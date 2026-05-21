@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A private personal finance, career, goals, routine, and family dashboard."
+    />
+    <title>Life Ledger</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">LL</div>
+          <div>
+            <p class="eyebrow">Private OS</p>
+            <h1>Life Ledger</h1>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" type="button" data-view="dashboard">
+            <span aria-hidden="true">⌘</span>
+            <span>Dashboard</span>
+          </button>
+          <button class="nav-item" type="button" data-view="finance">
+            <span aria-hidden="true">₹</span>
+            <span>Finance</span>
+          </button>
+          <button class="nav-item" type="button" data-view="career">
+            <span aria-hidden="true">↗</span>
+            <span>Career</span>
+          </button>
+          <button class="nav-item" type="button" data-view="goals">
+            <span aria-hidden="true">✓</span>
+            <span>Goals</span>
+          </button>
+          <button class="nav-item" type="button" data-view="assistant">
+            <span aria-hidden="true">?</span>
+            <span>Assistant</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <p class="muted-small">Data is saved on this device.</p>
+          <button class="ghost-button" type="button" id="exportDataButton">Export backup</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Today</p>
+            <h2 id="todayTitle">Your growth dashboard</h2>
+          </div>
+          <div class="topbar-actions">
+            <button class="secondary-button" type="button" id="themeToggle" aria-pressed="false">Dark mode</button>
+            <button class="secondary-button danger-button" type="button" data-open-modal="resetModal">Reset data</button>
+            <button class="secondary-button" type="button" id="seedDemoButton">Load demo</button>
+            <button class="primary-button" type="button" data-open-modal="importModal">Upload sheet</button>
+          </div>
+        </header>
+
+        <section class="view active" id="dashboard" aria-labelledby="dashboardTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="dashboardTitle">Command Center</h2>
+              <p>Salary, expenses, net worth, goals, routines, and interview prep in one place.</p>
+            </div>
+            <div class="period-pill" id="currentMonthLabel">This month</div>
+          </div>
+
+          <div class="metric-grid" id="metricGrid"></div>
+
+          <div class="dashboard-layout">
+            <section class="panel large-panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Income vs expenses</h3>
+                  <p>Monthly movement across both of you.</p>
+                </div>
+                <span class="status-dot good" id="savingsSignal">Healthy</span>
+              </div>
+              <div class="chart-area">
+                <svg class="line-chart" id="cashflowChart" role="img" aria-label="Monthly income and expense chart"></svg>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Expense mix</h3>
+                  <p>Where the money is going.</p>
+                </div>
+              </div>
+              <div class="donut-wrap">
+                <div class="donut" id="expenseDonut" aria-hidden="true"></div>
+                <div class="legend-list" id="expenseLegend"></div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Net worth path</h3>
+                  <p>Assets minus liabilities.</p>
+                </div>
+              </div>
+              <div class="networth-stack" id="networthStack"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Today focus</h3>
+                  <p>Tasks, study, movement.</p>
+                </div>
+              </div>
+              <div class="focus-list" id="todayFocus"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="finance" aria-labelledby="financeTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="financeTitle">Family Finance</h2>
+              <p>Track your salary growth, your wife's salary, shared home expenses, assets, and liabilities.</p>
+            </div>
+            <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="expense">Add entry</button>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Finance tabs">
+            <button class="tab-button active" type="button" data-finance-tab="overview">Overview</button>
+            <button class="tab-button" type="button" data-finance-tab="income">Salary</button>
+            <button class="tab-button" type="button" data-finance-tab="expenses">Expenses</button>
+            <button class="tab-button" type="button" data-finance-tab="wealth">Net worth</button>
+          </div>
+
+          <div class="finance-tab active" id="finance-overview">
+            <div class="split-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Salary growth</h3>
+                    <p>Latest annualized income by person.</p>
+                  </div>
+                </div>
+                <div id="salaryCards" class="stack-list"></div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Monthly budget pulse</h3>
+                    <p>Expected versus actual home spending.</p>
+                  </div>
+                </div>
+                <div id="budgetPulse" class="stack-list"></div>
+              </section>
+            </div>
+
+            <section class="panel large-panel salary-progression-panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Salary progression</h3>
+                  <p>Monthly gross and net in-hand salary across your organizations from 2018 onward.</p>
+                </div>
+                <span class="status-dot good" id="latestSalaryBadge">Latest salary</span>
+              </div>
+              <div class="chart-area">
+                <svg class="line-chart salary-chart" id="salaryProgressionChart" role="img" aria-label="Salary progression chart"></svg>
+              </div>
+              <div class="salary-insights" id="salaryInsights"></div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-income">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Salary ledger</h3>
+                  <p>Monthly payslip components including gross, net in-hand, tax, basic, HRA, PF, and allowances.</p>
+                </div>
+                <div class="panel-actions">
+                  <button class="secondary-button danger-button" type="button" data-reset-scope="income">Reset salary</button>
+                  <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="income">Add income</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Person</th>
+                      <th>Organization</th>
+                      <th>Gross</th>
+                      <th>Net in-hand</th>
+                      <th>Tax / TDS</th>
+                      <th>Basic</th>
+                      <th>HRA</th>
+                      <th>PF</th>
+                      <th>Top components</th>
+                    </tr>
+                  </thead>
+                  <tbody id="incomeTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-expenses">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Expenses</h3>
+                  <p>Home, personal, family, travel, investments, and more.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="expense">Add expense</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Category</th>
+                      <th>Paid by</th>
+                      <th>Amount</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="expenseTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-wealth">
+            <div class="split-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Assets</h3>
+                    <p>Bank, investments, PF, property, gold, and cash.</p>
+                  </div>
+                  <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="asset">Add asset</button>
+                </div>
+                <div id="assetList" class="stack-list"></div>
+              </section>
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Liabilities</h3>
+                    <p>Loans, credit cards, and other pending obligations.</p>
+                  </div>
+                  <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="liability">Add liability</button>
+                </div>
+                <div id="liabilityList" class="stack-list"></div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="career" aria-labelledby="careerTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="careerTitle">Interview Switchboard</h2>
+              <p>Study topics, confidence, hours, target companies, and switch readiness.</p>
+            </div>
+            <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="study">Add topic</button>
+          </div>
+
+          <div class="career-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Prep map</h3>
+                  <p>Progress by topic.</p>
+                </div>
+              </div>
+              <div id="studyBoard" class="topic-board"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Switch readiness</h3>
+                  <p>Signals that matter before applying hard.</p>
+                </div>
+              </div>
+              <div id="readinessList" class="stack-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="goals" aria-labelledby="goalsTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="goalsTitle">Goals & Routines</h2>
+              <p>Future goals, daily to-dos, workouts, and habits that compound.</p>
+            </div>
+            <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="goal">Add goal</button>
+          </div>
+
+          <div class="goals-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Future goals</h3>
+                  <p>Money, career, family, health, and personal milestones.</p>
+                </div>
+              </div>
+              <div id="goalList" class="stack-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Daily to-do</h3>
+                  <p>Small promises to today.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="task">Add task</button>
+              </div>
+              <div id="taskList" class="check-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Exercise</h3>
+                  <p>Sessions and consistency.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="workout">Log workout</button>
+              </div>
+              <div id="workoutList" class="stack-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="assistant" aria-labelledby="assistantTitle">
+          <div class="assistant-shell">
+            <div class="section-heading">
+              <div>
+                <h2 id="assistantTitle">Analysis Assistant</h2>
+                <p>Ask about spending, salary growth, goals, study plans, workouts, or next best actions.</p>
+              </div>
+            </div>
+
+            <div class="assistant-layout">
+              <section class="panel chat-panel">
+                <div class="chat-log" id="chatLog" aria-live="polite"></div>
+                <form class="chat-form" id="chatForm">
+                  <input
+                    id="chatInput"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="Ask: How much did we save this month?"
+                    aria-label="Ask the assistant"
+                  />
+                  <button class="primary-button" type="submit">Ask</button>
+                </form>
+              </section>
+
+              <aside class="panel quick-prompts">
+                <h3>Quick prompts</h3>
+                <button type="button" data-prompt="Give me this month's finance summary">Finance summary</button>
+                <button type="button" data-prompt="What should I study this week for interviews?">Study plan</button>
+                <button type="button" data-prompt="How is my net worth looking?">Net worth</button>
+                <button type="button" data-prompt="Where are expenses high?">Expense risks</button>
+                <button type="button" data-prompt="What should I do today?">Today's plan</button>
+              </aside>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Data import</p>
+            <h2 id="importTitle">Upload Excel, CSV, or JSON</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+
+        <div class="import-grid">
+          <label>
+            Data category
+            <select id="importKind">
+              <option value="auto">Auto detect</option>
+              <option value="income">Income / salary</option>
+              <option value="expense">Expenses</option>
+              <option value="asset">Assets</option>
+              <option value="liability">Liabilities</option>
+              <option value="goal">Goals</option>
+              <option value="study">Study topics</option>
+              <option value="task">Tasks</option>
+              <option value="workout">Workouts</option>
+            </select>
+          </label>
+          <label>
+            Sheet file
+            <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.json" />
+          </label>
+        </div>
+
+        <div class="help-box">
+          <strong>Smart columns:</strong> the importer understands headers like Date, Month, Person, Amount,
+          Category, Note, Company, Source, Goal, Target, Saved, Status, Confidence, and Hours.
+        </div>
+
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" id="importBackupButton">Import backup JSON</button>
+          <button class="primary-button" type="button" id="importFileButton">Import file</button>
+        </div>
+        <p class="muted-small" id="importStatus"></p>
+      </div>
+    </div>
+
+    <div class="modal" id="quickAddModal" role="dialog" aria-modal="true" aria-labelledby="quickAddTitle" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Quick add</p>
+            <h2 id="quickAddTitle">Add entry</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+
+        <form id="quickAddForm" class="quick-form"></form>
+      </div>
+    </div>
+
+    <div class="modal" id="resetModal" role="dialog" aria-modal="true" aria-labelledby="resetTitle" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Reset</p>
+            <h2 id="resetTitle">Clear selected data</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+
+        <div class="help-box">
+          Clear only the area you want to reupload. Export a backup first if you want a restore point.
+        </div>
+
+        <div class="reset-grid">
+          <button type="button" data-reset-scope="income">Salary / income</button>
+          <button type="button" data-reset-scope="expenses">Expenses</button>
+          <button type="button" data-reset-scope="networth">Assets + liabilities</button>
+          <button type="button" data-reset-scope="finance">All finance</button>
+          <button type="button" data-reset-scope="studies">Interview prep</button>
+          <button type="button" data-reset-scope="goals">Future goals</button>
+          <button type="button" data-reset-scope="tasks">Daily to-do</button>
+          <button type="button" data-reset-scope="workouts">Exercise</button>
+          <button type="button" data-reset-scope="chat">Assistant chat</button>
+          <button class="danger-reset" type="button" data-reset-scope="all">Everything</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
