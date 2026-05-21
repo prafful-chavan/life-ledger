@@ -46,7 +46,23 @@ python3 -m http.server 4173
 
 Visit `http://localhost:4173`.
 
-## Import data
+## Import your salary & expenses workbook
+
+Your file `Salary and expensese sheet details (1).xlsx` includes:
+
+| Sheets | What imports |
+|--------|----------------|
+| TCS-Salary, JLR-Salary, Quantiphi-Salary, Hashedin-Salary, Blazeclan-Salary, Wife-Ascent-Salary | Monthly salary with gross, net, tax, basic, HRA, PF, etc. |
+| Expenses-till-march-2026 | Expenses (Date, Category, Amount, Note) |
+
+**Local / with file in project:**
+
+1. Copy the workbook to `data/salary-and-expenses.xlsx` (already set up if you pasted it in the project folder).
+2. Run the app → **Upload sheet** → **Import master salary sheet**.
+
+**Live site (GitHub Pages):** use **Upload sheet** → choose the `.xlsx` from your Mac (the master file is not pushed to GitHub for privacy).
+
+## Import other data
 
 Use **Upload sheet** to import `.xlsx`, `.xls`, `.csv`, or backup `.json` files. The importer understands common headers:
 

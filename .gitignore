@@ -1,5 +1,12 @@
 .DS_Store
 *.log
+node_modules/
+
+# Personal finance workbooks (use Upload sheet or data/ locally)
+*.xlsx
+*.xls
+data/*.xlsx
+Salary*.xlsx
 
 # Optional local override (config.js in repo is a placeholder)
 # config.local.js

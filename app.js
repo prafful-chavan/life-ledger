@@ -438,7 +438,56 @@ function bindFinanceTabs() {
   });
 }
 
+async function importBuiltInMasterSheet() {
+  if (!window.XLSX) {
+    throw new Error("Excel support needs internet once to load the SheetJS parser.");
+  }
+
+  let response;
+  for (const path of MASTER_SHEET_PATHS) {
+    const attempt = await fetch(path);
+    if (attempt.ok) {
+      response = attempt;
+      break;
+    }
+  }
+  if (!response) {
+    throw new Error(
+      "Master workbook not found. Copy your file to data/salary-and-expenses.xlsx or use Upload sheet."
+    );
+  }
+
+  const buffer = await response.arrayBuffer();
+  const file = new File([buffer], "salary-and-expenses.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  return parseImportFile(file, "auto");
+}
+
 function bindImports() {
+  document.getElementById("importMasterSheetButton")?.addEventListener("click", async () => {
+    const ok = confirm(
+      "Import salary and expenses from your master workbook?\n\nThis replaces current salary and expense rows (other data stays)."
+    );
+    if (!ok) return;
+
+    try {
+      const imported = await importBuiltInMasterSheet();
+      state.income = [];
+      state.expenses = [];
+      mergeImportedData(imported);
+      saveData();
+      renderAll();
+      const summary = importSummary(imported);
+      document.getElementById("importStatus").textContent = summary;
+      toast(`Master sheet imported. ${summary}`);
+      closeModal(document.getElementById("importModal"));
+    } catch (error) {
+      document.getElementById("importStatus").textContent = error.message;
+      toast(error.message);
+    }
+  });
+
   document.getElementById("importFileButton").addEventListener("click", async () => {
     const file = document.getElementById("fileInput").files[0];
     const kind = document.getElementById("importKind").value;
@@ -657,11 +706,19 @@ async function parseImportFile(file, selectedKind) {
   throw new Error("Unsupported file type.");
 }
 
+const MASTER_SHEET_PATHS = [
+  "data/salary-and-expenses.xlsx",
+  "Salary and expensese sheet details  (1).xlsx",
+];
+
+const INCOME_SKIP_SHEETS = /breakup|_break|sal_break|our need/i;
+
 function rowsToData(rows, selectedKind) {
   const output = clone(defaultData);
   rows.forEach((row) => {
     const normalized = normalizeRow(row);
     const kind = selectedKind === "auto" ? detectKind(normalized) : selectedKind;
+    if (kind === "income" && INCOME_SKIP_SHEETS.test(String(normalized.sheet || ""))) return;
     const item = mapRowToKind(normalized, kind);
     if (!item) return;
 
@@ -679,7 +736,9 @@ function rowsToData(rows, selectedKind) {
 
 function normalizeRow(row) {
   const normalized = {};
+  if (row.__sheet) normalized.sheet = row.__sheet;
   Object.entries(row).forEach(([key, value]) => {
+    if (key === "__sheet") return;
     const cleanKey = key
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "")
@@ -708,7 +767,7 @@ function mapRowToKind(row, kind) {
     const dateValue = pick(row, ["date", "month", "salarydate", "crediteddate"]);
     if (/^total$/i.test(String(dateValue || "").trim())) return null;
 
-    const sheetName = String(row.sheet || "");
+    const sheetName = String(row.sheet || row.__sheet || "");
     const grossEarnings = pickNumber(row, ["grossearnings", "grosssalary", "totalearnings", "gross", "ctc"]);
     const explicitNetSalary = pickNumber(row, ["netsalary", "netpay", "netinhand", "inhand", "takehome", "salary", "income", "monthlysalary"]);
     const genericAmount = pickNumber(row, ["amount"]);
