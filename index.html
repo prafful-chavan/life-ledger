@@ -25,7 +25,7 @@
           <div>
             <p class="eyebrow">Private vault</p>
             <h1>Life Ledger</h1>
-            <p class="auth-lead">Password + Authy 2FA. Your data is encrypted before it touches Google Drive.</p>
+            <p class="auth-lead">Password-protected vault. Your data is encrypted before it touches Google Drive.</p>
           </div>
         </div>
 
@@ -40,26 +40,8 @@
             Confirm password
             <input id="setupPasswordConfirm" type="password" autocomplete="new-password" />
           </label>
-          <button class="primary-button auth-submit" type="button" id="beginSetupButton">Continue to 2FA</button>
+          <button class="primary-button auth-submit" type="button" id="createVaultButton">Create vault &amp; sign in</button>
           <p class="auth-message" id="setupMessage"></p>
-        </section>
-
-        <section data-auth-panel="setup-totp" class="auth-panel" hidden>
-          <h2>Set up Authy / Authenticator</h2>
-          <p class="muted-small">Scan the QR code in Authy, then enter the 6-digit code to finish.</p>
-          <div class="totp-setup">
-            <img id="totpQr" width="180" height="180" alt="" />
-            <div>
-              <p class="muted-small">Manual secret</p>
-              <code class="totp-secret" id="totpSecretDisplay"></code>
-            </div>
-          </div>
-          <label class="auth-field">
-            6-digit code
-            <input id="setupTotpCode" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" />
-          </label>
-          <button class="primary-button auth-submit" type="button" id="finishSetupButton">Create vault &amp; sign in</button>
-          <p class="auth-message" id="setupTotpMessage"></p>
         </section>
 
         <section data-auth-panel="login" class="auth-panel" hidden>
@@ -67,10 +49,6 @@
           <label class="auth-field">
             Password
             <input id="loginPassword" type="password" autocomplete="current-password" />
-          </label>
-          <label class="auth-field">
-            Authy / Authenticator code
-            <input id="loginTotpCode" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" />
           </label>
           <button class="primary-button auth-submit" type="button" id="loginButton">Unlock</button>
           <p class="auth-message" id="loginMessage"></p>

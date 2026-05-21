@@ -1,20 +1,15 @@
 /**
- * Life Ledger — client-side auth, TOTP (Authy / Authenticator), and encrypted vault.
- * Data at rest is AES-256-GCM; only ciphertext is stored on Google Drive or in localStorage.
+ * Life Ledger — password-protected encrypted vault (+ Google Drive sync).
+ * TOTP / 2FA can be added later; vault stores totpSecret: null for now.
  */
 (function () {
   const VAULT_LOCAL_KEY = "lifeLedgerVault:v1";
   const SESSION_KEY = "lifeLedgerSession:v1";
   const SESSION_HOURS = 12;
   const PBKDF2_ITERATIONS = 250000;
-  const TOTP_PERIOD = 30;
-  const TOTP_DIGITS = 6;
-  const TOTP_WINDOW = 1;
-  const ISSUER = "Life Ledger";
 
   let vaultMeta = null;
   let unlockedPayload = null;
-  let setupTotpSecret = null;
 
   function enc() {
     return new TextEncoder();
@@ -67,75 +62,6 @@
     return JSON.parse(dec().decode(plaintext));
   }
 
-  function generateTotpSecret() {
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    const bytes = randomBytes(20);
-    let secret = "";
-    for (let i = 0; i < 20; i++) secret += alphabet[bytes[i] % 32];
-    return secret;
-  }
-
-  function base32Decode(secret) {
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    const cleaned = secret.replace(/\s/g, "").toUpperCase().replace(/=+$/, "");
-    let bits = "";
-    for (const char of cleaned) {
-      const val = alphabet.indexOf(char);
-      if (val < 0) continue;
-      bits += val.toString(2).padStart(5, "0");
-    }
-    const bytes = new Uint8Array(Math.floor(bits.length / 8));
-    for (let i = 0; i < bytes.length; i++) {
-      bytes[i] = parseInt(bits.slice(i * 8, (i + 1) * 8), 2);
-    }
-    return bytes;
-  }
-
-  async function hmacSha1(keyBytes, messageBytes) {
-    const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
-    return new Uint8Array(await crypto.subtle.sign("HMAC", key, messageBytes));
-  }
-
-  async function totpAt(secret, counter) {
-    const key = base32Decode(secret);
-    const msg = new Uint8Array(8);
-    let temp = counter;
-    for (let i = 7; i >= 0; i--) {
-      msg[i] = temp & 0xff;
-      temp = Math.floor(temp / 256);
-    }
-    const hmac = await hmacSha1(key, msg);
-    const offset = hmac[hmac.length - 1] & 0x0f;
-    const code =
-      ((hmac[offset] & 0x7f) << 24) |
-      ((hmac[offset + 1] & 0xff) << 16) |
-      ((hmac[offset + 2] & 0xff) << 8) |
-      (hmac[offset + 3] & 0xff);
-    return String(code % 10 ** TOTP_DIGITS).padStart(TOTP_DIGITS, "0");
-  }
-
-  async function verifyTotp(secret, code) {
-    if (!secret || !/^\d{6}$/.test(String(code || "").trim())) return false;
-    const now = Math.floor(Date.now() / 1000 / TOTP_PERIOD);
-    const entered = String(code).trim();
-    for (let w = -TOTP_WINDOW; w <= TOTP_WINDOW; w++) {
-      if ((await totpAt(secret, now + w)) === entered) return true;
-    }
-    return false;
-  }
-
-  function totpUri(secret, accountLabel) {
-    const label = encodeURIComponent(`${ISSUER}:${accountLabel || "vault"}`);
-    const params = new URLSearchParams({
-      secret,
-      issuer: ISSUER,
-      algorithm: "SHA1",
-      digits: String(TOTP_DIGITS),
-      period: String(TOTP_PERIOD),
-    });
-    return `otpauth://totp/${label}?${params.toString()}`;
-  }
-
   function readSession() {
     try {
       const raw = sessionStorage.getItem(SESSION_KEY);
@@ -161,6 +87,13 @@
   function clearSession() {
     sessionStorage.removeItem(SESSION_KEY);
     unlockedPayload = null;
+  }
+
+  function vaultInnerPayload(data, totpSecret) {
+    return {
+      totpSecret: totpSecret || null,
+      data,
+    };
   }
 
   async function loadVaultFile() {
@@ -235,32 +168,23 @@
     });
   }
 
-  function renderTotpQr(secret) {
-    const uri = totpUri(secret, "Life Ledger");
-    const qrImg = document.getElementById("totpQr");
-    const secretEl = document.getElementById("totpSecretDisplay");
-    if (qrImg) {
-      qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(uri)}`;
-      qrImg.alt = "QR code for Authy or Authenticator";
-    }
-    if (secretEl) secretEl.textContent = secret;
-  }
-
   async function persistAppData(data) {
     if (!unlockedPayload) throw new Error("Not unlocked");
     unlockedPayload.data = data;
     const password = unlockedPayload._sessionPassword;
     if (!password || !vaultMeta) throw new Error("Session expired — sign in again");
-    const vault = await buildVault(password, {
-      totpSecret: unlockedPayload.totpSecret,
-      data: unlockedPayload.data,
-    });
+    const vault = await buildVault(
+      password,
+      vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret)
+    );
     await saveVaultFile(vault);
   }
 
-  async function tryResumeSession() {
-    if (!readSession() || !vaultMeta) return false;
-    return false;
+  function unlockApp(inner, password) {
+    unlockedPayload = { ...inner, _sessionPassword: password };
+    writeSession();
+    showGate("app");
+    window.LifeLedgerApp?.bootstrap(inner.data);
   }
 
   const LifeLedgerAuth = {
@@ -274,10 +198,6 @@
 
     getAppData() {
       return unlockedPayload?.data ?? null;
-    },
-
-    getTotpUri() {
-      return setupTotpSecret ? totpUri(setupTotpSecret, "Life Ledger") : "";
     },
 
     async init() {
@@ -299,40 +219,25 @@
 
       showGate("auth");
       showAuthPanel("login");
-      await tryResumeSession();
     },
 
-    async completeSetup(password, confirmPassword, totpCode) {
+    async completeSetup(password, confirmPassword) {
       if (password.length < 10) throw new Error("Use at least 10 characters for your password.");
       if (password !== confirmPassword) throw new Error("Passwords do not match.");
-      if (!setupTotpSecret) throw new Error("2FA is not ready. Refresh and try again.");
-      if (!(await verifyTotp(setupTotpSecret, totpCode))) {
-        throw new Error("Invalid 2FA code. Check Authy and try again.");
-      }
 
       const legacy = migrateLegacyPlaintext();
-      const inner = {
-        totpSecret: setupTotpSecret,
-        data: legacy || window.LifeLedgerApp?.defaultData?.() || {},
-      };
+      const inner = vaultInnerPayload(
+        legacy || window.LifeLedgerApp?.defaultData?.() || {},
+        null
+      );
       const vault = await buildVault(password, inner);
       await saveVaultFile(vault);
       if (legacy) localStorage.removeItem("lifeLedgerData:v1");
 
-      unlockedPayload = { ...inner, _sessionPassword: password };
-      writeSession();
-      setupTotpSecret = null;
-      showGate("app");
-      window.LifeLedgerApp?.bootstrap(inner.data);
+      unlockApp(inner, password);
     },
 
-    beginSetup() {
-      setupTotpSecret = generateTotpSecret();
-      renderTotpQr(setupTotpSecret);
-      showAuthPanel("setup-totp");
-    },
-
-    async login(password, totpCode) {
+    async login(password) {
       if (!vaultMeta) throw new Error("No vault found. Create an account first.");
       let inner;
       try {
@@ -340,13 +245,8 @@
       } catch {
         throw new Error("Wrong password or corrupted vault.");
       }
-      if (!(await verifyTotp(inner.totpSecret, totpCode))) {
-        throw new Error("Invalid 2FA code.");
-      }
-      unlockedPayload = { ...inner, _sessionPassword: password };
-      writeSession();
-      showGate("app");
-      window.LifeLedgerApp?.bootstrap(inner.data);
+      if (!inner?.data) throw new Error("Vault format is invalid.");
+      unlockApp(inner, password);
     },
 
     async saveAppData(data) {
@@ -374,37 +274,21 @@
   };
 
   function bindAuthUi() {
-    document.getElementById("beginSetupButton")?.addEventListener("click", () => {
-      setAuthMessage("setupMessage", "");
+    document.getElementById("createVaultButton")?.addEventListener("click", async () => {
       const password = document.getElementById("setupPassword")?.value || "";
       const confirm = document.getElementById("setupPasswordConfirm")?.value || "";
-      if (password.length < 10) {
-        setAuthMessage("setupMessage", "Use at least 10 characters.", true);
-        return;
-      }
-      if (password !== confirm) {
-        setAuthMessage("setupMessage", "Passwords do not match.", true);
-        return;
-      }
-      LifeLedgerAuth._setupPassword = password;
-      LifeLedgerAuth.beginSetup();
-    });
-
-    document.getElementById("finishSetupButton")?.addEventListener("click", async () => {
-      const code = document.getElementById("setupTotpCode")?.value || "";
       try {
-        await LifeLedgerAuth.completeSetup(LifeLedgerAuth._setupPassword, LifeLedgerAuth._setupPassword, code);
-        toastAuth("Vault created. Connect Google Drive in the sidebar when ready.");
+        await LifeLedgerAuth.completeSetup(password, confirm);
+        toastAuth("Vault created. Link Google Drive in the sidebar when ready.");
       } catch (error) {
-        setAuthMessage("setupTotpMessage", error.message, true);
+        setAuthMessage("setupMessage", error.message, true);
       }
     });
 
     document.getElementById("loginButton")?.addEventListener("click", async () => {
       const password = document.getElementById("loginPassword")?.value || "";
-      const code = document.getElementById("loginTotpCode")?.value || "";
       try {
-        await LifeLedgerAuth.login(password, code);
+        await LifeLedgerAuth.login(password);
       } catch (error) {
         setAuthMessage("loginMessage", error.message, true);
       }
@@ -428,7 +312,7 @@
         vaultMeta = await loadVaultFile();
         if (vaultMeta) {
           showAuthPanel("login");
-          setAuthMessage("loginMessage", "Vault loaded from Drive. Enter password and 2FA.", false);
+          setAuthMessage("loginMessage", "Vault loaded from Drive. Enter your password.", false);
         } else {
           setAuthMessage("loginMessage", "No vault file found on Drive. Create a vault first.", true);
         }
@@ -450,20 +334,14 @@
       }
     });
 
-    document
-      .querySelectorAll(
-        "#loginPassword, #loginTotpCode, #setupPassword, #setupPasswordConfirm, #setupTotpCode"
-      )
-      .forEach((input) => {
-        input.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") {
-            const panel = document.querySelector("[data-auth-panel]:not([hidden])")?.dataset.authPanel;
-            if (panel === "login") document.getElementById("loginButton")?.click();
-            if (panel === "setup") document.getElementById("beginSetupButton")?.click();
-            if (panel === "setup-totp") document.getElementById("finishSetupButton")?.click();
-          }
-        });
+    document.querySelectorAll("#loginPassword, #setupPassword, #setupPasswordConfirm").forEach((input) => {
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        const panel = document.querySelector("[data-auth-panel]:not([hidden])")?.dataset.authPanel;
+        if (panel === "login") document.getElementById("loginButton")?.click();
+        if (panel === "setup") document.getElementById("createVaultButton")?.click();
       });
+    });
   }
 
   function toastAuth(message) {

@@ -8,15 +8,14 @@ A private, mobile-friendly personal dashboard for family finance, salary growth,
 
 Pushes to `main` redeploy automatically via GitHub Pages.
 
-## Security (password + Authy 2FA + encrypted sync)
+## Security (password + encrypted sync)
 
 The public URL does **not** expose your numbers. Protection works like this:
 
 1. **Password** — unlocks an AES-256-GCM encrypted vault (PBKDF2, 250k iterations).
-2. **TOTP 2FA** — works with **Authy**, Google Authenticator, or any TOTP app (scan QR on first setup).
-3. **Google Drive** — only the **encrypted** vault file is stored (`life-ledger-vault.enc.json`). Google cannot read your salary or expenses without your password and 2FA.
+2. **Google Drive** — only the **encrypted** vault file is stored (`life-ledger-vault.enc.json`). Google cannot read your salary or expenses without your password.
 
-On a new browser or phone: use **Restore vault from Google Drive**, then sign in with password + Authy code.
+2FA (Authy / Authenticator) can be added later. On a new browser or phone: use **Restore vault from Google Drive**, then sign in with your password.
 
 Use **Export backup** inside the app for an extra offline copy.
 
