@@ -189,6 +189,8 @@
             <button class="tab-button active" type="button" data-finance-tab="overview">Overview</button>
             <button class="tab-button" type="button" data-finance-tab="income">Salary</button>
             <button class="tab-button" type="button" data-finance-tab="expenses">Expenses</button>
+            <button class="tab-button" type="button" data-finance-tab="mutualfunds">Mutual funds</button>
+            <button class="tab-button" type="button" data-finance-tab="stocks">Stocks</button>
             <button class="tab-button" type="button" data-finance-tab="wealth">Net worth</button>
           </div>
 
@@ -268,23 +270,129 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h3>Expenses</h3>
-                  <p>Home, personal, family, travel, investments, and more.</p>
+                  <h3>Expenses by month</h3>
+                  <p>Browse thousands of entries month-wise — summary first, then paginated details.</p>
                 </div>
                 <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="expense">Add expense</button>
               </div>
-              <div class="table-wrap">
+
+              <div class="expense-toolbar">
+                <label class="toolbar-field">
+                  Month
+                  <select id="expenseMonthSelect" aria-label="Select expense month"></select>
+                </label>
+              </div>
+
+              <div class="metric-grid compact" id="expenseMonthSummary"></div>
+
+              <div class="split-grid expense-split">
+                <section class="panel soft-panel">
+                  <div class="panel-header">
+                    <div>
+                      <h3>Category breakdown</h3>
+                      <p>Top categories for the selected month.</p>
+                    </div>
+                  </div>
+                  <div class="stack-list" id="expenseCategoryBreakdown"></div>
+                </section>
+                <section class="panel soft-panel">
+                  <div class="panel-header">
+                    <div>
+                      <h3>Transactions</h3>
+                      <p id="expensePageInfo" class="muted-small"></p>
+                    </div>
+                    <div class="panel-actions">
+                      <button class="secondary-button" type="button" id="expensePagePrev">Previous</button>
+                      <button class="secondary-button" type="button" id="expensePageNext">Next</button>
+                    </div>
+                  </div>
+                  <div class="table-wrap tall-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Category</th>
+                          <th>Paid by</th>
+                          <th>Amount</th>
+                          <th>Note</th>
+                        </tr>
+                      </thead>
+                      <tbody id="expenseTable"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-mutualfunds">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Mutual funds</h3>
+                  <p>Folio, AMC, SIP, NAV, invested vs current value — separate view for you and your wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">Add fund</button>
+              </div>
+              <div class="owner-toggle" role="tablist" aria-label="Mutual fund owner">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="mfOwnerSummary"></div>
+              <div class="table-wrap tall-table">
                 <table>
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Category</th>
-                      <th>Paid by</th>
-                      <th>Amount</th>
-                      <th>Note</th>
+                      <th>Fund</th>
+                      <th>AMC</th>
+                      <th>Type</th>
+                      <th>Folio</th>
+                      <th>Invested</th>
+                      <th>Current</th>
+                      <th>Units</th>
+                      <th>NAV</th>
+                      <th>SIP</th>
+                      <th>Platform</th>
                     </tr>
                   </thead>
-                  <tbody id="expenseTable"></tbody>
+                  <tbody id="mutualFundTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-stocks">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Stocks</h3>
+                  <p>Demat holdings with quantity, average price, and market value — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="stock">Add stock</button>
+              </div>
+              <div class="owner-toggle" role="tablist" aria-label="Stock owner">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="stockOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Company</th>
+                      <th>Exchange</th>
+                      <th>Qty</th>
+                      <th>Avg price</th>
+                      <th>CMP</th>
+                      <th>Value</th>
+                      <th>Sector</th>
+                      <th>Demat</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockTable"></tbody>
                 </table>
               </div>
             </section>
@@ -448,6 +556,8 @@
               <option value="income">Income / salary</option>
               <option value="expense">Expenses</option>
               <option value="asset">Assets</option>
+              <option value="mutualFund">Mutual funds</option>
+              <option value="stock">Stocks</option>
               <option value="liability">Liabilities</option>
               <option value="goal">Goals</option>
               <option value="study">Study topics</option>
@@ -512,6 +622,9 @@
           <button type="button" data-reset-scope="income">Salary / income</button>
           <button type="button" data-reset-scope="expenses">Expenses</button>
           <button type="button" data-reset-scope="networth">Assets + liabilities</button>
+          <button type="button" data-reset-scope="holdings">Mutual funds + stocks</button>
+          <button type="button" data-reset-scope="mutualfunds">Mutual funds only</button>
+          <button type="button" data-reset-scope="stocks">Stocks only</button>
           <button type="button" data-reset-scope="finance">All finance</button>
           <button type="button" data-reset-scope="studies">Interview prep</button>
           <button type="button" data-reset-scope="goals">Future goals</button>

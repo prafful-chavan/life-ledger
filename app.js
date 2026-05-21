@@ -12,12 +12,17 @@ const defaultData = {
   expenses: [],
   assets: [],
   liabilities: [],
+  mutualFunds: [],
+  stocks: [],
   goals: [],
   tasks: [],
   studies: [],
   workouts: [],
   chat: [],
 };
+
+const EXPENSE_PAGE_SIZE = 80;
+const IMPORT_YIELD_EVERY = 400;
 
 const demoData = {
   income: [
@@ -186,6 +191,10 @@ const demoData = {
 let state = clone(defaultData);
 let activeView = "dashboard";
 let activeFinanceTab = "overview";
+let activeHoldingsOwner = "Me";
+let activeExpenseMonth = "";
+let activeExpensePage = 0;
+let expenseMonthIndexCache = null;
 let quickAddKind = "expense";
 
 const assistantWelcome =
@@ -244,13 +253,49 @@ const fieldsByKind = {
     ["minutes", "Minutes", "number"],
     ["intensity", "Intensity", "text"],
   ],
+  mutualFund: [
+    ["owner", "Owner (Me / Wife)", "text"],
+    ["fundName", "Fund name", "text"],
+    ["amc", "AMC", "text"],
+    ["category", "Category (Equity / Debt / Hybrid)", "text"],
+    ["folio", "Folio no.", "text"],
+    ["invested", "Amount invested", "number"],
+    ["currentValue", "Current value", "number"],
+    ["units", "Units", "number"],
+    ["nav", "Latest NAV", "number"],
+    ["sipAmount", "SIP amount", "number"],
+    ["sipDay", "SIP day of month", "number"],
+    ["platform", "Platform (Groww / Kuvera / etc.)", "text"],
+    ["purchaseDate", "Purchase / start date", "date"],
+    ["notes", "Notes", "textarea"],
+  ],
+  stock: [
+    ["owner", "Owner (Me / Wife)", "text"],
+    ["symbol", "Symbol", "text"],
+    ["company", "Company name", "text"],
+    ["exchange", "Exchange (NSE / BSE)", "text"],
+    ["quantity", "Quantity", "number"],
+    ["avgPrice", "Avg buy price", "number"],
+    ["currentPrice", "Current price", "number"],
+    ["invested", "Amount invested", "number"],
+    ["sector", "Sector", "text"],
+    ["demat", "Demat / broker", "text"],
+    ["purchaseDate", "Purchase date", "date"],
+    ["notes", "Notes", "textarea"],
+  ],
 };
 
 const resetScopes = {
   income: { label: "salary / income", keys: ["income"] },
   expenses: { label: "expenses", keys: ["expenses"] },
   networth: { label: "assets and liabilities", keys: ["assets", "liabilities"] },
-  finance: { label: "all finance data", keys: ["income", "expenses", "assets", "liabilities"] },
+  holdings: { label: "mutual funds and stocks", keys: ["mutualFunds", "stocks"] },
+  finance: {
+    label: "all finance data",
+    keys: ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks"],
+  },
+  mutualfunds: { label: "mutual funds", keys: ["mutualFunds"] },
+  stocks: { label: "stocks", keys: ["stocks"] },
   studies: { label: "interview prep", keys: ["studies"] },
   goals: { label: "future goals", keys: ["goals"] },
   tasks: { label: "daily to-do", keys: ["tasks"] },
@@ -319,6 +364,7 @@ window.LifeLedgerApp = {
 let saveDataTimer;
 
 function saveData() {
+  invalidateExpenseCache();
   if (!window.LifeLedgerAuth?.isUnlocked()) return;
   clearTimeout(saveDataTimer);
   saveDataTimer = setTimeout(() => {
@@ -327,6 +373,14 @@ function saveData() {
       toast(error.message || "Could not save encrypted vault.");
     });
   }, 700);
+}
+
+function invalidateExpenseCache() {
+  expenseMonthIndexCache = null;
+}
+
+function appendArray(target, source) {
+  for (let i = 0; i < source.length; i += 1) target.push(source[i]);
 }
 
 function loadTheme() {
@@ -359,6 +413,8 @@ function normalizeData(data) {
     expenses: ensureIds(data.expenses || [], "exp"),
     assets: ensureIds(data.assets || [], "asset"),
     liabilities: ensureIds(data.liabilities || [], "liab"),
+    mutualFunds: ensureIds(data.mutualFunds || [], "mf"),
+    stocks: ensureIds(data.stocks || [], "stk"),
     goals: ensureIds(data.goals || [], "goal"),
     tasks: ensureIds(data.tasks || [], "task"),
     studies: ensureIds(data.studies || [], "study"),
@@ -433,7 +489,33 @@ function bindFinanceTabs() {
       document.querySelectorAll("[data-finance-tab]").forEach((tab) => tab.classList.remove("active"));
       button.classList.add("active");
       document.querySelectorAll(".finance-tab").forEach((tab) => tab.classList.remove("active"));
-      document.getElementById(`finance-${activeFinanceTab}`).classList.add("active");
+      document.getElementById(`finance-${activeFinanceTab}`)?.classList.add("active");
+      if (activeFinanceTab === "expenses") renderExpenseExplorer();
+    });
+  });
+
+  document.getElementById("expenseMonthSelect")?.addEventListener("change", (event) => {
+    activeExpenseMonth = event.target.value;
+    activeExpensePage = 0;
+    renderExpenseExplorer();
+  });
+
+  document.getElementById("expensePagePrev")?.addEventListener("click", () => {
+    activeExpensePage = Math.max(0, activeExpensePage - 1);
+    renderExpenseExplorer(false);
+  });
+
+  document.getElementById("expensePageNext")?.addEventListener("click", () => {
+    activeExpensePage += 1;
+    renderExpenseExplorer(false);
+  });
+
+  document.querySelectorAll("[data-holdings-owner]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeHoldingsOwner = button.dataset.holdingsOwner;
+      document.querySelectorAll("[data-holdings-owner]").forEach((tab) => tab.classList.remove("active"));
+      button.classList.add("active");
+      renderHoldingsTabs();
     });
   });
 }
@@ -472,15 +554,13 @@ function bindImports() {
     if (!ok) return;
 
     try {
-      const imported = await importBuiltInMasterSheet();
-      state.income = [];
-      state.expenses = [];
-      mergeImportedData(imported);
-      saveData();
-      renderAll();
-      const summary = importSummary(imported);
-      document.getElementById("importStatus").textContent = summary;
-      toast(`Master sheet imported. ${summary}`);
+      await runImport(async () => {
+        const imported = await importBuiltInMasterSheet();
+        state.income = [];
+        state.expenses = [];
+        mergeImportedData(imported);
+        return imported;
+      });
       closeModal(document.getElementById("importModal"));
     } catch (error) {
       document.getElementById("importStatus").textContent = error.message;
@@ -497,12 +577,11 @@ function bindImports() {
     }
 
     try {
-      const imported = await parseImportFile(file, kind);
-      mergeImportedData(imported);
-      saveData();
-      renderAll();
-      document.getElementById("importStatus").textContent = importSummary(imported);
-      toast("Imported successfully.");
+      await runImport(async () => {
+        const imported = await parseImportFile(file, kind);
+        mergeImportedData(imported);
+        return imported;
+      });
     } catch (error) {
       document.getElementById("importStatus").textContent = error.message;
       toast(error.message);
@@ -615,6 +694,8 @@ function buildQuickAddForm(kind) {
     expense: "Add expense",
     asset: "Add asset",
     liability: "Add liability",
+    mutualFund: "Add mutual fund",
+    stock: "Add stock",
     goal: "Add goal",
     task: "Add task",
     study: "Add study topic",
@@ -664,6 +745,15 @@ function buildQuickAddForm(kind) {
     if (kind === "income") state.income.push(entry);
     if (kind === "asset") state.assets.push(entry);
     if (kind === "liability") state.liabilities.push(entry);
+    if (kind === "mutualFund") {
+      entry.owner = normalizeOwner(entry.owner);
+      state.mutualFunds.push(entry);
+    }
+    if (kind === "stock") {
+      entry.owner = normalizeOwner(entry.owner);
+      if (!entry.invested) entry.invested = toNumber(entry.quantity) * toNumber(entry.avgPrice || entry.currentPrice);
+      state.stocks.push(entry);
+    }
     if (kind === "goal") state.goals.push(entry);
     if (kind === "task") state.tasks.push(entry);
     if (kind === "study") state.studies.push(entry);
@@ -674,6 +764,21 @@ function buildQuickAddForm(kind) {
     closeModal(form.closest(".modal"));
     toast("Entry saved.");
   };
+}
+
+async function runImport(importFn) {
+  const status = document.getElementById("importStatus");
+  if (status) status.textContent = "Importing… this may take a moment for large sheets.";
+  toast("Importing…");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const result = await importFn();
+  invalidateExpenseCache();
+  saveData();
+  renderAll();
+  const summary = result && result.income ? importSummary(result) : importSummary(state);
+  if (status) status.textContent = summary;
+  toast(`Import complete. ${summary}`);
+  return result;
 }
 
 async function parseImportFile(file, selectedKind) {
@@ -694,16 +799,57 @@ async function parseImportFile(file, selectedKind) {
     }
     const buffer = await file.arrayBuffer();
     const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
-    const allRows = workbook.SheetNames.flatMap((sheetName) =>
-      window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "", raw: false }).map((row) => ({
-        ...row,
-        __sheet: sheetName,
-      }))
-    );
-    return rowsToData(allRows, selectedKind);
+    const output = emptyImportBuckets();
+    let processed = 0;
+
+    for (const sheetName of workbook.SheetNames) {
+      if (selectedKind === "auto" && INCOME_SKIP_SHEETS.test(sheetName)) continue;
+      const sheet = workbook.Sheets[sheetName];
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true, dateNF: "yyyy-mm-dd" });
+      for (let i = 0; i < rows.length; i += 1) {
+        ingestImportRow(output, { ...rows[i], __sheet: sheetName }, selectedKind);
+        processed += 1;
+        if (processed % IMPORT_YIELD_EVERY === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    return output;
   }
 
   throw new Error("Unsupported file type.");
+}
+
+function emptyImportBuckets() {
+  return {
+    income: [],
+    expenses: [],
+    assets: [],
+    liabilities: [],
+    mutualFunds: [],
+    stocks: [],
+    goals: [],
+    tasks: [],
+    studies: [],
+    workouts: [],
+    chat: [],
+  };
+}
+
+function ingestImportRow(output, row, selectedKind) {
+  const normalized = normalizeRow(row);
+  const kind = selectedKind === "auto" ? detectKind(normalized) : selectedKind;
+  if (kind === "income" && INCOME_SKIP_SHEETS.test(String(normalized.sheet || ""))) return;
+  const item = mapRowToKind(normalized, kind);
+  if (!item) return;
+  if (kind === "income") output.income.push(item);
+  if (kind === "expense") output.expenses.push(item);
+  if (kind === "asset") output.assets.push(item);
+  if (kind === "liability") output.liabilities.push(item);
+  if (kind === "mutualFund") output.mutualFunds.push(item);
+  if (kind === "stock") output.stocks.push(item);
+  if (kind === "goal") output.goals.push(item);
+  if (kind === "task") output.tasks.push(item);
+  if (kind === "study") output.studies.push(item);
+  if (kind === "workout") output.workouts.push(item);
 }
 
 const MASTER_SHEET_PATHS = [
@@ -714,23 +860,8 @@ const MASTER_SHEET_PATHS = [
 const INCOME_SKIP_SHEETS = /breakup|_break|sal_break|our need/i;
 
 function rowsToData(rows, selectedKind) {
-  const output = clone(defaultData);
-  rows.forEach((row) => {
-    const normalized = normalizeRow(row);
-    const kind = selectedKind === "auto" ? detectKind(normalized) : selectedKind;
-    if (kind === "income" && INCOME_SKIP_SHEETS.test(String(normalized.sheet || ""))) return;
-    const item = mapRowToKind(normalized, kind);
-    if (!item) return;
-
-    if (kind === "income") output.income.push(item);
-    if (kind === "expense") output.expenses.push(item);
-    if (kind === "asset") output.assets.push(item);
-    if (kind === "liability") output.liabilities.push(item);
-    if (kind === "goal") output.goals.push(item);
-    if (kind === "task") output.tasks.push(item);
-    if (kind === "study") output.studies.push(item);
-    if (kind === "workout") output.workouts.push(item);
-  });
+  const output = emptyImportBuckets();
+  rows.forEach((row) => ingestImportRow(output, row, selectedKind));
   return output;
 }
 
@@ -753,7 +884,9 @@ function detectKind(row) {
   const sheet = String(row.sheet || row.__sheet || "").toLowerCase();
   if (/salary|income|ctc|company|source/.test(keys + sheet)) return "income";
   if (/expense|spend|merchant|paidby|category/.test(keys + sheet)) return "expense";
-  if (/asset|investment|mutual|bank|gold/.test(keys + sheet)) return "asset";
+  if (/mutual|mf|sip|folio|amc/.test(keys + sheet) && !/stock|equity share/.test(keys + sheet)) return "mutualFund";
+  if (/stock|equity|demat|nse|bse|share|symbol/.test(keys + sheet)) return "stock";
+  if (/asset|investment|bank|gold/.test(keys + sheet)) return "asset";
   if (/liability|loan|debt|outstanding/.test(keys + sheet)) return "liability";
   if (/goal|target|saved|duedate/.test(keys + sheet)) return "goal";
   if (/topic|confidence|hours|study|interview/.test(keys + sheet)) return "study";
@@ -786,7 +919,7 @@ function mapRowToKind(row, kind) {
 
     return {
       id: `inc-${crypto.randomUUID()}`,
-      date: pickDate(row, ["date", "month", "salarydate", "crediteddate"]),
+      date: pickDate(row, ["date", "month", "salarydate", "crediteddate"]) || todayISO(),
       person,
       source: organization,
       organization,
@@ -805,13 +938,63 @@ function mapRowToKind(row, kind) {
   if (kind === "expense") {
     const amount = pickNumber(row, ["amount", "expense", "spend", "cost", "debit"]);
     if (!amount) return null;
+    const date = pickDate(row, ["date", "month", "spentdate", "transactiondate"]);
+    if (!date) return null;
     return {
       id: `exp-${crypto.randomUUID()}`,
-      date: pickDate(row, ["date", "month", "spentdate"]),
+      date,
       category: pick(row, ["category", "expensecategory", "type"]) || "General",
       paidBy: pick(row, ["paidby", "person", "payer", "owner"]) || "Both",
       amount,
       note: pick(row, ["note", "description", "merchant", "remarks"]) || "",
+    };
+  }
+
+  if (kind === "mutualFund") {
+    const currentValue = pickNumber(row, ["currentvalue", "value", "marketvalue", "amount"]);
+    const invested = pickNumber(row, ["invested", "investment", "cost", "principal"]);
+    if (!currentValue && !invested) return null;
+    const owner = normalizeOwner(pick(row, ["owner", "person", "holder"]) || inferPerson(String(row.sheet || ""), row));
+    return {
+      id: `mf-${crypto.randomUUID()}`,
+      owner,
+      fundName: pick(row, ["fundname", "name", "scheme", "fund"]) || "Mutual fund",
+      amc: pick(row, ["amc", "fundhouse"]) || "",
+      category: pick(row, ["category", "type", "assetclass"]) || "Equity",
+      folio: pick(row, ["folio", "foliono", "folionumber"]) || "",
+      invested: invested || currentValue,
+      currentValue: currentValue || invested,
+      units: pickNumber(row, ["units", "unit"]),
+      nav: pickNumber(row, ["nav", "latestnav"]),
+      sipAmount: pickNumber(row, ["sipamount", "sip", "monthlysip"]),
+      sipDay: pickNumber(row, ["sipday", "sipdate"]),
+      platform: pick(row, ["platform", "app", "broker"]) || "",
+      purchaseDate: pickDate(row, ["purchasedate", "startdate", "date"]),
+      notes: pick(row, ["notes", "note", "remarks"]) || "",
+    };
+  }
+
+  if (kind === "stock") {
+    const quantity = pickNumber(row, ["quantity", "qty", "shares", "units"]);
+    const avgPrice = pickNumber(row, ["avgprice", "averageprice", "buyprice", "price"]);
+    const currentPrice = pickNumber(row, ["currentprice", "cmp", "ltp", "marketprice"]);
+    const invested = pickNumber(row, ["invested", "investment", "cost"]) || quantity * avgPrice;
+    if (!quantity && !invested && !currentPrice) return null;
+    const owner = normalizeOwner(pick(row, ["owner", "person", "holder"]) || inferPerson(String(row.sheet || ""), row));
+    return {
+      id: `stk-${crypto.randomUUID()}`,
+      owner,
+      symbol: pick(row, ["symbol", "ticker", "code"]) || "",
+      company: pick(row, ["company", "name", "stock", "security"]) || "Stock",
+      exchange: pick(row, ["exchange", "market"]) || "NSE",
+      quantity,
+      avgPrice,
+      currentPrice: currentPrice || avgPrice,
+      invested: invested || quantity * (avgPrice || currentPrice),
+      sector: pick(row, ["sector", "industry"]) || "",
+      demat: pick(row, ["demat", "broker", "platform"]) || "",
+      purchaseDate: pickDate(row, ["purchasedate", "buydate", "date"]),
+      notes: pick(row, ["notes", "note", "remarks"]) || "",
     };
   }
 
@@ -887,14 +1070,24 @@ function mapRowToKind(row, kind) {
 
 function mergeImportedData(imported) {
   const normalized = normalizeData(imported);
-  state.income.push(...normalized.income);
-  state.expenses.push(...normalized.expenses);
-  state.assets.push(...normalized.assets);
-  state.liabilities.push(...normalized.liabilities);
-  state.goals.push(...normalized.goals);
-  state.tasks.push(...normalized.tasks);
-  state.studies.push(...normalized.studies);
-  state.workouts.push(...normalized.workouts);
+  appendArray(state.income, normalized.income);
+  appendArray(state.expenses, normalized.expenses);
+  appendArray(state.assets, normalized.assets);
+  appendArray(state.liabilities, normalized.liabilities);
+  appendArray(state.mutualFunds, normalized.mutualFunds);
+  appendArray(state.stocks, normalized.stocks);
+  appendArray(state.goals, normalized.goals);
+  appendArray(state.tasks, normalized.tasks);
+  appendArray(state.studies, normalized.studies);
+  appendArray(state.workouts, normalized.workouts);
+}
+
+function normalizeOwner(value) {
+  const text = String(value || "").trim();
+  if (/wife|archana|spouse/i.test(text)) return "Wife";
+  if (/me|prafful|self/i.test(text)) return "Me";
+  if (/both|joint/i.test(text)) return "Both";
+  return text || "Me";
 }
 
 function inferOrganization(sheetName, row) {
@@ -922,13 +1115,20 @@ function isSalary(item) {
 }
 
 function isFullBackup(data) {
-  return data && ["income", "expenses", "assets", "liabilities", "goals", "tasks", "studies", "workouts"].some((key) => Array.isArray(data[key]));
+  return (
+    data &&
+    ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks", "goals", "tasks", "studies", "workouts"].some(
+      (key) => Array.isArray(data[key])
+    )
+  );
 }
 
 function importSummary(imported) {
   const parts = [
     ["income", imported.income?.length || 0],
     ["expenses", imported.expenses?.length || 0],
+    ["mutual funds", imported.mutualFunds?.length || 0],
+    ["stocks", imported.stocks?.length || 0],
     ["assets", imported.assets?.length || 0],
     ["liabilities", imported.liabilities?.length || 0],
     ["goals", imported.goals?.length || 0],
@@ -1155,14 +1355,16 @@ function renderExpenseMix() {
 function renderNetWorth() {
   const container = document.getElementById("networthStack");
   const assets = sum(state.assets, "value");
+  const holdings = investmentHoldingsTotal();
   const liabilities = sum(state.liabilities, "value");
-  const netWorth = assets - liabilities;
-  const maxValue = Math.max(assets, liabilities, Math.abs(netWorth), 1);
+  const netWorth = assets + holdings - liabilities;
+  const maxValue = Math.max(assets, holdings, liabilities, Math.abs(netWorth), 1);
   container.innerHTML = "";
   [
-    ["Assets", assets, "bar-fill"],
+    ["Assets (other)", assets, "bar-fill"],
+    ["MF + Stocks", holdings, "bar-fill blue"],
     ["Liabilities", liabilities, "bar-fill accent"],
-    ["Net worth", netWorth, "bar-fill blue"],
+    ["Net worth", netWorth, "bar-fill"],
   ].forEach(([label, value, klass]) => {
     const row = document.createElement("div");
     row.className = "bar-row";
@@ -1211,7 +1413,8 @@ function renderFinance() {
   renderSalaryProgression();
   renderBudgetPulse();
   renderIncomeTable();
-  renderExpenseTable();
+  renderExpenseExplorer();
+  renderHoldingsTabs();
   renderAssetLiabilityLists();
 }
 
@@ -1344,15 +1547,270 @@ function renderIncomeTable() {
   );
 }
 
-function renderExpenseTable() {
+function getExpenseMonthIndex() {
+  if (expenseMonthIndexCache) return expenseMonthIndexCache;
+  const byMonth = new Map();
+  state.expenses.forEach((expense) => {
+    const key = toMonthKey(expense.date);
+    if (!key) return;
+    if (!byMonth.has(key)) byMonth.set(key, { total: 0, categories: {}, rows: [] });
+    const bucket = byMonth.get(key);
+    const amount = toNumber(expense.amount);
+    bucket.total += amount;
+    const category = expense.category || "General";
+    bucket.categories[category] = (bucket.categories[category] || 0) + amount;
+    bucket.rows.push(expense);
+  });
+  expenseMonthIndexCache = byMonth;
+  return byMonth;
+}
+
+function listExpenseMonths() {
+  return [...getExpenseMonthIndex().keys()].sort().reverse();
+}
+
+function renderExpenseExplorer(refreshMonthList = true) {
+  const monthSelect = document.getElementById("expenseMonthSelect");
+  const summary = document.getElementById("expenseMonthSummary");
+  const categoryList = document.getElementById("expenseCategoryBreakdown");
   const table = document.getElementById("expenseTable");
+  const pageInfo = document.getElementById("expensePageInfo");
+  const months = listExpenseMonths();
+
+  if (!monthSelect || !table) return;
+
+  if (refreshMonthList) {
+    monthSelect.innerHTML = "";
+    if (months.length === 0) {
+      monthSelect.innerHTML = `<option value="">No expenses yet</option>`;
+      activeExpenseMonth = "";
+    } else {
+      months.forEach((key) => {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = formatMonthKeyLabel(key);
+        monthSelect.append(option);
+      });
+      if (!activeExpenseMonth || !months.includes(activeExpenseMonth)) {
+        activeExpenseMonth = months[0];
+      }
+      monthSelect.value = activeExpenseMonth;
+    }
+  }
+
+  if (!activeExpenseMonth) {
+    if (summary) summary.innerHTML = `<div class="empty-state">Upload your expense sheet or add entries.</div>`;
+    if (categoryList) categoryList.innerHTML = "";
+    renderRows(table, [], () => [], "No expenses for this month.", 5);
+    if (pageInfo) pageInfo.textContent = "";
+    return;
+  }
+
+  const bucket = getExpenseMonthIndex().get(activeExpenseMonth);
+  const rows = [...(bucket?.rows || [])].sort(sortByDateDesc);
+  const totalPages = Math.max(1, Math.ceil(rows.length / EXPENSE_PAGE_SIZE));
+  activeExpensePage = clamp(activeExpensePage, 0, totalPages - 1);
+  const pageRows = rows.slice(activeExpensePage * EXPENSE_PAGE_SIZE, (activeExpensePage + 1) * EXPENSE_PAGE_SIZE);
+
+  if (summary) {
+    const txnCount = rows.length;
+    const avg = txnCount ? bucket.total / txnCount : 0;
+    summary.innerHTML = `
+      <article class="metric-card compact-metric">
+        <div class="label">Month total</div>
+        <div class="value">${formatINR(bucket.total)}</div>
+        <div class="hint">${txnCount} transactions</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">Avg per entry</div>
+        <div class="value">${formatINR(avg)}</div>
+        <div class="hint">${formatMonthKeyLabel(activeExpenseMonth)}</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">Top category</div>
+        <div class="value">${escapeHTML(topCategoryName(bucket.categories))}</div>
+        <div class="hint">${formatINR(topCategoryAmount(bucket.categories))}</div>
+      </article>
+    `;
+  }
+
+  if (categoryList) {
+    categoryList.innerHTML = "";
+    const categories = Object.entries(bucket.categories || {}).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (categories.length === 0) {
+      categoryList.innerHTML = `<div class="empty-state">No categories this month.</div>`;
+    } else {
+      categories.forEach(([category, value]) => {
+        const row = document.createElement("div");
+        row.className = "stack-row";
+        row.innerHTML = `
+          <div>
+            <div class="stack-title">${escapeHTML(category)}</div>
+            <div class="stack-meta">${Math.round((value / Math.max(1, bucket.total)) * 100)}% of month</div>
+          </div>
+          <div class="stack-value">${formatINR(value)}</div>
+        `;
+        categoryList.append(row);
+      });
+    }
+  }
+
   renderRows(
     table,
-    [...state.expenses].sort(sortByDateDesc).slice(0, 120),
+    pageRows,
     (item) => [formatDate(item.date), item.category, item.paidBy, formatINR(item.amount), item.note],
-    "No data yet. Upload a sheet or add an entry.",
+    "No expenses for this month.",
     5
   );
+
+  if (pageInfo) {
+    pageInfo.textContent = rows.length
+      ? `Page ${activeExpensePage + 1} of ${totalPages} • showing ${pageRows.length} of ${rows.length}`
+      : "";
+  }
+}
+
+function topCategoryName(categories = {}) {
+  const entry = Object.entries(categories).sort((a, b) => b[1] - a[1])[0];
+  return entry?.[0] || "-";
+}
+
+function topCategoryAmount(categories = {}) {
+  const entry = Object.entries(categories).sort((a, b) => b[1] - a[1])[0];
+  return entry?.[1] || 0;
+}
+
+function formatMonthKeyLabel(key) {
+  const [year, month] = String(key).split("-");
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  if (Number.isNaN(date.getTime())) return key;
+  return date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
+function renderHoldingsTabs() {
+  renderMutualFundsPanel();
+  renderStocksPanel();
+}
+
+function renderMutualFundsPanel() {
+  const summary = document.getElementById("mfOwnerSummary");
+  const table = document.getElementById("mutualFundTable");
+  if (!table) return;
+
+  const rows = state.mutualFunds
+    .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
+    .sort((a, b) => toNumber(b.currentValue) - toNumber(a.currentValue));
+
+  const invested = sum(rows, "invested");
+  const current = sum(rows, "currentValue");
+  const gain = current - invested;
+
+  if (summary) {
+    summary.innerHTML = `
+      <article class="metric-card compact-metric">
+        <div class="label">Invested (${activeHoldingsOwner})</div>
+        <div class="value">${formatINR(invested)}</div>
+        <div class="hint">${rows.length} funds</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">Current value</div>
+        <div class="value">${formatINR(current)}</div>
+        <div class="hint">${formatINR(gain)} ${gain >= 0 ? "gain" : "loss"}</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">SIP / month</div>
+        <div class="value">${formatINR(sum(rows, "sipAmount"))}</div>
+        <div class="hint">Tracked SIP amounts</div>
+      </article>
+    `;
+  }
+
+  renderRows(
+    table,
+    rows,
+    (item) => [
+      item.fundName,
+      item.amc || "-",
+      item.category || "-",
+      item.folio || "-",
+      formatINR(item.invested),
+      formatINR(item.currentValue),
+      item.units ? String(item.units) : "-",
+      item.nav ? String(item.nav) : "-",
+      item.sipAmount ? formatINR(item.sipAmount) : "-",
+      item.platform || "-",
+    ],
+    `No mutual funds for ${activeHoldingsOwner}. Add a fund or import a sheet.`,
+    10
+  );
+}
+
+function renderStocksPanel() {
+  const summary = document.getElementById("stockOwnerSummary");
+  const table = document.getElementById("stockTable");
+  if (!table) return;
+
+  const rows = state.stocks
+    .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
+    .sort((a, b) => stockMarketValue(b) - stockMarketValue(a));
+
+  const invested = rows.reduce((total, row) => total + toNumber(row.invested), 0);
+  const current = rows.reduce((total, row) => total + stockMarketValue(row), 0);
+  const gain = current - invested;
+
+  if (summary) {
+    summary.innerHTML = `
+      <article class="metric-card compact-metric">
+        <div class="label">Invested (${activeHoldingsOwner})</div>
+        <div class="value">${formatINR(invested)}</div>
+        <div class="hint">${rows.length} holdings</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">Market value</div>
+        <div class="value">${formatINR(current)}</div>
+        <div class="hint">${formatINR(gain)} ${gain >= 0 ? "gain" : "loss"}</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">Holdings</div>
+        <div class="value">${rows.reduce((t, r) => t + toNumber(r.quantity), 0)}</div>
+        <div class="hint">Total quantity</div>
+      </article>
+    `;
+  }
+
+  renderRows(
+    table,
+    rows,
+    (item) => [
+      item.symbol || "-",
+      item.company,
+      item.exchange || "-",
+      item.quantity || 0,
+      formatINR(item.avgPrice),
+      formatINR(item.currentPrice),
+      formatINR(stockMarketValue(item)),
+      item.sector || "-",
+      item.demat || "-",
+    ],
+    `No stocks for ${activeHoldingsOwner}. Add a holding or import a sheet.`,
+    9
+  );
+}
+
+function matchHoldingsOwner(owner, filter) {
+  const normalized = normalizeOwner(owner || "Me");
+  if (filter === "Both") return true;
+  return normalized === filter || normalized === "Both";
+}
+
+function stockMarketValue(item) {
+  return toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice);
+}
+
+function investmentHoldingsTotal() {
+  const mutualFunds = sum(state.mutualFunds, "currentValue");
+  const stocks = state.stocks.reduce((total, item) => total + stockMarketValue(item), 0);
+  return mutualFunds + stocks;
 }
 
 function renderAssetLiabilityLists() {
@@ -1541,15 +1999,16 @@ function calculateMetrics() {
   const monthIncome = sum(monthIncomeRows, "amount");
   const monthExpenses = sum(monthExpenseRows, "amount");
   const assets = sum(state.assets, "value");
+  const holdings = investmentHoldingsTotal();
   const liabilities = sum(state.liabilities, "value");
   const topExpenseCategory =
     Object.entries(groupSum(monthExpenseRows, (expense) => expense.category || "General", "amount")).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
   return {
     monthIncome,
     monthExpenses,
-    assets,
+    assets: assets + holdings,
     liabilities,
-    netWorth: assets - liabilities,
+    netWorth: assets + holdings - liabilities,
     incomePeople: new Set(monthIncomeRows.map((income) => income.person || "Me")).size,
     savingsRate: monthIncome ? Math.round(((monthIncome - monthExpenses) / monthIncome) * 100) : 0,
     topExpenseCategory,
@@ -1558,6 +2017,19 @@ function calculateMetrics() {
 
 function monthlyCashflow() {
   const now = new Date();
+  const incomeByMonth = new Map();
+  const expenseByMonth = new Map();
+  state.income.forEach((item) => {
+    const key = toMonthKey(item.date);
+    if (!key) return;
+    incomeByMonth.set(key, (incomeByMonth.get(key) || 0) + toNumber(item.amount));
+  });
+  state.expenses.forEach((item) => {
+    const key = toMonthKey(item.date);
+    if (!key) return;
+    expenseByMonth.set(key, (expenseByMonth.get(key) || 0) + toNumber(item.amount));
+  });
+
   const months = [];
   for (let i = 5; i >= 0; i -= 1) {
     const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -1565,8 +2037,8 @@ function monthlyCashflow() {
     months.push({
       key,
       label: date.toLocaleDateString("en-IN", { month: "short" }),
-      income: sum(state.income.filter((item) => monthKey(new Date(item.date)) === key), "amount"),
-      expenses: sum(state.expenses.filter((item) => monthKey(new Date(item.date)) === key), "amount"),
+      income: incomeByMonth.get(key) || 0,
+      expenses: expenseByMonth.get(key) || 0,
     });
   }
   return months;
@@ -1713,22 +2185,51 @@ function pickNumber(row, keys) {
 
 function pickDate(row, keys) {
   const value = pick(row, keys);
-  if (!value) return todayISO();
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return dateToISODate(value);
-  if (typeof value === "number" && value > 25000 && value < 90000) {
-    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + value);
-    return dateToISODate(excelEpoch);
+  return calendarDateToISO(value) || "";
+}
+
+function calendarDateToISO(value) {
+  const date = parseCalendarDate(value);
+  return date ? dateToISODate(date) : "";
+}
+
+function parseCalendarDate(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
   }
-  const maybeMonth = String(value).match(/([a-zA-Z]+)[\s-]*(\d{4})/);
+  if (typeof value === "number" && value > 20000 && value < 70000) {
+    const excelEpoch = new Date(1899, 10, 30);
+    const converted = new Date(excelEpoch.getTime() + value * 86400000);
+    return new Date(converted.getFullYear(), converted.getMonth(), converted.getDate());
+  }
+  const text = String(value).trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  const dmy = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (dmy) {
+    let year = Number(dmy[3]);
+    if (year < 100) year += 2000;
+    const first = Number(dmy[1]);
+    const second = Number(dmy[2]);
+    if (first > 12) return new Date(year, second - 1, first);
+    if (second > 12) return new Date(year, first - 1, second);
+    return new Date(year, second - 1, first);
+  }
+  const maybeMonth = text.match(/([a-zA-Z]+)[\s-]*(\d{4})/);
   if (maybeMonth) {
     const monthName = normalizeMonthName(maybeMonth[1]);
     const date = new Date(`${monthName} 1, ${maybeMonth[2]}`);
-    if (!Number.isNaN(date.getTime())) return dateToISODate(date);
+    if (!Number.isNaN(date.getTime())) return new Date(date.getFullYear(), date.getMonth(), 1);
   }
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return dateToISODate(parsed);
-  return todayISO();
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  return null;
+}
+
+function toMonthKey(value) {
+  const date = parseCalendarDate(value);
+  return date ? monthKey(date) : "";
 }
 
 function normalizeMonthName(value) {
@@ -1792,14 +2293,14 @@ function formatPercent(value) {
 }
 
 function formatDate(dateValue) {
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return "-";
+  const date = parseCalendarDate(dateValue);
+  if (!date) return "-";
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function formatMonth(dateValue) {
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return "-";
+  const date = parseCalendarDate(dateValue);
+  if (!date) return "-";
   return date.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 }
 
@@ -1813,18 +2314,20 @@ function componentSummary(item) {
 }
 
 function sortByDateDesc(a, b) {
-  return new Date(b.date || b.dueDate || 0) - new Date(a.date || a.dueDate || 0);
+  const left = parseCalendarDate(b.date || b.dueDate)?.getTime() || 0;
+  const right = parseCalendarDate(a.date || a.dueDate)?.getTime() || 0;
+  return left - right;
 }
 
 function isCurrentMonth(dateValue) {
-  const date = new Date(dateValue);
+  const date = parseCalendarDate(dateValue);
   const now = new Date();
-  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+  return Boolean(date && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth());
 }
 
 function sameDay(dateA, dateB) {
-  const first = safeISODate(dateA);
-  const second = safeISODate(dateB);
+  const first = calendarDateToISO(dateA);
+  const second = calendarDateToISO(dateB);
   return Boolean(first && second && first === second);
 }
 
@@ -1837,8 +2340,7 @@ function todayISO() {
 }
 
 function safeISODate(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : dateToISODate(date);
+  return calendarDateToISO(value);
 }
 
 function clone(value) {
