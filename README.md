@@ -2,7 +2,13 @@
 
 A private, mobile-friendly personal dashboard for family finance, salary growth, expenses, net worth, interview preparation, future goals, daily tasks, exercise, and local assistant-style analysis.
 
-## Open it
+## Live app
+
+**https://prafful-chavan.github.io/life-ledger/**
+
+Pushes to `main` redeploy automatically via GitHub Pages.
+
+## Open locally
 
 Open `index.html` in any modern browser, or run a small static server from this folder:
 
