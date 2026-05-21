@@ -1,11 +1,11 @@
 /**
  * Life Ledger — password-protected encrypted vault (+ Google Drive sync).
- * TOTP / 2FA can be added later; vault stores totpSecret: null for now.
  */
 (function () {
-  const VAULT_LOCAL_KEY = "lifeLedgerVault:v1";
   const SESSION_KEY = "lifeLedgerSession:v1";
+  const REMEMBER_KEY = "lifeLedgerRemember:v1";
   const SESSION_HOURS = 12;
+  const REMEMBER_DAYS = 30;
   const PBKDF2_ITERATIONS = 250000;
 
   let vaultMeta = null;
@@ -64,11 +64,12 @@
 
   function readSession() {
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
+      const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(REMEMBER_KEY);
       if (!raw) return null;
       const session = JSON.parse(raw);
       if (!session?.expiresAt || Date.now() > session.expiresAt) {
         sessionStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(REMEMBER_KEY);
         return null;
       }
       return session;
@@ -77,16 +78,53 @@
     }
   }
 
-  function writeSession() {
-    sessionStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify({ expiresAt: Date.now() + SESSION_HOURS * 60 * 60 * 1000, ok: true })
-    );
+  function writeSession(expiresAt) {
+    const session = { expiresAt, ok: true };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
   }
 
   function clearSession() {
     sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(REMEMBER_KEY);
     unlockedPayload = null;
+  }
+
+  function rememberPasswordEnabled() {
+    return document.getElementById("rememberDevice")?.checked !== false;
+  }
+
+  function readRememberedPassword() {
+    try {
+      const raw = localStorage.getItem(REMEMBER_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data?.expiresAt || Date.now() > data.expiresAt) {
+        localStorage.removeItem(REMEMBER_KEY);
+        return null;
+      }
+      return data.password || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveRememberedPassword(password) {
+    const shortExpiry = Date.now() + SESSION_HOURS * 60 * 60 * 1000;
+    if (!rememberPasswordEnabled() || !password) {
+      localStorage.removeItem(REMEMBER_KEY);
+      writeSession(shortExpiry);
+      return;
+    }
+    const longExpiry = Date.now() + REMEMBER_DAYS * 24 * 60 * 60 * 1000;
+    localStorage.setItem(
+      REMEMBER_KEY,
+      JSON.stringify({
+        expiresAt: longExpiry,
+        password,
+        ok: true,
+      })
+    );
+    writeSession(longExpiry);
   }
 
   function vaultInnerPayload(data, totpSecret) {
@@ -96,27 +134,44 @@
     };
   }
 
-  async function loadVaultFile() {
-    if (window.LifeLedgerDrive?.isConnected()) {
-      const remote = await window.LifeLedgerDrive.loadVault();
-      if (remote) {
-        localStorage.setItem(VAULT_LOCAL_KEY, JSON.stringify(remote));
-        return remote;
-      }
-    }
+  async function loadVaultFromDrive() {
+    if (!window.LifeLedgerDrive?.tryRestoreVault) return null;
     try {
-      const local = localStorage.getItem(VAULT_LOCAL_KEY);
-      return local ? JSON.parse(local) : null;
-    } catch {
+      return await window.LifeLedgerDrive.tryRestoreVault();
+    } catch (error) {
+      console.warn("Drive restore:", error);
       return null;
     }
   }
 
+  async function loadVaultFile() {
+    if (window.LifeLedgerVaultStore) {
+      const local = await window.LifeLedgerVaultStore.load();
+      if (local) return local;
+    }
+
+    const remote = await loadVaultFromDrive();
+    if (remote && window.LifeLedgerVaultStore) {
+      await window.LifeLedgerVaultStore.save(remote);
+      return remote;
+    }
+    return remote;
+  }
+
   async function saveVaultFile(vault) {
-    localStorage.setItem(VAULT_LOCAL_KEY, JSON.stringify(vault));
+    if (!window.LifeLedgerVaultStore) {
+      throw new Error("Vault storage is not available.");
+    }
+    await window.LifeLedgerVaultStore.save(vault);
     vaultMeta = vault;
-    if (window.LifeLedgerDrive?.isConnected()) {
-      await window.LifeLedgerDrive.saveVault(vault);
+
+    if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+      try {
+        await window.LifeLedgerDrive.saveVault(vault);
+      } catch (error) {
+        console.warn("Drive sync failed:", error);
+        toastAuth("Saved on this device. Google Drive sync failed — use Sync now later.");
+      }
     }
   }
 
@@ -182,9 +237,24 @@
 
   function unlockApp(inner, password) {
     unlockedPayload = { ...inner, _sessionPassword: password };
-    writeSession();
+    saveRememberedPassword(password);
     showGate("app");
     window.LifeLedgerApp?.bootstrap(inner.data);
+  }
+
+  async function tryAutoUnlock() {
+    if (!vaultMeta) return false;
+    const remembered = readRememberedPassword();
+    if (!remembered) return false;
+    try {
+      const inner = await openVault(remembered, vaultMeta);
+      if (!inner?.data) return false;
+      unlockApp(inner, remembered);
+      return true;
+    } catch {
+      localStorage.removeItem(REMEMBER_KEY);
+      return false;
+    }
   }
 
   const LifeLedgerAuth = {
@@ -201,6 +271,9 @@
     },
 
     async init() {
+      const statusEl = document.getElementById("loginMessage");
+      if (statusEl) statusEl.textContent = "Loading your vault…";
+
       vaultMeta = await loadVaultFile();
       const legacy = migrateLegacyPlaintext();
 
@@ -213,12 +286,28 @@
             "Existing data on this device will be encrypted and moved into your vault on setup.",
             false
           );
+        } else {
+          setAuthMessage(
+            "setupHint",
+            "No vault on this device. If you used Google Drive before, click Restore on the sign-in screen after creating once, or restore from Drive.",
+            false
+          );
         }
         return;
       }
 
       showGate("auth");
       showAuthPanel("login");
+      setAuthMessage("loginMessage", "Enter your password to unlock.", false);
+
+      if (await tryAutoUnlock()) {
+        toastAuth("Welcome back — vault unlocked.");
+        return;
+      }
+
+      if (readSession() && !readRememberedPassword()) {
+        setAuthMessage("loginMessage", "Session ended. Enter your password (same one as before).", false);
+      }
     },
 
     async completeSetup(password, confirmPassword) {
@@ -258,7 +347,7 @@
       unlockedPayload = null;
       showGate("auth");
       showAuthPanel("login");
-      window.location.reload();
+      setAuthMessage("loginMessage", "Signed out. Enter your password to unlock.", false);
     },
 
     async connectDriveAndSync() {
@@ -279,7 +368,7 @@
       const confirm = document.getElementById("setupPasswordConfirm")?.value || "";
       try {
         await LifeLedgerAuth.completeSetup(password, confirm);
-        toastAuth("Vault created. Link Google Drive in the sidebar when ready.");
+        toastAuth("Vault created and saved on this device.");
       } catch (error) {
         setAuthMessage("setupMessage", error.message, true);
       }
@@ -308,13 +397,16 @@
 
     document.getElementById("restoreDriveButton")?.addEventListener("click", async () => {
       try {
-        await window.LifeLedgerDrive.connect();
-        vaultMeta = await loadVaultFile();
-        if (vaultMeta) {
+        setAuthMessage("loginMessage", "Connecting to Google Drive…", false);
+        const remote = await loadVaultFromDrive();
+        if (remote) {
+          await window.LifeLedgerVaultStore.save(remote);
+          vaultMeta = remote;
           showAuthPanel("login");
-          setAuthMessage("loginMessage", "Vault loaded from Drive. Enter your password.", false);
+          setAuthMessage("loginMessage", "Vault restored from Drive. Enter your password.", false);
+          if (await tryAutoUnlock()) toastAuth("Vault restored and unlocked.");
         } else {
-          setAuthMessage("loginMessage", "No vault file found on Drive. Create a vault first.", true);
+          setAuthMessage("loginMessage", "No vault file found on Drive yet.", true);
         }
       } catch (error) {
         setAuthMessage("loginMessage", error.message, true);
@@ -323,9 +415,10 @@
 
     document.getElementById("syncDriveButton")?.addEventListener("click", async () => {
       try {
-        vaultMeta = await loadVaultFile();
         if (LifeLedgerAuth.isUnlocked() && unlockedPayload) {
           await persistAppData(unlockedPayload.data);
+        } else {
+          vaultMeta = await loadVaultFile();
         }
         updateDriveBadge();
         toastAuth("Synced with Google Drive.");

@@ -1078,6 +1078,20 @@ body.auth-locked .app-shell {
   font-weight: 400;
 }
 
+.auth-remember {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0 14px;
+  font-size: 0.88rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.auth-remember input {
+  margin-top: 3px;
+}
+
 .auth-submit {
   width: 100%;
   margin-top: 8px;

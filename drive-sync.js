@@ -62,7 +62,7 @@
             accessToken = response.access_token;
             resolve(accessToken);
           };
-          tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent" });
+          tokenClient.requestAccessToken({ prompt: accessToken ? "" : "select_account" });
         })
         .catch(reject);
     });
@@ -167,11 +167,28 @@
     return true;
   }
 
+  async function tryRestoreVault() {
+    if (!getClientId() || getClientId().includes("YOUR_CLIENT_ID")) return null;
+    if (!localStorage.getItem(FILE_ID_KEY)) return null;
+    try {
+      return await loadVault();
+    } catch (error) {
+      console.warn("Drive restore:", error);
+      return null;
+    }
+  }
+
   window.LifeLedgerDrive = {
     async connect() {
       await requestAccessToken();
       const remote = await loadVault();
       return Boolean(accessToken);
+    },
+
+    tryRestoreVault,
+
+    hasLinkedDrive() {
+      return Boolean(localStorage.getItem(FILE_ID_KEY));
     },
 
     isConnected() {

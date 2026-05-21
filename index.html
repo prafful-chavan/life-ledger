@@ -13,6 +13,7 @@
     <script src="config.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script defer src="vault-store.js"></script>
     <script defer src="drive-sync.js"></script>
     <script defer src="app.js"></script>
     <script defer src="auth.js"></script>
@@ -46,15 +47,20 @@
 
         <section data-auth-panel="login" class="auth-panel" hidden>
           <h2>Sign in</h2>
+          <p class="muted-small">Your vault is saved on this device. Enter the same password you created earlier.</p>
           <label class="auth-field">
             Password
             <input id="loginPassword" type="password" autocomplete="current-password" />
+          </label>
+          <label class="auth-remember">
+            <input id="rememberDevice" type="checkbox" checked />
+            <span>Remember password on this device (30 days)</span>
           </label>
           <button class="primary-button auth-submit" type="button" id="loginButton">Unlock</button>
           <p class="auth-message" id="loginMessage"></p>
           <button class="secondary-button auth-secondary" type="button" id="restoreDriveButton">Restore vault from Google Drive</button>
           <p class="muted-small auth-footnote">
-            New device? Link Drive first, then sign in. Export backups from inside the app still work.
+            Refreshing the page should not ask you to create a new vault. If it does, restore from Drive above.
           </p>
         </section>
       </div>
