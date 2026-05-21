@@ -1,4 +1,3 @@
-const STORAGE_KEY = "lifeLedgerData:v1";
 const THEME_STORAGE_KEY = "lifeLedgerTheme:v1";
 const INR = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -184,7 +183,7 @@ const demoData = {
   chat: [],
 };
 
-let state = loadData();
+let state = clone(defaultData);
 let activeView = "dashboard";
 let activeFinanceTab = "overview";
 let quickAddKind = "expense";
@@ -299,7 +298,8 @@ const deductionFields = [
 
 applyTheme(loadTheme());
 
-document.addEventListener("DOMContentLoaded", () => {
+function bootstrapApp(initialState) {
+  state = normalizeData(initialState || defaultData);
   bindTheme();
   bindNavigation();
   bindModals();
@@ -309,20 +309,24 @@ document.addEventListener("DOMContentLoaded", () => {
   bindChat();
   bindExport();
   renderAll();
-});
-
-function loadData() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? normalizeData(JSON.parse(stored)) : clone(defaultData);
-  } catch (error) {
-    console.warn(error);
-    return clone(defaultData);
-  }
 }
 
+window.LifeLedgerApp = {
+  defaultData: () => clone(defaultData),
+  bootstrap: bootstrapApp,
+};
+
+let saveDataTimer;
+
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!window.LifeLedgerAuth?.isUnlocked()) return;
+  clearTimeout(saveDataTimer);
+  saveDataTimer = setTimeout(() => {
+    window.LifeLedgerAuth.saveAppData(state).catch((error) => {
+      console.warn(error);
+      toast(error.message || "Could not save encrypted vault.");
+    });
+  }, 700);
 }
 
 function loadTheme() {

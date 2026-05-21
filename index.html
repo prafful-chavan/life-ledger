@@ -9,11 +9,80 @@
     />
     <title>Life Ledger</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="config.example.js"></script>
+    <script src="config.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script defer src="drive-sync.js"></script>
     <script defer src="app.js"></script>
+    <script defer src="auth.js"></script>
   </head>
-  <body>
-    <div class="app-shell">
+  <body class="auth-locked">
+    <div class="auth-gate" id="authGate">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <div class="brand-mark" aria-hidden="true">LL</div>
+          <div>
+            <p class="eyebrow">Private vault</p>
+            <h1>Life Ledger</h1>
+            <p class="auth-lead">Password + Authy 2FA. Your data is encrypted before it touches Google Drive.</p>
+          </div>
+        </div>
+
+        <section data-auth-panel="setup" class="auth-panel">
+          <h2>Create your vault</h2>
+          <p class="muted-small" id="setupHint">First-time setup on this browser.</p>
+          <label class="auth-field">
+            Password <span class="muted-small">(10+ characters)</span>
+            <input id="setupPassword" type="password" autocomplete="new-password" />
+          </label>
+          <label class="auth-field">
+            Confirm password
+            <input id="setupPasswordConfirm" type="password" autocomplete="new-password" />
+          </label>
+          <button class="primary-button auth-submit" type="button" id="beginSetupButton">Continue to 2FA</button>
+          <p class="auth-message" id="setupMessage"></p>
+        </section>
+
+        <section data-auth-panel="setup-totp" class="auth-panel" hidden>
+          <h2>Set up Authy / Authenticator</h2>
+          <p class="muted-small">Scan the QR code in Authy, then enter the 6-digit code to finish.</p>
+          <div class="totp-setup">
+            <img id="totpQr" width="180" height="180" alt="" />
+            <div>
+              <p class="muted-small">Manual secret</p>
+              <code class="totp-secret" id="totpSecretDisplay"></code>
+            </div>
+          </div>
+          <label class="auth-field">
+            6-digit code
+            <input id="setupTotpCode" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" />
+          </label>
+          <button class="primary-button auth-submit" type="button" id="finishSetupButton">Create vault &amp; sign in</button>
+          <p class="auth-message" id="setupTotpMessage"></p>
+        </section>
+
+        <section data-auth-panel="login" class="auth-panel" hidden>
+          <h2>Sign in</h2>
+          <label class="auth-field">
+            Password
+            <input id="loginPassword" type="password" autocomplete="current-password" />
+          </label>
+          <label class="auth-field">
+            Authy / Authenticator code
+            <input id="loginTotpCode" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" />
+          </label>
+          <button class="primary-button auth-submit" type="button" id="loginButton">Unlock</button>
+          <p class="auth-message" id="loginMessage"></p>
+          <button class="secondary-button auth-secondary" type="button" id="restoreDriveButton">Restore vault from Google Drive</button>
+          <p class="muted-small auth-footnote">
+            New device? Link Drive first, then sign in. Export backups from inside the app still work.
+          </p>
+        </section>
+      </div>
+    </div>
+
+    <div class="app-shell hidden" id="appShell">
       <aside class="sidebar" aria-label="Primary navigation">
         <div class="brand-block">
           <div class="brand-mark" aria-hidden="true">LL</div>
@@ -47,8 +116,11 @@
         </nav>
 
         <div class="sidebar-footer">
-          <p class="muted-small">Data is saved on this device.</p>
+          <p class="muted-small">Encrypted vault · <span id="driveStatusBadge">Drive offline</span></p>
+          <button class="ghost-button" type="button" id="connectDriveButton">Link Google Drive</button>
+          <button class="ghost-button" type="button" id="syncDriveButton">Sync now</button>
           <button class="ghost-button" type="button" id="exportDataButton">Export backup</button>
+          <button class="ghost-button danger-text" type="button" id="logoutButton">Sign out</button>
         </div>
       </aside>
 

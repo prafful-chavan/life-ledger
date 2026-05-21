@@ -1017,3 +1017,122 @@ tr:last-child td {
     bottom: 12px;
   }
 }
+
+.hidden {
+  display: none !important;
+}
+
+body.auth-locked .app-shell {
+  display: none;
+}
+
+.auth-gate {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(440px, 100%);
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.auth-brand {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+.auth-lead {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.auth-panel h2 {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.auth-field input {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--input-bg);
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.auth-secondary {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.auth-message {
+  min-height: 1.25rem;
+  margin: 12px 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.auth-message.auth-error {
+  color: var(--danger);
+}
+
+.auth-footnote {
+  margin-top: 16px;
+  line-height: 1.45;
+}
+
+.totp-setup {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin: 16px 0;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+}
+
+.totp-secret {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--input-bg);
+  font-size: 0.78rem;
+  word-break: break-all;
+}
+
+#driveStatusBadge.good {
+  color: var(--good);
+}
+
+.ghost-button.danger-text {
+  color: var(--danger);
+}
+
+.sidebar-footer .ghost-button {
+  width: 100%;
+  margin-bottom: 6px;
+}

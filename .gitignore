@@ -1,2 +1,5 @@
 .DS_Store
 *.log
+
+# Optional local override (config.js in repo is a placeholder)
+# config.local.js
