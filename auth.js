@@ -242,25 +242,22 @@
     window.LifeLedgerApp?.bootstrap(inner.data);
 
     if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
-      const hasToken = window.LifeLedgerDrive.hasCachedToken();
-      if (!isAutoUnlock || hasToken) {
-        const runSync = async () => {
-          try {
-            const msg = await syncWithDrive(isAutoUnlock);
-            updateDriveBadge();
-            if (msg.includes("pulled") || msg.includes("restored")) {
-              toastAuth(msg);
-            }
-          } catch (error) {
-            console.warn("Auto-sync failed:", error);
+      const runSync = async () => {
+        try {
+          const msg = await syncWithDrive(isAutoUnlock);
+          updateDriveBadge();
+          if (msg.includes("pulled") || msg.includes("restored")) {
+            toastAuth(msg);
           }
-        };
-
-        if (isAutoUnlock) {
-          setTimeout(runSync, 50);
-        } else {
-          runSync();
+        } catch (error) {
+          console.warn("Auto-sync failed:", error);
         }
+      };
+
+      if (isAutoUnlock) {
+        setTimeout(runSync, 50);
+      } else {
+        runSync();
       }
     }
   }
