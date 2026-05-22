@@ -363,17 +363,34 @@ window.LifeLedgerApp = {
 
 let saveDataTimer;
 
-function saveData() {
+function saveData(immediate = false) {
   invalidateExpenseCache();
   if (!window.LifeLedgerAuth?.isUnlocked()) return;
   clearTimeout(saveDataTimer);
-  saveDataTimer = setTimeout(() => {
+  const saveAction = () => {
+    saveDataTimer = null;
     window.LifeLedgerAuth.saveAppData(state).catch((error) => {
       console.warn(error);
       toast(error.message || "Could not save encrypted vault.");
     });
-  }, 700);
+  };
+  if (immediate) {
+    saveAction();
+  } else {
+    saveDataTimer = setTimeout(saveAction, 700);
+  }
 }
+
+window.addEventListener("beforeunload", (event) => {
+  if (saveDataTimer) {
+    clearTimeout(saveDataTimer);
+    saveDataTimer = null;
+    window.LifeLedgerAuth?.saveAppData(state).catch(console.warn);
+    event.preventDefault();
+    event.returnValue = "Saving changes, please wait a moment...";
+    return event.returnValue;
+  }
+});
 
 function invalidateExpenseCache() {
   expenseMonthIndexCache = null;
@@ -476,7 +493,7 @@ function bindModals() {
 
   document.getElementById("seedDemoButton").addEventListener("click", () => {
     state = normalizeData(demoData);
-    saveData();
+    saveData(true);
     renderAll();
     toast("Demo data loaded. Replace it anytime with your Excel or backup.");
   });
@@ -597,7 +614,7 @@ function bindImports() {
     try {
       const text = await file.text();
       state = normalizeData(JSON.parse(text));
-      saveData();
+      saveData(true);
       renderAll();
       toast("Backup restored.");
       closeModal(document.getElementById("importModal"));
@@ -674,7 +691,7 @@ function resetData(scope) {
   }
 
   ensureAssistantWelcome(false);
-  saveData();
+  saveData(true);
   renderAll();
   document.querySelectorAll(".modal").forEach((modal) => closeModal(modal));
   toast(`${capitalize(config.label)} cleared.`);
@@ -759,7 +776,7 @@ function buildQuickAddForm(kind) {
     if (kind === "study") state.studies.push(entry);
     if (kind === "workout") state.workouts.push(entry);
 
-    saveData();
+    saveData(true);
     renderAll();
     closeModal(form.closest(".modal"));
     toast("Entry saved.");
@@ -773,7 +790,7 @@ async function runImport(importFn) {
   await new Promise((resolve) => setTimeout(resolve, 0));
   const result = await importFn();
   invalidateExpenseCache();
-  saveData();
+  saveData(true);
   renderAll();
   const summary = result && result.income ? importSummary(result) : importSummary(state);
   if (status) status.textContent = summary;

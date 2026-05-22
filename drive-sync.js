@@ -11,6 +11,28 @@
   let tokenClient = null;
   let fileId = localStorage.getItem(FILE_ID_KEY) || null;
 
+  const TOKEN_CACHE_KEY = "lifeLedgerDriveToken:v1";
+
+  function getStoredToken() {
+    try {
+      const raw = sessionStorage.getItem(TOKEN_CACHE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (data.accessToken && data.expiresAt && Date.now() < data.expiresAt - 120000) {
+        return data.accessToken;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function storeToken(token, expiresIn) {
+    try {
+      accessToken = token;
+      const expiresAt = Date.now() + (expiresIn || 3600) * 1000;
+      sessionStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ accessToken, expiresAt }));
+    } catch (e) {}
+  }
+
   function getClientId() {
     return window.LIFE_LEDGER_CONFIG?.GOOGLE_CLIENT_ID || "";
   }
@@ -50,7 +72,7 @@
     }
   }
 
-  function requestAccessToken() {
+  function requestAccessToken(options = {}) {
     return new Promise((resolve, reject) => {
       ensureTokenClient()
         .then(() => {
@@ -59,17 +81,22 @@
               reject(new Error(response.error_description || response.error));
               return;
             }
-            accessToken = response.access_token;
-            resolve(accessToken);
+            const token = response.access_token;
+            storeToken(token, response.expires_in);
+            resolve(token);
           };
-          tokenClient.requestAccessToken({ prompt: accessToken ? "" : "select_account" });
+          const prompt = options.silent ? "" : "select_account";
+          tokenClient.requestAccessToken({ prompt });
         })
         .catch(reject);
     });
   }
 
   async function driveFetch(url, options = {}) {
-    if (!accessToken) await requestAccessToken();
+    if (!accessToken) {
+      accessToken = getStoredToken();
+      if (!accessToken) await requestAccessToken(options);
+    }
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -79,18 +106,20 @@
     });
     if (response.status === 401) {
       accessToken = null;
-      await requestAccessToken();
+      sessionStorage.removeItem(TOKEN_CACHE_KEY);
+      await requestAccessToken(options);
       return driveFetch(url, options);
     }
     return response;
   }
 
-  async function findVaultFile() {
+  async function findVaultFile(options = {}) {
     const query = encodeURIComponent(
       `name='${VAULT_FILENAME}' and trashed=false and mimeType='application/json'`
     );
     const response = await driveFetch(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=5`
+      `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=5`,
+      options
     );
     if (!response.ok) throw new Error("Could not search Google Drive.");
     const data = await response.json();
@@ -100,16 +129,23 @@
     return files[0].id;
   }
 
-  async function loadVault() {
+  async function loadVault(options = {}) {
     if (!getClientId() || getClientId().includes("YOUR_CLIENT_ID")) return null;
     try {
-      await requestAccessToken();
-      const id = fileId || (await findVaultFile());
+      if (!accessToken) {
+        accessToken = getStoredToken();
+        if (!accessToken) {
+          // If silent is requested, do not call requestAccessToken unless we are silent
+          // Actually, findVaultFile or driveFetch will do it.
+        }
+      }
+      const id = fileId || (await findVaultFile(options));
       if (!id) return null;
       fileId = id;
       localStorage.setItem(FILE_ID_KEY, id);
       const response = await driveFetch(
-        `https://www.googleapis.com/drive/v3/files/${id}?alt=media`
+        `https://www.googleapis.com/drive/v3/files/${id}?alt=media`,
+        options
       );
       if (!response.ok) return null;
       return response.json();
@@ -119,13 +155,12 @@
     }
   }
 
-  async function saveVault(vault) {
+  async function saveVault(vault, options = {}) {
     if (!getClientId() || getClientId().includes("YOUR_CLIENT_ID")) return false;
-    await requestAccessToken();
     const body = JSON.stringify(vault);
 
     if (!fileId) {
-      fileId = await findVaultFile();
+      fileId = await findVaultFile(options);
     }
 
     if (fileId) {
@@ -135,6 +170,7 @@
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body,
+          ...options,
         }
       );
       if (!response.ok) throw new Error("Failed to update vault on Google Drive.");
@@ -151,6 +187,12 @@
       );
       form.append("file", new Blob([body], { type: "application/json" }));
 
+      if (!accessToken) {
+        accessToken = getStoredToken();
+        if (!accessToken) {
+          await requestAccessToken(options);
+        }
+      }
       const response = await fetch(
         "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
         {
@@ -159,6 +201,12 @@
           body: form,
         }
       );
+      if (response.status === 401) {
+        accessToken = null;
+        sessionStorage.removeItem(TOKEN_CACHE_KEY);
+        await requestAccessToken(options);
+        return saveVault(vault, options);
+      }
       if (!response.ok) throw new Error("Failed to create vault on Google Drive.");
       const created = await response.json();
       fileId = created.id;
@@ -180,8 +228,8 @@
 
   window.LifeLedgerDrive = {
     async connect() {
-      await requestAccessToken();
-      const remote = await loadVault();
+      await requestAccessToken({ silent: false });
+      const remote = await loadVault({ silent: false });
       return Boolean(accessToken);
     },
 
@@ -189,6 +237,10 @@
 
     hasLinkedDrive() {
       return Boolean(localStorage.getItem(FILE_ID_KEY));
+    },
+
+    hasCachedToken() {
+      return Boolean(getStoredToken());
     },
 
     isConnected() {

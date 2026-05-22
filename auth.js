@@ -235,11 +235,34 @@
     await saveVaultFile(vault);
   }
 
-  function unlockApp(inner, password) {
+  function unlockApp(inner, password, isAutoUnlock = false) {
     unlockedPayload = { ...inner, _sessionPassword: password };
     saveRememberedPassword(password);
     showGate("app");
     window.LifeLedgerApp?.bootstrap(inner.data);
+
+    if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+      const hasToken = window.LifeLedgerDrive.hasCachedToken();
+      if (!isAutoUnlock || hasToken) {
+        const runSync = async () => {
+          try {
+            const msg = await syncWithDrive(isAutoUnlock);
+            updateDriveBadge();
+            if (msg.includes("pulled") || msg.includes("restored")) {
+              toastAuth(msg);
+            }
+          } catch (error) {
+            console.warn("Auto-sync failed:", error);
+          }
+        };
+
+        if (isAutoUnlock) {
+          setTimeout(runSync, 50);
+        } else {
+          runSync();
+        }
+      }
+    }
   }
 
   async function tryAutoUnlock() {
@@ -249,7 +272,7 @@
     try {
       const inner = await openVault(remembered, vaultMeta);
       if (!inner?.data) return false;
-      unlockApp(inner, remembered);
+      unlockApp(inner, remembered, true);
       return true;
     } catch {
       localStorage.removeItem(REMEMBER_KEY);
@@ -281,6 +304,60 @@
       }
     } catch (error) {
       setAuthMessage(msgId, error.message, true);
+    }
+  }
+
+  async function syncWithDrive(silent = true) {
+    if (!window.LifeLedgerDrive?.isConnected()) {
+      if (silent) return "Not synced: Google Drive not connected.";
+      await window.LifeLedgerDrive.connect();
+    }
+
+    const remoteVault = await window.LifeLedgerDrive.loadVault({ silent });
+    if (!remoteVault) {
+      if (vaultMeta) {
+        await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
+        return "Synced: Local vault pushed to Google Drive.";
+      }
+      throw new Error("No vault found to sync.");
+    }
+
+    if (!vaultMeta) {
+      await window.LifeLedgerVaultStore.save(remoteVault);
+      vaultMeta = remoteVault;
+      return "Synced: Vault restored from Google Drive.";
+    }
+
+    const localTime = new Date(vaultMeta.updatedAt || 0).getTime();
+    const remoteTime = new Date(remoteVault.updatedAt || 0).getTime();
+
+    if (remoteTime > localTime) {
+      if (unlockedPayload) {
+        const password = unlockedPayload._sessionPassword;
+        try {
+          const inner = await openVault(password, remoteVault);
+          if (inner && inner.data) {
+            vaultMeta = remoteVault;
+            await window.LifeLedgerVaultStore.save(remoteVault);
+            unlockedPayload = { ...inner, _sessionPassword: password };
+            window.LifeLedgerApp?.bootstrap(inner.data);
+            return "Synced: Newer data pulled from Google Drive.";
+          } else {
+            throw new Error("Invalid remote vault structure.");
+          }
+        } catch (e) {
+          throw new Error("Google Drive has newer changes, but they couldn't be decrypted with your current password. Please sign out and log back in.");
+        }
+      } else {
+        vaultMeta = remoteVault;
+        await window.LifeLedgerVaultStore.save(remoteVault);
+        return "Synced: Updated local vault from Google Drive. Unlock to view.";
+      }
+    } else if (localTime > remoteTime) {
+      await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
+      return "Synced: Local changes pushed to Google Drive.";
+    } else {
+      return "Synced: Already up to date.";
     }
   }
 
@@ -350,7 +427,7 @@
       await saveVaultFile(vault);
       if (legacy) localStorage.removeItem("lifeLedgerData:v1");
 
-      unlockApp(inner, password);
+      unlockApp(inner, password, false);
     },
 
     async login(password) {
@@ -362,7 +439,7 @@
         throw new Error("Wrong password or corrupted vault.");
       }
       if (!inner?.data) throw new Error("Vault format is invalid.");
-      unlockApp(inner, password);
+      unlockApp(inner, password, false);
     },
 
     async saveAppData(data) {
@@ -380,7 +457,7 @@
     async connectDriveAndSync() {
       if (!window.LifeLedgerDrive) throw new Error("Google Drive module not loaded.");
       await window.LifeLedgerDrive.connect();
-      if (vaultMeta) await window.LifeLedgerDrive.saveVault(vaultMeta);
+      await syncWithDrive(false);
       return window.LifeLedgerDrive.isConnected();
     },
 
@@ -431,16 +508,23 @@
     });
 
     document.getElementById("syncDriveButton")?.addEventListener("click", async () => {
+      const btn = document.getElementById("syncDriveButton");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Syncing…";
+      }
       try {
-        if (LifeLedgerAuth.isUnlocked() && unlockedPayload) {
-          await persistAppData(unlockedPayload.data);
-        } else {
-          vaultMeta = await loadVaultFile();
-        }
+        const msg = await syncWithDrive(false);
         updateDriveBadge();
-        toastAuth("Synced with Google Drive.");
+        toastAuth(msg);
       } catch (error) {
+        console.warn(error);
         toastAuth(error.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Sync now";
+        }
       }
     });
 
