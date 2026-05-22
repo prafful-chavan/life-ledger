@@ -459,7 +459,7 @@ function normalizeData(data) {
 }
 
 function ensureIds(items, prefix) {
-  return items.map((item) => ({ ...item, id: item.id || `${prefix}-${crypto.randomUUID()}` }));
+  return items.map((item) => ({ ...item, id: item.id || `${prefix}-${generateUUID()}` }));
 }
 
 function bindTheme() {
@@ -777,7 +777,7 @@ function buildQuickAddForm(kind) {
   form.onsubmit = async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
-    const entry = { id: `${kind}-${crypto.randomUUID()}` };
+    const entry = { id: `${kind}-${generateUUID()}` };
     fields.forEach(([name, , type]) => {
       if (type === "checkbox") {
         entry[name] = form.querySelector(`[name="${name}"]`).checked;
@@ -963,7 +963,7 @@ function mapRowToKind(row, kind) {
     const deductions = collectSalaryParts(row, deductionFields);
 
     return {
-      id: `inc-${crypto.randomUUID()}`,
+      id: `inc-${generateUUID()}`,
       date: pickDate(row, ["date", "month", "salarydate", "crediteddate"]) || todayISO(),
       person,
       source: organization,
@@ -986,7 +986,7 @@ function mapRowToKind(row, kind) {
     const date = pickDate(row, ["date", "month", "spentdate", "transactiondate"]);
     if (!date) return null;
     return {
-      id: `exp-${crypto.randomUUID()}`,
+      id: `exp-${generateUUID()}`,
       date,
       category: pick(row, ["category", "expensecategory", "type"]) || "General",
       paidBy: pick(row, ["paidby", "person", "payer", "owner"]) || "Both",
@@ -1001,7 +1001,7 @@ function mapRowToKind(row, kind) {
     if (!currentValue && !invested) return null;
     const owner = normalizeOwner(pick(row, ["owner", "person", "holder"]) || inferPerson(String(row.sheet || ""), row));
     return {
-      id: `mf-${crypto.randomUUID()}`,
+      id: `mf-${generateUUID()}`,
       owner,
       fundName: pick(row, ["fundname", "name", "scheme", "fund"]) || "Mutual fund",
       amc: pick(row, ["amc", "fundhouse"]) || "",
@@ -1027,7 +1027,7 @@ function mapRowToKind(row, kind) {
     if (!quantity && !invested && !currentPrice) return null;
     const owner = normalizeOwner(pick(row, ["owner", "person", "holder"]) || inferPerson(String(row.sheet || ""), row));
     return {
-      id: `stk-${crypto.randomUUID()}`,
+      id: `stk-${generateUUID()}`,
       owner,
       symbol: pick(row, ["symbol", "ticker", "code"]) || "",
       company: pick(row, ["company", "name", "stock", "security"]) || "Stock",
@@ -1047,7 +1047,7 @@ function mapRowToKind(row, kind) {
     const value = pickNumber(row, ["value", "amount", "currentvalue", "balance"]);
     if (!value) return null;
     return {
-      id: `asset-${crypto.randomUUID()}`,
+      id: `asset-${generateUUID()}`,
       name: pick(row, ["name", "asset", "account", "investment"]) || "Asset",
       category: pick(row, ["category", "type"]) || "Asset",
       owner: pick(row, ["owner", "person"]) || "Both",
@@ -1059,7 +1059,7 @@ function mapRowToKind(row, kind) {
     const value = pickNumber(row, ["value", "amount", "outstanding", "balance", "debt"]);
     if (!value) return null;
     return {
-      id: `liab-${crypto.randomUUID()}`,
+      id: `liab-${generateUUID()}`,
       name: pick(row, ["name", "liability", "loan", "account"]) || "Liability",
       category: pick(row, ["category", "type"]) || "Liability",
       owner: pick(row, ["owner", "person"]) || "Both",
@@ -1070,7 +1070,7 @@ function mapRowToKind(row, kind) {
   if (kind === "goal") {
     const target = pickNumber(row, ["target", "targetamount", "goalamount"]) || 100;
     return {
-      id: `goal-${crypto.randomUUID()}`,
+      id: `goal-${generateUUID()}`,
       name: pick(row, ["name", "goal", "title"]) || "Goal",
       category: pick(row, ["category", "area"]) || "Personal",
       target,
@@ -1081,7 +1081,7 @@ function mapRowToKind(row, kind) {
 
   if (kind === "study") {
     return {
-      id: `study-${crypto.randomUUID()}`,
+      id: `study-${generateUUID()}`,
       topic: pick(row, ["topic", "subject", "name"]) || "Study topic",
       status: pick(row, ["status", "stage"]) || "Planned",
       confidence: clamp(pickNumber(row, ["confidence", "confidencepercent", "progress"]) || 0, 0, 100),
@@ -1092,7 +1092,7 @@ function mapRowToKind(row, kind) {
 
   if (kind === "task") {
     return {
-      id: `task-${crypto.randomUUID()}`,
+      id: `task-${generateUUID()}`,
       text: pick(row, ["task", "todo", "text", "name"]) || "Task",
       area: pick(row, ["area", "category"]) || "Personal",
       date: pickDate(row, ["date", "day"]),
@@ -1102,7 +1102,7 @@ function mapRowToKind(row, kind) {
 
   if (kind === "workout") {
     return {
-      id: `work-${crypto.randomUUID()}`,
+      id: `work-${generateUUID()}`,
       date: pickDate(row, ["date", "day"]),
       type: pick(row, ["type", "workout", "exercise"]) || "Workout",
       minutes: pickNumber(row, ["minutes", "duration", "time"]) || 0,
@@ -2484,3 +2484,33 @@ function toast(message) {
   clearTimeout(toast.timeout);
   toast.timeout = setTimeout(() => element.classList.remove("show"), 2600);
 }
+
+function generateUUID() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const buffer = new Uint8Array(16);
+    crypto.getRandomValues(buffer);
+    buffer[6] = (buffer[6] & 0x0f) | 0x40;
+    buffer[8] = (buffer[8] & 0x3f) | 0x80;
+    const hex = Array.from(buffer).map((b) => b.toString(16).padStart(2, "0"));
+    return (
+      hex.slice(0, 4).join("") +
+      "-" +
+      hex.slice(4, 6).join("") +
+      "-" +
+      hex.slice(6, 8).join("") +
+      "-" +
+      hex.slice(8, 10).join("") +
+      "-" +
+      hex.slice(10, 16).join("")
+    );
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
