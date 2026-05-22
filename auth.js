@@ -257,6 +257,33 @@
     }
   }
 
+  async function performRestore(msgId) {
+    try {
+      const clientId = window.LIFE_LEDGER_CONFIG?.GOOGLE_CLIENT_ID;
+      if (!clientId || clientId.includes("YOUR_CLIENT_ID")) {
+        throw new Error("Add your Google Client ID in config.js (see config.example.js).");
+      }
+      if (!window.LifeLedgerDrive?.loadVault) {
+        throw new Error("Google Drive module not loaded.");
+      }
+      setAuthMessage(msgId, "Connecting to Google Drive…", false);
+      const remote = await window.LifeLedgerDrive.loadVault();
+      if (remote) {
+        await window.LifeLedgerVaultStore.save(remote);
+        vaultMeta = remote;
+        showAuthPanel("login");
+        setAuthMessage("loginMessage", "Vault restored from Drive. Enter your password.", false);
+        if (await tryAutoUnlock()) {
+          toastAuth("Vault restored and unlocked.");
+        }
+      } else {
+        setAuthMessage(msgId, "No vault file found on Drive yet.", true);
+      }
+    } catch (error) {
+      setAuthMessage(msgId, error.message, true);
+    }
+  }
+
   const LifeLedgerAuth = {
     isConfigured() {
       return Boolean(vaultMeta);
@@ -395,22 +422,12 @@
       }
     });
 
-    document.getElementById("restoreDriveButton")?.addEventListener("click", async () => {
-      try {
-        setAuthMessage("loginMessage", "Connecting to Google Drive…", false);
-        const remote = await loadVaultFromDrive();
-        if (remote) {
-          await window.LifeLedgerVaultStore.save(remote);
-          vaultMeta = remote;
-          showAuthPanel("login");
-          setAuthMessage("loginMessage", "Vault restored from Drive. Enter your password.", false);
-          if (await tryAutoUnlock()) toastAuth("Vault restored and unlocked.");
-        } else {
-          setAuthMessage("loginMessage", "No vault file found on Drive yet.", true);
-        }
-      } catch (error) {
-        setAuthMessage("loginMessage", error.message, true);
-      }
+    document.getElementById("restoreDriveButton")?.addEventListener("click", () => {
+      performRestore("loginMessage");
+    });
+
+    document.getElementById("setupRestoreDriveButton")?.addEventListener("click", () => {
+      performRestore("setupMessage");
     });
 
     document.getElementById("syncDriveButton")?.addEventListener("click", async () => {
