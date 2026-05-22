@@ -20,7 +20,12 @@
   }
 
   function bytesToBase64(bytes) {
-    const bin = String.fromCharCode(...new Uint8Array(bytes));
+    const arr = new Uint8Array(bytes);
+    let bin = "";
+    const chunkSize = 0xffff;
+    for (let i = 0; i < arr.length; i += chunkSize) {
+      bin += String.fromCharCode(...arr.subarray(i, i + chunkSize));
+    }
     return btoa(bin);
   }
 
