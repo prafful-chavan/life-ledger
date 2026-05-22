@@ -1170,7 +1170,7 @@ function renderMetrics() {
       hint: `${formatINR(metrics.assets)} assets minus ${formatINR(metrics.liabilities)} liabilities`,
     },
     {
-      label: "This month income",
+      label: metrics.isFallbackIncome ? `Income (${metrics.fallbackMonthLabel})` : "This month income",
       value: formatINR(metrics.monthIncome),
       hint: `${metrics.incomePeople} income owner${metrics.incomePeople === 1 ? "" : "s"} tracked`,
     },
@@ -1182,7 +1182,9 @@ function renderMetrics() {
     {
       label: "Savings rate",
       value: `${metrics.savingsRate}%`,
-      hint: `${formatINR(metrics.monthIncome - metrics.monthExpenses)} left this month`,
+      hint: metrics.isFallbackIncome
+        ? `${formatINR(metrics.monthIncome - metrics.monthExpenses)} left (est. savings)`
+        : `${formatINR(metrics.monthIncome - metrics.monthExpenses)} left this month`,
     },
   ].forEach((metric) => {
     const card = document.createElement("article");
@@ -1994,7 +1996,31 @@ function answerQuestion(question) {
 }
 
 function calculateMetrics() {
-  const monthIncomeRows = state.income.filter((income) => isCurrentMonth(income.date));
+  let monthIncomeRows = state.income.filter((income) => isCurrentMonth(income.date));
+  let isFallbackIncome = false;
+  let fallbackMonthLabel = "";
+
+  if (monthIncomeRows.length === 0 && state.income.length > 0) {
+    const incomesByMonth = {};
+    state.income.forEach((inc) => {
+      const key = toMonthKey(inc.date);
+      if (!key) return;
+      if (!incomesByMonth[key]) incomesByMonth[key] = [];
+      incomesByMonth[key].push(inc);
+    });
+
+    const sortedMonthKeys = Object.keys(incomesByMonth).sort().reverse();
+    if (sortedMonthKeys.length > 0) {
+      const latestMonthKey = sortedMonthKeys[0];
+      monthIncomeRows = incomesByMonth[latestMonthKey];
+      isFallbackIncome = true;
+
+      const [year, month] = latestMonthKey.split("-").map(Number);
+      const tempDate = new Date(year, month - 1, 1);
+      fallbackMonthLabel = tempDate.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+    }
+  }
+
   const monthExpenseRows = state.expenses.filter((expense) => isCurrentMonth(expense.date));
   const monthIncome = sum(monthIncomeRows, "amount");
   const monthExpenses = sum(monthExpenseRows, "amount");
@@ -2012,6 +2038,8 @@ function calculateMetrics() {
     incomePeople: new Set(monthIncomeRows.map((income) => income.person || "Me")).size,
     savingsRate: monthIncome ? Math.round(((monthIncome - monthExpenses) / monthIncome) * 100) : 0,
     topExpenseCategory,
+    isFallbackIncome,
+    fallbackMonthLabel,
   };
 }
 
