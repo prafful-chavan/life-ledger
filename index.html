@@ -7,7 +7,7 @@
       name="description"
       content="A private personal finance, career, goals, routine, and family dashboard."
     />
-    <title>Life Ledger</title>
+    <title>Prafful's & Archana Life Ledger</title>
     <link rel="stylesheet" href="styles.css?v=1.0.3" />
     <script src="config.example.js"></script>
     <script src="config.js"></script>
@@ -22,10 +22,10 @@
     <div class="auth-gate" id="authGate">
       <div class="auth-card">
         <div class="auth-brand">
-          <div class="brand-mark" aria-hidden="true">LL</div>
+          <div class="brand-mark" aria-hidden="true">PA</div>
           <div>
             <p class="eyebrow">Private vault</p>
-            <h1>Life Ledger</h1>
+            <h1>Prafful's &amp; Archana Life Ledger</h1>
             <p class="auth-lead">Password-protected vault. Your data is encrypted before it touches Google Drive.</p>
           </div>
         </div>
@@ -71,10 +71,10 @@
     <div class="app-shell hidden" id="appShell">
       <aside class="sidebar" aria-label="Primary navigation">
         <div class="brand-block">
-          <div class="brand-mark" aria-hidden="true">LL</div>
+          <div class="brand-mark" aria-hidden="true">PA</div>
           <div>
             <p class="eyebrow">Private OS</p>
-            <h1>Life Ledger</h1>
+            <h1 class="brand-title">Prafful &amp; Archana<br><span>Life Ledger</span></h1>
           </div>
         </div>
 
@@ -288,6 +288,7 @@
                       <th>HRA</th>
                       <th>PF</th>
                       <th>Top components</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="incomeTable"></tbody>
@@ -331,7 +332,8 @@
                       <h3>Transactions</h3>
                       <p id="expensePageInfo" class="muted-small"></p>
                     </div>
-                    <div class="panel-actions">
+                    <div class="panel-actions" style="display: flex; gap: 8px;">
+                      <button class="secondary-button" type="button" id="toggleExpenseTableZoom">🔍 Expand</button>
                       <button class="secondary-button" type="button" id="expensePagePrev">Previous</button>
                       <button class="secondary-button" type="button" id="expensePageNext">Next</button>
                     </div>
@@ -363,7 +365,10 @@
                   <h3>Mutual funds</h3>
                   <p>Folio, AMC, SIP, NAV, invested vs current value — separate view for you and your wife.</p>
                 </div>
-                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">Add fund</button>
+                <div class="panel-actions" style="display: flex; gap: 8px;">
+                  <button class="secondary-button" type="button" id="refreshMutualFundNAVsBtn">🔄 Refresh NAVs</button>
+                  <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">Add fund</button>
+                </div>
               </div>
               <div class="owner-toggle" role="tablist" aria-label="Mutual fund owner">
                 <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
@@ -375,16 +380,17 @@
                 <table>
                   <thead>
                     <tr>
+                      <th>Date</th>
                       <th>Fund</th>
-                      <th>AMC</th>
                       <th>Type</th>
-                      <th>Folio</th>
-                      <th>Invested</th>
-                      <th>Current</th>
                       <th>Units</th>
-                      <th>NAV</th>
-                      <th>SIP</th>
-                      <th>Platform</th>
+                      <th>Purchase NAV</th>
+                      <th>Invested</th>
+                      <th>Latest NAV</th>
+                      <th>Current Value</th>
+                      <th>Gain / Loss</th>
+                      <th>Owner</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="mutualFundTable"></tbody>
@@ -421,6 +427,7 @@
                       <th>Value</th>
                       <th>Sector</th>
                       <th>Demat</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="stockTable"></tbody>

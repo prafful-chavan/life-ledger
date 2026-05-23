@@ -256,17 +256,13 @@ const fieldsByKind = {
   mutualFund: [
     ["owner", "Owner (Me / Wife)", "text"],
     ["fundName", "Fund name", "text"],
-    ["amc", "AMC", "text"],
-    ["category", "Category (Equity / Debt / Hybrid)", "text"],
-    ["folio", "Folio no.", "text"],
-    ["invested", "Amount invested", "number"],
-    ["currentValue", "Current value", "number"],
+    ["transactionType", "Transaction type (PURCHASE / REDEMPTION)", "text"],
     ["units", "Units", "number"],
-    ["nav", "Latest NAV", "number"],
-    ["sipAmount", "SIP amount", "number"],
-    ["sipDay", "SIP day of month", "number"],
+    ["nav", "Purchase NAV", "number"],
+    ["invested", "Amount invested", "number"],
+    ["purchaseDate", "Purchase Date", "date"],
+    ["folio", "Folio no.", "text"],
     ["platform", "Platform (Groww / Kuvera / etc.)", "text"],
-    ["purchaseDate", "Purchase / start date", "date"],
     ["notes", "Notes", "textarea"],
   ],
   stock: [
@@ -354,6 +350,7 @@ function bootstrapApp(initialState) {
   bindChat();
   bindExport();
   renderAll();
+  refreshMutualFundNAVs(false);
 }
 
 window.LifeLedgerApp = {
@@ -545,13 +542,84 @@ function bindFinanceTabs() {
     renderExpenseExplorer(false);
   });
 
-  document.getElementById("expenseTable")?.addEventListener("click", async (event) => {
-    const btn = event.target.closest(".delete-expense-btn");
-    if (!btn) return;
-    const id = btn.dataset.id;
-    if (id) {
-      await deleteExpense(id);
+  document.getElementById("toggleExpenseTableZoom")?.addEventListener("click", () => {
+    const btn = document.getElementById("toggleExpenseTableZoom");
+    const container = document.querySelector(".expense-split");
+    if (container && btn) {
+      const isZoomed = container.classList.toggle("table-zoomed");
+      btn.textContent = isZoomed ? "🔍 Split view" : "🔍 Expand";
     }
+  });
+
+  document.getElementById("expenseTable")?.addEventListener("click", async (event) => {
+    const editBtn = event.target.closest(".edit-expense-btn");
+    const deleteBtn = event.target.closest(".delete-expense-btn");
+    if (editBtn) {
+      const id = editBtn.dataset.id;
+      buildQuickAddForm("expense", id);
+      openModal("quickAddModal");
+    } else if (deleteBtn) {
+      const id = deleteBtn.dataset.id;
+      if (id) await deleteExpense(id);
+    }
+  });
+
+  document.getElementById("incomeTable")?.addEventListener("click", async (event) => {
+    const editBtn = event.target.closest(".edit-income-btn");
+    const deleteBtn = event.target.closest(".delete-income-btn");
+    if (editBtn) {
+      const id = editBtn.dataset.id;
+      buildQuickAddForm("income", id);
+      openModal("quickAddModal");
+    } else if (deleteBtn) {
+      const id = deleteBtn.dataset.id;
+      if (id && confirm("Are you sure you want to delete this salary entry?")) {
+        state.income = state.income.filter(item => item.id !== id);
+        await saveData(true);
+        renderIncomeTable();
+        toast("Salary entry deleted.");
+      }
+    }
+  });
+
+  document.getElementById("mutualFundTable")?.addEventListener("click", async (event) => {
+    const editBtn = event.target.closest(".edit-mutualFund-btn");
+    const deleteBtn = event.target.closest(".delete-mutualFund-btn");
+    if (editBtn) {
+      const id = editBtn.dataset.id;
+      buildQuickAddForm("mutualFund", id);
+      openModal("quickAddModal");
+    } else if (deleteBtn) {
+      const id = deleteBtn.dataset.id;
+      if (id && confirm("Are you sure you want to delete this mutual fund transaction?")) {
+        state.mutualFunds = state.mutualFunds.filter(item => item.id !== id);
+        await saveData(true);
+        renderMutualFundsPanel();
+        toast("Mutual fund transaction deleted.");
+      }
+    }
+  });
+
+  document.getElementById("stockTable")?.addEventListener("click", async (event) => {
+    const editBtn = event.target.closest(".edit-stock-btn");
+    const deleteBtn = event.target.closest(".delete-stock-btn");
+    if (editBtn) {
+      const id = editBtn.dataset.id;
+      buildQuickAddForm("stock", id);
+      openModal("quickAddModal");
+    } else if (deleteBtn) {
+      const id = deleteBtn.dataset.id;
+      if (id && confirm("Are you sure you want to delete this stock entry?")) {
+        state.stocks = state.stocks.filter(item => item.id !== id);
+        await saveData(true);
+        renderStocksPanel();
+        toast("Stock entry deleted.");
+      }
+    }
+  });
+
+  document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", async () => {
+    await refreshMutualFundNAVs(true);
   });
 
   document.querySelectorAll("[data-holdings-owner]").forEach((button) => {
@@ -764,25 +832,42 @@ function ensureAssistantWelcome(shouldSave) {
   if (shouldSave) saveData();
 }
 
-function buildQuickAddForm(kind) {
+function buildQuickAddForm(kind, editId = null) {
   const form = document.getElementById("quickAddForm");
   const title = document.getElementById("quickAddTitle");
   const labels = {
-    income: "Add income",
-    expense: "Add expense",
-    asset: "Add asset",
-    liability: "Add liability",
-    mutualFund: "Add mutual fund",
-    stock: "Add stock",
-    goal: "Add goal",
-    task: "Add task",
-    study: "Add study topic",
-    workout: "Log workout",
+    income: editId ? "Edit income" : "Add income",
+    expense: editId ? "Edit expense" : "Add expense",
+    asset: editId ? "Edit asset" : "Add asset",
+    liability: editId ? "Edit liability" : "Add liability",
+    mutualFund: editId ? "Edit mutual fund" : "Add mutual fund",
+    stock: editId ? "Edit stock" : "Add stock",
+    goal: editId ? "Edit goal" : "Add goal",
+    task: editId ? "Edit task" : "Add task",
+    study: editId ? "Edit study topic" : "Add study topic",
+    workout: editId ? "Edit workout" : "Log workout",
   };
 
-  title.textContent = labels[kind] || "Add entry";
+  title.textContent = labels[kind] || (editId ? "Edit entry" : "Add entry");
   const fields = fieldsByKind[kind] || fieldsByKind.expense;
   form.innerHTML = "";
+
+  let existingEntry = null;
+  let collection = [];
+  if (editId) {
+    if (kind === "expense") collection = state.expenses;
+    else if (kind === "income") collection = state.income;
+    else if (kind === "asset") collection = collection = state.assets;
+    else if (kind === "liability") collection = state.liabilities;
+    else if (kind === "mutualFund") collection = state.mutualFunds;
+    else if (kind === "stock") collection = state.stocks;
+    else if (kind === "goal") collection = state.goals;
+    else if (kind === "task") collection = state.tasks;
+    else if (kind === "study") collection = state.studies;
+    else if (kind === "workout") collection = state.workouts;
+
+    existingEntry = collection.find(item => item.id === editId);
+  }
 
   fields.forEach(([name, label, type]) => {
     const wrapper = document.createElement("label");
@@ -792,8 +877,18 @@ function buildQuickAddForm(kind) {
     const input = type === "textarea" ? document.createElement("textarea") : document.createElement("input");
     input.name = name;
     input.type = type === "checkbox" ? "checkbox" : type;
-    if (type === "date" && ["date", "dueDate"].includes(name)) input.value = todayISO();
     if (type === "number") input.inputMode = "decimal";
+
+    if (existingEntry) {
+      if (type === "checkbox") {
+        input.checked = !!existingEntry[name];
+      } else {
+        input.value = existingEntry[name] !== undefined ? existingEntry[name] : "";
+      }
+    } else {
+      if (type === "date" && ["date", "dueDate", "purchaseDate"].includes(name)) input.value = todayISO();
+    }
+
     wrapper.append(input);
     form.append(wrapper);
   });
@@ -810,7 +905,7 @@ function buildQuickAddForm(kind) {
   form.onsubmit = async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
-    const entry = { id: `${kind}-${generateUUID()}` };
+    const entry = existingEntry ? { ...existingEntry } : { id: `${kind}-${generateUUID()}` };
     fields.forEach(([name, , type]) => {
       if (type === "checkbox") {
         entry[name] = form.querySelector(`[name="${name}"]`).checked;
@@ -819,28 +914,40 @@ function buildQuickAddForm(kind) {
       }
     });
 
-    if (kind === "expense") state.expenses.push(entry);
-    if (kind === "income") state.income.push(entry);
-    if (kind === "asset") state.assets.push(entry);
-    if (kind === "liability") state.liabilities.push(entry);
     if (kind === "mutualFund") {
       entry.owner = normalizeOwner(entry.owner);
-      state.mutualFunds.push(entry);
+      entry.amc = inferAmc(entry.fundName);
+      if (!entry.latestNav) entry.latestNav = entry.nav;
+      if (!entry.currentValue) entry.currentValue = entry.invested;
     }
     if (kind === "stock") {
       entry.owner = normalizeOwner(entry.owner);
       if (!entry.invested) entry.invested = toNumber(entry.quantity) * toNumber(entry.avgPrice || entry.currentPrice);
-      state.stocks.push(entry);
     }
-    if (kind === "goal") state.goals.push(entry);
-    if (kind === "task") state.tasks.push(entry);
-    if (kind === "study") state.studies.push(entry);
-    if (kind === "workout") state.workouts.push(entry);
 
+    if (existingEntry) {
+      const idx = collection.findIndex(item => item.id === editId);
+      if (idx !== -1) {
+        collection[idx] = entry;
+      }
+    } else {
+      if (kind === "expense") state.expenses.push(entry);
+      if (kind === "income") state.income.push(entry);
+      if (kind === "asset") state.assets.push(entry);
+      if (kind === "liability") state.liabilities.push(entry);
+      if (kind === "mutualFund") state.mutualFunds.push(entry);
+      if (kind === "stock") state.stocks.push(entry);
+      if (kind === "goal") state.goals.push(entry);
+      if (kind === "task") state.tasks.push(entry);
+      if (kind === "study") state.studies.push(entry);
+      if (kind === "workout") state.workouts.push(entry);
+    }
+
+    invalidateExpenseCache();
     await saveData(true);
     renderAll();
     closeModal(form.closest(".modal"));
-    toast("Entry saved.");
+    toast(existingEntry ? "Entry updated." : "Entry saved.");
   };
 }
 
@@ -853,6 +960,7 @@ async function runImport(importFn) {
   invalidateExpenseCache();
   await saveData(true);
   renderAll();
+  refreshMutualFundNAVs(false);
   const summary = result && result.income ? importSummary(result) : importSummary(state);
   if (status) status.textContent = summary;
   toast(`Import complete. ${summary}`);
@@ -1029,25 +1137,44 @@ function mapRowToKind(row, kind) {
   }
 
   if (kind === "mutualFund") {
-    const currentValue = pickNumber(row, ["currentvalue", "value", "marketvalue", "amount"]);
-    const invested = pickNumber(row, ["invested", "investment", "cost", "principal"]);
-    if (!currentValue && !invested) return null;
-    const owner = normalizeOwner(pick(row, ["owner", "person", "holder"]) || inferPerson(String(row.sheet || ""), row));
+    const fundName = pick(row, ["schemename", "fundname", "name", "scheme", "fund"]) || "Mutual fund";
+    const transactionType = pick(row, ["transactiontype", "type"]) || "PURCHASE";
+    const units = pickNumber(row, ["units", "unit"]);
+    const nav = pickNumber(row, ["nav", "purchasenav", "latestnav"]);
+    const invested = pickNumber(row, ["amount", "invested", "investment", "cost", "principal"]);
+    const date = pickDate(row, ["date", "purchasedate", "startdate"]);
+    const owner = normalizeOwner(pick(row, ["owner", "ownermewife", "person", "holder"]) || inferPerson(String(row.sheet || ""), row));
+
+    let purchaseNav = nav;
+    if (!purchaseNav && units && invested) {
+      purchaseNav = invested / units;
+    }
+    let amountInvested = invested;
+    if (!amountInvested && units && purchaseNav) {
+      amountInvested = units * purchaseNav;
+    }
+    let mfUnits = units;
+    if (!mfUnits && amountInvested && purchaseNav) {
+      mfUnits = amountInvested / purchaseNav;
+    }
+
+    if (!amountInvested && !mfUnits) return null;
+
     return {
       id: `mf-${generateUUID()}`,
       owner,
-      fundName: pick(row, ["fundname", "name", "scheme", "fund"]) || "Mutual fund",
-      amc: pick(row, ["amc", "fundhouse"]) || "",
-      category: pick(row, ["category", "type", "assetclass"]) || "Equity",
+      fundName,
+      transactionType,
+      amc: pick(row, ["amc", "fundhouse"]) || inferAmc(fundName),
+      category: pick(row, ["category", "assetclass"]) || "Equity",
       folio: pick(row, ["folio", "foliono", "folionumber"]) || "",
-      invested: invested || currentValue,
-      currentValue: currentValue || invested,
-      units: pickNumber(row, ["units", "unit"]),
-      nav: pickNumber(row, ["nav", "latestnav"]),
-      sipAmount: pickNumber(row, ["sipamount", "sip", "monthlysip"]),
-      sipDay: pickNumber(row, ["sipday", "sipdate"]),
+      invested: amountInvested,
+      currentValue: amountInvested,
+      units: mfUnits,
+      nav: purchaseNav,
+      latestNav: purchaseNav,
       platform: pick(row, ["platform", "app", "broker"]) || "",
-      purchaseDate: pickDate(row, ["purchasedate", "startdate", "date"]),
+      purchaseDate: date || todayISO(),
       notes: pick(row, ["notes", "note", "remarks"]) || "",
     };
   }
@@ -1738,9 +1865,13 @@ function renderIncomeTable() {
       formatINR(item.hra || 0),
       formatINR(item.pf || 0),
       componentSummary(item),
+      `<div class="actions-wrapper">
+        <button class="action-btn edit-btn edit-income-btn" data-id="${item.id}" title="Edit entry">✏️</button>
+        <button class="action-btn delete-btn delete-income-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
+      </div>`
     ],
     "No salary data yet. Upload your salary workbook or add an income entry.",
-    10
+    11
   );
 }
 
@@ -1861,7 +1992,10 @@ function renderExpenseExplorer(refreshMonthList = true) {
       item.paidBy,
       formatINR(item.amount),
       item.note,
-      `<button class="delete-expense-btn" data-id="${item.id}" title="Delete entry">🗑️</button>`
+      `<div class="actions-wrapper">
+        <button class="action-btn edit-btn edit-expense-btn" data-id="${item.id}" title="Edit entry">✏️</button>
+        <button class="action-btn delete-btn delete-expense-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
+      </div>`
     ],
     "No expenses for this month.",
     6
@@ -1901,30 +2035,31 @@ function renderMutualFundsPanel() {
   const table = document.getElementById("mutualFundTable");
   if (!table) return;
 
-  const rows = state.mutualFunds
+  const rows = [...state.mutualFunds]
     .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
-    .sort((a, b) => toNumber(b.currentValue) - toNumber(a.currentValue));
+    .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
 
   const invested = sum(rows, "invested");
   const current = sum(rows, "currentValue");
   const gain = current - invested;
+  const roi = invested ? (gain / invested) * 100 : 0;
 
   if (summary) {
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">Invested (${activeHoldingsOwner})</div>
         <div class="value">${formatINR(invested)}</div>
-        <div class="hint">${rows.length} funds</div>
+        <div class="hint">${rows.length} transactions</div>
       </article>
       <article class="metric-card compact-metric">
         <div class="label">Current value</div>
         <div class="value">${formatINR(current)}</div>
-        <div class="hint">${formatINR(gain)} ${gain >= 0 ? "gain" : "loss"}</div>
+        <div class="hint">${formatINR(gain)} ${gain >= 0 ? "gain 📈" : "loss 📉"}</div>
       </article>
       <article class="metric-card compact-metric">
-        <div class="label">SIP / month</div>
-        <div class="value">${formatINR(sum(rows, "sipAmount"))}</div>
-        <div class="hint">Tracked SIP amounts</div>
+        <div class="label">Total ROI</div>
+        <div class="value" style="color: ${gain >= 0 ? "var(--good)" : "var(--danger)"};">${formatPercent(roi)}</div>
+        <div class="hint">Overall portfolio returns</div>
       </article>
     `;
   }
@@ -1933,19 +2068,30 @@ function renderMutualFundsPanel() {
     table,
     rows,
     (item) => [
+      formatDate(item.purchaseDate || item.date),
       item.fundName,
-      item.amc || "-",
-      item.category || "-",
-      item.folio || "-",
+      item.transactionType || "PURCHASE",
+      item.units ? Number(item.units).toFixed(3) : "-",
+      item.nav ? formatINR(item.nav) : "-",
       formatINR(item.invested),
-      formatINR(item.currentValue),
-      item.units ? String(item.units) : "-",
-      item.nav ? String(item.nav) : "-",
-      item.sipAmount ? formatINR(item.sipAmount) : "-",
-      item.platform || "-",
+      item.latestNav ? formatINR(item.latestNav) : (item.nav ? formatINR(item.nav) : "-"),
+      formatINR(item.currentValue || item.invested),
+      (() => {
+        const inv = toNumber(item.invested);
+        const cur = toNumber(item.currentValue || item.invested);
+        const g = cur - inv;
+        const pct = inv ? (g / inv) * 100 : 0;
+        const color = g >= 0 ? "var(--good)" : "var(--danger)";
+        return `<span style="color: ${color}; font-weight: 600;">${formatINR(g)} (${formatPercent(pct)})</span>`;
+      })(),
+      item.owner || "Me",
+      `<div class="actions-wrapper">
+        <button class="action-btn edit-btn edit-mutualFund-btn" data-id="${item.id}" title="Edit entry">✏️</button>
+        <button class="action-btn delete-btn delete-mutualFund-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
+      </div>`
     ],
-    `No mutual funds for ${activeHoldingsOwner}. Add a fund or import a sheet.`,
-    10
+    `No mutual funds for ${activeHoldingsOwner}. Add a transaction or import a sheet.`,
+    11
   );
 }
 
@@ -1995,9 +2141,13 @@ function renderStocksPanel() {
       formatINR(stockMarketValue(item)),
       item.sector || "-",
       item.demat || "-",
+      `<div class="actions-wrapper">
+        <button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit entry">✏️</button>
+        <button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
+      </div>`
     ],
     `No stocks for ${activeHoldingsOwner}. Add a holding or import a sheet.`,
-    9
+    10
   );
 }
 
@@ -2676,4 +2826,165 @@ function generateUUID() {
     return v.toString(16);
   });
 }
+
+// Mutual Fund API Cache & Resolver Utilities
+const MF_CACHE_EXPIRY = 12 * 60 * 60 * 1000; // 12 hours
+
+function getFundCodesCache() {
+  try {
+    return JSON.parse(localStorage.getItem("lifeLedgerFundCodes") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveFundCodesCache(cache) {
+  try {
+    localStorage.setItem("lifeLedgerFundCodes", JSON.stringify(cache));
+  } catch (e) {
+    console.warn("Failed to write fund codes cache:", e);
+  }
+}
+
+function getNavCache() {
+  try {
+    return JSON.parse(localStorage.getItem("lifeLedgerNavCache:v1") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveNavCache(cache) {
+  try {
+    localStorage.setItem("lifeLedgerNavCache:v1", JSON.stringify(cache));
+  } catch (e) {
+    console.warn("Failed to write NAV cache:", e);
+  }
+}
+
+function inferAmc(fundName) {
+  if (!fundName) return "";
+  const parts = fundName.split(/\s+/);
+  return parts[0] || "";
+}
+
+async function resolveSchemeCodes(fundNames) {
+  if (!fundNames || fundNames.length === 0) return getFundCodesCache();
+  const cache = getFundCodesCache();
+  const missing = fundNames.filter(name => !cache[name]);
+  
+  if (missing.length === 0) return cache;
+  
+  toast("Fetching mutual fund master list to resolve codes...");
+  try {
+    const response = await fetch("https://api.mfapi.in/mf");
+    if (!response.ok) throw new Error("Failed to fetch mutual fund master list.");
+    const allFunds = await response.json();
+    
+    missing.forEach(query => {
+      const queryWords = query.toLowerCase().replace(/[^a-z0-9\s]+/g, '').split(/\s+/).filter(w => w.length > 1);
+      const amcWord = queryWords[0];
+      let best = null;
+      let bestScore = -Infinity;
+      
+      const isGrowthPreferred = !query.toLowerCase().includes('dividend') && !query.toLowerCase().includes('idcw');
+      const isDirectPreferred = !query.toLowerCase().includes('regular');
+
+      for (const scheme of allFunds) {
+        const name = scheme.schemeName;
+        const nameLower = name.toLowerCase();
+        const schemeWords = nameLower.replace(/[^a-z0-9\s]+/g, '').split(/\s+/).filter(w => w.length > 1);
+        
+        if (amcWord && !schemeWords.includes(amcWord)) continue;
+        
+        const overlap = queryWords.filter(w => schemeWords.includes(w)).length;
+        if (overlap === 0) continue;
+        
+        let score = (overlap * 100) - Math.abs(name.length - query.length);
+        if (isGrowthPreferred && nameLower.includes('growth')) score += 50;
+        if (isDirectPreferred && nameLower.includes('direct')) score += 20;
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = scheme;
+        }
+      }
+      
+      if (best) {
+        cache[query] = {
+          schemeCode: best.schemeCode,
+          schemeName: best.schemeName
+        };
+      }
+    });
+    
+    saveFundCodesCache(cache);
+  } catch (err) {
+    console.error("Failed to resolve scheme codes:", err);
+    toast("Failed to resolve mutual fund codes. Using cached details.");
+  }
+  return cache;
+}
+
+async function refreshMutualFundNAVs(force = false) {
+  const uniqueNames = [...new Set(state.mutualFunds.map(item => item.fundName).filter(Boolean))];
+  if (uniqueNames.length === 0) return;
+
+  try {
+    const codesCache = await resolveSchemeCodes(uniqueNames);
+    const schemeCodes = uniqueNames.map(name => codesCache[name]?.schemeCode).filter(Boolean);
+    
+    if (schemeCodes.length === 0) return;
+    
+    toast("Refreshing mutual fund Net Asset Values...");
+    const navCache = getNavCache();
+    const now = Date.now();
+    let updatedCount = 0;
+    
+    for (const code of schemeCodes) {
+      const cached = navCache[code];
+      if (!force && cached && (now - cached.timestamp < MF_CACHE_EXPIRY)) {
+        continue;
+      }
+      
+      try {
+        const response = await fetch(`https://api.mfapi.in/mf/${code}/latest`);
+        if (!response.ok) continue;
+        const json = await response.json();
+        if (json && json.status === "SUCCESS" && json.data && json.data[0]) {
+          navCache[code] = {
+            nav: toNumber(json.data[0].nav),
+            date: json.data[0].date,
+            timestamp: now
+          };
+          updatedCount += 1;
+        }
+        await new Promise(r => setTimeout(r, 50));
+      } catch (e) {
+        console.warn(`Failed to fetch NAV for ${code}:`, e);
+      }
+    }
+    
+    if (updatedCount > 0 || force) {
+      saveNavCache(navCache);
+      toast(updatedCount > 0 ? `Refreshed ${updatedCount} NAVs.` : "NAVs are up to date.");
+      
+      state.mutualFunds.forEach(item => {
+        const cachedCodeObj = codesCache[item.fundName];
+        if (cachedCodeObj) {
+          const cachedNavObj = navCache[cachedCodeObj.schemeCode];
+          if (cachedNavObj) {
+            item.latestNav = cachedNavObj.nav;
+            item.currentValue = toNumber(item.units) * cachedNavObj.nav;
+          }
+        }
+      });
+      await saveData(true);
+      renderMutualFundsPanel();
+    }
+  } catch (err) {
+    console.error("Failed to refresh mutual fund NAVs:", err);
+  }
+}
+
 
