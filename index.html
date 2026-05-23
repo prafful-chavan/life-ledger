@@ -370,10 +370,15 @@
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">Add fund</button>
                 </div>
               </div>
-              <div class="owner-toggle" role="tablist" aria-label="Mutual fund owner">
+              <div class="owner-toggle" role="tablist" aria-label="Mutual fund owner" style="display: flex; align-items: center; gap: 8px;">
                 <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+                
+                <div style="margin-left: auto; display: flex; gap: 8px;" class="mf-view-toggle">
+                  <button class="owner-pill active" type="button" id="toggleMfViewHoldings">📊 Holdings</button>
+                  <button class="owner-pill" type="button" id="toggleMfViewTxns">📜 Transactions</button>
+                </div>
               </div>
               <div class="metric-grid compact" id="mfOwnerSummary"></div>
               <div class="table-wrap tall-table">

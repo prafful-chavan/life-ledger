@@ -192,6 +192,7 @@ let state = clone(defaultData);
 let activeView = "dashboard";
 let activeFinanceTab = "overview";
 let activeHoldingsOwner = "Me";
+let activeMfView = "holdings";
 let activeExpenseMonth = "";
 let activeExpensePage = 0;
 let expenseMonthIndexCache = null;
@@ -620,6 +621,23 @@ function bindFinanceTabs() {
 
   document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", async () => {
     await refreshMutualFundNAVs(true);
+  });
+
+  const mfHoldingsBtn = document.getElementById("toggleMfViewHoldings");
+  const mfTxnsBtn = document.getElementById("toggleMfViewTxns");
+  
+  mfHoldingsBtn?.addEventListener("click", () => {
+    activeMfView = "holdings";
+    mfHoldingsBtn.classList.add("active");
+    mfTxnsBtn?.classList.remove("active");
+    renderMutualFundsPanel();
+  });
+  
+  mfTxnsBtn?.addEventListener("click", () => {
+    activeMfView = "txns";
+    mfTxnsBtn.classList.add("active");
+    mfHoldingsBtn?.classList.remove("active");
+    renderMutualFundsPanel();
   });
 
   document.querySelectorAll("[data-holdings-owner]").forEach((button) => {
@@ -2035,6 +2053,7 @@ function renderMutualFundsPanel() {
   const summary = document.getElementById("mfOwnerSummary");
   const table = document.getElementById("mutualFundTable");
   if (!table) return;
+  const targetThead = table.querySelector("thead");
 
   const rows = [...state.mutualFunds]
     .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
@@ -2044,6 +2063,19 @@ function renderMutualFundsPanel() {
   const current = sum(rows, "currentValue");
   const gain = current - invested;
   const roi = invested ? (gain / invested) * 100 : 0;
+
+  // Calculate overall portfolio XIRR
+  const portfolioFlows = rows.map(t => ({
+    date: new Date(t.purchaseDate || t.date || Date.now()),
+    amount: -toNumber(t.invested)
+  }));
+  if (current > 0) {
+    portfolioFlows.push({
+      date: new Date(),
+      amount: current
+    });
+  }
+  const portfolioXirr = calculateXIRR(portfolioFlows);
 
   if (summary) {
     summary.innerHTML = `
@@ -2058,42 +2090,135 @@ function renderMutualFundsPanel() {
         <div class="hint">${formatINR(gain)} ${gain >= 0 ? "gain 📈" : "loss 📉"}</div>
       </article>
       <article class="metric-card compact-metric">
-        <div class="label">Total ROI</div>
-        <div class="value" style="color: ${gain >= 0 ? "var(--good)" : "var(--danger)"};">${formatPercent(roi)}</div>
-        <div class="hint">Overall portfolio returns</div>
+        <div class="label">Portfolio XIRR</div>
+        <div class="value" style="color: ${portfolioXirr >= 0 ? "var(--good)" : "var(--danger)"};">${portfolioXirr.toFixed(2)}%</div>
+        <div class="hint">Overall ROI: ${formatPercent(roi)}</div>
       </article>
     `;
   }
 
-  renderRows(
-    table,
-    rows,
-    (item) => [
-      formatDate(item.purchaseDate || item.date),
-      item.fundName,
-      item.transactionType || "PURCHASE",
-      item.units ? Number(item.units).toFixed(3) : "-",
-      item.nav ? formatINR(item.nav) : "-",
-      formatINR(item.invested),
-      item.latestNav ? formatINR(item.latestNav) : (item.nav ? formatINR(item.nav) : "-"),
-      formatINR(item.currentValue || item.invested),
-      (() => {
-        const inv = toNumber(item.invested);
-        const cur = toNumber(item.currentValue || item.invested);
-        const g = cur - inv;
-        const pct = inv ? (g / inv) * 100 : 0;
-        const color = g >= 0 ? "var(--good)" : "var(--danger)";
-        return `<span style="color: ${color}; font-weight: 600;">${formatINR(g)} (${formatPercent(pct)})</span>`;
-      })(),
-      item.owner || "Me",
-      `<div class="actions-wrapper">
-        <button class="action-btn edit-btn edit-mutualFund-btn" data-id="${item.id}" title="Edit entry">✏️</button>
-        <button class="action-btn delete-btn delete-mutualFund-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
-      </div>`
-    ],
-    `No mutual funds for ${activeHoldingsOwner}. Add a transaction or import a sheet.`,
-    11
-  );
+  if (activeMfView === "holdings") {
+    if (targetThead) {
+      targetThead.innerHTML = `
+        <tr>
+          <th>Fund</th>
+          <th>Total Units</th>
+          <th>Avg. NAV</th>
+          <th>Invested</th>
+          <th>Latest NAV</th>
+          <th>Current Value</th>
+          <th>Gain / Loss</th>
+          <th>XIRR</th>
+        </tr>
+      `;
+    }
+
+    const groups = groupBy(rows, item => item.fundName);
+    const holdings = Object.entries(groups).map(([fundName, txns]) => {
+      const totalInvested = sum(txns, "invested");
+      const totalUnits = sum(txns, "units");
+      const latestNav = txns[0].latestNav || txns[0].nav;
+      const currentValue = totalUnits * latestNav;
+      const gain = currentValue - totalInvested;
+      const roi = totalInvested ? (gain / totalInvested) * 100 : 0;
+      const avgNav = totalUnits ? (totalInvested / totalUnits) : 0;
+
+      const cashFlows = txns.map(t => ({
+        date: new Date(t.purchaseDate || t.date || Date.now()),
+        amount: -toNumber(t.invested)
+      }));
+      if (totalUnits > 0) {
+        cashFlows.push({
+          date: new Date(),
+          amount: currentValue
+        });
+      }
+      const xirr = calculateXIRR(cashFlows);
+
+      return {
+        fundName,
+        totalUnits,
+        avgNav,
+        totalInvested,
+        latestNav,
+        currentValue,
+        gain,
+        roi,
+        xirr
+      };
+    }).sort((a, b) => b.currentValue - a.currentValue);
+
+    renderRows(
+      table,
+      holdings,
+      (item) => [
+        item.fundName,
+        item.totalUnits.toFixed(3),
+        formatINR(item.avgNav),
+        formatINR(item.totalInvested),
+        formatINR(item.latestNav),
+        formatINR(item.currentValue),
+        (() => {
+          const color = item.gain >= 0 ? "var(--good)" : "var(--danger)";
+          return `<span style="color: ${color}; font-weight: 600;">${formatINR(item.gain)} (${formatPercent(item.roi)})</span>`;
+        })(),
+        (() => {
+          const color = item.xirr >= 0 ? "var(--good)" : "var(--danger)";
+          return `<span style="color: ${color}; font-weight: 600;">${item.xirr.toFixed(2)}%</span>`;
+        })()
+      ],
+      `No mutual funds for ${activeHoldingsOwner}.`,
+      8
+    );
+  } else {
+    if (targetThead) {
+      targetThead.innerHTML = `
+        <tr>
+          <th>Date</th>
+          <th>Fund</th>
+          <th>Type</th>
+          <th>Units</th>
+          <th>Purchase NAV</th>
+          <th>Invested</th>
+          <th>Latest NAV</th>
+          <th>Current Value</th>
+          <th>Gain / Loss</th>
+          <th>Owner</th>
+          <th>Action</th>
+        </tr>
+      `;
+    }
+
+    renderRows(
+      table,
+      rows,
+      (item) => [
+        formatDate(item.purchaseDate || item.date),
+        item.fundName,
+        item.transactionType || "PURCHASE",
+        item.units ? Number(item.units).toFixed(3) : "-",
+        item.nav ? formatINR(item.nav) : "-",
+        formatINR(item.invested),
+        item.latestNav ? formatINR(item.latestNav) : (item.nav ? formatINR(item.nav) : "-"),
+        formatINR(item.currentValue || item.invested),
+        (() => {
+          const inv = toNumber(item.invested);
+          const cur = toNumber(item.currentValue || item.invested);
+          const g = cur - inv;
+          const pct = inv ? (g / inv) * 100 : 0;
+          const color = g >= 0 ? "var(--good)" : "var(--danger)";
+          return `<span style="color: ${color}; font-weight: 600;">${formatINR(g)} (${formatPercent(pct)})</span>`;
+        })(),
+        item.owner || "Me",
+        `<div class="actions-wrapper">
+          <button class="action-btn edit-btn edit-mutualFund-btn" data-id="${item.id}" title="Edit entry">✏️</button>
+          <button class="action-btn delete-btn delete-mutualFund-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
+        </div>`
+      ],
+      `No mutual funds for ${activeHoldingsOwner}. Add a transaction or import a sheet.`,
+      11
+    );
+  }
 }
 
 function renderStocksPanel() {
@@ -2899,8 +3024,18 @@ async function resolveSchemeCodes(fundNames) {
     const allFunds = await response.json();
     
     missing.forEach(query => {
-      const queryWords = query.toLowerCase().replace(/[^a-z0-9\s]+/g, '').split(/\s+/).filter(w => w.length > 1);
-      const amcWord = queryWords[0];
+      const queryLower = query.toLowerCase().replace(/[^a-z0-9\s]+/g, ' ');
+      const queryWords = queryLower.split(/\s+/).filter(w => w.length > 1);
+      
+      const noiseWords = new Set([
+        "me", "wife", "sip", "lumpsum", "mutual", "fund", "funds", 
+        "investment", "investments", "my", "our", "portfolio", "she", 
+        "he", "both", "direct", "regular", "growth", "idcw", "dividend", 
+        "payout", "reinvestment", "plan", "option"
+      ]);
+      
+      const amcCandidates = queryWords.filter(w => !noiseWords.has(w));
+      const amcWord = amcCandidates[0];
       let best = null;
       let bestScore = -Infinity;
       
@@ -2910,7 +3045,7 @@ async function resolveSchemeCodes(fundNames) {
       for (const scheme of allFunds) {
         const name = scheme.schemeName;
         const nameLower = name.toLowerCase();
-        const schemeWords = nameLower.replace(/[^a-z0-9\s]+/g, '').split(/\s+/).filter(w => w.length > 1);
+        const schemeWords = nameLower.replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(w => w.length > 1);
         
         if (amcWord && !schemeWords.includes(amcWord)) continue;
         
@@ -3002,6 +3137,129 @@ async function refreshMutualFundNAVs(force = false) {
   } catch (err) {
     console.error("Failed to refresh mutual fund NAVs:", err);
   }
+}
+
+function calculateXIRR(cashFlows) {
+  if (!cashFlows || cashFlows.length < 2) return 0;
+  
+  const cleaned = cashFlows
+    .map(cf => ({
+      date: new Date(cf.date),
+      amount: Number(cf.amount)
+    }))
+    .filter(cf => !isNaN(cf.date.getTime()) && !isNaN(cf.amount) && cf.amount !== 0);
+    
+  if (cleaned.length < 2) return 0;
+  
+  cleaned.sort((a, b) => a.date - b.date);
+  const d1 = cleaned[0].date;
+  
+  let hasPositive = false;
+  let hasNegative = false;
+  for (const cf of cleaned) {
+    if (cf.amount > 0) hasPositive = true;
+    if (cf.amount < 0) hasNegative = true;
+  }
+  if (!hasPositive || !hasNegative) return 0;
+  
+  const years = cleaned.map(cf => (cf.date - d1) / (1000 * 60 * 60 * 24 * 365));
+  
+  function f(r) {
+    let sum = 0;
+    for (let i = 0; i < cleaned.length; i++) {
+      const cf = cleaned[i];
+      const t = years[i];
+      const divisor = Math.pow(Math.max(1e-4, 1 + r), t);
+      sum += cf.amount / divisor;
+    }
+    return sum;
+  }
+  
+  function df(r) {
+    let sum = 0;
+    for (let i = 0; i < cleaned.length; i++) {
+      const cf = cleaned[i];
+      const t = years[i];
+      if (t === 0) continue;
+      const divisor = Math.pow(Math.max(1e-4, 1 + r), t + 1);
+      sum += -t * cf.amount / divisor;
+    }
+    return sum;
+  }
+  
+  let r = 0.1;
+  const maxIterations = 100;
+  const tolerance = 1e-6;
+  
+  for (let i = 0; i < maxIterations; i++) {
+    const val = f(r);
+    const deriv = df(r);
+    if (Math.abs(deriv) < 1e-12) break;
+    
+    const nextR = r - val / deriv;
+    if (isNaN(nextR) || !isFinite(nextR)) break;
+    
+    if (Math.abs(nextR - r) < tolerance) {
+      const result = nextR * 100;
+      return isNaN(result) || !isFinite(result) ? 0 : result;
+    }
+    r = r + Math.max(-0.5, Math.min(0.5, nextR - r));
+  }
+  
+  // Bisection fallback
+  let low = -0.999;
+  let high = 5.0;
+  let valLow = f(low);
+  let valHigh = f(high);
+  
+  if (valLow * valHigh > 0) {
+    let found = false;
+    for (let h = 5.0; h <= 100.0; h *= 2) {
+      const val = f(h);
+      if (val * valLow < 0) {
+        high = h;
+        valHigh = val;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      for (let l = -0.9; l > -0.999999; l = -1 + (1 + l) * 0.1) {
+        const val = f(l);
+        if (val * valHigh < 0) {
+          low = l;
+          valLow = val;
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+  
+  if (f(low) * f(high) <= 0) {
+    for (let i = 0; i < 100; i++) {
+      const mid = (low + high) / 2;
+      const valMid = f(mid);
+      if (Math.abs(valMid) < tolerance || (high - low) < tolerance) {
+        const result = mid * 100;
+        return isNaN(result) || !isFinite(result) ? 0 : result;
+      }
+      if (valMid * f(low) < 0) {
+        high = mid;
+      } else {
+        low = mid;
+      }
+    }
+  }
+  
+  // Fallback to simple ROI
+  const totalInvested = cleaned.reduce((sum, cf) => cf.amount < 0 ? sum - cf.amount : sum, 0);
+  const totalReceived = cleaned.reduce((sum, cf) => cf.amount > 0 ? sum + cf.amount : sum, 0);
+  if (totalInvested > 0) {
+    const result = ((totalReceived - totalInvested) / totalInvested) * 100;
+    return isNaN(result) || !isFinite(result) ? 0 : result;
+  }
+  return 0;
 }
 
 
