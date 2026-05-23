@@ -1345,6 +1345,7 @@ function importSummary(imported) {
 }
 
 function renderAll() {
+  updateMutualFundsFromCache();
   renderDate();
   renderMetrics();
   renderCashflowChart();
@@ -2829,6 +2830,22 @@ function generateUUID() {
 
 // Mutual Fund API Cache & Resolver Utilities
 const MF_CACHE_EXPIRY = 12 * 60 * 60 * 1000; // 12 hours
+
+function updateMutualFundsFromCache() {
+  const codesCache = getFundCodesCache();
+  const navCache = getNavCache();
+
+  state.mutualFunds.forEach(item => {
+    const cachedCodeObj = codesCache[item.fundName];
+    if (cachedCodeObj) {
+      const cachedNavObj = navCache[cachedCodeObj.schemeCode];
+      if (cachedNavObj) {
+        item.latestNav = cachedNavObj.nav;
+        item.currentValue = toNumber(item.units) * cachedNavObj.nav;
+      }
+    }
+  });
+}
 
 function getFundCodesCache() {
   try {
