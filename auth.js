@@ -167,12 +167,15 @@
     if (!window.LifeLedgerVaultStore) {
       throw new Error("Vault storage is not available.");
     }
+    console.log("[auth.js] Saving vault file, size:", JSON.stringify(vault).length, "chars");
     await window.LifeLedgerVaultStore.save(vault);
     vaultMeta = vault;
 
     if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
       try {
+        console.log("[auth.js] Uploading vault backup to Google Drive...");
         await window.LifeLedgerDrive.saveVault(vault);
+        console.log("[auth.js] Google Drive upload completed successfully.");
       } catch (error) {
         console.warn("Drive sync failed:", error);
         toastAuth("Saved on this device. Google Drive sync failed — use Sync now later.");
@@ -230,6 +233,7 @@
 
   async function persistAppData(data) {
     if (!unlockedPayload) throw new Error("Not unlocked");
+    console.log("[auth.js] Persisting updated app data to storage...");
     unlockedPayload.data = data;
     const password = unlockedPayload._sessionPassword;
     if (!password || !vaultMeta) throw new Error("Session expired — sign in again");
@@ -238,6 +242,7 @@
       vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret)
     );
     await saveVaultFile(vault);
+    console.log("[auth.js] App data persistence completed successfully.");
   }
 
   function unlockApp(inner, password, isAutoUnlock = false) {
@@ -386,7 +391,13 @@
       if (!vaultMeta) {
         showGate("auth");
         showAuthPanel("setup");
-        if (legacy) {
+        if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+          setAuthMessage(
+            "setupHint",
+            "A Google Drive vault backup was detected. Click 'Link Google Drive' below to link and download your vault.",
+            false
+          );
+        } else if (legacy) {
           setAuthMessage(
             "setupHint",
             "Existing data on this device will be encrypted and moved into your vault on setup.",

@@ -545,6 +545,15 @@ function bindFinanceTabs() {
     renderExpenseExplorer(false);
   });
 
+  document.getElementById("expenseTable")?.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".delete-expense-btn");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (id) {
+      await deleteExpense(id);
+    }
+  });
+
   document.querySelectorAll("[data-holdings-owner]").forEach((button) => {
     button.addEventListener("click", () => {
       activeHoldingsOwner = button.dataset.holdingsOwner;
@@ -691,6 +700,24 @@ function closeModal(modal) {
   modal.hidden = true;
 }
 
+async function deleteExpense(id) {
+  if (!id) return;
+  if (!confirm("Are you sure you want to delete this expense entry?")) return;
+
+  state.expenses = state.expenses.filter((exp) => exp.id !== id);
+  invalidateExpenseCache();
+
+  try {
+    await saveData(true);
+    toast("Expense deleted.");
+  } catch (error) {
+    console.error("Failed to delete expense:", error);
+    toast("Failed to delete expense: " + error.message);
+  }
+
+  renderAll();
+}
+
 async function resetData(scope) {
   const config = {
     all: { label: "all data", keys: [] },
@@ -701,6 +728,12 @@ async function resetData(scope) {
     tasks: { label: "tasks", keys: ["tasks"] },
     studies: { label: "studies", keys: ["studies"] },
     workouts: { label: "workouts", keys: ["workouts"] },
+    networth: { label: "assets and liabilities", keys: ["assets", "liabilities"] },
+    holdings: { label: "mutual funds and stocks", keys: ["mutualFunds", "stocks"] },
+    mutualfunds: { label: "mutual funds", keys: ["mutualFunds"] },
+    stocks: { label: "stocks", keys: ["stocks"] },
+    finance: { label: "all finance data", keys: ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks"] },
+    chat: { label: "assistant chat", keys: ["chat"] },
   }[scope];
 
   if (!config) return;
@@ -1311,56 +1344,148 @@ function renderSalaryProgressionChart(svg, rows) {
   const lineColor = cssVar("--line");
   const mutedColor = cssVar("--muted");
   const inkColor = cssVar("--ink");
-  const brandColor = cssVar("--brand");
-  const accentColor = cssVar("--accent");
   const width = 900;
   const height = 320;
-  const padding = { top: 22, right: 26, bottom: 44, left: 72 };
+  const padding = { top: 38, right: 26, bottom: 44, left: 72 };
+
   const values = rows.flatMap((row) => [row.grossEarnings || 0, row.netSalary || row.amount || 0]);
   const maxValue = Math.max(1, ...values);
   const xStep = (width - padding.left - padding.right) / Math.max(1, rows.length - 1);
   const y = (value) => height - padding.bottom - (value / maxValue) * (height - padding.top - padding.bottom);
   const x = (index) => padding.left + index * xStep;
-  const grossPoints = rows.map((row, index) => `${x(index)},${y(row.grossEarnings || row.netSalary || row.amount || 0)}`).join(" ");
-  const netPoints = rows.map((row, index) => `${x(index)},${y(row.netSalary || row.amount || 0)}`).join(" ");
+
+  // Modern company color list (theme variable fallbacks + high contrast trendy colors)
+  const COMPANY_COLORS = [
+    "var(--brand)",
+    "var(--accent)",
+    "var(--accent-2)",
+    "var(--good)",
+    "var(--danger)",
+    "#8b5cf6", // Purple
+    "#ec4899", // Pink
+    "#06b6d4"  // Cyan
+  ];
+
+  // Map organizations to colors
+  const orgs = [...new Set(rows.map((row) => row.source || row.organization || "Salary"))];
+  const companyColorMap = {};
+  orgs.forEach((org, idx) => {
+    companyColorMap[org] = COMPANY_COLORS[idx % COMPANY_COLORS.length];
+  });
+
+  // Build grid lines
+  const gridLines = [0, 0.25, 0.5, 0.75, 1]
+    .map((tick) => {
+      const yy = padding.top + tick * (height - padding.top - padding.bottom);
+      const value = maxValue * (1 - tick);
+      return `<line x1="${padding.left}" y1="${yy}" x2="${width - padding.right}" y2="${yy}" stroke="${lineColor}" />
+        <text x="10" y="${yy + 4}" fill="${mutedColor}" font-size="12">${compactINR(value)}</text>`;
+    })
+    .join("");
+
+  // Build line segments for net and gross salary
+  let chartLines = "";
+  let transitions = "";
+
+  for (let i = 1; i < rows.length; i++) {
+    const prev = rows[i - 1];
+    const curr = rows[i];
+    const prevOrg = prev.source || prev.organization || "Salary";
+    const currOrg = curr.source || curr.organization || "Salary";
+    const color = companyColorMap[currOrg];
+
+    const x1 = x(i - 1);
+    const x2 = x(i);
+    const yNet1 = y(prev.netSalary || prev.amount || 0);
+    const yNet2 = y(curr.netSalary || curr.amount || 0);
+    const yGross1 = y(prev.grossEarnings || prev.netSalary || prev.amount || 0);
+    const yGross2 = y(curr.grossEarnings || curr.netSalary || curr.amount || 0);
+
+    // Draw net segment
+    chartLines += `<line x1="${x1}" y1="${yNet1}" x2="${x2}" y2="${yNet2}" stroke="${color}" stroke-width="4" stroke-linecap="round" />`;
+
+    // Draw gross segment (dashed/opacity)
+    chartLines += `<line x1="${x1}" y1="${yGross1}" x2="${x2}" y2="${yGross2}" stroke="${color}" stroke-width="2.5" stroke-dasharray="3 3" stroke-linecap="round" opacity="0.6" />`;
+
+    // Check transition
+    if (prevOrg !== currOrg) {
+      transitions += `
+        <line x1="${x2}" y1="${padding.top}" x2="${x2}" y2="${height - padding.bottom}" stroke="${lineColor}" stroke-dasharray="2 4" stroke-width="1.5"></line>
+      `;
+    }
+  }
+
+  // Fallback for single data point
+  if (rows.length === 1) {
+    const single = rows[0];
+    const org = single.source || single.organization || "Salary";
+    const color = companyColorMap[org];
+    const xVal = padding.left + (width - padding.left - padding.right) / 2;
+    chartLines += `
+      <circle cx="${xVal}" cy="${y(single.netSalary || single.amount || 0)}" r="6" fill="${color}"></circle>
+      <circle cx="${xVal}" cy="${y(single.grossEarnings || single.netSalary || single.amount || 0)}" r="4" fill="${color}" opacity="0.6"></circle>
+    `;
+  }
+
+  // Add dots at intervals
+  const dots = rows
+    .filter((_, index) => index === 0 || index === rows.length - 1 || index % 6 === 0)
+    .map((row) => {
+      const index = rows.indexOf(row);
+      const org = row.source || row.organization || "Salary";
+      const color = companyColorMap[org];
+      return `<circle cx="${x(index)}" cy="${y(row.netSalary || row.amount || 0)}" r="5.5" fill="${color}" stroke="${panelColor}" stroke-width="2"></circle>`;
+    })
+    .join("");
+
+  // Build year vertical grid lines
   const yearLabels = rows
     .map((row, index) => ({ date: new Date(row.date), index }))
-    .filter((item, index, list) => index === 0 || item.date.getFullYear() !== list[index - 1].date.getFullYear());
+    .filter((item, index, list) => index === 0 || item.date.getFullYear() !== list[index - 1].date.getFullYear())
+    .map(
+      ({ date, index }) => `
+        <line x1="${x(index)}" y1="${padding.top}" x2="${x(index)}" y2="${height - padding.bottom}" stroke="${lineColor}" stroke-dasharray="4 6"></line>
+        <text x="${x(index) + 4}" y="${height - 14}" fill="${mutedColor}" font-size="12">${date.getFullYear()}</text>
+      `
+    )
+    .join("");
+
+  // Build Legend
+  let legendHtml = `
+    <g transform="translate(72, 20)">
+      <line x1="0" y1="0" x2="16" y2="0" stroke="${inkColor}" stroke-width="3"></line>
+      <text x="22" y="4" fill="${inkColor}" font-size="12" font-weight="700">Net</text>
+      <line x1="60" y1="0" x2="76" y2="0" stroke="${inkColor}" stroke-width="2" stroke-dasharray="2 2" opacity="0.7"></line>
+      <text x="82" y="4" fill="${inkColor}" font-size="12" font-weight="700">Gross</text>
+    </g>
+  `;
+
+  // Draw company legend items
+  let legendX = 240;
+  const legendItems = orgs
+    .map((org) => {
+      const color = companyColorMap[org];
+      const item = `
+        <g transform="translate(${legendX}, 20)">
+          <circle cx="0" cy="-1" r="5.5" fill="${color}"></circle>
+          <text x="10" y="3" fill="${inkColor}" font-size="12" font-weight="700">${escapeHTML(org)}</text>
+        </g>
+      `;
+      legendX += org.length * 6.5 + 32;
+      return item;
+    })
+    .join("");
 
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.innerHTML = `
     <rect width="${width}" height="${height}" rx="8" fill="${panelColor}"></rect>
-    ${[0, 0.25, 0.5, 0.75, 1]
-      .map((tick) => {
-        const yy = padding.top + tick * (height - padding.top - padding.bottom);
-        const value = maxValue * (1 - tick);
-        return `<line x1="${padding.left}" y1="${yy}" x2="${width - padding.right}" y2="${yy}" stroke="${lineColor}" />
-          <text x="10" y="${yy + 4}" fill="${mutedColor}" font-size="12">${compactINR(value)}</text>`;
-      })
-      .join("")}
-    <polyline points="${grossPoints}" fill="none" stroke="${accentColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
-    <polyline points="${netPoints}" fill="none" stroke="${brandColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-    ${rows
-      .filter((_, index) => index === 0 || index === rows.length - 1 || index % 6 === 0)
-      .map((row) => {
-        const index = rows.indexOf(row);
-        return `<circle cx="${x(index)}" cy="${y(row.netSalary || row.amount || 0)}" r="3.5" fill="${brandColor}"></circle>`;
-      })
-      .join("")}
-    ${yearLabels
-      .map(
-        ({ date, index }) => `
-          <line x1="${x(index)}" y1="${padding.top}" x2="${x(index)}" y2="${height - padding.bottom}" stroke="${lineColor}" stroke-dasharray="4 6"></line>
-          <text x="${x(index) + 4}" y="${height - 14}" fill="${mutedColor}" font-size="12">${date.getFullYear()}</text>
-        `
-      )
-      .join("")}
-    <g transform="translate(${width - 238}, 20)">
-      <circle cx="0" cy="0" r="5" fill="${brandColor}"></circle>
-      <text x="10" y="4" fill="${inkColor}" font-size="13" font-weight="700">Net in-hand</text>
-      <circle cx="116" cy="0" r="5" fill="${accentColor}"></circle>
-      <text x="126" y="4" fill="${inkColor}" font-size="13" font-weight="700">Gross</text>
-    </g>
+    ${gridLines}
+    ${transitions}
+    ${yearLabels}
+    ${chartLines}
+    ${dots}
+    ${legendHtml}
+    ${legendItems}
   `;
 }
 
@@ -1574,9 +1699,34 @@ function renderBudgetPulse() {
 
 function renderIncomeTable() {
   const table = document.getElementById("incomeTable");
+  const salaryRows = [...state.income].filter(isSalary);
+
+  // Calculate metrics
+  let totalNet = 0;
+  let totalTds = 0;
+  let monthsCount = salaryRows.length;
+
+  salaryRows.forEach((row) => {
+    totalNet += Number(row.netSalary || row.amount || 0);
+    totalTds += Number(row.taxTds || 0);
+  });
+
+  const avgNet = monthsCount > 0 ? (totalNet / monthsCount) : 0;
+
+  // Set values in DOM
+  const earnedEl = document.getElementById("salaryTotalEarned");
+  const tdsEl = document.getElementById("salaryTotalTDS");
+  const monthsEl = document.getElementById("salaryMonthsTracked");
+  const avgEl = document.getElementById("salaryAvgInHand");
+
+  if (earnedEl) earnedEl.textContent = formatINR(totalNet);
+  if (tdsEl) tdsEl.textContent = formatINR(totalTds);
+  if (monthsEl) monthsEl.textContent = String(monthsCount);
+  if (avgEl) avgEl.textContent = formatINR(avgNet);
+
   renderRows(
     table,
-    [...state.income].filter(isSalary).sort(sortByDateDesc).slice(0, 160),
+    [...salaryRows].sort(sortByDateDesc).slice(0, 160),
     (item) => [
       formatMonth(item.date),
       item.person,
@@ -1705,9 +1855,16 @@ function renderExpenseExplorer(refreshMonthList = true) {
   renderRows(
     table,
     pageRows,
-    (item) => [formatDate(item.date), item.category, item.paidBy, formatINR(item.amount), item.note],
+    (item) => [
+      formatDate(item.date),
+      item.category,
+      item.paidBy,
+      formatINR(item.amount),
+      item.note,
+      `<button class="delete-expense-btn" data-id="${item.id}" title="Delete entry">🗑️</button>`
+    ],
     "No expenses for this month.",
-    5
+    6
   );
 
   if (pageInfo) {
@@ -2155,7 +2312,13 @@ function renderRows(table, rows, mapper, emptyText = "No data yet. Upload a shee
     const tr = document.createElement("tr");
     mapper(row).forEach((cell) => {
       const td = document.createElement("td");
-      td.textContent = cell || "-";
+      if (cell instanceof HTMLElement) {
+        td.appendChild(cell);
+      } else if (typeof cell === "string" && cell.trim().startsWith("<") && cell.trim().endsWith(">")) {
+        td.innerHTML = cell;
+      } else {
+        td.textContent = cell || "-";
+      }
       tr.append(td);
     });
     table.append(tr);

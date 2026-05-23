@@ -252,6 +252,28 @@
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="income">Add income</button>
                 </div>
               </div>
+              <div class="metric-grid" id="salarySummaryMetrics" style="margin-bottom: 20px;">
+                <div class="metric-card">
+                  <div class="label">Total Salary Earned</div>
+                  <div class="value" id="salaryTotalEarned">-</div>
+                  <div class="hint">Net earnings (all persons)</div>
+                </div>
+                <div class="metric-card">
+                  <div class="label">Total TDS Paid</div>
+                  <div class="value" id="salaryTotalTDS">-</div>
+                  <div class="hint">Income tax deducted till date</div>
+                </div>
+                <div class="metric-card">
+                  <div class="label">Months Tracked</div>
+                  <div class="value" id="salaryMonthsTracked">-</div>
+                  <div class="hint">Total pay cycles logged</div>
+                </div>
+                <div class="metric-card">
+                  <div class="label">Avg. In-Hand</div>
+                  <div class="value" id="salaryAvgInHand">-</div>
+                  <div class="hint">Average net salary per month</div>
+                </div>
+              </div>
               <div class="table-wrap">
                 <table>
                   <thead>
@@ -323,6 +345,7 @@
                           <th>Paid by</th>
                           <th>Amount</th>
                           <th>Note</th>
+                          <th>Action</th>
                         </tr>
                       </thead>
                       <tbody id="expenseTable"></tbody>

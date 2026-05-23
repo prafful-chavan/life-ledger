@@ -30,28 +30,28 @@
 
 body[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #101614;
-  --panel: #17211d;
-  --panel-translucent: rgba(23, 33, 29, 0.94);
-  --panel-soft: #22302b;
-  --input-bg: #111a17;
-  --ink: #edf5ef;
-  --muted: #a6b8af;
-  --line: #314139;
-  --brand: #3ab795;
-  --brand-strong: #5bccab;
-  --on-brand: #07120f;
-  --accent: #e1a356;
-  --accent-2: #7fa7e6;
-  --danger: #ff8a8a;
-  --good: #77d7a5;
-  --shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
-  --sidebar-bg: rgba(16, 22, 20, 0.86);
-  --top-glow: rgba(58, 183, 149, 0.1);
-  --empty-bg: rgba(34, 48, 43, 0.72);
-  --modal-backdrop: rgba(0, 0, 0, 0.62);
-  --modal-shadow: 0 30px 90px rgba(0, 0, 0, 0.44);
-  --on-ink: #101614;
+  --bg: #0b1115;
+  --panel: #111a20;
+  --panel-translucent: rgba(17, 26, 32, 0.94);
+  --panel-soft: #1a262e;
+  --input-bg: #090e12;
+  --ink: #f1f5f9;
+  --muted: #94a3b8;
+  --line: #22313b;
+  --brand: #14b8a6;
+  --brand-strong: #2dd4bf;
+  --on-brand: #042f2e;
+  --accent: #f59e0b;
+  --accent-2: #3b82f6;
+  --danger: #f87171;
+  --good: #34d399;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --sidebar-bg: rgba(11, 17, 21, 0.85);
+  --top-glow: rgba(20, 184, 166, 0.08);
+  --empty-bg: rgba(26, 38, 46, 0.6);
+  --modal-backdrop: rgba(4, 7, 9, 0.8);
+  --modal-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
+  --on-ink: #0b1115;
 }
 
 * {
@@ -258,6 +258,32 @@ h3 {
 
 .danger-button {
   color: var(--danger);
+}
+
+.delete-expense-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.delete-expense-btn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.2);
+  transform: scale(1.08);
+}
+
+.delete-expense-btn:active {
+  transform: scale(0.92);
 }
 
 .ghost-button {

@@ -44,6 +44,8 @@
     });
   }
 
+  const BACKUP_LOCAL_KEY = "lifeLedgerVault:backup";
+
   function readLegacyLocalVault() {
     try {
       const raw = localStorage.getItem(LEGACY_LOCAL_KEY);
@@ -55,9 +57,36 @@
 
   window.LifeLedgerVaultStore = {
     async load() {
-      let vault = await idbGet(VAULT_KEY);
-      if (vault) return vault;
+      let vault = null;
+      try {
+        vault = await idbGet(VAULT_KEY);
+      } catch (err) {
+        console.warn("IndexedDB load failed:", err);
+      }
 
+      if (vault) {
+        return vault;
+      }
+
+      // Fallback 1: LocalStorage backup
+      try {
+        const backupRaw = localStorage.getItem(BACKUP_LOCAL_KEY);
+        if (backupRaw) {
+          const backupVault = JSON.parse(backupRaw);
+          if (backupVault) {
+            console.log("IndexedDB empty/evicted. Restored vault from localStorage backup.");
+            // Re-populate IndexedDB in background
+            idbSet(VAULT_KEY, backupVault).catch(err => 
+              console.warn("Failed to restore IndexedDB from backup:", err)
+            );
+            return backupVault;
+          }
+        }
+      } catch (err) {
+        console.warn("LocalStorage backup load failed:", err);
+      }
+
+      // Fallback 2: Legacy local vault
       const legacy = readLegacyLocalVault();
       if (legacy) {
         await this.save(legacy);
@@ -68,7 +97,20 @@
     },
 
     async save(vault) {
+      // Primary write to IndexedDB
       await idbSet(VAULT_KEY, vault);
+
+      // Secondary write/backup to localStorage (as long as it fits)
+      try {
+        if (vault) {
+          localStorage.setItem(BACKUP_LOCAL_KEY, JSON.stringify(vault));
+        } else {
+          localStorage.removeItem(BACKUP_LOCAL_KEY);
+        }
+      } catch (err) {
+        console.warn("Failed to write vault backup to localStorage (likely quota exceeded):", err);
+      }
+
       try {
         localStorage.removeItem(LEGACY_LOCAL_KEY);
       } catch {
@@ -78,8 +120,17 @@
     },
 
     async clear() {
-      await idbSet(VAULT_KEY, null);
-      localStorage.removeItem(LEGACY_LOCAL_KEY);
+      try {
+        await idbSet(VAULT_KEY, null);
+      } catch (err) {
+        console.warn("IndexedDB clear failed:", err);
+      }
+      try {
+        localStorage.removeItem(BACKUP_LOCAL_KEY);
+        localStorage.removeItem(LEGACY_LOCAL_KEY);
+      } catch {
+        /* ignore */
+      }
     },
   };
 })();
