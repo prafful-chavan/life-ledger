@@ -28,6 +28,7 @@ const defaultData = {
   tasks: [],
   studies: [],
   workouts: [],
+  habits: [],
   chat: [],
 };
 
@@ -158,22 +159,25 @@ const demoData = {
       id: "goal-1",
       name: "Emergency fund",
       category: "Finance",
+      owner: "Both",
       target: 900000,
       saved: 420000,
       dueDate: "2026-12-31",
     },
     {
       id: "goal-2",
-      name: "Switch to higher package",
+      name: "Wife tech certifications",
       category: "Career",
-      target: 100,
-      saved: 46,
+      owner: "Wife",
+      target: 50000,
+      saved: 15000,
       dueDate: "2026-09-30",
     },
     {
       id: "goal-3",
       name: "Family trip fund",
       category: "Family",
+      owner: "Both",
       target: 250000,
       saved: 65000,
       dueDate: "2027-03-31",
@@ -185,15 +189,25 @@ const demoData = {
     { id: "task-3", text: "30 minute walk", date: todayISO(), done: true, area: "Health" },
   ],
   studies: [
-    { id: "study-1", topic: "DSA patterns", status: "In progress", confidence: 58, hours: 42, targetHours: 90 },
-    { id: "study-2", topic: "System design", status: "In progress", confidence: 38, hours: 18, targetHours: 60 },
-    { id: "study-3", topic: "Behavioral stories", status: "Not started", confidence: 20, hours: 4, targetHours: 20 },
-    { id: "study-4", topic: "Resume projects", status: "In progress", confidence: 65, hours: 16, targetHours: 24 },
+    { id: "study-1", topic: "Kubernetes (K8s) Orchestration", status: "In progress", confidence: 75, hours: 30, targetHours: 50, owner: "Me" },
+    { id: "study-2", topic: "Terraform & Infrastructure as Code", status: "In progress", confidence: 60, hours: 15, targetHours: 30, owner: "Me" },
+    { id: "study-3", topic: "MLOps Pipelines (MLflow & DVC)", status: "Planned", confidence: 20, hours: 2, targetHours: 25, owner: "Me" },
+    { id: "study-4", topic: "GitHub Actions & CI/CD automation", status: "Completed", confidence: 90, hours: 20, targetHours: 20, owner: "Me" },
+    { id: "study-5", topic: "Apache Spark & PySpark Big Data", status: "In progress", confidence: 65, hours: 25, targetHours: 40, owner: "Wife" },
+    { id: "study-6", topic: "Airflow Workflow Orchestration", status: "In progress", confidence: 50, hours: 12, targetHours: 24, owner: "Wife" },
+    { id: "study-7", topic: "ETL Pipelines & DBT (Data Build Tool)", status: "Planned", confidence: 10, hours: 0, targetHours: 20, owner: "Wife" },
+    { id: "study-8", topic: "SQL Optimization & Snowflake / BigQuery", status: "Completed", confidence: 85, hours: 15, targetHours: 15, owner: "Wife" },
   ],
   workouts: [
     { id: "work-1", date: todayISO(), type: "Walk", minutes: 30, intensity: "Easy" },
     { id: "work-2", date: daysAgoISO(1), type: "Strength", minutes: 45, intensity: "Medium" },
     { id: "work-3", date: daysAgoISO(3), type: "Yoga", minutes: 25, intensity: "Easy" },
+  ],
+  habits: [
+    { id: "habit-1", name: "Read 10 pages", frequency: "Daily", owner: "Me", streak: 5 },
+    { id: "habit-2", name: "Morning 30m Walk", frequency: "Daily", owner: "Wife", streak: 8 },
+    { id: "habit-3", name: "Code & Track SRE roadmap", frequency: "Daily", owner: "Me", streak: 12 },
+    { id: "habit-4", name: "ETL pipeline review", frequency: "Weekly", owner: "Wife", streak: 3 },
   ],
   chat: [],
 };
@@ -243,6 +257,7 @@ const fieldsByKind = {
   goal: [
     ["name", "Goal name", "text"],
     ["category", "Category", "text"],
+    ["owner", "Owner", "select"], // Me, Wife, Both
     ["target", "Target amount or score", "number"],
     ["saved", "Current progress", "number"],
     ["dueDate", "Due date", "date"],
@@ -255,7 +270,8 @@ const fieldsByKind = {
   ],
   study: [
     ["topic", "Topic", "text"],
-    ["status", "Status", "text"],
+    ["status", "Status", "select"], // Planned, In progress, Completed
+    ["owner", "Engineer", "select"], // Me (SRE/DevOps), Wife (ETL/Data Eng)
     ["confidence", "Confidence %", "number"],
     ["hours", "Hours done", "number"],
     ["targetHours", "Target hours", "number"],
@@ -265,6 +281,12 @@ const fieldsByKind = {
     ["type", "Workout type", "text"],
     ["minutes", "Minutes", "number"],
     ["intensity", "Intensity", "text"],
+  ],
+  habit: [
+    ["name", "Habit name", "text"],
+    ["frequency", "Frequency", "select"], // Daily, Weekly
+    ["owner", "Person", "select"], // Me, Wife, Both
+    ["streak", "Starting streak", "number"],
   ],
   mutualFund: [
     ["owner", "Owner (Me / Wife)", "select"],
@@ -361,6 +383,7 @@ const resetScopes = {
   goals: { label: "future goals", keys: ["goals"] },
   tasks: { label: "daily to-do", keys: ["tasks"] },
   workouts: { label: "exercise logs", keys: ["workouts"] },
+  habits: { label: "habit tracker", keys: ["habits"] },
   chat: { label: "assistant chat", keys: ["chat"] },
   all: { label: "everything", keys: Object.keys(defaultData) },
 };
@@ -410,6 +433,7 @@ function bootstrapApp(initialState) {
   bindNavigation();
   bindModals();
   bindFinanceTabs();
+  bindCareerTabs();
   bindImports();
   bindReset();
   bindChat();
@@ -523,10 +547,11 @@ function normalizeData(data) {
     usstocks: ensureIds(data.usstocks || [], "uss"),
     banksaving: ensureIds(data.banksaving || [], "sav"),
     others: ensureIds(data.others || [], "oth"),
-    goals: ensureIds(data.goals || [], "goal"),
+    goals: ensureIds(data.goals || [], "goal").map(g => ({ ...g, owner: g.owner || "Both" })),
     tasks: ensureIds(data.tasks || [], "task"),
-    studies: ensureIds(data.studies || [], "study"),
+    studies: ensureIds(data.studies || [], "study").map(s => ({ ...s, owner: s.owner || "Me" })),
     workouts: ensureIds(data.workouts || [], "work"),
+    habits: ensureIds(data.habits || [], "habit"),
     chat: data.chat || [],
   };
 }
@@ -670,30 +695,44 @@ function bindFinanceTabs() {
   });
 
   document.addEventListener("click", async (event) => {
-    const editBtn = event.target.closest(".edit-simple-asset-btn");
-    const deleteBtn = event.target.closest(".delete-simple-asset-btn");
+    const editBtn = event.target.closest(".edit-btn");
+    const deleteBtn = event.target.closest(".delete-btn");
     if (editBtn) {
       const id = editBtn.dataset.id;
       const kind = editBtn.dataset.kind;
-      buildQuickAddForm(kind, id);
-      openModal("quickAddModal");
+      if (id && kind) {
+        buildQuickAddForm(kind, id);
+        openModal("quickAddModal");
+      }
     } else if (deleteBtn) {
       const id = deleteBtn.dataset.id;
       const kind = deleteBtn.dataset.kind;
-      if (kind === "liability") {
-        if (id && confirm("Are you sure you want to delete this liability entry?")) {
-          state.liabilities = state.liabilities.filter(item => item.id !== id);
+      if (id && kind) {
+        const stateKeys = {
+          stock: "stocks",
+          fd: "fd",
+          epf: "epf",
+          bonds: "bonds",
+          ppf: "ppf",
+          gold: "gold",
+          silver: "silver",
+          crypto: "crypto",
+          usstocks: "usstocks",
+          banksaving: "banksaving",
+          others: "others",
+          liability: "liabilities",
+          goal: "goals",
+          task: "tasks",
+          workout: "workouts",
+          study: "studies",
+          habit: "habits"
+        };
+        const stateKey = stateKeys[kind];
+        if (stateKey && confirm(`Are you sure you want to delete this ${kind} entry?`)) {
+          state[stateKey] = (state[stateKey] || []).filter(item => item.id !== id);
           await saveData(true);
           renderAll();
-          toast("Liability entry deleted.");
-        }
-      } else {
-        const config = SIMPLE_ASSET_TABS.find(c => c.kind === kind);
-        if (id && config && confirm(`Are you sure you want to delete this ${config.label} entry?`)) {
-          state[config.stateKey] = (state[config.stateKey] || []).filter(item => item.id !== id);
-          await saveData(true);
-          renderAll();
-          toast(`${config.label} entry deleted.`);
+          toast(`${kind.charAt(0).toUpperCase() + kind.slice(1)} entry deleted.`);
         }
       }
     }
@@ -771,6 +810,26 @@ function bindFinanceTabs() {
     if (trendSectionDesc) trendSectionDesc.textContent = "Detailed breakdown of all-time expenses, biggest purchases, and budget optimizations.";
     if (latestSalaryBadge) latestSalaryBadge.style.display = "none";
     renderExpensesAnalysis();
+  });
+}
+
+function bindCareerTabs() {
+  document.querySelectorAll("[data-career-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeCareerTab = button.dataset.careerTab;
+      document.querySelectorAll("[data-career-tab]").forEach((tab) => tab.classList.remove("active"));
+      button.classList.add("active");
+      document.querySelectorAll(".career-tab").forEach((tab) => tab.classList.remove("active"));
+      document.getElementById(`career-${activeCareerTab}`)?.classList.add("active");
+      renderCareer();
+    });
+  });
+
+  const careerAddBtn = document.getElementById("careerAddBtn");
+  careerAddBtn?.addEventListener("click", () => {
+    const kind = careerAddBtn.dataset.kind || "study";
+    buildQuickAddForm(kind);
+    openModal("quickAddModal");
   });
 }
 
@@ -998,6 +1057,7 @@ function buildQuickAddForm(kind, editId = null) {
     task: editId ? "Edit task" : "Add task",
     study: editId ? "Edit study topic" : "Add study topic",
     workout: editId ? "Edit workout" : "Log workout",
+    habit: editId ? "Edit habit" : "Add habit",
   };
 
   title.textContent = labels[kind] || (editId ? "Edit entry" : "Add entry");
@@ -1031,6 +1091,7 @@ function buildQuickAddForm(kind, editId = null) {
     else if (kind === "task") collection = state.tasks;
     else if (kind === "study") collection = state.studies;
     else if (kind === "workout") collection = state.workouts;
+    else if (kind === "habit") collection = state.habits;
 
     if (collection) {
       existingEntry = collection.find(item => item.id === editId);
@@ -1048,12 +1109,16 @@ function buildQuickAddForm(kind, editId = null) {
       input.name = name;
       let options = [];
       if (name === "person" || name === "owner" || name === "paidBy") {
-        const needsBoth = (kind === "asset" || kind === "liability" || kind === "expense" || [
+        const needsBoth = (kind === "asset" || kind === "liability" || kind === "expense" || kind === "goal" || kind === "habit" || [
           "stock", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"
         ].includes(kind));
         options = needsBoth ? ["Me", "Wife", "Both"] : ["Me", "Wife"];
       } else if (name === "transactionType") {
         options = ["PURCHASE", "REDEMPTION"];
+      } else if (name === "status") {
+        options = ["Planned", "In progress", "Completed"];
+      } else if (name === "frequency") {
+        options = ["Daily", "Weekly"];
       } else {
         options = ["Me", "Wife", "Both"];
       }
@@ -1125,7 +1190,7 @@ function buildQuickAddForm(kind, editId = null) {
     if (kind === "income") {
       entry.person = normalizeOwner(entry.person);
     }
-    if (kind === "asset" || kind === "liability") {
+    if (kind === "asset" || kind === "liability" || kind === "goal" || kind === "study" || kind === "habit") {
       entry.owner = normalizeOwner(entry.owner);
     }
 
@@ -1144,6 +1209,7 @@ function buildQuickAddForm(kind, editId = null) {
       else if (kind === "task") state.tasks.push(entry);
       else if (kind === "study") state.studies.push(entry);
       else if (kind === "workout") state.workouts.push(entry);
+      else if (kind === "habit") state.habits.push(entry);
       else {
         const simpleAssetKeys = {
           stock: "stocks",
@@ -1239,6 +1305,7 @@ function emptyImportBuckets() {
     tasks: [],
     studies: [],
     workouts: [],
+    habits: [],
     chat: [],
   };
 }
@@ -1578,6 +1645,8 @@ function renderAll() {
   renderFinance();
   renderCareer();
   renderGoals();
+  renderTodoView();
+  renderDashboardAnalysis();
   renderChat();
 }
 
@@ -1890,6 +1959,104 @@ function renderNetWorth() {
     `;
     container.append(row);
   });
+}
+
+function renderDashboardAnalysis() {
+  // 1. Goal progression
+  const goalContainer = document.getElementById("dashboardGoalAnalysis");
+  if (goalContainer) {
+    goalContainer.innerHTML = "";
+    if (state.goals.length === 0) {
+      goalContainer.innerHTML = `<div class="empty-state">No goals set.</div>`;
+    } else {
+      state.goals.slice(0, 3).forEach((goal) => {
+        const progress = clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
+        const row = document.createElement("div");
+        row.style.marginBottom = "10px";
+        row.innerHTML = `
+          <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+            <span><strong>${escapeHTML(goal.name)}</strong> (${escapeHTML(goal.owner)})</span>
+            <span>${formatINR(goal.saved)} / ${formatINR(goal.target)}</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${progress}%"></div></div>
+        `;
+        goalContainer.append(row);
+      });
+    }
+  }
+
+  // 2. Habit streaks
+  const habitContainer = document.getElementById("dashboardHabitAnalysis");
+  if (habitContainer) {
+    habitContainer.innerHTML = "";
+    if (state.habits.length === 0) {
+      habitContainer.innerHTML = `<div class="empty-state">No habits tracked yet.</div>`;
+    } else {
+      state.habits.slice(0, 3).forEach((habit) => {
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.justifyContent = "space-between";
+        row.style.alignItems = "center";
+        row.style.marginBottom = "8px";
+        row.innerHTML = `
+          <div style="font-size:12px;">
+            <strong>${escapeHTML(habit.name)}</strong>
+            <div class="stack-meta">${escapeHTML(habit.frequency)} · ${escapeHTML(habit.owner)}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; font-weight:700; color:#f59e0b;">🔥 ${habit.streak || 0}</span>
+            <button class="log-habit-btn" type="button" style="padding:2px 8px; font-size:11px;" data-id="${habit.id}">+1</button>
+          </div>
+        `;
+        row.querySelector(".log-habit-btn").addEventListener("click", async () => {
+          habit.streak = (toNumber(habit.streak) || 0) + 1;
+          await saveData(true);
+          renderAll();
+          toast(`Streaked! ${habit.name} streak is now ${habit.streak}. 🔥`);
+        });
+        habitContainer.append(row);
+      });
+    }
+  }
+
+  // 3. Exercise consistency
+  const workoutContainer = document.getElementById("dashboardWorkoutAnalysis");
+  if (workoutContainer) {
+    workoutContainer.innerHTML = "";
+    const thisMonthWorkouts = state.workouts.filter(w => isTargetDashboardMonth(w.date));
+    const totalMinutes = thisMonthWorkouts.reduce((sum, w) => sum + (toNumber(w.minutes) || 0), 0);
+    const totalSessions = thisMonthWorkouts.length;
+
+    const summary = document.createElement("div");
+    summary.style.marginBottom = "12px";
+    summary.innerHTML = `
+      <div style="font-size:13px; margin-bottom:4px;"><strong>This Month:</strong> ${totalMinutes} mins over ${totalSessions} sessions</div>
+    `;
+    workoutContainer.append(summary);
+
+    if (state.workouts.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "No exercise logged yet.";
+      workoutContainer.append(empty);
+    } else {
+      state.workouts.slice(0, 2).forEach((w) => {
+        const row = document.createElement("div");
+        row.className = "stack-row";
+        row.style.padding = "6px 8px";
+        row.style.fontSize = "12px";
+        row.style.marginBottom = "4px";
+        row.innerHTML = `
+          <div style="display:flex; justify-content:space-between;">
+            <span><strong>${escapeHTML(w.type)}</strong> (${escapeHTML(w.intensity)})</span>
+            <span>${w.minutes} mins</span>
+          </div>
+          <div class="stack-meta" style="font-size:10px;">${formatDate(w.date)}</div>
+        `;
+        workoutContainer.append(row);
+      });
+    }
+  }
 }
 
 function renderTodayFocus() {
@@ -2546,85 +2713,204 @@ function renderLiabilities() {
   );
 }
 
-function renderCareer() {
-  const board = document.getElementById("studyBoard");
-  board.innerHTML = "";
+let activeCareerTab = "devops";
 
-  if (state.studies.length === 0) {
-    board.innerHTML = `<div class="empty-state">Add DSA, system design, projects, behavioral stories, and other study topics.</div>`;
-  } else {
-    state.studies
-      .slice()
-      .sort((a, b) => (a.confidence || 0) - (b.confidence || 0))
-      .forEach((topic) => {
+function renderCareer() {
+  const addBtn = document.getElementById("careerAddBtn");
+  if (addBtn) {
+    if (activeCareerTab === "habits") {
+      addBtn.textContent = "Add habit";
+      addBtn.dataset.kind = "habit";
+    } else {
+      addBtn.textContent = "Add topic";
+      addBtn.dataset.kind = "study";
+    }
+  }
+
+  // Helper to render roadmap board for study topics
+  const renderRoadmap = (boardId, readinessId, owner) => {
+    const board = document.getElementById(boardId);
+    if (!board) return;
+    board.innerHTML = "";
+
+    const list = state.studies
+      .filter((topic) => (topic.owner || "Me") === owner)
+      .sort((a, b) => (a.confidence || 0) - (b.confidence || 0));
+
+    if (list.length === 0) {
+      board.innerHTML = `<div class="empty-state">No study topics added yet. Click "Add topic" above.</div>`;
+    } else {
+      list.forEach((topic) => {
         const confidence = clamp(toNumber(topic.confidence), 0, 100);
         const hoursRatio = clamp(((topic.hours || 0) / Math.max(1, topic.targetHours || 20)) * 100, 0, 100);
         const card = document.createElement("article");
         card.className = "topic-card";
         card.innerHTML = `
           <div class="topic-card-top">
-            <div>
-              <h4>${escapeHTML(topic.topic)}</h4>
-              <div class="stack-meta">${escapeHTML(topic.status || "Planned")} • ${topic.hours || 0}/${topic.targetHours || 20}h</div>
+            <div style="flex: 1;">
+              <h4 style="display: flex; align-items: center; justify-content: space-between;">
+                <span>${escapeHTML(topic.topic)}</span>
+                <span class="actions-wrapper" style="margin-left: 12px;">
+                  <button class="action-btn edit-btn" type="button" data-kind="study" data-id="${topic.id}" title="Edit topic">✏️</button>
+                  <button class="action-btn delete-btn" type="button" data-kind="study" data-id="${topic.id}" title="Delete topic">🗑️</button>
+                </span>
+              </h4>
+              <div class="stack-meta" style="margin-top: 4px;">${escapeHTML(topic.status || "Planned")} • ${topic.hours || 0}/${topic.targetHours || 20}h</div>
             </div>
-            <strong>${confidence}%</strong>
+            <strong style="margin-left: 12px;">${confidence}%</strong>
           </div>
           <div class="bar-track"><div class="bar-fill" style="width:${confidence}%"></div></div>
           <div class="bar-track"><div class="bar-fill accent" style="width:${hoursRatio}%"></div></div>
         `;
         board.append(card);
       });
-  }
+    }
 
-  const readiness = calculateReadiness();
-  renderStackList(document.getElementById("readinessList"), readiness, (item) => ({
-    title: item.title,
-    meta: item.meta,
-    value: item.value,
-  }));
+    const readiness = calculateReadiness(owner);
+    renderStackList(document.getElementById(readinessId), readiness, (item) => ({
+      title: item.title,
+      meta: item.meta,
+      value: item.value,
+    }));
+  };
+
+  if (activeCareerTab === "devops") {
+    renderRoadmap("devopsStudyBoard", "readinessList", "Me");
+  } else if (activeCareerTab === "dataeng") {
+    renderRoadmap("dataengStudyBoard", "wifeReadinessList", "Wife");
+  } else if (activeCareerTab === "habits") {
+    const listContainer = document.getElementById("habitsList");
+    if (listContainer) {
+      listContainer.innerHTML = "";
+      if (state.habits.length === 0) {
+        listContainer.innerHTML = `<div class="empty-state">No habits tracked yet. Click "Add habit" above.</div>`;
+      } else {
+        state.habits.forEach((habit) => {
+          const row = document.createElement("div");
+          row.className = "stack-row";
+          row.style.display = "flex";
+          row.style.justifyContent = "space-between";
+          row.style.alignItems = "center";
+          row.innerHTML = `
+            <div>
+              <div class="stack-title">${escapeHTML(habit.name)}</div>
+              <div class="stack-meta">${escapeHTML(habit.frequency || "Daily")} • ${escapeHTML(habit.owner || "Both")}</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-weight: 700; color: #f59e0b;">🔥 ${habit.streak || 0} streak</span>
+              <button class="log-habit-btn" type="button" data-id="${habit.id}">Check in</button>
+              <div class="actions-wrapper">
+                <button class="action-btn edit-btn" type="button" data-kind="habit" data-id="${habit.id}" title="Edit habit">✏️</button>
+                <button class="action-btn delete-btn" type="button" data-kind="habit" data-id="${habit.id}" title="Delete habit">🗑️</button>
+              </div>
+            </div>
+          `;
+          row.querySelector(".log-habit-btn").addEventListener("click", async () => {
+            habit.streak = (toNumber(habit.streak) || 0) + 1;
+            await saveData(true);
+            renderCareer();
+            toast(`Streaked! ${habit.name} streak is now ${habit.streak}. 🔥`);
+          });
+          listContainer.append(row);
+        });
+      }
+    }
+  }
 }
 
 function renderGoals() {
-  renderStackList(document.getElementById("goalList"), state.goals, (goal) => {
-    const progress = clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
-    return {
-      title: goal.name,
-      meta: `${goal.category || "Goal"} • ${Math.round(progress)}% • due ${formatDate(goal.dueDate)}`,
-      value: `${formatINR(goal.saved || 0)} / ${formatINR(goal.target || 0)}`,
-      progress,
-    };
-  });
+  const container = document.getElementById("goalList");
+  if (!container) return;
+  container.innerHTML = "";
 
-  const taskContainer = document.getElementById("taskList");
-  taskContainer.innerHTML = "";
-  const tasks = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done)).slice(0, 12);
-  if (tasks.length === 0) {
-    taskContainer.innerHTML = `<div class="empty-state">Add a few daily tasks and this becomes your execution board.</div>`;
-  } else {
-    tasks.forEach((task) => {
-      const row = document.createElement("label");
-      row.className = `task-row ${task.done ? "done" : ""}`;
-      row.innerHTML = `
-        <input type="checkbox" ${task.done ? "checked" : ""} aria-label="Toggle task" />
-        <span>
-          <strong>${escapeHTML(task.text)}</strong>
-          <span class="row-subtext">${escapeHTML(task.area || "Personal")} • ${formatDate(task.date)}</span>
-        </span>
-      `;
-      row.querySelector("input").addEventListener("change", (event) => {
-        task.done = event.target.checked;
-        saveData();
-        renderAll();
-      });
-      taskContainer.append(row);
-    });
+  if (state.goals.length === 0) {
+    container.innerHTML = `<div class="empty-state">No goals set yet. Click "Add goal" above.</div>`;
+    return;
   }
 
-  renderStackList(document.getElementById("workoutList"), [...state.workouts].sort(sortByDateDesc).slice(0, 8), (workout) => ({
-    title: workout.type,
-    meta: `${formatDate(workout.date)} • ${workout.intensity || "Medium"}`,
-    value: `${workout.minutes || 0} min`,
-  }));
+  state.goals.forEach((goal) => {
+    const progress = clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
+    const element = document.createElement("div");
+    element.className = "stack-row";
+    element.innerHTML = `
+      <div style="flex: 1;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="stack-title">${escapeHTML(goal.name)}</div>
+          <div class="actions-wrapper" style="margin-left: auto; margin-right: 12px;">
+            <button class="action-btn edit-btn" type="button" data-kind="goal" data-id="${goal.id}" title="Edit goal">✏️</button>
+            <button class="action-btn delete-btn" type="button" data-kind="goal" data-id="${goal.id}" title="Delete goal">🗑️</button>
+          </div>
+          <div class="stack-value">${formatINR(goal.saved || 0)} / ${formatINR(goal.target || 0)}</div>
+        </div>
+        <div class="stack-meta" style="margin-top: 4px;">${escapeHTML(goal.category || "Goal")} • ${goal.owner || "Both"} • due ${formatDate(goal.dueDate)}</div>
+        <div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:${progress}%"></div></div>
+      </div>
+    `;
+    container.append(element);
+  });
+}
+
+function renderTodoView() {
+  const taskContainer = document.getElementById("taskList");
+  if (taskContainer) {
+    taskContainer.innerHTML = "";
+    const tasks = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done)).slice(0, 15);
+    if (tasks.length === 0) {
+      taskContainer.innerHTML = `<div class="empty-state">Add a few daily tasks.</div>`;
+    } else {
+      tasks.forEach((task) => {
+        const row = document.createElement("label");
+        row.className = `task-row ${task.done ? "done" : ""}`;
+        row.innerHTML = `
+          <input type="checkbox" ${task.done ? "checked" : ""} aria-label="Toggle task" />
+          <span>
+            <strong>${escapeHTML(task.text)}</strong>
+            <span class="row-subtext">${escapeHTML(task.area || "Personal")} • ${formatDate(task.date)}</span>
+          </span>
+          <div class="actions-wrapper" style="margin-left: auto; display: flex; gap: 8px;">
+            <button class="action-btn edit-btn" type="button" data-kind="task" data-id="${task.id}" title="Edit task">✏️</button>
+            <button class="action-btn delete-btn" type="button" data-kind="task" data-id="${task.id}" title="Delete task">🗑️</button>
+          </div>
+        `;
+        row.querySelector("input").addEventListener("change", async (event) => {
+          task.done = event.target.checked;
+          await saveData();
+          renderAll();
+        });
+        taskContainer.append(row);
+      });
+    }
+  }
+
+  const workoutContainer = document.getElementById("workoutList");
+  if (workoutContainer) {
+    workoutContainer.innerHTML = "";
+    const workouts = [...state.workouts].sort(sortByDateDesc).slice(0, 10);
+    if (workouts.length === 0) {
+      workoutContainer.innerHTML = `<div class="empty-state">No workouts logged yet.</div>`;
+    } else {
+      workouts.forEach((workout) => {
+        const element = document.createElement("div");
+        element.className = "stack-row";
+        element.innerHTML = `
+          <div style="flex: 1; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div class="stack-title">${escapeHTML(workout.type)}</div>
+              <div class="stack-meta">${formatDate(workout.date)} • ${escapeHTML(workout.intensity || "Medium")}</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div class="stack-value">${workout.minutes || 0} min</div>
+              <div class="actions-wrapper">
+                <button class="action-btn edit-btn" type="button" data-kind="workout" data-id="${workout.id}" title="Edit workout">✏️</button>
+                <button class="action-btn delete-btn" type="button" data-kind="workout" data-id="${workout.id}" title="Delete workout">🗑️</button>
+              </div>
+            </div>
+          </div>
+        `;
+        workoutContainer.append(element);
+      });
+    }
+  }
 }
 
 function renderChat() {
@@ -2790,28 +3076,29 @@ function monthlyCashflow() {
   return months;
 }
 
-function calculateReadiness() {
-  const studyAverage = state.studies.length
-    ? Math.round(state.studies.reduce((total, topic) => total + (topic.confidence || 0), 0) / state.studies.length)
+function calculateReadiness(owner = "Me") {
+  const list = state.studies.filter(topic => (topic.owner || "Me") === owner);
+  const studyAverage = list.length
+    ? Math.round(list.reduce((total, topic) => total + (topic.confidence || 0), 0) / list.length)
     : 0;
-  const projectTopic = state.studies.find((topic) => /resume|project/i.test(topic.topic || ""));
-  const dsaTopic = state.studies.find((topic) => /dsa|data|algo/i.test(topic.topic || ""));
-  const systemTopic = state.studies.find((topic) => /system|design/i.test(topic.topic || ""));
+  const projectTopic = list.find((topic) => /resume|project|etl|ware/i.test(topic.topic || ""));
+  const dsaTopic = list.find((topic) => /dsa|data|algo|spark|python/i.test(topic.topic || ""));
+  const systemTopic = list.find((topic) => /system|design|airflow|pipeline/i.test(topic.topic || ""));
   return [
     { title: "Overall readiness", meta: "Average confidence across topics", value: `${studyAverage}%` },
     {
-      title: "DSA signal",
-      meta: dsaTopic ? `${dsaTopic.hours || 0}/${dsaTopic.targetHours || 20}h completed` : "Add DSA topic",
+      title: owner === "Me" ? "DSA & Cloud signal" : "Spark & Python signal",
+      meta: dsaTopic ? `${dsaTopic.hours || 0}/${dsaTopic.targetHours || 20}h completed` : "Add core programming topic",
       value: `${dsaTopic?.confidence || 0}%`,
     },
     {
-      title: "System design signal",
-      meta: systemTopic ? `${systemTopic.hours || 0}/${systemTopic.targetHours || 20}h completed` : "Add system design topic",
+      title: owner === "Me" ? "System Design signal" : "ETL & Airflow signal",
+      meta: systemTopic ? `${systemTopic.hours || 0}/${systemTopic.targetHours || 20}h completed` : "Add system/workflow topic",
       value: `${systemTopic?.confidence || 0}%`,
     },
     {
-      title: "Resume/project signal",
-      meta: projectTopic ? projectTopic.status || "In progress" : "Add resume project topic",
+      title: "Projects/Architecture",
+      meta: projectTopic ? projectTopic.status || "In progress" : "Add project topic",
       value: `${projectTopic?.confidence || 0}%`,
     },
   ];
@@ -3149,8 +3436,9 @@ function viewTitle(view) {
     {
       dashboard: "Your growth dashboard",
       finance: "Money, salary, and net worth",
-      career: "Interview preparation and switch plan",
-      goals: "Goals, routines, and health",
+      career: "Career Roadmaps & Habits",
+      goals: "Goals Tracker",
+      todo: "Daily To-Do List & Exercise",
       assistant: "Ask your dashboard",
     }[view] || "Life Ledger"
   );

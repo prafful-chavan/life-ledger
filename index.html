@@ -95,6 +95,10 @@
             <span aria-hidden="true">✓</span>
             <span>Goals</span>
           </button>
+          <button class="nav-item" type="button" data-view="todo">
+            <span aria-hidden="true">📋</span>
+            <span>To-Do List</span>
+          </button>
           <button class="nav-item" type="button" data-view="assistant">
             <span aria-hidden="true">?</span>
             <span>Assistant</span>
@@ -181,6 +185,36 @@
                 </div>
               </div>
               <div class="focus-list" id="todayFocus"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Goal progression</h3>
+                  <p>Aggregate savings towards targets.</p>
+                </div>
+              </div>
+              <div class="focus-list" id="dashboardGoalAnalysis"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Habit streaks</h3>
+                  <p>Consistency tracker.</p>
+                </div>
+              </div>
+              <div class="focus-list" id="dashboardHabitAnalysis"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Exercise consistency</h3>
+                  <p>Weekly exercise duration (min).</p>
+                </div>
+              </div>
+              <div class="focus-list" id="dashboardWorkoutAnalysis"></div>
             </section>
           </div>
         </section>
@@ -839,31 +873,73 @@
         <section class="view" id="career" aria-labelledby="careerTitle">
           <div class="section-heading">
             <div>
-              <h2 id="careerTitle">Interview Switchboard</h2>
-              <p>Study topics, confidence, hours, target companies, and switch readiness.</p>
+              <h2 id="careerTitle">Career Roadmap &amp; Habits</h2>
+              <p>Roadmaps for DevOps, SRE, MLOps, ETL, Data Engineering, and habit trackers.</p>
             </div>
-            <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="study">Add topic</button>
+            <button class="primary-button" type="button" id="careerAddBtn" data-open-modal="quickAddModal" data-kind="study">Add topic</button>
           </div>
 
-          <div class="career-grid">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <h3>Prep map</h3>
-                  <p>Progress by topic.</p>
-                </div>
-              </div>
-              <div id="studyBoard" class="topic-board"></div>
-            </section>
+          <div class="tabs" role="tablist" aria-label="Career tabs">
+            <button class="tab-button active" type="button" data-career-tab="devops">DevOps &amp; SRE</button>
+            <button class="tab-button" type="button" data-career-tab="dataeng">Data Engineering</button>
+            <button class="tab-button" type="button" data-career-tab="habits">Habit Tracker</button>
+          </div>
 
+          <div class="career-tab active" id="career-devops">
+            <div class="career-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>DevOps, SRE, MLOps &amp; Cloud</h3>
+                    <p>Prafful's study roadmap.</p>
+                  </div>
+                </div>
+                <div id="devopsStudyBoard" class="topic-board"></div>
+              </section>
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Switch readiness</h3>
+                    <p>Core signals before applying.</p>
+                  </div>
+                </div>
+                <div id="readinessList" class="stack-list"></div>
+              </section>
+            </div>
+          </div>
+
+          <div class="career-tab" id="career-dataeng">
+            <div class="career-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>ETL &amp; Data Engineering</h3>
+                    <p>Archana's study roadmap.</p>
+                  </div>
+                </div>
+                <div id="dataengStudyBoard" class="topic-board"></div>
+              </section>
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Switch readiness</h3>
+                    <p>Core signals before applying.</p>
+                  </div>
+                </div>
+                <div id="wifeReadinessList" class="stack-list"></div>
+              </section>
+            </div>
+          </div>
+
+          <div class="career-tab" id="career-habits">
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h3>Switch readiness</h3>
-                  <p>Signals that matter before applying hard.</p>
+                  <h3>Habit Tracker</h3>
+                  <p>Daily and weekly rituals to build consistency.</p>
                 </div>
               </div>
-              <div id="readinessList" class="stack-list"></div>
+              <div id="habitsList" class="stack-list"></div>
             </section>
           </div>
         </section>
@@ -871,30 +947,42 @@
         <section class="view" id="goals" aria-labelledby="goalsTitle">
           <div class="section-heading">
             <div>
-              <h2 id="goalsTitle">Goals & Routines</h2>
-              <p>Future goals, daily to-dos, workouts, and habits that compound.</p>
+              <h2 id="goalsTitle">Goals Tracker</h2>
+              <p>Future goals, money, career, family, health, and personal milestones for both of us.</p>
             </div>
             <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="goal">Add goal</button>
           </div>
 
-          <div class="goals-layout">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <h3>Future goals</h3>
-                  <p>Money, career, family, health, and personal milestones.</p>
-                </div>
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>Future goals</h3>
+                <p>Track your shared family goals and personal milestones.</p>
               </div>
-              <div id="goalList" class="stack-list"></div>
-            </section>
+            </div>
+            <div id="goalList" class="stack-list"></div>
+          </section>
+        </section>
 
+        <section class="view" id="todo" aria-labelledby="todoTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="todoTitle">To-Do List &amp; Exercise</h2>
+              <p>Manage daily tasks and track workout consistency.</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="workout">Log workout</button>
+              <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="task">Add task</button>
+            </div>
+          </div>
+
+          <div class="split-grid">
             <section class="panel">
               <div class="panel-header">
                 <div>
                   <h3>Daily to-do</h3>
                   <p>Small promises to today.</p>
                 </div>
-                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="task">Add task</button>
               </div>
               <div id="taskList" class="check-list"></div>
             </section>
@@ -905,7 +993,6 @@
                   <h3>Exercise</h3>
                   <p>Sessions and consistency.</p>
                 </div>
-                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="workout">Log workout</button>
               </div>
               <div id="workoutList" class="stack-list"></div>
             </section>
