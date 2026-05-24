@@ -2442,7 +2442,15 @@ function renderMutualFundsPanel() {
     .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
 
   const invested = sum(rows, "invested");
-  const current = sum(rows, "currentValue");
+  // Calculate current value from units × latestNav (same as fund summary table)
+  const currentByFund = {};
+  rows.forEach((t) => {
+    const key = t.fundName || "Unknown";
+    if (!currentByFund[key]) currentByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
+    currentByFund[key].units += toNumber(t.units);
+    if (t.latestNav) currentByFund[key].latestNav = toNumber(t.latestNav);
+  });
+  const current = Object.values(currentByFund).reduce((total, f) => total + f.units * f.latestNav, 0);
   const gain = current - invested;
   const roi = invested ? (gain / invested) * 100 : 0;
 
@@ -2665,7 +2673,21 @@ function matchHoldingsOwner(owner, filter) {
 }
 
 function investmentHoldingsTotal() {
-  const mutualFunds = sum(state.mutualFunds, "currentValue");
+  // Calculate MF current value the SAME way as the fund summary:
+  // Group by fund → sum units → multiply by latestNav (or purchaseNav fallback)
+  // This avoids using the stale `currentValue` field that was initialized to `invested` on import.
+  const mfByFund = {};
+  state.mutualFunds.forEach((t) => {
+    const key = t.fundName || "Unknown";
+    if (!mfByFund[key]) mfByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
+    mfByFund[key].units += toNumber(t.units);
+    // Always take the latest NAV from any transaction in this fund
+    if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
+  });
+  const mutualFunds = Object.values(mfByFund).reduce((total, fund) => {
+    return total + fund.units * fund.latestNav;
+  }, 0);
+
   const simpleAssetsTotal = SIMPLE_ASSET_TABS.reduce((total, { stateKey }) => {
     return total + sum(state[stateKey] || [], "value");
   }, 0);
@@ -2971,7 +2993,18 @@ function answerQuestion(question) {
 
   // Investment totals (pulled fresh every time)
   const mfInvested = sum(state.mutualFunds, "invested");
-  const mfCurrent = sum(state.mutualFunds, "currentValue");
+  // Calculate MF current value from units × latestNav (same as fund summary & net worth)
+  const mfCurrentCalc = (() => {
+    const byFund = {};
+    state.mutualFunds.forEach((t) => {
+      const key = t.fundName || "Unknown";
+      if (!byFund[key]) byFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
+      byFund[key].units += toNumber(t.units);
+      if (t.latestNav) byFund[key].latestNav = toNumber(t.latestNav);
+    });
+    return Object.values(byFund).reduce((total, f) => total + f.units * f.latestNav, 0);
+  })();
+  const mfCurrent = mfCurrentCalc;
   const stocksVal = sum(state.stocks, "value");
   const fdVal = sum(state.fd, "value");
   const epfVal = sum(state.epf, "value");
