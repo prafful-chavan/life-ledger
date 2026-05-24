@@ -22,6 +22,8 @@
   --modal-backdrop: rgba(22, 33, 27, 0.42);
   --modal-shadow: 0 30px 90px rgba(0, 0, 0, 0.22);
   --on-ink: #ffffff;
+  --chart-income: #176b5b;
+  --chart-expense: #d8913c;
   --radius: 8px;
   --sidebar-width: 280px;
   font-family:
@@ -52,6 +54,8 @@ body[data-theme="dark"] {
   --modal-backdrop: rgba(9, 9, 11, 0.85);
   --modal-shadow: 0 0 50px rgba(0, 0, 0, 0.6);
   --on-ink: #09090b;
+  --chart-income: #10b981;
+  --chart-expense: #f97316;
 }
 
 body[data-theme="dark"]::before {
@@ -1523,5 +1527,29 @@ body[data-theme="dark"] tbody tr:nth-child(even) td {
 body[data-theme="dark"] tbody tr:hover td {
   background: rgba(255, 255, 255, 0.04) !important;
   color: #ffffff;
+}
+
+/* Dark mode sidebar footer ghost buttons contrast */
+body[data-theme="dark"] .ghost-button {
+  color: #e4e4e7;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+body[data-theme="dark"] .ghost-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+/* Colorized Net Worth progress bars */
+.bar-fill.green {
+  background: #10b981;
+}
+.bar-fill.blue {
+  background: #3b82f6;
+}
+.bar-fill.red {
+  background: #ef4444;
+}
+.bar-fill.purple {
+  background: #8b5cf6;
 }
 

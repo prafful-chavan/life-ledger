@@ -1503,8 +1503,8 @@ function renderCashflowChart() {
   const lineColor = cssVar("--line");
   const mutedColor = cssVar("--muted");
   const inkColor = cssVar("--ink");
-  const brandColor = cssVar("--brand");
-  const accentColor = cssVar("--accent");
+  const incomeColor = cssVar("--chart-income") || cssVar("--brand");
+  const expenseColor = cssVar("--chart-expense") || cssVar("--accent");
   const width = 760;
   const height = 280;
   const padding = { top: 18, right: 18, bottom: 36, left: 64 };
@@ -1526,21 +1526,21 @@ function renderCashflowChart() {
           <text x="10" y="${yy + 4}" fill="${mutedColor}" font-size="12">${compactINR(value)}</text>`;
       })
       .join("")}
-    <polyline points="${expensePoints}" fill="none" stroke="${accentColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-    <polyline points="${incomePoints}" fill="none" stroke="${brandColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    <polyline points="${expensePoints}" fill="none" stroke="${expenseColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    <polyline points="${incomePoints}" fill="none" stroke="${incomeColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
     ${months
       .map(
         (month, index) => `
-          <circle cx="${x(index)}" cy="${y(month.income)}" r="4" fill="${brandColor}"></circle>
-          <circle cx="${x(index)}" cy="${y(month.expenses)}" r="4" fill="${accentColor}"></circle>
+          <circle cx="${x(index)}" cy="${y(month.income)}" r="4" fill="${incomeColor}"></circle>
+          <circle cx="${x(index)}" cy="${y(month.expenses)}" r="4" fill="${expenseColor}"></circle>
           <text x="${x(index)}" y="${height - 12}" text-anchor="middle" fill="${mutedColor}" font-size="12">${month.label}</text>
         `
       )
       .join("")}
     <g transform="translate(${width - 208}, 18)">
-      <circle cx="0" cy="0" r="5" fill="${brandColor}"></circle>
+      <circle cx="0" cy="0" r="5" fill="${incomeColor}"></circle>
       <text x="10" y="4" fill="${inkColor}" font-size="13" font-weight="700">Income</text>
-      <circle cx="90" cy="0" r="5" fill="${accentColor}"></circle>
+      <circle cx="90" cy="0" r="5" fill="${expenseColor}"></circle>
       <text x="100" y="4" fill="${inkColor}" font-size="13" font-weight="700">Expenses</text>
     </g>
   `;
@@ -1740,10 +1740,10 @@ function renderNetWorth() {
   const maxValue = Math.max(assets, holdings, liabilities, Math.abs(netWorth), 1);
   container.innerHTML = "";
   [
-    ["Assets (other)", assets, "bar-fill"],
+    ["Assets (other)", assets, "bar-fill green"],
     ["MF + Stocks", holdings, "bar-fill blue"],
-    ["Liabilities", liabilities, "bar-fill accent"],
-    ["Net worth", netWorth, "bar-fill"],
+    ["Liabilities", liabilities, "bar-fill red"],
+    ["Net worth", netWorth, "bar-fill purple"],
   ].forEach(([label, value, klass]) => {
     const row = document.createElement("div");
     row.className = "bar-row";
