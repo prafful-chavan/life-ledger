@@ -196,6 +196,8 @@ let activeMfView = "holdings";
 let activeExpenseMonth = "";
 let activeExpensePage = 0;
 let expenseMonthIndexCache = null;
+let activeExpenseOwner = "Both";
+let activeDashboardMonth = "";
 let quickAddKind = "expense";
 
 const assistantWelcome =
@@ -204,7 +206,7 @@ const assistantWelcome =
 const fieldsByKind = {
   income: [
     ["date", "Date", "date"],
-    ["person", "Person", "text"],
+    ["person", "Person", "select"],
     ["source", "Source / company", "text"],
     ["amount", "Amount", "number"],
     ["type", "Type", "text"],
@@ -212,20 +214,20 @@ const fieldsByKind = {
   expense: [
     ["date", "Date", "date"],
     ["category", "Category", "text"],
-    ["paidBy", "Paid by", "text"],
+    ["paidBy", "Paid by", "select"],
     ["amount", "Amount", "number"],
     ["note", "Note", "textarea"],
   ],
   asset: [
     ["name", "Asset name", "text"],
     ["category", "Category", "text"],
-    ["owner", "Owner", "text"],
+    ["owner", "Owner", "select"],
     ["value", "Current value", "number"],
   ],
   liability: [
     ["name", "Liability name", "text"],
     ["category", "Category", "text"],
-    ["owner", "Owner", "text"],
+    ["owner", "Owner", "select"],
     ["value", "Outstanding value", "number"],
   ],
   goal: [
@@ -255,9 +257,9 @@ const fieldsByKind = {
     ["intensity", "Intensity", "text"],
   ],
   mutualFund: [
-    ["owner", "Owner (Me / Wife)", "text"],
+    ["owner", "Owner (Me / Wife)", "select"],
     ["fundName", "Fund name", "text"],
-    ["transactionType", "Transaction type (PURCHASE / REDEMPTION)", "text"],
+    ["transactionType", "Transaction type (PURCHASE / REDEMPTION)", "select"],
     ["units", "Units", "number"],
     ["nav", "Purchase NAV", "number"],
     ["invested", "Amount invested", "number"],
@@ -267,7 +269,7 @@ const fieldsByKind = {
     ["notes", "Notes", "textarea"],
   ],
   stock: [
-    ["owner", "Owner (Me / Wife)", "text"],
+    ["owner", "Owner (Me / Wife)", "select"],
     ["symbol", "Symbol", "text"],
     ["company", "Company name", "text"],
     ["exchange", "Exchange (NSE / BSE)", "text"],
@@ -350,6 +352,7 @@ function bootstrapApp(initialState) {
   bindReset();
   bindChat();
   bindExport();
+  bindDashboard();
   renderAll();
   refreshMutualFundNAVs(false);
 }
@@ -648,6 +651,45 @@ function bindFinanceTabs() {
       renderHoldingsTabs();
     });
   });
+
+  document.querySelectorAll("[data-expense-owner]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeExpenseOwner = button.dataset.expenseOwner;
+      document.querySelectorAll("[data-expense-owner]").forEach((tab) => tab.classList.remove("active"));
+      button.classList.add("active");
+      activeExpensePage = 0;
+      renderExpenseExplorer(false);
+    });
+  });
+
+  const toggleTrendSalary = document.getElementById("toggleTrendSalary");
+  const toggleTrendExpenses = document.getElementById("toggleTrendExpenses");
+  const salaryTrendContent = document.getElementById("salaryTrendContent");
+  const expenseAnalysisArea = document.getElementById("expenseAnalysisArea");
+  const trendSectionTitle = document.getElementById("trendSectionTitle");
+  const trendSectionDesc = document.getElementById("trendSectionDesc");
+  const latestSalaryBadge = document.getElementById("latestSalaryBadge");
+  
+  toggleTrendSalary?.addEventListener("click", () => {
+    toggleTrendSalary.classList.add("active");
+    toggleTrendExpenses?.classList.remove("active");
+    if (salaryTrendContent) salaryTrendContent.style.display = "block";
+    if (expenseAnalysisArea) expenseAnalysisArea.style.display = "none";
+    if (trendSectionTitle) trendSectionTitle.textContent = "Salary progression";
+    if (trendSectionDesc) trendSectionDesc.textContent = "Monthly gross and net in-hand salary across your organizations from 2018 onward.";
+    if (latestSalaryBadge) latestSalaryBadge.style.display = "inline-flex";
+  });
+  
+  toggleTrendExpenses?.addEventListener("click", () => {
+    toggleTrendExpenses.classList.add("active");
+    toggleTrendSalary?.classList.remove("active");
+    if (salaryTrendContent) salaryTrendContent.style.display = "none";
+    if (expenseAnalysisArea) expenseAnalysisArea.style.display = "block";
+    if (trendSectionTitle) trendSectionTitle.textContent = "Expense Pro Analysis";
+    if (trendSectionDesc) trendSectionDesc.textContent = "Detailed breakdown of all-time expenses, biggest purchases, and budget optimizations.";
+    if (latestSalaryBadge) latestSalaryBadge.style.display = "none";
+    renderExpensesAnalysis();
+  });
 }
 
 async function importBuiltInMasterSheet() {
@@ -892,10 +934,34 @@ function buildQuickAddForm(kind, editId = null) {
     if (type === "textarea") wrapper.classList.add("full-span");
     wrapper.textContent = label;
 
-    const input = type === "textarea" ? document.createElement("textarea") : document.createElement("input");
-    input.name = name;
-    input.type = type === "checkbox" ? "checkbox" : type;
-    if (type === "number") input.inputMode = "decimal";
+    let input;
+    if (type === "select") {
+      input = document.createElement("select");
+      input.name = name;
+      let options = [];
+      if (name === "person" || name === "owner" || name === "paidBy") {
+        const needsBoth = (kind === "asset" || kind === "liability" || kind === "expense");
+        options = needsBoth ? ["Me", "Wife", "Both"] : ["Me", "Wife"];
+      } else if (name === "transactionType") {
+        options = ["PURCHASE", "REDEMPTION"];
+      } else {
+        options = ["Me", "Wife", "Both"];
+      }
+      options.forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt;
+        option.textContent = opt;
+        input.append(option);
+      });
+    } else if (type === "textarea") {
+      input = document.createElement("textarea");
+      input.name = name;
+    } else {
+      input = document.createElement("input");
+      input.name = name;
+      input.type = type === "checkbox" ? "checkbox" : type;
+      if (type === "number") input.inputMode = "decimal";
+    }
 
     if (existingEntry) {
       if (type === "checkbox") {
@@ -941,6 +1007,15 @@ function buildQuickAddForm(kind, editId = null) {
     if (kind === "stock") {
       entry.owner = normalizeOwner(entry.owner);
       if (!entry.invested) entry.invested = toNumber(entry.quantity) * toNumber(entry.avgPrice || entry.currentPrice);
+    }
+    if (kind === "expense") {
+      entry.paidBy = normalizeOwner(entry.paidBy);
+    }
+    if (kind === "income") {
+      entry.person = normalizeOwner(entry.person);
+    }
+    if (kind === "asset" || kind === "liability") {
+      entry.owner = normalizeOwner(entry.owner);
     }
 
     if (existingEntry) {
@@ -1148,7 +1223,7 @@ function mapRowToKind(row, kind) {
       id: `exp-${generateUUID()}`,
       date,
       category: pick(row, ["category", "expensecategory", "type"]) || "General",
-      paidBy: pick(row, ["paidby", "person", "payer", "owner"]) || "Both",
+      paidBy: normalizeOwner(pick(row, ["paidby", "person", "payer", "owner"]) || "Both"),
       amount,
       note: pick(row, ["note", "description", "merchant", "remarks"]) || "",
     };
@@ -1364,7 +1439,7 @@ function importSummary(imported) {
 
 function renderAll() {
   updateMutualFundsFromCache();
-  renderDate();
+  renderDashboardPeriodSelector();
   renderMetrics();
   renderCashflowChart();
   renderExpenseMix();
@@ -1374,13 +1449,6 @@ function renderAll() {
   renderCareer();
   renderGoals();
   renderChat();
-}
-
-function renderDate() {
-  document.getElementById("currentMonthLabel").textContent = new Date().toLocaleDateString("en-IN", {
-    month: "long",
-    year: "numeric",
-  });
 }
 
 function renderMetrics() {
@@ -1636,7 +1704,7 @@ function renderSalaryProgressionChart(svg, rows) {
 }
 
 function renderExpenseMix() {
-  const currentExpenses = state.expenses.filter((expense) => isCurrentMonth(expense.date));
+  const currentExpenses = state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
   const byCategory = groupSum(currentExpenses, (expense) => expense.category || "General", "amount");
   const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((sum, [, value]) => sum + value, 0);
@@ -1734,6 +1802,7 @@ function renderFinance() {
   renderExpenseExplorer();
   renderHoldingsTabs();
   renderAssetLiabilityLists();
+  renderExpensesAnalysis();
 }
 
 function renderSalaryCards() {
@@ -1954,18 +2023,36 @@ function renderExpenseExplorer(refreshMonthList = true) {
   }
 
   const bucket = getExpenseMonthIndex().get(activeExpenseMonth);
-  const rows = [...(bucket?.rows || [])].sort(sortByDateDesc);
+  const allRows = bucket?.rows || [];
+
+  const filteredRows = allRows.filter(item => {
+    const norm = normalizeOwner(item.paidBy || "Both");
+    if (activeExpenseOwner === "Both") return true;
+    return norm === activeExpenseOwner || norm === "Both";
+  });
+
+  const total = sum(filteredRows, "amount");
+  const categoryMap = {};
+  filteredRows.forEach(item => {
+    const cat = item.category || "General";
+    categoryMap[cat] = (categoryMap[cat] || 0) + toNumber(item.amount);
+  });
+  const categories = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
+
+  const rows = [...filteredRows].sort(sortByDateDesc);
   const totalPages = Math.max(1, Math.ceil(rows.length / EXPENSE_PAGE_SIZE));
   activeExpensePage = clamp(activeExpensePage, 0, totalPages - 1);
   const pageRows = rows.slice(activeExpensePage * EXPENSE_PAGE_SIZE, (activeExpensePage + 1) * EXPENSE_PAGE_SIZE);
 
   if (summary) {
     const txnCount = rows.length;
-    const avg = txnCount ? bucket.total / txnCount : 0;
+    const avg = txnCount ? total / txnCount : 0;
+    const topCatName = categories[0]?.[0] || "-";
+    const topCatVal = categories[0]?.[1] || 0;
     summary.innerHTML = `
       <article class="metric-card compact-metric">
-        <div class="label">Month total</div>
-        <div class="value">${formatINR(bucket.total)}</div>
+        <div class="label">Month total (${activeExpenseOwner})</div>
+        <div class="value">${formatINR(total)}</div>
         <div class="hint">${txnCount} transactions</div>
       </article>
       <article class="metric-card compact-metric">
@@ -1975,25 +2062,25 @@ function renderExpenseExplorer(refreshMonthList = true) {
       </article>
       <article class="metric-card compact-metric">
         <div class="label">Top category</div>
-        <div class="value">${escapeHTML(topCategoryName(bucket.categories))}</div>
-        <div class="hint">${formatINR(topCategoryAmount(bucket.categories))}</div>
+        <div class="value">${escapeHTML(topCatName)}</div>
+        <div class="hint">${formatINR(topCatVal)}</div>
       </article>
     `;
   }
 
   if (categoryList) {
     categoryList.innerHTML = "";
-    const categories = Object.entries(bucket.categories || {}).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    if (categories.length === 0) {
+    const topCategories = categories.slice(0, 8);
+    if (topCategories.length === 0) {
       categoryList.innerHTML = `<div class="empty-state">No categories this month.</div>`;
     } else {
-      categories.forEach(([category, value]) => {
+      topCategories.forEach(([category, value]) => {
         const row = document.createElement("div");
         row.className = "stack-row";
         row.innerHTML = `
           <div>
             <div class="stack-title">${escapeHTML(category)}</div>
-            <div class="stack-meta">${Math.round((value / Math.max(1, bucket.total)) * 100)}% of month</div>
+            <div class="stack-meta">${Math.round((value / Math.max(1, total)) * 100)}% of month</div>
           </div>
           <div class="stack-value">${formatINR(value)}</div>
         `;
@@ -2474,7 +2561,7 @@ function answerQuestion(question) {
 }
 
 function calculateMetrics() {
-  let monthIncomeRows = state.income.filter((income) => isCurrentMonth(income.date));
+  let monthIncomeRows = state.income.filter((income) => isTargetDashboardMonth(income.date));
   let isFallbackIncome = false;
   let fallbackMonthLabel = "";
 
@@ -2499,7 +2586,7 @@ function calculateMetrics() {
     }
   }
 
-  const monthExpenseRows = state.expenses.filter((expense) => isCurrentMonth(expense.date));
+  const monthExpenseRows = state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
   const monthIncome = sum(monthIncomeRows, "amount");
   const monthExpenses = sum(monthExpenseRows, "amount");
   const assets = sum(state.assets, "value");
@@ -3260,6 +3347,195 @@ function calculateXIRR(cashFlows) {
     return isNaN(result) || !isFinite(result) ? 0 : result;
   }
   return 0;
+}
+
+function isTargetDashboardMonth(dateValue) {
+  const date = parseCalendarDate(dateValue);
+  if (!date) return false;
+  const key = monthKey(date);
+  const targetKey = activeDashboardMonth || monthKey(new Date());
+  return key === targetKey;
+}
+
+function listDashboardMonths() {
+  const months = new Set();
+  
+  // Populate from income
+  state.income.forEach((item) => {
+    const key = toMonthKey(item.date);
+    if (key) months.add(key);
+  });
+  
+  // Populate from expenses
+  state.expenses.forEach((item) => {
+    const key = toMonthKey(item.date);
+    if (key) months.add(key);
+  });
+  
+  // Always ensure current month is in options as a fallback
+  months.add(monthKey(new Date()));
+  
+  return [...months].sort().reverse();
+}
+
+function renderDashboardPeriodSelector() {
+  const select = document.getElementById("dashboardMonthSelect");
+  if (!select) return;
+  
+  const months = listDashboardMonths();
+  select.innerHTML = "";
+  
+  months.forEach((key) => {
+    const option = document.createElement("option");
+    option.value = key;
+    
+    const [year, month] = key.split("-").map(Number);
+    const date = new Date(year, month - 1, 1);
+    option.textContent = date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+    select.append(option);
+  });
+  
+  if (activeDashboardMonth && months.includes(activeDashboardMonth)) {
+    select.value = activeDashboardMonth;
+  } else {
+    const currentKey = monthKey(new Date());
+    if (months.includes(currentKey)) {
+      activeDashboardMonth = currentKey;
+    } else {
+      activeDashboardMonth = months[0] || currentKey;
+    }
+    select.value = activeDashboardMonth;
+  }
+}
+
+function bindDashboard() {
+  document.getElementById("dashboardMonthSelect")?.addEventListener("change", (event) => {
+    activeDashboardMonth = event.target.value;
+    renderMetrics();
+    renderExpenseMix();
+  });
+}
+
+function renderExpensesAnalysis() {
+  const metricsContainer = document.getElementById("expenseAnalysisMetrics");
+  const biggestPurchasesContainer = document.getElementById("biggestPurchasesList");
+  const budgetOptimizationContainer = document.getElementById("budgetOptimizationList");
+  
+  if (!metricsContainer || !biggestPurchasesContainer || !budgetOptimizationContainer) return;
+  
+  const allExpenses = [...state.expenses];
+  if (allExpenses.length === 0) {
+    metricsContainer.innerHTML = "";
+    biggestPurchasesContainer.innerHTML = `<div class="empty-state">Upload expenses to see your pro analysis dashboard.</div>`;
+    budgetOptimizationContainer.innerHTML = `<div class="empty-state">Upload expenses to see budget advice.</div>`;
+    return;
+  }
+  
+  const totalSpent = sum(allExpenses, "amount");
+  
+  // Calculate average per month based on unique months in expenses only
+  const expenseMonths = new Set();
+  allExpenses.forEach(e => {
+    const key = toMonthKey(e.date);
+    if (key) expenseMonths.add(key);
+  });
+  const monthsCount = Math.max(1, expenseMonths.size);
+  const avgMonthlySpend = totalSpent / monthsCount;
+  
+  const sortedByAmount = [...allExpenses].sort((a, b) => toNumber(b.amount) - toNumber(a.amount));
+  
+  // Discretionary spend identification
+  const discretionaryKeywords = /shop|dining|restaurant|food|swiggy|zomato|movie|entertainment|travel|uber|ola|cab|pub|party|gift|leisure/i;
+  let discretionaryTotal = 0;
+  allExpenses.forEach(e => {
+    const cat = String(e.category || "").toLowerCase();
+    const note = String(e.note || "").toLowerCase();
+    if (discretionaryKeywords.test(cat) || discretionaryKeywords.test(note)) {
+      discretionaryTotal += toNumber(e.amount);
+    }
+  });
+  const discretionaryPct = Math.round((discretionaryTotal / totalSpent) * 100);
+  
+  metricsContainer.innerHTML = `
+    <article class="metric-card compact-metric">
+      <div class="label">Total Paid Till Now</div>
+      <div class="value">${formatINR(totalSpent)}</div>
+      <div class="hint">Across ${monthsCount} months</div>
+    </article>
+    <article class="metric-card compact-metric">
+      <div class="label">Avg Monthly Spend</div>
+      <div class="value">${formatINR(avgMonthlySpend)}</div>
+      <div class="hint">All-time average</div>
+    </article>
+    <article class="metric-card compact-metric">
+      <div class="label">Discretionary Spend</div>
+      <div class="value">${formatINR(discretionaryTotal)}</div>
+      <div class="hint">${discretionaryPct}% of all time spend</div>
+    </article>
+  `;
+  
+  biggestPurchasesContainer.innerHTML = "";
+  sortedByAmount.slice(0, 5).forEach(item => {
+    const row = document.createElement("div");
+    row.className = "stack-row";
+    row.innerHTML = `
+      <div>
+        <div class="stack-title">${escapeHTML(item.note || item.category || "Purchase")}</div>
+        <div class="stack-meta">${formatDate(item.date)} • ${escapeHTML(item.category)} • Paid by ${escapeHTML(item.paidBy || "Both")}</div>
+      </div>
+      <div class="stack-value" style="color: var(--danger); font-weight:600;">${formatINR(item.amount)}</div>
+    `;
+    biggestPurchasesContainer.append(row);
+  });
+  
+  const catSums = {};
+  allExpenses.forEach(e => {
+    const cat = e.category || "General";
+    catSums[cat] = (catSums[cat] || 0) + toNumber(e.amount);
+  });
+  const sortedCategories = Object.entries(catSums).sort((a, b) => b[1] - a[1]);
+  
+  budgetOptimizationContainer.innerHTML = "";
+  const optimizationTips = [];
+  
+  if (discretionaryPct > 40) {
+    optimizationTips.push({
+      title: "High Discretionary Spending ⚠️",
+      desc: `Your discretionary spending (dining, shopping, cabs) represents ${discretionaryPct}% of total expenses. Target keeping this under 30% to boost savings.`,
+      action: `Potential monthly savings: ${formatINR((discretionaryTotal * 0.2) / monthsCount)} (at 20% cut)`
+    });
+  } else {
+    optimizationTips.push({
+      title: "Balanced Discretionary Spending ✅",
+      desc: `Your discretionary spending is at ${discretionaryPct}% of total expenses, which is within the healthy budget zone.`,
+      action: "Keep tracking discretionary categories month-on-month."
+    });
+  }
+  
+  sortedCategories.slice(0, 3).forEach(([cat, val]) => {
+    const monthlyVal = val / monthsCount;
+    const potentialSaving = monthlyVal * 0.15;
+    optimizationTips.push({
+      title: `Optimize ${cat} Spend`,
+      desc: `You spend an average of ${formatINR(monthlyVal)} per month on ${cat}.`,
+      action: `Reducing this by 15% would save ${formatINR(potentialSaving)} monthly.`
+    });
+  });
+  
+  optimizationTips.forEach(tip => {
+    const itemEl = document.createElement("div");
+    itemEl.className = "stack-row";
+    itemEl.style.flexDirection = "column";
+    itemEl.style.alignItems = "stretch";
+    itemEl.style.padding = "10px 0";
+    itemEl.style.borderBottom = "1px solid var(--line)";
+    itemEl.innerHTML = `
+      <div style="font-weight: 700; color: var(--brand); font-size: 0.9rem; margin-bottom: 2px;">${escapeHTML(tip.title)}</div>
+      <div style="font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; line-height: 1.4;">${escapeHTML(tip.desc)}</div>
+      <div style="font-size: 0.8rem; font-weight: 600; color: var(--ink);">${escapeHTML(tip.action)}</div>
+    `;
+    budgetOptimizationContainer.append(itemEl);
+  });
 }
 
 

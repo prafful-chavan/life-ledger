@@ -130,7 +130,9 @@
               <h2 id="dashboardTitle">Command Center</h2>
               <p>Salary, expenses, net worth, goals, routines, and interview prep in one place.</p>
             </div>
-            <div class="period-pill" id="currentMonthLabel">This month</div>
+            <select class="period-pill-select" id="dashboardMonthSelect" aria-label="Select dashboard month">
+              <option value="">Loading...</option>
+            </select>
           </div>
 
           <div class="metric-grid" id="metricGrid"></div>
@@ -226,17 +228,48 @@
             </div>
 
             <section class="panel large-panel salary-progression-panel">
-              <div class="panel-header">
+              <div class="panel-header" style="flex-wrap: wrap; gap: 12px; align-items: center;">
                 <div>
-                  <h3>Salary progression</h3>
-                  <p>Monthly gross and net in-hand salary across your organizations from 2018 onward.</p>
+                  <h3 id="trendSectionTitle">Salary progression</h3>
+                  <p id="trendSectionDesc">Monthly gross and net in-hand salary across your organizations from 2018 onward.</p>
                 </div>
-                <span class="status-dot good" id="latestSalaryBadge">Latest salary</span>
+                <div style="display: flex; gap: 8px; align-items: center;" class="trend-actions">
+                  <div class="owner-toggle" style="margin-bottom: 0; display: flex; gap: 6px;" id="overviewTrendToggle">
+                    <button class="owner-pill active" type="button" id="toggleTrendSalary">Salary Trend</button>
+                    <button class="owner-pill" type="button" id="toggleTrendExpenses">Expense Analysis</button>
+                  </div>
+                  <span class="status-dot good" id="latestSalaryBadge">Latest salary</span>
+                </div>
               </div>
-              <div class="chart-area">
-                <svg class="line-chart salary-chart" id="salaryProgressionChart" role="img" aria-label="Salary progression chart"></svg>
+              <div id="salaryTrendContent">
+                <div class="chart-area">
+                  <svg class="line-chart salary-chart" id="salaryProgressionChart" role="img" aria-label="Salary progression chart"></svg>
+                </div>
+                <div class="salary-insights" id="salaryInsights"></div>
               </div>
-              <div class="salary-insights" id="salaryInsights"></div>
+              <div id="expenseAnalysisArea" style="display: none;">
+                <div class="metric-grid compact" id="expenseAnalysisMetrics" style="margin-bottom: 20px;"></div>
+                <div class="expense-pro-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                  <section class="panel soft-panel" style="margin-bottom: 0;">
+                    <div class="panel-header">
+                      <div>
+                        <h3>Biggest Purchases 💸</h3>
+                        <p>Largest single transactions overall.</p>
+                      </div>
+                    </div>
+                    <div id="biggestPurchasesList" class="stack-list"></div>
+                  </section>
+                  <section class="panel soft-panel" style="margin-bottom: 0;">
+                    <div class="panel-header">
+                      <div>
+                        <h3>Budget Optimization 🎯</h3>
+                        <p>Opportunities to reduce costs.</p>
+                      </div>
+                    </div>
+                    <div id="budgetOptimizationList" class="stack-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
+                  </section>
+                </div>
+              </div>
             </section>
           </div>
 
@@ -307,11 +340,16 @@
                 <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="expense">Add expense</button>
               </div>
 
-              <div class="expense-toolbar">
+              <div class="expense-toolbar" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
                 <label class="toolbar-field">
                   Month
                   <select id="expenseMonthSelect" aria-label="Select expense month"></select>
                 </label>
+                <div class="owner-toggle" role="tablist" aria-label="Expense payer" style="display: flex; gap: 8px; margin-bottom: 0;">
+                  <button class="owner-pill active" type="button" data-expense-owner="Both">All Expenses</button>
+                  <button class="owner-pill" type="button" data-expense-owner="Me">Me (Prafful)</button>
+                  <button class="owner-pill" type="button" data-expense-owner="Wife">Wife (Archana)</button>
+                </div>
               </div>
 
               <div class="metric-grid compact" id="expenseMonthSummary"></div>
