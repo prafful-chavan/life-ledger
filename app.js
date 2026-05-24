@@ -680,12 +680,21 @@ function bindFinanceTabs() {
     } else if (deleteBtn) {
       const id = deleteBtn.dataset.id;
       const kind = deleteBtn.dataset.kind;
-      const config = SIMPLE_ASSET_TABS.find(c => c.kind === kind);
-      if (id && config && confirm(`Are you sure you want to delete this ${config.label} entry?`)) {
-        state[config.stateKey] = (state[config.stateKey] || []).filter(item => item.id !== id);
-        await saveData(true);
-        renderSimpleAssets();
-        toast(`${config.label} entry deleted.`);
+      if (kind === "liability") {
+        if (id && confirm("Are you sure you want to delete this liability entry?")) {
+          state.liabilities = state.liabilities.filter(item => item.id !== id);
+          await saveData(true);
+          renderAll();
+          toast("Liability entry deleted.");
+        }
+      } else {
+        const config = SIMPLE_ASSET_TABS.find(c => c.kind === kind);
+        if (id && config && confirm(`Are you sure you want to delete this ${config.label} entry?`)) {
+          state[config.stateKey] = (state[config.stateKey] || []).filter(item => item.id !== id);
+          await saveData(true);
+          renderAll();
+          toast(`${config.label} entry deleted.`);
+        }
       }
     }
   });
@@ -1922,7 +1931,7 @@ function renderFinance() {
   renderIncomeTable();
   renderExpenseExplorer();
   renderHoldingsTabs();
-  renderAssetLiabilityLists();
+  renderLiabilities();
   renderExpensesAnalysis();
 }
 
@@ -2498,17 +2507,43 @@ function investmentHoldingsTotal() {
   return mutualFunds + simpleAssetsTotal;
 }
 
-function renderAssetLiabilityLists() {
-  renderStackList(document.getElementById("assetList"), state.assets, (item) => ({
-    title: item.name,
-    meta: `${item.category || "Asset"} • ${item.owner || "Both"}`,
-    value: formatINR(item.value),
-  }));
-  renderStackList(document.getElementById("liabilityList"), state.liabilities, (item) => ({
-    title: item.name,
-    meta: `${item.category || "Liability"} • ${item.owner || "Both"}`,
-    value: formatINR(item.value),
-  }));
+function renderLiabilities() {
+  const summary = document.getElementById("liabilitiesOwnerSummary");
+  const table = document.getElementById("liabilityTable");
+  if (!table) return;
+
+  const rows = state.liabilities
+    .filter((item) => matchHoldingsOwner(item.owner || "Both", activeHoldingsOwner))
+    .sort((a, b) => b.value - a.value);
+
+  const totalValue = rows.reduce((total, row) => total + toNumber(row.value), 0);
+
+  if (summary) {
+    summary.innerHTML = `
+      <article class="metric-card compact-metric">
+        <div class="label">Total Outstanding (${activeHoldingsOwner})</div>
+        <div class="value">${formatINR(totalValue)}</div>
+        <div class="hint">${rows.length} liability / liabilities</div>
+      </article>
+    `;
+  }
+
+  renderRows(
+    table,
+    rows,
+    (item) => [
+      item.name || "-",
+      item.category || "-",
+      item.owner || "Both",
+      formatINR(item.value),
+      `<div class="actions-wrapper">
+        <button class="action-btn edit-btn edit-simple-asset-btn" data-kind="liability" data-id="${item.id}" title="Edit entry">✏️</button>
+        <button class="action-btn delete-btn delete-simple-asset-btn" data-kind="liability" data-id="${item.id}" title="Delete entry">🗑️</button>
+      </div>`
+    ],
+    `No liabilities found for ${activeHoldingsOwner}.`,
+    5
+  );
 }
 
 function renderCareer() {

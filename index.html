@@ -210,7 +210,7 @@
             <button class="tab-button" type="button" data-finance-tab="usstocks">US Stocks</button>
             <button class="tab-button" type="button" data-finance-tab="banksaving">Bank Saving</button>
             <button class="tab-button" type="button" data-finance-tab="others">Others</button>
-            <button class="tab-button" type="button" data-finance-tab="wealth">Net worth</button>
+            <button class="tab-button" type="button" data-finance-tab="liabilities">Liabilities</button>
           </div>
 
           <div class="finance-tab active" id="finance-overview">
@@ -803,29 +803,36 @@
             </section>
           </div>
 
-          <div class="finance-tab" id="finance-wealth">
-            <div class="split-grid">
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <h3>Assets</h3>
-                    <p>Bank, investments, PF, property, gold, and cash.</p>
-                  </div>
-                  <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="asset">Add asset</button>
+          <div class="finance-tab" id="finance-liabilities">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Liabilities</h3>
+                  <p>Track loans, credit cards, and other pending obligations — Me and Wife.</p>
                 </div>
-                <div id="assetList" class="stack-list"></div>
-              </section>
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <h3>Liabilities</h3>
-                    <p>Loans, credit cards, and other pending obligations.</p>
-                  </div>
-                  <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="liability">Add liability</button>
-                </div>
-                <div id="liabilityList" class="stack-list"></div>
-              </section>
-            </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="liability">Add liability</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="liabilitiesOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Category</th>
+                      <th>Owner</th>
+                      <th>Outstanding Value</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="liabilityTable"></tbody>
+                </table>
+              </div>
+            </section>
           </div>
         </section>
 
