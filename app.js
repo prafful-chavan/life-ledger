@@ -1658,7 +1658,7 @@ function renderMetrics() {
     {
       label: "Net worth",
       value: formatINR(metrics.netWorth),
-      hint: `Investments + assets − liabilities (salary not included)`,
+      hint: `Investment holdings − liabilities`,
     },
     {
       label: metrics.isFallbackIncome ? `Income (${metrics.fallbackMonthLabel})` : "This month income",
@@ -1939,14 +1939,12 @@ function renderExpenseMix() {
 
 function renderNetWorth() {
   const container = document.getElementById("networthStack");
-  const assets = sum(state.assets, "value");
   const holdings = investmentHoldingsTotal();
   const liabilities = sum(state.liabilities, "value");
-  const netWorth = assets + holdings - liabilities;
-  const maxValue = Math.max(assets, holdings, liabilities, Math.abs(netWorth), 1);
+  const netWorth = holdings - liabilities;
+  const maxValue = Math.max(holdings, liabilities, Math.abs(netWorth), 1);
   container.innerHTML = "";
   [
-    ["Assets (other)", assets, "bar-fill green"],
     ["Investments", holdings, "bar-fill blue"],
     ["Liabilities", liabilities, "bar-fill red"],
     ["Net worth", netWorth, "bar-fill purple"],
@@ -3035,7 +3033,7 @@ function answerQuestion(question) {
     if (/workout|exercise/.test(q)) return `**Workouts**: **${state.workouts.length}** logged.`;
     if (/asset/.test(q)) return `**Registered assets**: **${formatINR(registeredAssets)}** across **${state.assets.length}** entries.\n**Investment holdings**: **${formatINR(allHoldingsTotal)}**.`;
     if (/liabilit|loan|debt/.test(q)) return `**Liabilities**: **${formatINR(totalLiabilities)}** across **${state.liabilities.length}** entries.`;
-    if (/net worth|networth/.test(q)) return `**Net worth**: **${formatINR(metrics.netWorth)}** (assets ${formatINR(metrics.assets)} − liabilities ${formatINR(totalLiabilities)}).\n_Excludes salary/income — only investments + registered assets._`;
+    if (/net worth|networth/.test(q)) return `**Net worth**: **${formatINR(metrics.netWorth)}** (investments ${formatINR(metrics.assets)} − liabilities ${formatINR(totalLiabilities)}).\n_Only investment holdings counted — salary not included._`;
     if (/invest|portfolio/.test(q)) return `**Total investment holdings**: **${formatINR(allHoldingsTotal)}** across MF, stocks, FD, EPF, PPF, bonds, gold, silver, crypto, US stocks, bank savings, and others.`;
   }
 
@@ -3064,7 +3062,7 @@ function answerQuestion(question) {
 
   // ─── NET WORTH ───────────────────────────────────────────────────────────────
   if (/net\s*worth|networth|wealth|total\s*asset/.test(q)) {
-    return `**Net Worth** 💼\n_Formula: Investments + Registered Assets − Liabilities (salary NOT included)_\n\n**Assets (what you own)**\n• Registered assets: ${formatINR(registeredAssets)}\n• Mutual Funds: ${formatINR(mfCurrent)}\n• Stocks: ${formatINR(stocksVal)}\n• FD: ${formatINR(fdVal)}\n• EPF: ${formatINR(epfVal)}\n• PPF: ${formatINR(ppfVal)}\n• Gold: ${formatINR(goldVal)}\n• Silver: ${formatINR(silverVal)}\n• Crypto: ${formatINR(cryptoVal)}\n• US Stocks: ${formatINR(usStocksVal)}\n• Bonds: ${formatINR(bondsVal)}\n• Bank Savings: ${formatINR(bankSavingVal)}\n• Others: ${formatINR(othersVal)}\n• **Total assets: ${formatINR(metrics.assets)}**\n\n**Liabilities (what you owe)**\n${state.liabilities.length ? state.liabilities.slice(0, 5).map((l) => `• ${l.name || l.category}: ${formatINR(l.value)}`).join("\n") : "• No liabilities"}\n• **Total liabilities: ${formatINR(totalLiabilities)}**\n\n**Net Worth: ${formatINR(metrics.netWorth)}**`;
+    return `**Net Worth** 💼\n_Formula: Investment Holdings − Liabilities (salary/registered assets NOT included)_\n\n**Investments (what you own)**\n• Mutual Funds: ${formatINR(mfCurrent)}\n• Stocks: ${formatINR(stocksVal)}\n• FD: ${formatINR(fdVal)}\n• EPF: ${formatINR(epfVal)}\n• PPF: ${formatINR(ppfVal)}\n• Gold: ${formatINR(goldVal)}\n• Silver: ${formatINR(silverVal)}\n• Crypto: ${formatINR(cryptoVal)}\n• US Stocks: ${formatINR(usStocksVal)}\n• Bonds: ${formatINR(bondsVal)}\n• Bank Savings: ${formatINR(bankSavingVal)}\n• Others: ${formatINR(othersVal)}\n• **Total investments: ${formatINR(metrics.assets)}**\n\n**Liabilities (what you owe)**\n${state.liabilities.length ? state.liabilities.slice(0, 5).map((l) => `• ${l.name || l.category}: ${formatINR(l.value)}`).join("\n") : "• No liabilities"}\n• **Total liabilities: ${formatINR(totalLiabilities)}**\n\n**Net Worth: ${formatINR(metrics.netWorth)}**`;
   }
 
   // ─── SALARY / INCOME ────────────────────────────────────────────────────────
@@ -3255,7 +3253,7 @@ function answerQuestion(question) {
 
   // ─── OVERVIEW / HOW AM I DOING ──────────────────────────────────────────────
   if (/how.*doing|overview|status|snapshot|quick|all\b|everything|sab kuch/.test(q)) {
-    return `**Life Ledger Overview** 🌟\n\n💰 **Net worth: ${formatINR(metrics.netWorth)}**\n• Assets: ${formatINR(metrics.assets)} | Liabilities: ${formatINR(totalLiabilities)}\n• Month income: ${formatINR(metrics.monthIncome)} | Expenses: ${formatINR(metrics.monthExpenses)} | Savings: ${metrics.savingsRate}%\n\n📈 **Investments: ${formatINR(allHoldingsTotal)}**\n• MF: ${formatINR(mfCurrent)} | Stocks: ${formatINR(stocksVal)} | Gold: ${formatINR(goldVal)} | Crypto: ${formatINR(cryptoVal)}\n\n🎯 **Life**: ${pendingTasks.length} tasks pending | ${state.habits.length} habits | ${state.goals.length} goals | ${state.studies.length} career topics\n\n🏃 Workouts: ${state.workouts.length} logged${state.workouts.some((w) => sameDay(w.date, todayISO())) ? " (✅ today)" : ""}`;
+    return `**Life Ledger Overview** 🌟\n\n💰 **Net worth: ${formatINR(metrics.netWorth)}**\n• Investments: ${formatINR(metrics.assets)} | Liabilities: ${formatINR(totalLiabilities)}\n• Month income: ${formatINR(metrics.monthIncome)} | Expenses: ${formatINR(metrics.monthExpenses)} | Savings: ${metrics.savingsRate}%\n\n📈 **Investments: ${formatINR(allHoldingsTotal)}**\n• MF: ${formatINR(mfCurrent)} | Stocks: ${formatINR(stocksVal)} | Gold: ${formatINR(goldVal)} | Crypto: ${formatINR(cryptoVal)}\n\n🎯 **Life**: ${pendingTasks.length} tasks pending | ${state.habits.length} habits | ${state.goals.length} goals | ${state.studies.length} career topics\n\n🏃 Workouts: ${state.workouts.length} logged${state.workouts.some((w) => sameDay(w.date, todayISO())) ? " (✅ today)" : ""}`;
   }
 
   // ─── HELP / FALLBACK ────────────────────────────────────────────────────────
@@ -3291,7 +3289,6 @@ function calculateMetrics() {
   const monthExpenseRows = state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
   const monthIncome = sum(monthIncomeRows, "amount");
   const monthExpenses = sum(monthExpenseRows, "amount");
-  const assets = sum(state.assets, "value");
   const holdings = investmentHoldingsTotal();
   const liabilities = sum(state.liabilities, "value");
   const topExpenseCategory =
@@ -3299,9 +3296,9 @@ function calculateMetrics() {
   return {
     monthIncome,
     monthExpenses,
-    assets: assets + holdings,
+    assets: holdings,
     liabilities,
-    netWorth: assets + holdings - liabilities,
+    netWorth: holdings - liabilities,
     incomePeople: new Set(monthIncomeRows.map((income) => income.person || "Me")).size,
     savingsRate: monthIncome ? Math.round(((monthIncome - monthExpenses) / monthIncome) * 100) : 0,
     topExpenseCategory,
