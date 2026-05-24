@@ -1658,7 +1658,7 @@ function renderMetrics() {
     {
       label: "Net worth",
       value: formatINR(metrics.netWorth),
-      hint: `${formatINR(metrics.assets)} assets minus ${formatINR(metrics.liabilities)} liabilities`,
+      hint: `Investments + assets − liabilities (salary not included)`,
     },
     {
       label: metrics.isFallbackIncome ? `Income (${metrics.fallbackMonthLabel})` : "This month income",
@@ -2919,16 +2919,23 @@ function renderChat() {
   state.chat.slice(-80).forEach((message) => {
     const bubble = document.createElement("div");
     bubble.className = `chat-message ${message.role}`;
-    // Convert newlines and bullet symbols to HTML for readable formatting
+    // Convert markdown-like formatting to HTML for readable chat messages
     const formatted = message.text
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/_(.+?)_/g, "<em>$1</em>")
+      .replace(/\n(\d+)\. /g, "<br>$1. ")
       .replace(/\n•/g, "<br>•")
       .replace(/\n/g, "<br>");
     bubble.innerHTML = formatted;
     log.append(bubble);
   });
   log.scrollTop = log.scrollHeight;
+  // Toggle suggestion chips visibility
+  const suggestions = document.getElementById("chatSuggestions");
+  if (suggestions) {
+    suggestions.style.display = state.chat.length > 0 ? "none" : "";
+  }
 }
 
 function addChat(role, text) {
@@ -2938,16 +2945,17 @@ function addChat(role, text) {
 }
 
 function answerQuestion(question) {
-  const q = question.toLowerCase();
+  const q = question.toLowerCase().trim();
   const metrics = calculateMetrics();
 
-  // ─── HELPERS ────────────────────────────────────────────────────────────────
+  // ─── DATA READERS (always fresh from state) ───────────────────────────────
+  const monthExpenseRows = state.expenses.filter((e) => isTargetDashboardMonth(e.date));
   const topMonthExpenses = Object.entries(
-    groupSum(
-      state.expenses.filter((e) => isCurrentMonth(e.date)),
-      (e) => e.category || "General",
-      "amount"
-    )
+    groupSum(monthExpenseRows, (e) => e.category || "General", "amount")
+  ).sort((a, b) => b[1] - a[1]);
+
+  const allExpenseCategories = Object.entries(
+    groupSum(state.expenses, (e) => e.category || "General", "amount")
   ).sort((a, b) => b[1] - a[1]);
 
   const pendingTasks = state.tasks.filter((t) => !t.done);
@@ -2963,239 +2971,295 @@ function answerQuestion(question) {
   const weakestMyTopic = [...myStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
   const weakestWifeTopic = [...wifeStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
 
+  // Investment totals (pulled fresh every time)
+  const mfInvested = sum(state.mutualFunds, "invested");
+  const mfCurrent = sum(state.mutualFunds, "currentValue");
+  const stocksVal = sum(state.stocks, "value");
+  const fdVal = sum(state.fd, "value");
+  const epfVal = sum(state.epf, "value");
+  const ppfVal = sum(state.ppf, "value");
+  const bondsVal = sum(state.bonds, "value");
+  const goldVal = sum(state.gold, "value");
+  const silverVal = sum(state.silver, "value");
+  const cryptoVal = sum(state.crypto, "value");
+  const usStocksVal = sum(state.usstocks, "value");
+  const bankSavingVal = sum(state.banksaving, "value");
+  const othersVal = sum(state.others, "value");
+  const registeredAssets = sum(state.assets, "value");
+  const allHoldingsTotal = mfCurrent + stocksVal + fdVal + epfVal + ppfVal + bondsVal + goldVal + silverVal + cryptoVal + usStocksVal + bankSavingVal + othersVal;
+  const totalLiabilities = sum(state.liabilities, "value");
+
+  // income totals
+  const totalAllIncome = sum(state.income, "amount");
+  const totalAllExpenses = sum(state.expenses, "amount");
+
+  // helper for formatting owner splits
+  function ownerSplit(arr, valKey) {
+    const mine = sum(arr.filter((r) => (r.owner || r.paidBy || "Me") === "Me"), valKey);
+    const hers = sum(arr.filter((r) => (r.owner || r.paidBy) === "Wife"), valKey);
+    const both = sum(arr.filter((r) => (r.owner || r.paidBy) === "Both"), valKey);
+    return { mine, hers, both };
+  }
+
   // ─── GREET / HELLO ──────────────────────────────────────────────────────────
-  if (/^(hi|hello|hey|howdy|sup|yo|namaste|hola)/.test(q)) {
+  if (/^(hi|hello|hey|howdy|sup|yo|namaste|hola)\b/.test(q)) {
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-    return `${greeting}, Prafful! 👋 I'm ready to help. You have **${pendingTasks.length} pending tasks**, **${myHabits.length} active habits**, and your portfolio stands at **${formatINR(metrics.assets)}**. What would you like to know?`;
+    return `${greeting}, Prafful! 👋 Ready to help.\n\n• Net worth: **${formatINR(metrics.netWorth)}**\n• This month income: **${formatINR(metrics.monthIncome)}** | expenses: **${formatINR(metrics.monthExpenses)}**\n• Pending tasks: **${pendingTasks.length}** | Active habits: **${state.habits.length}**\n• Career topics: **${state.studies.length}** tracked\n\nWhat do you want to know?`;
+  }
+
+  // ─── HOW MUCH / TOTAL / COUNT questions ─────────────────────────────────────
+  // "how much in gold", "total gold", "how many mutual funds"
+  if (/how (?:much|many)|total|count|kitna|kitne/.test(q)) {
+    if (/mutual fund|mf\b|sip/.test(q)) {
+      const fundCount = new Set(state.mutualFunds.map((f) => f.fundName)).size;
+      const gain = mfCurrent - mfInvested;
+      return `**Mutual Fund Data** 📈\n• Unique funds: **${fundCount}**\n• Total entries: **${state.mutualFunds.length}**\n• Invested: **${formatINR(mfInvested)}**\n• Current value: **${formatINR(mfCurrent)}**\n• Gain/Loss: **${formatINR(gain)}** (${mfInvested ? ((gain / mfInvested) * 100).toFixed(1) : 0}%)`;
+    }
+    if (/stock/.test(q) && !/us stock/.test(q)) return `**Indian Stocks**: **${formatINR(stocksVal)}** across **${state.stocks.length}** entries.`;
+    if (/us stock|foreign/.test(q)) return `**US Stocks**: **${formatINR(usStocksVal)}** across **${state.usstocks.length}** entries.`;
+    if (/\bfd\b|fixed deposit/.test(q)) return `**FD total**: **${formatINR(fdVal)}** across **${state.fd.length}** entries.`;
+    if (/\bepf\b|provident fund/.test(q)) return `**EPF total**: **${formatINR(epfVal)}** across **${state.epf.length}** entries.`;
+    if (/\bppf\b/.test(q)) return `**PPF total**: **${formatINR(ppfVal)}** across **${state.ppf.length}** entries.`;
+    if (/gold/.test(q)) return `**Gold total**: **${formatINR(goldVal)}** across **${state.gold.length}** entries.`;
+    if (/silver/.test(q)) return `**Silver total**: **${formatINR(silverVal)}** across **${state.silver.length}** entries.`;
+    if (/crypto|bitcoin/.test(q)) return `**Crypto total**: **${formatINR(cryptoVal)}** across **${state.crypto.length}** entries.`;
+    if (/bond/.test(q)) return `**Bonds total**: **${formatINR(bondsVal)}** across **${state.bonds.length}** entries.`;
+    if (/bank/.test(q)) return `**Bank Savings total**: **${formatINR(bankSavingVal)}** across **${state.banksaving.length}** entries.`;
+    if (/income|salary|earn/.test(q)) return `**Total income entries**: **${state.income.length}** totalling **${formatINR(totalAllIncome)}** (all time). This month: **${formatINR(metrics.monthIncome)}**.`;
+    if (/expense|spend|kharcha/.test(q)) return `**Total expense entries**: **${state.expenses.length}** totalling **${formatINR(totalAllExpenses)}** (all time). This month: **${formatINR(metrics.monthExpenses)}**.`;
+    if (/goal/.test(q)) return `**Goals**: **${state.goals.length}** tracked. ${state.goals.filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0).length} completed.`;
+    if (/task|todo/.test(q)) return `**Tasks**: **${state.tasks.length}** total. **${pendingTasks.length}** pending, **${doneTasks.length}** done.`;
+    if (/habit/.test(q)) return `**Habits**: **${state.habits.length}** tracked. Best streak: **${[...state.habits].sort((a, b) => (b.streak || 0) - (a.streak || 0))[0]?.name || "none"}**.`;
+    if (/stud|topic|career|roadmap/.test(q)) return `**Career/Study topics**: **${state.studies.length}** total. DevOps: **${myStudies.length}**, ETL: **${wifeStudies.length}**.`;
+    if (/workout|exercise/.test(q)) return `**Workouts**: **${state.workouts.length}** logged.`;
+    if (/asset/.test(q)) return `**Registered assets**: **${formatINR(registeredAssets)}** across **${state.assets.length}** entries.\n**Investment holdings**: **${formatINR(allHoldingsTotal)}**.`;
+    if (/liabilit|loan|debt/.test(q)) return `**Liabilities**: **${formatINR(totalLiabilities)}** across **${state.liabilities.length}** entries.`;
+    if (/net worth|networth/.test(q)) return `**Net worth**: **${formatINR(metrics.netWorth)}** (assets ${formatINR(metrics.assets)} − liabilities ${formatINR(totalLiabilities)}).\n_Excludes salary/income — only investments + registered assets._`;
+    if (/invest|portfolio/.test(q)) return `**Total investment holdings**: **${formatINR(allHoldingsTotal)}** across MF, stocks, FD, EPF, PPF, bonds, gold, silver, crypto, US stocks, bank savings, and others.`;
   }
 
   // ─── FINANCE SUMMARY / SAVINGS ──────────────────────────────────────────────
-  if (/saving|save|surplus|summary|finance|this month|monthly/.test(q)) {
+  if (/saving|surplus|finance summ|month.* summary|this month|kitna bacha/.test(q)) {
     const surplus = metrics.monthIncome - metrics.monthExpenses;
-    return `**This Month's Finance Summary** 📊\n• Income: **${formatINR(metrics.monthIncome)}**\n• Expenses: **${formatINR(metrics.monthExpenses)}**\n• Surplus: **${formatINR(surplus)}**\n• Savings Rate: **${metrics.savingsRate}%**${topMonthExpenses[0] ? `\n• Biggest spend: **${topMonthExpenses[0][0]}** at ${formatINR(topMonthExpenses[0][1])}` : ""}\n\n${surplus > 0 ? `You saved ${formatINR(surplus)} this month — great discipline!` : "You're spending more than earning this month. Review your top categories below."}`;
+    const topCat = topMonthExpenses[0];
+    let fallbackNote = "";
+    if (metrics.isFallbackIncome) {
+      fallbackNote = `\n⚠️ No income found for current month — using latest available (${metrics.fallbackMonthLabel}).`;
+    }
+    return `**Monthly Finance Summary** 📊\n• Income: **${formatINR(metrics.monthIncome)}**\n• Expenses: **${formatINR(metrics.monthExpenses)}**\n• Surplus: **${formatINR(surplus)}**\n• Savings rate: **${metrics.savingsRate}%**${topCat ? `\n• Top expense: **${topCat[0]}** — ${formatINR(topCat[1])}` : ""}${fallbackNote}\n\n${surplus > 0 ? "👍 Great job saving this month!" : "⚠️ Spending exceeds income. Check your top categories."}`;
   }
 
-  // ─── EXPENSES / SPEND ANALYSIS ──────────────────────────────────────────────
-  if (/expense|spend|high|leak|where.*money|cost|bill/.test(q)) {
-    if (!topMonthExpenses.length) return "No expenses recorded this month yet. Add some entries and I'll rank the biggest categories for you.";
-    const top3 = topMonthExpenses.slice(0, 3).map(([name, val], i) => `${i + 1}. **${name}**: ${formatINR(val)}`).join("\n");
-    return `**Top Expense Categories This Month** 💸\n${top3}\n\nThe top category is where one decision makes the biggest difference. Consider setting a budget cap on **${topMonthExpenses[0][0]}**.`;
+  // ─── EXPENSES ───────────────────────────────────────────────────────────────
+  if (/expense|spend|kharcha|kharche|where.*money|cost|bill|budget/.test(q)) {
+    if (!topMonthExpenses.length && !allExpenseCategories.length) return "No expenses recorded yet. Add entries via the Expenses tab or import your sheet.";
+    const isAllTime = /all time|overall|total|all expense|ever/.test(q);
+    const data = isAllTime ? allExpenseCategories : topMonthExpenses;
+    const label = isAllTime ? "All-Time" : "This Month";
+    if (!data.length) return `No expenses found for ${label.toLowerCase()}. Try asking "all time expenses" or add this month's data.`;
+    const total = data.reduce((s, [, v]) => s + v, 0);
+    const lines = data.slice(0, 6).map(([name, val], i) => `${i + 1}. **${name}**: ${formatINR(val)} (${total ? Math.round((val / total) * 100) : 0}%)`).join("\n");
+    return `**${label} Expense Breakdown** 💸\n${lines}\n\n• Total: **${formatINR(total)}**\n• Categories tracked: **${data.length}**`;
   }
 
   // ─── NET WORTH ───────────────────────────────────────────────────────────────
-  if (/net worth|networth|wealth|total asset|total portfolio/.test(q)) {
-    const mf = sum(state.mutualFunds, "currentValue");
-    const stocks = sum(state.stocks, "value");
-    const fd = sum(state.fd, "value");
-    const epf = sum(state.epf, "value");
-    const gold = sum(state.gold, "value");
-    const crypto = sum(state.crypto, "value");
-    const liab = metrics.liabilities;
-    return `**Net Worth Breakdown** 💼\n• Mutual Funds: **${formatINR(mf)}**\n• Stocks: **${formatINR(stocks)}**\n• FD: **${formatINR(fd)}**\n• EPF: **${formatINR(epf)}**\n• Gold: **${formatINR(gold)}**\n• Crypto: **${formatINR(crypto)}**\n• Total Assets: **${formatINR(metrics.assets)}**\n• Total Liabilities: **${formatINR(liab)}**\n• **Net Worth: ${formatINR(metrics.netWorth)}**`;
+  if (/net\s*worth|networth|wealth|total\s*asset/.test(q)) {
+    return `**Net Worth** 💼\n_Formula: Investments + Registered Assets − Liabilities (salary NOT included)_\n\n**Assets (what you own)**\n• Registered assets: ${formatINR(registeredAssets)}\n• Mutual Funds: ${formatINR(mfCurrent)}\n• Stocks: ${formatINR(stocksVal)}\n• FD: ${formatINR(fdVal)}\n• EPF: ${formatINR(epfVal)}\n• PPF: ${formatINR(ppfVal)}\n• Gold: ${formatINR(goldVal)}\n• Silver: ${formatINR(silverVal)}\n• Crypto: ${formatINR(cryptoVal)}\n• US Stocks: ${formatINR(usStocksVal)}\n• Bonds: ${formatINR(bondsVal)}\n• Bank Savings: ${formatINR(bankSavingVal)}\n• Others: ${formatINR(othersVal)}\n• **Total assets: ${formatINR(metrics.assets)}**\n\n**Liabilities (what you owe)**\n${state.liabilities.length ? state.liabilities.slice(0, 5).map((l) => `• ${l.name || l.category}: ${formatINR(l.value)}`).join("\n") : "• No liabilities"}\n• **Total liabilities: ${formatINR(totalLiabilities)}**\n\n**Net Worth: ${formatINR(metrics.netWorth)}**`;
   }
 
-  // ─── SALARY / INCOME ─────────────────────────────────────────────────────────
-  if (/salary|income|earning|in.hand|payslip|ctc|pay|wage/.test(q)) {
-    const byPerson = groupBy(state.income.filter(isSalary), (i) => i.person || "Me");
+  // ─── SALARY / INCOME ────────────────────────────────────────────────────────
+  if (/salary|income|earn|in.hand|payslip|ctc|pay\b|wage|kamai/.test(q)) {
+    if (!state.income.length) return "No income data found. Import salary sheets or add entries via the Income tab.";
+    const byPerson = groupBy(state.income, (i) => i.person || "Me");
     const lines = Object.entries(byPerson).map(([person, rows]) => {
       const sorted = rows.sort((a, b) => new Date(a.date) - new Date(b.date));
-      const first = sorted[0]?.netSalary || sorted[0]?.amount || 0;
       const latest = sorted.at(-1);
       const latestVal = latest?.netSalary || latest?.amount || 0;
-      const growth = first ? (((latestVal - first) / first) * 100).toFixed(1) : 0;
-      return `• **${person}**: ${formatINR(latestVal)} net in-hand (${latest?.source || "Salary"}) — ${growth}% career growth tracked`;
+      const first = sorted[0]?.netSalary || sorted[0]?.amount || 0;
+      const growth = first && first !== latestVal ? (((latestVal - first) / first) * 100).toFixed(1) : "0";
+      return `• **${person}**: ${formatINR(latestVal)} latest (${latest?.source || "—"}, ${formatDate(latest?.date)}) — ${growth}% growth tracked over ${sorted.length} entries`;
     });
-    return lines.length
-      ? `**Salary Summary** 💰\n${lines.join("\n")}\n\nKeep uploading monthly payslips to build a complete salary growth chart.`
-      : "No salary data found. Upload payslips with Gross, Net Salary, Basic, HRA, PF, and tax columns.";
+    return `**Income / Salary** 💰\n${lines.join("\n")}\n\n• Total income entries: **${state.income.length}**\n• All-time total: **${formatINR(totalAllIncome)}**\n• This month: **${formatINR(metrics.monthIncome)}**`;
   }
 
-  // ─── MUTUAL FUNDS ─────────────────────────────────────────────────────────────
-  if (/mutual fund|mf|fund|sip|kuvera|groww|nav/.test(q)) {
-    const mfTotal = sum(state.mutualFunds, "currentValue");
-    const invested = sum(state.mutualFunds, "invested");
-    const gain = mfTotal - invested;
-    const gainPct = invested ? ((gain / invested) * 100).toFixed(1) : 0;
-    const fundCount = new Set(state.mutualFunds.map((f) => f.fundName)).size;
-    return `**Mutual Fund Portfolio** 📈\n• Funds tracked: **${fundCount}**\n• Total invested: **${formatINR(invested)}**\n• Current value: **${formatINR(mfTotal)}**\n• Gain/Loss: **${formatINR(gain)} (${gainPct}%)**\n\n${gain >= 0 ? "Your SIPs are compounding nicely! Stay the course." : "Markets fluctuate — keep the SIP running for long-term gains."}`;
+  // ─── MUTUAL FUNDS ──────────────────────────────────────────────────────────
+  if (/mutual fund|mf portfolio|sip|kuvera|groww|nav\b/.test(q)) {
+    if (!state.mutualFunds.length) return "No mutual fund data. Import your MF statement or add entries manually.";
+    const gain = mfCurrent - mfInvested;
+    const fundNames = [...new Set(state.mutualFunds.map((f) => f.fundName))];
+    const { mine, hers } = ownerSplit(state.mutualFunds, "currentValue");
+    const topFunds = Object.entries(groupSum(state.mutualFunds, (f) => f.fundName || "Unknown", "currentValue"))
+      .sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([name, val]) => `  • ${name}: ${formatINR(val)}`).join("\n");
+    return `**Mutual Fund Portfolio** 📈\n• Funds: **${fundNames.length}** | Transactions: **${state.mutualFunds.length}**\n• Invested: **${formatINR(mfInvested)}**\n• Current: **${formatINR(mfCurrent)}**\n• Gain/Loss: **${formatINR(gain)}** (${mfInvested ? ((gain / mfInvested) * 100).toFixed(1) : 0}%)\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}\n\n**Top funds:**\n${topFunds}`;
   }
 
-  // ─── STOCKS ──────────────────────────────────────────────────────────────────
-  if (/\bstock|equity|share|nse|bse/.test(q) && !/us stock|usstocks|s&p/.test(q)) {
-    const total = sum(state.stocks, "value");
-    const mine = sum(state.stocks.filter((s) => (s.owner || "Me") === "Me"), "value");
-    const hers = sum(state.stocks.filter((s) => s.owner === "Wife"), "value");
-    return `**Indian Stocks** 🏦\n• Total value: **${formatINR(total)}**\n• Prafful's stocks: **${formatINR(mine)}**\n• Wife's stocks: **${formatINR(hers)}**\n• Entries tracked: **${state.stocks.length}**`;
+  // ─── INDIVIDUAL INVESTMENT TYPES ────────────────────────────────────────────
+  if (/\bstock\b|equity|share\b|nse|bse/.test(q) && !/us stock|foreign/.test(q)) {
+    const { mine, hers } = ownerSplit(state.stocks, "value");
+    const latest = [...state.stocks].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const recentEntries = latest.slice(0, 3).map((s) => `  • ${formatDate(s.date)}: ${formatINR(s.value)} (${s.owner || "Me"})${s.note ? " — " + s.note : ""}`).join("\n");
+    return `**Indian Stocks** 📊\n• Total: **${formatINR(stocksVal)}** across **${state.stocks.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}\n\n${recentEntries ? "**Recent:**\n" + recentEntries : ""}`;
   }
 
-  // ─── US STOCKS ────────────────────────────────────────────────────────────────
-  if (/us stock|usstocks|s&p|nasdaq|dollar|foreign/.test(q)) {
-    const total = sum(state.usstocks, "value");
-    return `**US Stocks / Foreign Portfolio** 🌐\n• Total value: **${formatINR(total)}**\n• Entries tracked: **${state.usstocks.length}**\n\n${total === 0 ? "No US stock entries yet. Add them under the US Stocks tab." : "Great diversification with international exposure!"}`;
+  if (/us stock|usstocks|foreign|s&p|nasdaq|dollar invest/.test(q)) {
+    const { mine, hers } = ownerSplit(state.usstocks, "value");
+    return `**US Stocks / Foreign** 🌐\n• Total: **${formatINR(usStocksVal)}** across **${state.usstocks.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}`;
   }
 
-  // ─── GOLD / SILVER ───────────────────────────────────────────────────────────
-  if (/gold|silver|precious metal/.test(q)) {
-    const gold = sum(state.gold, "value");
-    const silver = sum(state.silver, "value");
-    return `**Precious Metals** 🥇\n• Gold: **${formatINR(gold)}** (${state.gold.length} entries)\n• Silver: **${formatINR(silver)}** (${state.silver.length} entries)\n• Combined: **${formatINR(gold + silver)}**\n\nGold is a great inflation hedge — keep tracking it monthly!`;
+  if (/gold|silver|precious|sona|chandi/.test(q)) {
+    const gSplit = ownerSplit(state.gold, "value");
+    const sSplit = ownerSplit(state.silver, "value");
+    return `**Precious Metals** 🥇\n• Gold: **${formatINR(goldVal)}** (${state.gold.length} entries) — Prafful: ${formatINR(gSplit.mine)}, Wife: ${formatINR(gSplit.hers)}\n• Silver: **${formatINR(silverVal)}** (${state.silver.length} entries) — Prafful: ${formatINR(sSplit.mine)}, Wife: ${formatINR(sSplit.hers)}\n• Combined: **${formatINR(goldVal + silverVal)}**`;
   }
 
-  // ─── CRYPTO ───────────────────────────────────────────────────────────────────
-  if (/crypto|bitcoin|btc|eth|ethereum|web3/.test(q)) {
-    const total = sum(state.crypto, "value");
-    return `**Crypto Portfolio** 🔐\n• Total value: **${formatINR(total)}**\n• Entries tracked: **${state.crypto.length}**\n\n${total === 0 ? "No crypto entries yet. Add them under the Crypto tab." : "Crypto is volatile — treat it as high-risk allocation (<10% of portfolio)."}`;
+  if (/crypto|bitcoin|btc|eth\b|ethereum|web3|coin/.test(q)) {
+    const { mine, hers } = ownerSplit(state.crypto, "value");
+    return `**Crypto** 🔐\n• Total: **${formatINR(cryptoVal)}** across **${state.crypto.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}`;
   }
 
-  // ─── FD ───────────────────────────────────────────────────────────────────────
-  if (/\bfd\b|fixed deposit|fixed.deposit/.test(q)) {
-    const total = sum(state.fd, "value");
-    const mine = sum(state.fd.filter((f) => (f.owner || "Me") === "Me"), "value");
-    const hers = sum(state.fd.filter((f) => f.owner === "Wife"), "value");
-    return `**Fixed Deposits (FD)** 🏛️\n• Total: **${formatINR(total)}**\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}\n• Entries tracked: **${state.fd.length}**`;
+  if (/\bfd\b|fixed deposit/.test(q)) {
+    const { mine, hers } = ownerSplit(state.fd, "value");
+    return `**Fixed Deposits** 🏛️\n• Total: **${formatINR(fdVal)}** across **${state.fd.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}`;
   }
 
-  // ─── EPF ─────────────────────────────────────────────────────────────────────
-  if (/\bepf\b|provident fund|pf balance/.test(q)) {
-    const total = sum(state.epf, "value");
-    return `**EPF / Provident Fund** 🏢\n• Total balance: **${formatINR(total)}**\n• Entries tracked: **${state.epf.length}**\n\nEPF compounds at 8.25% — it's one of the best guaranteed returns available.`;
+  if (/\bepf\b|employee provident|pf balance/.test(q)) {
+    const { mine, hers } = ownerSplit(state.epf, "value");
+    return `**EPF / Provident Fund** 🏢\n• Total: **${formatINR(epfVal)}** across **${state.epf.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}`;
   }
 
-  // ─── PPF ─────────────────────────────────────────────────────────────────────
   if (/\bppf\b|public provident/.test(q)) {
-    const total = sum(state.ppf, "value");
-    return `**PPF (Public Provident Fund)** 🏦\n• Total balance: **${formatINR(total)}**\n• Entries: **${state.ppf.length}**\n\nPPF has a 15-year lock-in but offers tax-free returns. Great for long-term wealth!`;
+    const { mine, hers } = ownerSplit(state.ppf, "value");
+    return `**PPF** 🏦\n• Total: **${formatINR(ppfVal)}** across **${state.ppf.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}`;
   }
 
-  // ─── BONDS ────────────────────────────────────────────────────────────────────
-  if (/bond|debenture|sgb|sovereign/.test(q)) {
-    const total = sum(state.bonds, "value");
-    return `**Bonds** 📜\n• Total value: **${formatINR(total)}**\n• Entries tracked: **${state.bonds.length}**`;
+  if (/\bbond|debenture|sgb|sovereign/.test(q)) {
+    const { mine, hers } = ownerSplit(state.bonds, "value");
+    return `**Bonds** 📜\n• Total: **${formatINR(bondsVal)}** across **${state.bonds.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}`;
   }
 
-  // ─── BANK SAVINGS ────────────────────────────────────────────────────────────
-  if (/bank|saving account|savings account|fd bank|current account/.test(q) && !/fixed deposit/.test(q)) {
-    const total = sum(state.banksaving, "value");
-    return `**Bank Savings** 🏦\n• Total balance: **${formatINR(total)}**\n• Entries tracked: **${state.banksaving.length}**\n\nKeep 3-6 months of expenses as liquid emergency fund in your savings account.`;
+  if (/bank\s*saving|savings?\s*account|current\s*account/.test(q)) {
+    const { mine, hers } = ownerSplit(state.banksaving, "value");
+    return `**Bank Savings** 🏦\n• Total: **${formatINR(bankSavingVal)}** across **${state.banksaving.length}** entries\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}`;
   }
 
-  // ─── FULL INVESTMENT PORTFOLIO BREAKDOWN ─────────────────────────────────────
-  if (/portfolio|investment|all invest|breakdown|where.*invest/.test(q)) {
-    const mf = sum(state.mutualFunds, "currentValue");
-    const stocks = sum(state.stocks, "value");
-    const fd = sum(state.fd, "value");
-    const epf = sum(state.epf, "value");
-    const ppf = sum(state.ppf, "value");
-    const gold = sum(state.gold, "value");
-    const silver = sum(state.silver, "value");
-    const crypto = sum(state.crypto, "value");
-    const usst = sum(state.usstocks, "value");
-    const bank = sum(state.banksaving, "value");
-    const bonds = sum(state.bonds, "value");
-    const others = sum(state.others, "value");
-    const total = mf + stocks + fd + epf + ppf + gold + silver + crypto + usst + bank + bonds + others;
-    return `**Full Investment Portfolio** 💹\n• Mutual Funds: ${formatINR(mf)}\n• Stocks: ${formatINR(stocks)}\n• FD: ${formatINR(fd)}\n• EPF: ${formatINR(epf)}\n• PPF: ${formatINR(ppf)}\n• Gold: ${formatINR(gold)}\n• Silver: ${formatINR(silver)}\n• Crypto: ${formatINR(crypto)}\n• US Stocks: ${formatINR(usst)}\n• Bank Savings: ${formatINR(bank)}\n• Bonds: ${formatINR(bonds)}\n• Others: ${formatINR(others)}\n• **Total: ${formatINR(total)}**`;
+  // ─── FULL PORTFOLIO ─────────────────────────────────────────────────────────
+  if (/portfolio|all invest|breakdown|where.*invest|invest/.test(q)) {
+    const items = [
+      ["Mutual Funds", mfCurrent], ["Stocks", stocksVal], ["FD", fdVal], ["EPF", epfVal],
+      ["PPF", ppfVal], ["Gold", goldVal], ["Silver", silverVal], ["Crypto", cryptoVal],
+      ["US Stocks", usStocksVal], ["Bank Savings", bankSavingVal], ["Bonds", bondsVal], ["Others", othersVal],
+    ].filter(([, v]) => v > 0);
+    const total = items.reduce((s, [, v]) => s + v, 0);
+    const lines = items.map(([name, val]) => `• ${name}: **${formatINR(val)}** (${total ? Math.round((val / total) * 100) : 0}%)`).join("\n");
+    return `**Investment Portfolio Breakdown** 💹\n${lines}\n\n• Registered assets: **${formatINR(registeredAssets)}**\n• **Total investments: ${formatINR(total)}**\n• **Net worth: ${formatINR(metrics.netWorth)}**`;
   }
 
-  // ─── LIABILITIES ─────────────────────────────────────────────────────────────
-  if (/liabilit|loan|debt|emi|borrow|owe/.test(q)) {
-    const total = metrics.liabilities;
-    const entries = state.liabilities.sort((a, b) => b.value - a.value);
-    const top = entries.slice(0, 3).map((l) => `• ${l.name}: **${formatINR(l.value)}**`).join("\n");
-    return `**Liabilities / Loans** ⚠️\n• Total outstanding: **${formatINR(total)}**\n${top || "• No liabilities tracked yet"}\n\nPrioritize high-interest loans (credit cards, personal loans) for repayment first.`;
+  // ─── LIABILITIES ────────────────────────────────────────────────────────────
+  if (/liabilit|loan|debt|emi\b|borrow|owe|outstanding/.test(q)) {
+    if (!state.liabilities.length) return "No liabilities tracked. Add loans, credit cards, or EMIs via the Liabilities tab.";
+    const sorted = [...state.liabilities].sort((a, b) => toNumber(b.value) - toNumber(a.value));
+    const lines = sorted.map((l) => `• **${l.name || l.category || "—"}** (${l.owner || "Both"}): ${formatINR(l.value)}`).join("\n");
+    return `**Liabilities / Loans** ⚠️\n${lines}\n\n• **Total outstanding: ${formatINR(totalLiabilities)}**\n• Entries: **${state.liabilities.length}**`;
   }
 
-  // ─── GOALS ────────────────────────────────────────────────────────────────────
-  if (/goal|future|target|dream|plan|ambition/.test(q)) {
-    if (!state.goals.length) return "No goals tracked yet. Add goals like home purchase, vacation, or education fund with target amount and due date!";
+  // ─── GOALS ──────────────────────────────────────────────────────────────────
+  if (/goal|target|dream|ambition|lakshya/.test(q)) {
+    if (!state.goals.length) return "No goals tracked yet. Add goals like house, vacation, emergency fund with a target and due date.";
     const completed = state.goals.filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0);
-    const inProgress = state.goals.filter((g) => toNumber(g.saved) < toNumber(g.target) || !toNumber(g.target));
-    const nearestLines = sortedGoals.slice(0, 3).map((g) => {
-      const gap = Math.max(0, toNumber(g.target) - toNumber(g.saved));
-      return `• **${g.name}** (${g.owner || "Me"}): Gap ${formatINR(gap)}, due ${formatDate(g.dueDate)}`;
-    });
-    return `**Goals Tracker** 🎯\n• Total goals: **${state.goals.length}** (${completed.length} completed, ${inProgress.length} in progress)\n${nearestLines.join("\n")}\n\nNear goal: **${nextGoal?.name}** due ${formatDate(nextGoal?.dueDate)}.`;
+    const lines = sortedGoals.map((g) => {
+      const pct = toNumber(g.target) > 0 ? Math.round((toNumber(g.saved) / toNumber(g.target)) * 100) : 0;
+      return `• **${g.name}** (${g.owner || "Me"}): ${formatINR(toNumber(g.saved))} / ${formatINR(toNumber(g.target))} — **${pct}%** done, due ${formatDate(g.dueDate)}`;
+    }).join("\n");
+    return `**Goals Tracker** 🎯\n${lines}\n\n• Total: **${state.goals.length}** (${completed.length} completed)`;
   }
 
-  // ─── TASKS / TO-DO ────────────────────────────────────────────────────────────
-  if (/task|todo|to.do|pending|due|checklist/.test(q)) {
-    const byArea = groupBy(pendingTasks, (t) => t.area || "General");
-    const areaLines = Object.entries(byArea).slice(0, 4).map(([area, items]) => `• **${area}**: ${items.length} pending`).join("\n");
-    return `**To-Do List** ✅\n• Pending tasks: **${pendingTasks.length}**\n• Completed tasks: **${doneTasks.length}**\n${areaLines || "• No tasks categorized yet"}\n\nTop pending: ${pendingTasks.slice(0, 3).map((t) => t.text).join(", ") || "none"}`;
+  // ─── TASKS / TO-DO ──────────────────────────────────────────────────────────
+  if (/task|todo|to.do|pending|checklist|kaam/.test(q)) {
+    if (!state.tasks.length) return "No tasks tracked. Add to-do items via the Tasks tab.";
+    const pendingLines = pendingTasks.slice(0, 8).map((t) => `• ${t.done ? "✅" : "⬜"} ${t.text}${t.area ? " [" + t.area + "]" : ""}`).join("\n");
+    return `**To-Do List** ✅\n• Pending: **${pendingTasks.length}** | Done: **${doneTasks.length}** | Total: **${state.tasks.length}**\n\n${pendingLines || "All tasks completed! 🎉"}`;
   }
 
-  // ─── HABITS ──────────────────────────────────────────────────────────────────
-  if (/habit|streak|routine|consistent|discipline|daily|weekly/.test(q)) {
-    if (!state.habits.length) return "No habits tracked yet. Add daily habits like reading, exercise, or learning and I'll track your streaks!";
-    const topStreak = [...state.habits].sort((a, b) => (b.streak || 0) - (a.streak || 0))[0];
-    const myLines = myHabits.map((h) => `• ${h.name} — 🔥 ${h.streak || 0} day streak`).join("\n");
-    const wifeLines = wifeHabits.filter((h) => h.owner === "Wife").map((h) => `• ${h.name} — 🔥 ${h.streak || 0} day streak`).join("\n");
-    return `**Habit Tracker** 🔥\n**Your habits (Prafful):**\n${myLines || "• No habits tracked for you yet"}\n\n**Wife's habits:**\n${wifeLines || "• No habits tracked for wife yet"}\n\nBest streak: **${topStreak.name}** at ${topStreak.streak || 0} days! Keep it going!`;
+  // ─── HABITS ─────────────────────────────────────────────────────────────────
+  if (/habit|streak|routine|discipline/.test(q)) {
+    if (!state.habits.length) return "No habits tracked yet. Add daily habits like reading, exercise, or learning to track streaks.";
+    const sorted = [...state.habits].sort((a, b) => (b.streak || 0) - (a.streak || 0));
+    const myLines = sorted.filter((h) => (h.owner || "Me") === "Me" || h.owner === "Both")
+      .map((h) => `• ${h.name} — 🔥 **${h.streak || 0}** day streak (${h.frequency || "Daily"})`).join("\n");
+    const wifeLines = sorted.filter((h) => h.owner === "Wife")
+      .map((h) => `• ${h.name} — 🔥 **${h.streak || 0}** day streak (${h.frequency || "Daily"})`).join("\n");
+    return `**Habit Tracker** 🔥\n\n**Prafful's habits:**\n${myLines || "• None yet"}\n\n**Wife's habits:**\n${wifeLines || "• None yet"}\n\nTotal: **${state.habits.length}** habits tracked`;
   }
 
-  // ─── EXERCISE / WORKOUTS ─────────────────────────────────────────────────────
-  if (/exercise|workout|gym|walk|run|yoga|fitness|health|active/.test(q)) {
-    const recent = state.workouts.slice(-7);
-    const totalMinutes = recent.reduce((s, w) => s + toNumber(w.minutes), 0);
+  // ─── EXERCISE / WORKOUTS ────────────────────────────────────────────────────
+  if (/exercise|workout|gym|walk\b|run\b|yoga|fitness|active|health/.test(q)) {
+    if (!state.workouts.length) return "No workouts logged yet. Add exercises via the Exercise tab.";
+    const sorted = [...state.workouts].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const recent = sorted.slice(0, 7);
+    const totalMin = recent.reduce((s, w) => s + toNumber(w.minutes), 0);
     const todayWorked = state.workouts.some((w) => sameDay(w.date, todayISO()));
-    const byType = groupBy(recent, (w) => w.type || "General");
-    const typeLines = Object.entries(byType).map(([type, items]) => `• ${type}: ${items.length}x`).join("\n");
-    return `**Exercise Log (Last 7 entries)** 🏃\n• Sessions: **${recent.length}**\n• Total minutes: **${totalMinutes} min**\n${typeLines}\n\n${todayWorked ? "✅ You already worked out today. Amazing!" : "💡 No workout logged today yet — even a 20-min walk counts!"}`;
+    const lines = recent.map((w) => `• ${formatDate(w.date)}: **${w.type || "Workout"}** — ${w.minutes || 0} min (${w.intensity || "—"})`).join("\n");
+    return `**Exercise Log** 🏃\n${lines}\n\n• Last 7 sessions: **${totalMin} min** total\n• All-time workouts: **${state.workouts.length}**\n• Today: ${todayWorked ? "✅ Done" : "⚠️ Not yet — go for a walk!"}`;
   }
 
-  // ─── DEVOPS / SRE CAREER ────────────────────────────────────────────────────
-  if (/devops|sre|site reliab|kubernetes|k8s|cloud|aws|gcp|azure|terraform|jenkins|ci.cd|monitoring|infra/.test(q)) {
-    const devopsTopics = myStudies;
-    if (!devopsTopics.length) return "No DevOps/SRE roadmap topics added yet. Go to Career → DevOps/SRE tab and start adding topics!";
-    const avgConf = devopsTopics.length ? Math.round(devopsTopics.reduce((s, t) => s + (t.confidence || 0), 0) / devopsTopics.length) : 0;
-    const completed = devopsTopics.filter((t) => t.status === "Completed").length;
-    const inProg = devopsTopics.filter((t) => t.status === "In progress").length;
-    const focus = weakestMyTopic;
-    return `**Your DevOps/SRE Roadmap** 🚀\n• Total topics: **${devopsTopics.length}** (${completed} done, ${inProg} in progress)\n• Average confidence: **${avgConf}%**\n• Focus area: **${focus?.topic || "all good!"}** (${focus?.confidence || 0}% confidence)\n\nTop 3 topics: ${devopsTopics.slice(0, 3).map((t) => `${t.topic} (${t.confidence || 0}%)`).join(", ")}\n\nKeep pushing — SRE + DevOps skills are in high demand!`;
+  // ─── DEVOPS / SRE ───────────────────────────────────────────────────────────
+  if (/devops|sre|site reliab|kubernetes|k8s|cloud|aws|gcp|azure|terraform|jenkins|ci.cd|docker|monitoring|infra|mlops/.test(q)) {
+    if (!myStudies.length) return "No DevOps/SRE roadmap topics added. Go to Career → DevOps/SRE tab to start.";
+    const avgConf = Math.round(myStudies.reduce((s, t) => s + (t.confidence || 0), 0) / myStudies.length);
+    const completed = myStudies.filter((t) => t.status === "Completed");
+    const inProg = myStudies.filter((t) => t.status === "In progress");
+    const planned = myStudies.filter((t) => t.status === "Planned");
+    const lines = myStudies.sort((a, b) => (a.confidence || 0) - (b.confidence || 0))
+      .map((t) => `• **${t.topic}**: ${t.confidence || 0}% confidence, ${t.hours || 0}/${t.targetHours || 20}h (${t.status || "Planned"})`).join("\n");
+    return `**DevOps/SRE Roadmap (Prafful)** 🚀\n${lines}\n\n• Topics: **${myStudies.length}** (${completed.length} ✅, ${inProg.length} 🔄, ${planned.length} 📋)\n• Avg confidence: **${avgConf}%**\n• Focus on: **${weakestMyTopic?.topic || "—"}** (${weakestMyTopic?.confidence || 0}%)`;
   }
 
-  // ─── ETL / DATA ENGINEER (WIFE) ──────────────────────────────────────────────
-  if (/etl|data engineer|airflow|spark|pipeline|dbt|warehouse|data engi|wife.*career|wife.*study/.test(q)) {
-    const etlTopics = wifeStudies;
-    if (!etlTopics.length) return "No ETL/Data Engineering roadmap topics added for wife yet. Go to Career → ETL/Data tab and start adding topics!";
-    const avgConf = etlTopics.length ? Math.round(etlTopics.reduce((s, t) => s + (t.confidence || 0), 0) / etlTopics.length) : 0;
-    const completed = etlTopics.filter((t) => t.status === "Completed").length;
-    const inProg = etlTopics.filter((t) => t.status === "In progress").length;
-    return `**Wife's ETL/Data Engineering Roadmap** 📊\n• Total topics: **${etlTopics.length}** (${completed} done, ${inProg} in progress)\n• Average confidence: **${avgConf}%**\n• Focus area: **${weakestWifeTopic?.topic || "all good!"}** (${weakestWifeTopic?.confidence || 0}% confidence)\n\nTop 3 topics: ${etlTopics.slice(0, 3).map((t) => `${t.topic} (${t.confidence || 0}%)`).join(", ")}\n\nData engineering is a hot field — consistency is key!`;
+  // ─── ETL / DATA ENGINEER ────────────────────────────────────────────────────
+  if (/etl|data engineer|airflow|spark|pipeline|dbt|warehouse|wife.*career|wife.*study|wife.*roadmap/.test(q)) {
+    if (!wifeStudies.length) return "No ETL/Data Engineering topics added for wife. Go to Career → ETL/Data tab to start.";
+    const avgConf = Math.round(wifeStudies.reduce((s, t) => s + (t.confidence || 0), 0) / wifeStudies.length);
+    const completed = wifeStudies.filter((t) => t.status === "Completed");
+    const inProg = wifeStudies.filter((t) => t.status === "In progress");
+    const planned = wifeStudies.filter((t) => t.status === "Planned");
+    const lines = wifeStudies.sort((a, b) => (a.confidence || 0) - (b.confidence || 0))
+      .map((t) => `• **${t.topic}**: ${t.confidence || 0}% confidence, ${t.hours || 0}/${t.targetHours || 20}h (${t.status || "Planned"})`).join("\n");
+    return `**ETL/Data Engineering Roadmap (Wife)** 📊\n${lines}\n\n• Topics: **${wifeStudies.length}** (${completed.length} ✅, ${inProg.length} 🔄, ${planned.length} 📋)\n• Avg confidence: **${avgConf}%**\n• Focus on: **${weakestWifeTopic?.topic || "—"}** (${weakestWifeTopic?.confidence || 0}%)`;
   }
 
-  // ─── CAREER SUMMARY ──────────────────────────────────────────────────────────
-  if (/career|study|roadmap|learn|skill|progress|ready|switch/.test(q)) {
+  // ─── CAREER SUMMARY ─────────────────────────────────────────────────────────
+  if (/career|study|roadmap|learn|skill|progress|interview|switch|prep/.test(q)) {
     const myAvg = myStudies.length ? Math.round(myStudies.reduce((s, t) => s + (t.confidence || 0), 0) / myStudies.length) : 0;
     const wifeAvg = wifeStudies.length ? Math.round(wifeStudies.reduce((s, t) => s + (t.confidence || 0), 0) / wifeStudies.length) : 0;
-    return `**Career Roadmap Summary** 🎓\n• **Prafful (SRE/DevOps)**: ${myStudies.length} topics, ${myAvg}% avg confidence\n  Focus: ${weakestMyTopic?.topic || "add topics"}\n• **Wife (ETL/Data Eng)**: ${wifeStudies.length} topics, ${wifeAvg}% avg confidence\n  Focus: ${weakestWifeTopic?.topic || "add topics"}\n\n${weakestMyTopic ? `This week, prioritize **${weakestMyTopic.topic}** — it needs the most attention.` : "Add study topics to get personalized recommendations!"}`;
+    return `**Career Roadmap** 🎓\n\n**Prafful (SRE/DevOps)**: ${myStudies.length} topics, ${myAvg}% avg\n• Focus: ${weakestMyTopic?.topic || "add topics"}\n\n**Wife (ETL/Data Eng)**: ${wifeStudies.length} topics, ${wifeAvg}% avg\n• Focus: ${weakestWifeTopic?.topic || "add topics"}\n\nTotal study hours: **${state.studies.reduce((s, t) => s + (t.hours || 0), 0)}h** logged`;
   }
 
-  // ─── TODAY'S DAILY PLAN ──────────────────────────────────────────────────────
-  if (/today|daily plan|what.*do|morning|tonight|focus/.test(q)) {
-    const todayTasks = pendingTasks.slice(0, 3);
+  // ─── TODAY ──────────────────────────────────────────────────────────────────
+  if (/today|daily plan|what.*do\b|morning|tonight|focus|aaj/.test(q)) {
+    const todayTasks = pendingTasks.slice(0, 5);
     const worked = state.workouts.some((w) => sameDay(w.date, todayISO()));
     const topHabit = [...myHabits].sort((a, b) => (b.streak || 0) - (a.streak || 0))[0];
-    return `**Today's Plan for Prafful** 📅\n• **Tasks**: ${todayTasks.length ? todayTasks.map((t) => t.text).join(", ") : "All clear! No pending tasks."}\n• **Exercise**: ${worked ? "✅ Already logged" : "⚠️ Not logged yet — add a 20-30 min session!"}\n• **Habit to protect**: ${topHabit ? `${topHabit.name} (🔥 ${topHabit.streak || 0} day streak)` : "Add habits to track"}\n• **Study focus**: ${weakestMyTopic?.topic || "Add career topics for daily focus"}\n\nYou've got this, Prafful! 💪`;
+    return `**Today's Plan** 📅\n\n**Tasks:**\n${todayTasks.length ? todayTasks.map((t) => `• ⬜ ${t.text}`).join("\n") : "• All clear! ✨"}\n\n**Exercise:** ${worked ? "✅ Done today" : "⚠️ Not yet"}\n**Habit streak to protect:** ${topHabit ? `${topHabit.name} (🔥 ${topHabit.streak || 0} days)` : "Add habits"}\n**Study focus:** ${weakestMyTopic?.topic || "Add career topics"}`;
   }
 
-  // ─── COMPARISON (ME vs WIFE) ─────────────────────────────────────────────────
-  if (/compare|vs|versus|both|together|couple|family|husband|wife/.test(q)) {
+  // ─── COMPARE ME VS WIFE ─────────────────────────────────────────────────────
+  if (/compare|vs\b|versus|couple|family|husband|wife/.test(q)) {
     const myIncome = sum(state.income.filter((i) => (i.person || "Me") === "Me"), "amount");
     const wifeIncome = sum(state.income.filter((i) => i.person === "Wife"), "amount");
     const myMf = sum(state.mutualFunds.filter((f) => (f.owner || "Me") === "Me"), "currentValue");
     const wifeMf = sum(state.mutualFunds.filter((f) => f.owner === "Wife"), "currentValue");
-    return `**Prafful vs Wife Snapshot** 👫\n• Income — Prafful: ${formatINR(myIncome)} | Wife: ${formatINR(wifeIncome)}\n• MF Portfolio — Prafful: ${formatINR(myMf)} | Wife: ${formatINR(wifeMf)}\n• Career topics — Prafful: ${myStudies.length} | Wife: ${wifeStudies.length}\n• Goals — Prafful: ${myGoals.length} | Wife: ${wifeGoals.length}\n• Habits — Prafful: ${myHabits.length} | Wife: ${wifeHabits.filter((h) => h.owner === "Wife").length}`;
+    const myStocks = sum(state.stocks.filter((s) => (s.owner || "Me") === "Me"), "value");
+    const wifeStocks = sum(state.stocks.filter((s) => s.owner === "Wife"), "value");
+    return `**Prafful vs Wife** 👫\n\n| | Prafful | Wife |\n|---|---|---|\n| Total income | ${formatINR(myIncome)} | ${formatINR(wifeIncome)} |\n| Mutual funds | ${formatINR(myMf)} | ${formatINR(wifeMf)} |\n| Stocks | ${formatINR(myStocks)} | ${formatINR(wifeStocks)} |\n| Career topics | ${myStudies.length} | ${wifeStudies.length} |\n| Goals | ${myGoals.length} | ${wifeGoals.length} |\n| Habits | ${myHabits.length} | ${wifeHabits.filter((h) => h.owner === "Wife").length} |`;
   }
 
-  // ─── QUICK STATS / HOW AM I DOING ────────────────────────────────────────────
-  if (/how.*doing|quick.*stat|overview|status|snapshot|summary|all/.test(q)) {
-    return `**Life Ledger Snapshot** 🌟\n• 💰 Net Worth: **${formatINR(metrics.netWorth)}**\n• 📊 This Month Savings: **${formatINR(metrics.monthIncome - metrics.monthExpenses)}** (${metrics.savingsRate}% rate)\n• 🏦 Total Investments: **${formatINR(metrics.assets)}**\n• ✅ Pending Tasks: **${pendingTasks.length}**\n• 🔥 Habits: **${state.habits.length}** tracked\n• 🎯 Goals: **${state.goals.length}** (${state.goals.filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0).length} completed)\n• 🚀 Career Topics: **${myStudies.length}** (DevOps) + **${wifeStudies.length}** (ETL)`;
+  // ─── OVERVIEW / HOW AM I DOING ──────────────────────────────────────────────
+  if (/how.*doing|overview|status|snapshot|quick|all\b|everything|sab kuch/.test(q)) {
+    return `**Life Ledger Overview** 🌟\n\n💰 **Net worth: ${formatINR(metrics.netWorth)}**\n• Assets: ${formatINR(metrics.assets)} | Liabilities: ${formatINR(totalLiabilities)}\n• Month income: ${formatINR(metrics.monthIncome)} | Expenses: ${formatINR(metrics.monthExpenses)} | Savings: ${metrics.savingsRate}%\n\n📈 **Investments: ${formatINR(allHoldingsTotal)}**\n• MF: ${formatINR(mfCurrent)} | Stocks: ${formatINR(stocksVal)} | Gold: ${formatINR(goldVal)} | Crypto: ${formatINR(cryptoVal)}\n\n🎯 **Life**: ${pendingTasks.length} tasks pending | ${state.habits.length} habits | ${state.goals.length} goals | ${state.studies.length} career topics\n\n🏃 Workouts: ${state.workouts.length} logged${state.workouts.some((w) => sameDay(w.date, todayISO())) ? " (✅ today)" : ""}`;
   }
 
-  // ─── FALLBACK ─────────────────────────────────────────────────────────────────
-  return `I understand simple questions about your Life Ledger! 😊 Try asking:\n• "How much did we save this month?"\n• "What's my net worth?"\n• "How is my DevOps roadmap going?"\n• "Show me my habits"\n• "What are my pending tasks?"\n• "How are our goals looking?"\n• "Compare me and my wife"\n• "Show my portfolio breakdown"`;
+  // ─── HELP / FALLBACK ────────────────────────────────────────────────────────
+  return `I can answer questions about all your Life Ledger data 😊\n\nTry asking:\n• "How much in gold?" or "total mutual funds"\n• "This month saving"\n• "Net worth"\n• "Show expenses" or "all time expenses"\n• "Salary income"\n• "My DevOps roadmap" or "wife ETL progress"\n• "Habits and streaks"\n• "Pending tasks"\n• "Goals"\n• "Compare me and wife"\n• "Today's plan"\n• "Full portfolio breakdown"\n• "How am I doing?"`;
 }
 
 function calculateMetrics() {

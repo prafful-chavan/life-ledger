@@ -1000,76 +1000,62 @@
         </section>
 
         <section class="view" id="assistant" aria-labelledby="assistantTitle">
-          <div class="assistant-shell">
-            <div class="section-heading">
-              <div>
-                <h2 id="assistantTitle">Hey Prafful 🤖</h2>
-                <p>Your personal AI that knows your finances, investments, career, habits, goals &amp; tasks — just ask in plain English!</p>
+          <div class="chat-shell">
+            <!-- Chat Header -->
+            <div class="chat-header">
+              <div class="chat-header-left">
+                <div class="chat-header-avatar">🤖</div>
+                <div class="chat-header-info">
+                  <strong id="assistantTitle">Hey Prafful</strong>
+                  <span class="chat-status-badge"><span class="chat-online-dot"></span> Online</span>
+                </div>
+              </div>
+              <button class="chat-clear-btn" onclick="if(confirm('Clear chat history?')){state.chat=[];saveData();renderChat();}" title="Clear chat">🗑️</button>
+            </div>
+
+            <!-- Chat Messages Area -->
+            <div class="chat-messages" id="chatLog" aria-live="polite"></div>
+
+            <!-- Suggestion Chips -->
+            <div class="chat-suggestions" id="chatSuggestions">
+              <div class="chat-welcome-hero">
+                <div class="welcome-icon">✨</div>
+                <h3>What can I help you with?</h3>
+                <p>I know your finances, investments, career, habits &amp; goals</p>
+              </div>
+              <div class="chip-grid">
+                <button type="button" class="chip" data-prompt="Give me this month's finance summary">📊 Monthly summary</button>
+                <button type="button" class="chip" data-prompt="What is my net worth?">💼 Net worth</button>
+                <button type="button" class="chip" data-prompt="Show my full portfolio breakdown">💹 Portfolio</button>
+                <button type="button" class="chip" data-prompt="How are my mutual funds doing?">📈 Mutual funds</button>
+                <button type="button" class="chip" data-prompt="How is my gold and silver doing?">🥇 Gold &amp; Silver</button>
+                <button type="button" class="chip" data-prompt="How is my crypto portfolio?">🔐 Crypto</button>
+                <button type="button" class="chip" data-prompt="Show my EPF and PPF balance">🏢 EPF &amp; PPF</button>
+                <button type="button" class="chip" data-prompt="Show my salary income">💰 Salary</button>
+                <button type="button" class="chip" data-prompt="How are my liabilities and loans?">⚠️ Loans</button>
+                <button type="button" class="chip" data-prompt="How is my DevOps SRE roadmap going?">🚀 DevOps roadmap</button>
+                <button type="button" class="chip" data-prompt="How is wife's ETL data engineering roadmap?">📊 Wife's ETL</button>
+                <button type="button" class="chip" data-prompt="What should I do today?">📅 Today's plan</button>
+                <button type="button" class="chip" data-prompt="Show my habits and streaks">🔥 Habits</button>
+                <button type="button" class="chip" data-prompt="What are my pending tasks?">✅ Tasks</button>
+                <button type="button" class="chip" data-prompt="How are our goals looking?">🎯 Goals</button>
+                <button type="button" class="chip" data-prompt="Compare me and my wife">👫 Me vs Wife</button>
+                <button type="button" class="chip" data-prompt="How am I doing overall?">🌟 Overview</button>
+                <button type="button" class="chip" data-prompt="Show my exercise log">🏃 Exercise</button>
               </div>
             </div>
 
-            <div class="assistant-layout">
-              <section class="panel chat-panel">
-                <div class="chat-header-bar">
-                  <span class="chat-avatar">🤖</span>
-                  <div>
-                    <strong>Hey Prafful</strong>
-                    <span class="chat-status">● Online &amp; ready</span>
-                  </div>
-                </div>
-                <div class="chat-log" id="chatLog" aria-live="polite"></div>
-                <form class="chat-form" id="chatForm">
-                  <input
-                    id="chatInput"
-                    type="text"
-                    autocomplete="off"
-                    placeholder="Ask anything... e.g. How is my gold doing?"
-                    aria-label="Ask Hey Prafful"
-                  />
-                  <button class="primary-button" type="submit">Ask ✨</button>
-                </form>
-              </section>
-
-              <aside class="panel quick-prompts">
-                <h3>💬 Quick Questions</h3>
-                <p class="prompts-hint">Tap any to ask instantly</p>
-
-                <div class="prompt-group">
-                  <span class="prompt-group-label">💰 Finance</span>
-                  <button type="button" data-prompt="Give me this month's finance summary">This month summary</button>
-                  <button type="button" data-prompt="Where are expenses high this month?">High expenses</button>
-                  <button type="button" data-prompt="Show my salary income">Salary &amp; income</button>
-                  <button type="button" data-prompt="How are my liabilities and loans?">Loans &amp; EMIs</button>
-                </div>
-
-                <div class="prompt-group">
-                  <span class="prompt-group-label">📈 Investments</span>
-                  <button type="button" data-prompt="What is my net worth?">Net worth</button>
-                  <button type="button" data-prompt="Show my full portfolio breakdown">Full portfolio</button>
-                  <button type="button" data-prompt="How are my mutual funds doing?">Mutual funds</button>
-                  <button type="button" data-prompt="How is my gold and silver doing?">Gold &amp; Silver</button>
-                  <button type="button" data-prompt="How is my crypto portfolio?">Crypto</button>
-                  <button type="button" data-prompt="Show my EPF and PPF balance">EPF &amp; PPF</button>
-                </div>
-
-                <div class="prompt-group">
-                  <span class="prompt-group-label">🚀 Career</span>
-                  <button type="button" data-prompt="How is my DevOps SRE roadmap going?">My DevOps roadmap</button>
-                  <button type="button" data-prompt="How is wife's ETL data engineering roadmap?">Wife's ETL roadmap</button>
-                  <button type="button" data-prompt="Give me career summary for both of us">Career summary</button>
-                </div>
-
-                <div class="prompt-group">
-                  <span class="prompt-group-label">🎯 Life</span>
-                  <button type="button" data-prompt="What should I do today?">Today's plan</button>
-                  <button type="button" data-prompt="Show my habits and streaks">Habits &amp; streaks</button>
-                  <button type="button" data-prompt="What are my pending tasks?">Pending tasks</button>
-                  <button type="button" data-prompt="How are our goals looking?">Goals tracker</button>
-                  <button type="button" data-prompt="Show my exercise log">Exercise log</button>
-                  <button type="button" data-prompt="Compare me and my wife">Me vs Wife</button>
-                </div>
-              </aside>
-            </div>
+            <!-- Input Bar -->
+            <form class="chat-input-bar" id="chatForm">
+              <input
+                id="chatInput"
+                type="text"
+                autocomplete="off"
+                placeholder="Ask me anything about your data..."
+                aria-label="Ask Hey Prafful"
+              />
+              <button class="chat-send-btn" type="submit" aria-label="Send">➤</button>
+            </form>
           </div>
         </section>
       </main>
