@@ -200,6 +200,16 @@
             <button class="tab-button" type="button" data-finance-tab="expenses">Expenses</button>
             <button class="tab-button" type="button" data-finance-tab="mutualfunds">Mutual funds</button>
             <button class="tab-button" type="button" data-finance-tab="stocks">Stocks</button>
+            <button class="tab-button" type="button" data-finance-tab="fd">FD</button>
+            <button class="tab-button" type="button" data-finance-tab="epf">EPF</button>
+            <button class="tab-button" type="button" data-finance-tab="bonds">Bonds</button>
+            <button class="tab-button" type="button" data-finance-tab="ppf">PPF</button>
+            <button class="tab-button" type="button" data-finance-tab="gold">Gold</button>
+            <button class="tab-button" type="button" data-finance-tab="silver">Silver</button>
+            <button class="tab-button" type="button" data-finance-tab="crypto">Crypto</button>
+            <button class="tab-button" type="button" data-finance-tab="usstocks">US Stocks</button>
+            <button class="tab-button" type="button" data-finance-tab="banksaving">Bank Saving</button>
+            <button class="tab-button" type="button" data-finance-tab="others">Others</button>
             <button class="tab-button" type="button" data-finance-tab="wealth">Net worth</button>
           </div>
 
@@ -446,33 +456,348 @@
               <div class="panel-header">
                 <div>
                   <h3>Stocks</h3>
-                  <p>Demat holdings with quantity, average price, and market value — Me and Wife.</p>
+                  <p>Manage your stock assets — Me and Wife.</p>
                 </div>
                 <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="stock">Add stock</button>
               </div>
-              <div class="owner-toggle" role="tablist" aria-label="Stock owner">
+              <div class="owner-toggle" role="tablist">
                 <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
               </div>
-              <div class="metric-grid compact" id="stockOwnerSummary"></div>
+              <div class="metric-grid compact" id="stocksOwnerSummary"></div>
               <div class="table-wrap tall-table">
                 <table>
                   <thead>
                     <tr>
-                      <th>Symbol</th>
-                      <th>Company</th>
-                      <th>Exchange</th>
-                      <th>Qty</th>
-                      <th>Avg price</th>
-                      <th>CMP</th>
-                      <th>Value</th>
-                      <th>Sector</th>
-                      <th>Demat</th>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
                       <th>Action</th>
                     </tr>
                   </thead>
-                  <tbody id="stockTable"></tbody>
+                  <tbody id="stocksTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-fd">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Fixed Deposits (FD)</h3>
+                  <p>Track fixed deposits — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="fd">Add FD</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="fdOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fdTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-epf">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Employees' Provident Fund (EPF)</h3>
+                  <p>Track EPF balances — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="epf">Add EPF</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="epfOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="epfTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-bonds">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Bonds</h3>
+                  <p>Track bond holdings — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="bonds">Add bond</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="bondsOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bondsTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-ppf">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Public Provident Fund (PPF)</h3>
+                  <p>Track PPF balances — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="ppf">Add PPF</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="ppfOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ppfTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-gold">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Gold</h3>
+                  <p>Track gold investments — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="gold">Add gold</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="goldOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="goldTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-silver">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Silver</h3>
+                  <p>Track silver investments — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="silver">Add silver</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="silverOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="silverTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-crypto">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Crypto</h3>
+                  <p>Track crypto holdings — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="crypto">Add crypto</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="cryptoOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cryptoTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-usstocks">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>US Stocks</h3>
+                  <p>Track US stock investments — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="usstocks">Add US stock</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="usstocksOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usstocksTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-banksaving">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Bank Saving</h3>
+                  <p>Track bank savings balances — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="banksaving">Add bank entry</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="banksavingOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="banksavingTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-others">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Others</h3>
+                  <p>Track other investments — Me and Wife.</p>
+                </div>
+                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="others">Add other asset</button>
+              </div>
+              <div class="owner-toggle" role="tablist">
+                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
+                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              </div>
+              <div class="metric-grid compact" id="othersOwnerSummary"></div>
+              <div class="table-wrap tall-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Paid by</th>
+                      <th>Current Value</th>
+                      <th>Note</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="othersTable"></tbody>
                 </table>
               </div>
             </section>

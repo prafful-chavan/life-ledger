@@ -14,6 +14,16 @@ const defaultData = {
   liabilities: [],
   mutualFunds: [],
   stocks: [],
+  fd: [],
+  epf: [],
+  bonds: [],
+  ppf: [],
+  gold: [],
+  silver: [],
+  crypto: [],
+  usstocks: [],
+  banksaving: [],
+  others: [],
   goals: [],
   tasks: [],
   studies: [],
@@ -269,18 +279,70 @@ const fieldsByKind = {
     ["notes", "Notes", "textarea"],
   ],
   stock: [
-    ["owner", "Owner (Me / Wife)", "select"],
-    ["symbol", "Symbol", "text"],
-    ["company", "Company name", "text"],
-    ["exchange", "Exchange (NSE / BSE)", "text"],
-    ["quantity", "Quantity", "number"],
-    ["avgPrice", "Avg buy price", "number"],
-    ["currentPrice", "Current price", "number"],
-    ["invested", "Amount invested", "number"],
-    ["sector", "Sector", "text"],
-    ["demat", "Demat / broker", "text"],
-    ["purchaseDate", "Purchase date", "date"],
-    ["notes", "Notes", "textarea"],
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  fd: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  epf: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  bonds: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  ppf: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  gold: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  silver: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  crypto: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  usstocks: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  banksaving: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
+  ],
+  others: [
+    ["date", "Date", "date"],
+    ["owner", "Paid by", "select"],
+    ["value", "Current value", "number"],
+    ["note", "Note", "textarea"],
   ],
 };
 
@@ -288,13 +350,13 @@ const resetScopes = {
   income: { label: "salary / income", keys: ["income"] },
   expenses: { label: "expenses", keys: ["expenses"] },
   networth: { label: "assets and liabilities", keys: ["assets", "liabilities"] },
-  holdings: { label: "mutual funds and stocks", keys: ["mutualFunds", "stocks"] },
+  holdings: { label: "mutual funds, stocks and simple assets", keys: ["mutualFunds", "stocks", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"] },
   finance: {
     label: "all finance data",
-    keys: ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks"],
+    keys: ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"],
   },
   mutualfunds: { label: "mutual funds", keys: ["mutualFunds"] },
-  stocks: { label: "stocks", keys: ["stocks"] },
+  stocks: { label: "stocks and simple assets", keys: ["stocks", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"] },
   studies: { label: "interview prep", keys: ["studies"] },
   goals: { label: "future goals", keys: ["goals"] },
   tasks: { label: "daily to-do", keys: ["tasks"] },
@@ -451,6 +513,16 @@ function normalizeData(data) {
     liabilities: ensureIds(data.liabilities || [], "liab"),
     mutualFunds: ensureIds(data.mutualFunds || [], "mf"),
     stocks: ensureIds(data.stocks || [], "stk"),
+    fd: ensureIds(data.fd || [], "fd"),
+    epf: ensureIds(data.epf || [], "epf"),
+    bonds: ensureIds(data.bonds || [], "bond"),
+    ppf: ensureIds(data.ppf || [], "ppf"),
+    gold: ensureIds(data.gold || [], "gold"),
+    silver: ensureIds(data.silver || [], "slv"),
+    crypto: ensureIds(data.crypto || [], "crp"),
+    usstocks: ensureIds(data.usstocks || [], "uss"),
+    banksaving: ensureIds(data.banksaving || [], "sav"),
+    others: ensureIds(data.others || [], "oth"),
     goals: ensureIds(data.goals || [], "goal"),
     tasks: ensureIds(data.tasks || [], "task"),
     studies: ensureIds(data.studies || [], "study"),
@@ -597,20 +669,23 @@ function bindFinanceTabs() {
     }
   });
 
-  document.getElementById("stockTable")?.addEventListener("click", async (event) => {
-    const editBtn = event.target.closest(".edit-stock-btn");
-    const deleteBtn = event.target.closest(".delete-stock-btn");
+  document.addEventListener("click", async (event) => {
+    const editBtn = event.target.closest(".edit-simple-asset-btn");
+    const deleteBtn = event.target.closest(".delete-simple-asset-btn");
     if (editBtn) {
       const id = editBtn.dataset.id;
-      buildQuickAddForm("stock", id);
+      const kind = editBtn.dataset.kind;
+      buildQuickAddForm(kind, id);
       openModal("quickAddModal");
     } else if (deleteBtn) {
       const id = deleteBtn.dataset.id;
-      if (id && confirm("Are you sure you want to delete this stock entry?")) {
-        state.stocks = state.stocks.filter(item => item.id !== id);
+      const kind = deleteBtn.dataset.kind;
+      const config = SIMPLE_ASSET_TABS.find(c => c.kind === kind);
+      if (id && config && confirm(`Are you sure you want to delete this ${config.label} entry?`)) {
+        state[config.stateKey] = (state[config.stateKey] || []).filter(item => item.id !== id);
         await saveData(true);
-        renderStocksPanel();
-        toast("Stock entry deleted.");
+        renderSimpleAssets();
+        toast(`${config.label} entry deleted.`);
       }
     }
   });
@@ -639,8 +714,13 @@ function bindFinanceTabs() {
   document.querySelectorAll("[data-holdings-owner]").forEach((button) => {
     button.addEventListener("click", () => {
       activeHoldingsOwner = button.dataset.holdingsOwner;
-      document.querySelectorAll("[data-holdings-owner]").forEach((tab) => tab.classList.remove("active"));
-      button.classList.add("active");
+      document.querySelectorAll("[data-holdings-owner]").forEach((tab) => {
+        if (tab.dataset.holdingsOwner === activeHoldingsOwner) {
+          tab.classList.add("active");
+        } else {
+          tab.classList.remove("active");
+        }
+      });
       renderHoldingsTabs();
     });
   });
@@ -895,6 +975,16 @@ function buildQuickAddForm(kind, editId = null) {
     liability: editId ? "Edit liability" : "Add liability",
     mutualFund: editId ? "Edit mutual fund" : "Add mutual fund",
     stock: editId ? "Edit stock" : "Add stock",
+    fd: editId ? "Edit FD" : "Add FD",
+    epf: editId ? "Edit EPF" : "Add EPF",
+    bonds: editId ? "Edit bond" : "Add bond",
+    ppf: editId ? "Edit PPF" : "Add PPF",
+    gold: editId ? "Edit gold" : "Add gold",
+    silver: editId ? "Edit silver" : "Add silver",
+    crypto: editId ? "Edit crypto" : "Add crypto",
+    usstocks: editId ? "Edit US Stock" : "Add US Stock",
+    banksaving: editId ? "Edit Bank Saving" : "Add Bank Saving",
+    others: editId ? "Edit other asset" : "Add other asset",
     goal: editId ? "Edit goal" : "Add goal",
     task: editId ? "Edit task" : "Add task",
     study: editId ? "Edit study topic" : "Add study topic",
@@ -908,18 +998,34 @@ function buildQuickAddForm(kind, editId = null) {
   let existingEntry = null;
   let collection = [];
   if (editId) {
+    const simpleAssetKeys = {
+      stock: "stocks",
+      fd: "fd",
+      epf: "epf",
+      bonds: "bonds",
+      ppf: "ppf",
+      gold: "gold",
+      silver: "silver",
+      crypto: "crypto",
+      usstocks: "usstocks",
+      banksaving: "banksaving",
+      others: "others"
+    };
+
     if (kind === "expense") collection = state.expenses;
     else if (kind === "income") collection = state.income;
-    else if (kind === "asset") collection = collection = state.assets;
+    else if (kind === "asset") collection = state.assets;
     else if (kind === "liability") collection = state.liabilities;
     else if (kind === "mutualFund") collection = state.mutualFunds;
-    else if (kind === "stock") collection = state.stocks;
+    else if (simpleAssetKeys[kind]) collection = state[simpleAssetKeys[kind]];
     else if (kind === "goal") collection = state.goals;
     else if (kind === "task") collection = state.tasks;
     else if (kind === "study") collection = state.studies;
     else if (kind === "workout") collection = state.workouts;
 
-    existingEntry = collection.find(item => item.id === editId);
+    if (collection) {
+      existingEntry = collection.find(item => item.id === editId);
+    }
   }
 
   fields.forEach(([name, label, type]) => {
@@ -933,7 +1039,9 @@ function buildQuickAddForm(kind, editId = null) {
       input.name = name;
       let options = [];
       if (name === "person" || name === "owner" || name === "paidBy") {
-        const needsBoth = (kind === "asset" || kind === "liability" || kind === "expense");
+        const needsBoth = (kind === "asset" || kind === "liability" || kind === "expense" || [
+          "stock", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"
+        ].includes(kind));
         options = needsBoth ? ["Me", "Wife", "Both"] : ["Me", "Wife"];
       } else if (name === "transactionType") {
         options = ["PURCHASE", "REDEMPTION"];
@@ -991,15 +1099,16 @@ function buildQuickAddForm(kind, editId = null) {
       }
     });
 
+    const isSimpleAsset = ["stock", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"].includes(kind);
+
     if (kind === "mutualFund") {
       entry.owner = normalizeOwner(entry.owner);
       entry.amc = inferAmc(entry.fundName);
       if (!entry.latestNav) entry.latestNav = entry.nav;
       if (!entry.currentValue) entry.currentValue = entry.invested;
     }
-    if (kind === "stock") {
-      entry.owner = normalizeOwner(entry.owner);
-      if (!entry.invested) entry.invested = toNumber(entry.quantity) * toNumber(entry.avgPrice || entry.currentPrice);
+    if (isSimpleAsset) {
+      entry.owner = normalizeOwner(entry.owner || entry.paidBy);
     }
     if (kind === "expense") {
       entry.paidBy = normalizeOwner(entry.paidBy);
@@ -1018,15 +1127,34 @@ function buildQuickAddForm(kind, editId = null) {
       }
     } else {
       if (kind === "expense") state.expenses.push(entry);
-      if (kind === "income") state.income.push(entry);
-      if (kind === "asset") state.assets.push(entry);
-      if (kind === "liability") state.liabilities.push(entry);
-      if (kind === "mutualFund") state.mutualFunds.push(entry);
-      if (kind === "stock") state.stocks.push(entry);
-      if (kind === "goal") state.goals.push(entry);
-      if (kind === "task") state.tasks.push(entry);
-      if (kind === "study") state.studies.push(entry);
-      if (kind === "workout") state.workouts.push(entry);
+      else if (kind === "income") state.income.push(entry);
+      else if (kind === "asset") state.assets.push(entry);
+      else if (kind === "liability") state.liabilities.push(entry);
+      else if (kind === "mutualFund") state.mutualFunds.push(entry);
+      else if (kind === "goal") state.goals.push(entry);
+      else if (kind === "task") state.tasks.push(entry);
+      else if (kind === "study") state.studies.push(entry);
+      else if (kind === "workout") state.workouts.push(entry);
+      else {
+        const simpleAssetKeys = {
+          stock: "stocks",
+          fd: "fd",
+          epf: "epf",
+          bonds: "bonds",
+          ppf: "ppf",
+          gold: "gold",
+          silver: "silver",
+          crypto: "crypto",
+          usstocks: "usstocks",
+          banksaving: "banksaving",
+          others: "others"
+        };
+        const stateKey = simpleAssetKeys[kind];
+        if (stateKey) {
+          if (!state[stateKey]) state[stateKey] = [];
+          state[stateKey].push(entry);
+        }
+      }
     }
 
     invalidateExpenseCache();
@@ -1741,7 +1869,7 @@ function renderNetWorth() {
   container.innerHTML = "";
   [
     ["Assets (other)", assets, "bar-fill green"],
-    ["MF + Stocks", holdings, "bar-fill blue"],
+    ["Investments", holdings, "bar-fill blue"],
     ["Liabilities", liabilities, "bar-fill red"],
     ["Net worth", netWorth, "bar-fill purple"],
   ].forEach(([label, value, klass]) => {
@@ -2126,7 +2254,7 @@ function formatMonthKeyLabel(key) {
 
 function renderHoldingsTabs() {
   renderMutualFundsPanel();
-  renderStocksPanel();
+  renderSimpleAssets();
 }
 
 function renderMutualFundsPanel() {
@@ -2301,60 +2429,59 @@ function renderMutualFundsPanel() {
   }
 }
 
-function renderStocksPanel() {
-  const summary = document.getElementById("stockOwnerSummary");
-  const table = document.getElementById("stockTable");
-  if (!table) return;
+const SIMPLE_ASSET_TABS = [
+  { kind: "stock", stateKey: "stocks", summaryId: "stocksOwnerSummary", tableId: "stocksTable", label: "Stock" },
+  { kind: "fd", stateKey: "fd", summaryId: "fdOwnerSummary", tableId: "fdTable", label: "FD" },
+  { kind: "epf", stateKey: "epf", summaryId: "epfOwnerSummary", tableId: "epfTable", label: "EPF" },
+  { kind: "bonds", stateKey: "bonds", summaryId: "bondsOwnerSummary", tableId: "bondsTable", label: "Bond" },
+  { kind: "ppf", stateKey: "ppf", summaryId: "ppfOwnerSummary", tableId: "ppfTable", label: "PPF" },
+  { kind: "gold", stateKey: "gold", summaryId: "goldOwnerSummary", tableId: "goldTable", label: "Gold" },
+  { kind: "silver", stateKey: "silver", summaryId: "silverOwnerSummary", tableId: "silverTable", label: "Silver" },
+  { kind: "crypto", stateKey: "crypto", summaryId: "cryptoOwnerSummary", tableId: "cryptoTable", label: "Crypto" },
+  { kind: "usstocks", stateKey: "usstocks", summaryId: "usstocksOwnerSummary", tableId: "usstocksTable", label: "US Stock" },
+  { kind: "banksaving", stateKey: "banksaving", summaryId: "banksavingOwnerSummary", tableId: "banksavingTable", label: "Bank Saving" },
+  { kind: "others", stateKey: "others", summaryId: "othersOwnerSummary", tableId: "othersTable", label: "Other Asset" },
+];
 
-  const rows = state.stocks
-    .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
-    .sort((a, b) => stockMarketValue(b) - stockMarketValue(a));
+function renderSimpleAssets() {
+  SIMPLE_ASSET_TABS.forEach(({ kind, stateKey, summaryId, tableId, label }) => {
+    const summary = document.getElementById(summaryId);
+    const table = document.getElementById(tableId);
+    if (!table) return;
 
-  const invested = rows.reduce((total, row) => total + toNumber(row.invested), 0);
-  const current = rows.reduce((total, row) => total + stockMarketValue(row), 0);
-  const gain = current - invested;
+    const rows = (state[stateKey] || [])
+      .filter((item) => matchHoldingsOwner(item.owner || item.paidBy, activeHoldingsOwner))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  if (summary) {
-    summary.innerHTML = `
-      <article class="metric-card compact-metric">
-        <div class="label">Invested (${activeHoldingsOwner})</div>
-        <div class="value">${formatINR(invested)}</div>
-        <div class="hint">${rows.length} holdings</div>
-      </article>
-      <article class="metric-card compact-metric">
-        <div class="label">Market value</div>
-        <div class="value">${formatINR(current)}</div>
-        <div class="hint">${formatINR(gain)} ${gain >= 0 ? "gain" : "loss"}</div>
-      </article>
-      <article class="metric-card compact-metric">
-        <div class="label">Holdings</div>
-        <div class="value">${rows.reduce((t, r) => t + toNumber(r.quantity), 0)}</div>
-        <div class="hint">Total quantity</div>
-      </article>
-    `;
-  }
+    const totalValue = rows.reduce((total, row) => total + toNumber(row.value), 0);
 
-  renderRows(
-    table,
-    rows,
-    (item) => [
-      item.symbol || "-",
-      item.company,
-      item.exchange || "-",
-      item.quantity || 0,
-      formatINR(item.avgPrice),
-      formatINR(item.currentPrice),
-      formatINR(stockMarketValue(item)),
-      item.sector || "-",
-      item.demat || "-",
-      `<div class="actions-wrapper">
-        <button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit entry">✏️</button>
-        <button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
-      </div>`
-    ],
-    `No stocks for ${activeHoldingsOwner}. Add a holding or import a sheet.`,
-    10
-  );
+    if (summary) {
+      summary.innerHTML = `
+        <article class="metric-card compact-metric">
+          <div class="label">Current value (${activeHoldingsOwner})</div>
+          <div class="value">${formatINR(totalValue)}</div>
+          <div class="hint">${rows.length} entry / entries</div>
+        </article>
+      `;
+    }
+
+    renderRows(
+      table,
+      rows,
+      (item) => [
+        item.date || "-",
+        item.owner || item.paidBy || "Me",
+        formatINR(item.value),
+        item.note || "-",
+        `<div class="actions-wrapper">
+          <button class="action-btn edit-btn edit-simple-asset-btn" data-kind="${kind}" data-id="${item.id}" title="Edit entry">✏️</button>
+          <button class="action-btn delete-btn delete-simple-asset-btn" data-kind="${kind}" data-id="${item.id}" title="Delete entry">🗑️</button>
+        </div>`
+      ],
+      `No entries found for ${label}.`,
+      5
+    );
+  });
 }
 
 function matchHoldingsOwner(owner, filter) {
@@ -2363,14 +2490,12 @@ function matchHoldingsOwner(owner, filter) {
   return normalized === filter || normalized === "Both";
 }
 
-function stockMarketValue(item) {
-  return toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice);
-}
-
 function investmentHoldingsTotal() {
   const mutualFunds = sum(state.mutualFunds, "currentValue");
-  const stocks = state.stocks.reduce((total, item) => total + stockMarketValue(item), 0);
-  return mutualFunds + stocks;
+  const simpleAssetsTotal = SIMPLE_ASSET_TABS.reduce((total, { stateKey }) => {
+    return total + sum(state[stateKey] || [], "value");
+  }, 0);
+  return mutualFunds + simpleAssetsTotal;
 }
 
 function renderAssetLiabilityLists() {
