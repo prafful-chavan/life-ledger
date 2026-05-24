@@ -509,13 +509,6 @@ function bindModals() {
       if (event.target === modal) closeModal(modal);
     });
   });
-
-  document.getElementById("seedDemoButton").addEventListener("click", async () => {
-    state = normalizeData(demoData);
-    await saveData(true);
-    renderAll();
-    toast("Demo data loaded. Replace it anytime with your Excel or backup.");
-  });
 }
 
 function bindFinanceTabs() {
