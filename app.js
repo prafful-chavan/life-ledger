@@ -3062,7 +3062,7 @@ function answerQuestion(question) {
 
   // ─── NET WORTH ───────────────────────────────────────────────────────────────
   if (/net\s*worth|networth|wealth|total\s*asset/.test(q)) {
-    return `**Net Worth** 💼\n_Formula: Investment Holdings − Liabilities (salary/registered assets NOT included)_\n\n**Investments (what you own)**\n• Mutual Funds: ${formatINR(mfCurrent)}\n• Stocks: ${formatINR(stocksVal)}\n• FD: ${formatINR(fdVal)}\n• EPF: ${formatINR(epfVal)}\n• PPF: ${formatINR(ppfVal)}\n• Gold: ${formatINR(goldVal)}\n• Silver: ${formatINR(silverVal)}\n• Crypto: ${formatINR(cryptoVal)}\n• US Stocks: ${formatINR(usStocksVal)}\n• Bonds: ${formatINR(bondsVal)}\n• Bank Savings: ${formatINR(bankSavingVal)}\n• Others: ${formatINR(othersVal)}\n• **Total investments: ${formatINR(metrics.assets)}**\n\n**Liabilities (what you owe)**\n${state.liabilities.length ? state.liabilities.slice(0, 5).map((l) => `• ${l.name || l.category}: ${formatINR(l.value)}`).join("\n") : "• No liabilities"}\n• **Total liabilities: ${formatINR(totalLiabilities)}**\n\n**Net Worth: ${formatINR(metrics.netWorth)}**`;
+    return `**Net Worth** 💼\n_Formula: Investment Holdings (current value) − Liabilities_\n\n**Investments (current value only)**\n• Mutual Funds (current): ${formatINR(mfCurrent)}\n• Stocks: ${formatINR(stocksVal)}\n• FD: ${formatINR(fdVal)}\n• EPF: ${formatINR(epfVal)}\n• PPF: ${formatINR(ppfVal)}\n• Gold: ${formatINR(goldVal)}\n• Silver: ${formatINR(silverVal)}\n• Crypto: ${formatINR(cryptoVal)}\n• US Stocks: ${formatINR(usStocksVal)}\n• Bonds: ${formatINR(bondsVal)}\n• Bank Savings: ${formatINR(bankSavingVal)}\n• Others: ${formatINR(othersVal)}\n• **Total investments: ${formatINR(metrics.assets)}**\n\n**Liabilities (what you owe)**\n${state.liabilities.length ? state.liabilities.slice(0, 5).map((l) => `• ${l.name || l.category}: ${formatINR(l.value)}`).join("\n") : "• No liabilities"}\n• **Total liabilities: ${formatINR(totalLiabilities)}**\n\n**Net Worth: ${formatINR(metrics.netWorth)}**\n_MF invested amount (${formatINR(mfInvested)}) is NOT counted — only current value._`;
   }
 
   // ─── SALARY / INCOME ────────────────────────────────────────────────────────
@@ -3144,13 +3144,13 @@ function answerQuestion(question) {
   // ─── FULL PORTFOLIO ─────────────────────────────────────────────────────────
   if (/portfolio|all invest|breakdown|where.*invest|invest/.test(q)) {
     const items = [
-      ["Mutual Funds", mfCurrent], ["Stocks", stocksVal], ["FD", fdVal], ["EPF", epfVal],
+      ["Mutual Funds (current)", mfCurrent], ["Stocks", stocksVal], ["FD", fdVal], ["EPF", epfVal],
       ["PPF", ppfVal], ["Gold", goldVal], ["Silver", silverVal], ["Crypto", cryptoVal],
       ["US Stocks", usStocksVal], ["Bank Savings", bankSavingVal], ["Bonds", bondsVal], ["Others", othersVal],
     ].filter(([, v]) => v > 0);
     const total = items.reduce((s, [, v]) => s + v, 0);
     const lines = items.map(([name, val]) => `• ${name}: **${formatINR(val)}** (${total ? Math.round((val / total) * 100) : 0}%)`).join("\n");
-    return `**Investment Portfolio Breakdown** 💹\n${lines}\n\n• Registered assets: **${formatINR(registeredAssets)}**\n• **Total investments: ${formatINR(total)}**\n• **Net worth: ${formatINR(metrics.netWorth)}**`;
+    return `**Investment Portfolio Breakdown** 💹\n${lines}\n\n• **Total investments: ${formatINR(total)}**\n• **Net worth: ${formatINR(metrics.netWorth)}**\n_MF shows current value only, not invested amount._`;
   }
 
   // ─── LIABILITIES ────────────────────────────────────────────────────────────
