@@ -225,7 +225,7 @@ let activeDashboardMonth = "";
 let quickAddKind = "expense";
 
 const assistantWelcome =
-  "I can analyze your local dashboard data. Ask me about savings rate, high expenses, salary growth, net worth, goals, study plan, or today's focus.";
+  "Hey Prafful! 👋 I'm your personal Life Ledger AI. I know everything about your finances, investments, career roadmap, habits, goals, and daily tasks — for both you and your wife.\n\nTry asking me things like:\n• How much did we save this month?\n• What's my net worth?\n• How is my gold and crypto doing?\n• How is my DevOps roadmap going?\n• What habits am I tracking?\n• What are my pending tasks?\n• How are our goals looking?";
 
 const fieldsByKind = {
   income: [
@@ -2919,7 +2919,13 @@ function renderChat() {
   state.chat.slice(-80).forEach((message) => {
     const bubble = document.createElement("div");
     bubble.className = `chat-message ${message.role}`;
-    bubble.textContent = message.text;
+    // Convert newlines and bullet symbols to HTML for readable formatting
+    const formatted = message.text
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n•/g, "<br>•")
+      .replace(/\n/g, "<br>");
+    bubble.innerHTML = formatted;
     log.append(bubble);
   });
   log.scrollTop = log.scrollHeight;
@@ -2934,69 +2940,262 @@ function addChat(role, text) {
 function answerQuestion(question) {
   const q = question.toLowerCase();
   const metrics = calculateMetrics();
-  const topCategories = Object.entries(
+
+  // ─── HELPERS ────────────────────────────────────────────────────────────────
+  const topMonthExpenses = Object.entries(
     groupSum(
-      state.expenses.filter((expense) => isCurrentMonth(expense.date)),
-      (expense) => expense.category || "General",
+      state.expenses.filter((e) => isCurrentMonth(e.date)),
+      (e) => e.category || "General",
       "amount"
     )
   ).sort((a, b) => b[1] - a[1]);
-  const weakestTopic = [...state.studies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
-  const nextGoal = [...state.goals].sort((a, b) => new Date(a.dueDate || "2999-01-01") - new Date(b.dueDate || "2999-01-01"))[0];
 
-  if (/saving|save|summary|finance|month/.test(q)) {
-    return `This month income is ${formatINR(metrics.monthIncome)} and expenses are ${formatINR(metrics.monthExpenses)}, so your current surplus is ${formatINR(metrics.monthIncome - metrics.monthExpenses)} with a ${metrics.savingsRate}% savings rate. ${
-      topCategories[0]
-        ? `Biggest spend is ${topCategories[0][0]} at ${formatINR(topCategories[0][1])}.`
-        : "Add expense data and I can highlight the biggest leak."
-    }`;
+  const pendingTasks = state.tasks.filter((t) => !t.done);
+  const doneTasks = state.tasks.filter((t) => t.done);
+  const myStudies = state.studies.filter((s) => (s.owner || "Me") === "Me");
+  const wifeStudies = state.studies.filter((s) => (s.owner || "Me") === "Wife");
+  const myHabits = state.habits.filter((h) => (h.owner || "Me") === "Me" || h.owner === "Both");
+  const wifeHabits = state.habits.filter((h) => h.owner === "Wife" || h.owner === "Both");
+  const myGoals = state.goals.filter((g) => (g.owner || "Me") === "Me" || g.owner === "Both");
+  const wifeGoals = state.goals.filter((g) => g.owner === "Wife" || g.owner === "Both");
+  const sortedGoals = [...state.goals].sort((a, b) => new Date(a.dueDate || "2999-01-01") - new Date(b.dueDate || "2999-01-01"));
+  const nextGoal = sortedGoals[0];
+  const weakestMyTopic = [...myStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
+  const weakestWifeTopic = [...wifeStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
+
+  // ─── GREET / HELLO ──────────────────────────────────────────────────────────
+  if (/^(hi|hello|hey|howdy|sup|yo|namaste|hola)/.test(q)) {
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    return `${greeting}, Prafful! 👋 I'm ready to help. You have **${pendingTasks.length} pending tasks**, **${myHabits.length} active habits**, and your portfolio stands at **${formatINR(metrics.assets)}**. What would you like to know?`;
   }
 
-  if (/expense|spend|high|risk|leak/.test(q)) {
-    if (!topCategories.length) return "I need expense rows first. Upload your expense sheet or add a few entries, then I can rank the biggest categories and spot leaks.";
-    return `Your highest current-month categories are ${topCategories
-      .slice(0, 3)
-      .map(([name, value]) => `${name}: ${formatINR(value)}`)
-      .join(", ")}. Start by setting review rules for the top category, because that is where one decision can change the month fastest.`;
+  // ─── FINANCE SUMMARY / SAVINGS ──────────────────────────────────────────────
+  if (/saving|save|surplus|summary|finance|this month|monthly/.test(q)) {
+    const surplus = metrics.monthIncome - metrics.monthExpenses;
+    return `**This Month's Finance Summary** 📊\n• Income: **${formatINR(metrics.monthIncome)}**\n• Expenses: **${formatINR(metrics.monthExpenses)}**\n• Surplus: **${formatINR(surplus)}**\n• Savings Rate: **${metrics.savingsRate}%**${topMonthExpenses[0] ? `\n• Biggest spend: **${topMonthExpenses[0][0]}** at ${formatINR(topMonthExpenses[0][1])}` : ""}\n\n${surplus > 0 ? `You saved ${formatINR(surplus)} this month — great discipline!` : "You're spending more than earning this month. Review your top categories below."}`;
   }
 
-  if (/net worth|asset|liabil|wealth/.test(q)) {
-    return `Your tracked net worth is ${formatINR(metrics.netWorth)}. Assets total ${formatINR(metrics.assets)} and liabilities total ${formatINR(metrics.liabilities)}. A strong next move is to update assets monthly and keep liabilities grouped by interest rate so repayment priority is obvious.`;
+  // ─── EXPENSES / SPEND ANALYSIS ──────────────────────────────────────────────
+  if (/expense|spend|high|leak|where.*money|cost|bill/.test(q)) {
+    if (!topMonthExpenses.length) return "No expenses recorded this month yet. Add some entries and I'll rank the biggest categories for you.";
+    const top3 = topMonthExpenses.slice(0, 3).map(([name, val], i) => `${i + 1}. **${name}**: ${formatINR(val)}`).join("\n");
+    return `**Top Expense Categories This Month** 💸\n${top3}\n\nThe top category is where one decision makes the biggest difference. Consider setting a budget cap on **${topMonthExpenses[0][0]}**.`;
   }
 
-  if (/salary|growth|wife|income/.test(q)) {
-    const people = Object.entries(groupBy(state.income.filter(isSalary), (item) => item.person || "Me")).map(([person, rows]) => {
+  // ─── NET WORTH ───────────────────────────────────────────────────────────────
+  if (/net worth|networth|wealth|total asset|total portfolio/.test(q)) {
+    const mf = sum(state.mutualFunds, "currentValue");
+    const stocks = sum(state.stocks, "value");
+    const fd = sum(state.fd, "value");
+    const epf = sum(state.epf, "value");
+    const gold = sum(state.gold, "value");
+    const crypto = sum(state.crypto, "value");
+    const liab = metrics.liabilities;
+    return `**Net Worth Breakdown** 💼\n• Mutual Funds: **${formatINR(mf)}**\n• Stocks: **${formatINR(stocks)}**\n• FD: **${formatINR(fd)}**\n• EPF: **${formatINR(epf)}**\n• Gold: **${formatINR(gold)}**\n• Crypto: **${formatINR(crypto)}**\n• Total Assets: **${formatINR(metrics.assets)}**\n• Total Liabilities: **${formatINR(liab)}**\n• **Net Worth: ${formatINR(metrics.netWorth)}**`;
+  }
+
+  // ─── SALARY / INCOME ─────────────────────────────────────────────────────────
+  if (/salary|income|earning|in.hand|payslip|ctc|pay|wage/.test(q)) {
+    const byPerson = groupBy(state.income.filter(isSalary), (i) => i.person || "Me");
+    const lines = Object.entries(byPerson).map(([person, rows]) => {
       const sorted = rows.sort((a, b) => new Date(a.date) - new Date(b.date));
       const first = sorted[0]?.netSalary || sorted[0]?.amount || 0;
-      const latestRow = sorted.at(-1);
-      const latest = latestRow?.netSalary || latestRow?.amount || 0;
-      return `${person}: ${formatINR(latest)} latest net in-hand for ${formatMonth(latestRow?.date)} at ${latestRow?.source || "Salary"}, ${formatPercent(first ? ((latest - first) / first) * 100 : 0)} tracked growth`;
+      const latest = sorted.at(-1);
+      const latestVal = latest?.netSalary || latest?.amount || 0;
+      const growth = first ? (((latestVal - first) / first) * 100).toFixed(1) : 0;
+      return `• **${person}**: ${formatINR(latestVal)} net in-hand (${latest?.source || "Salary"}) — ${growth}% career growth tracked`;
     });
-    return people.length
-      ? `Salary view: ${people.join("; ")}. The salary ledger now reads gross, net in-hand, tax/TDS, basic, HRA, PF, and allowance components from payslip-style sheets.`
-      : "Upload salary history with Month, Gross Earnings, Net Salary, Basic, HRA, PF, and tax columns so I can calculate growth and component movement.";
+    return lines.length
+      ? `**Salary Summary** 💰\n${lines.join("\n")}\n\nKeep uploading monthly payslips to build a complete salary growth chart.`
+      : "No salary data found. Upload payslips with Gross, Net Salary, Basic, HRA, PF, and tax columns.";
   }
 
-  if (/study|interview|switch|career|prep/.test(q)) {
-    if (!weakestTopic) return "Add study topics like DSA, system design, resume projects, behavioral stories, and target companies. Then I will turn it into a weekly switch plan.";
-    return `This week, focus on ${weakestTopic.topic}. It has ${weakestTopic.confidence || 0}% confidence and ${weakestTopic.hours || 0}/${weakestTopic.targetHours || 20} hours done. A practical plan: 4 focused sessions, one mock interview, and one revision note after every session.`;
+  // ─── MUTUAL FUNDS ─────────────────────────────────────────────────────────────
+  if (/mutual fund|mf|fund|sip|kuvera|groww|nav/.test(q)) {
+    const mfTotal = sum(state.mutualFunds, "currentValue");
+    const invested = sum(state.mutualFunds, "invested");
+    const gain = mfTotal - invested;
+    const gainPct = invested ? ((gain / invested) * 100).toFixed(1) : 0;
+    const fundCount = new Set(state.mutualFunds.map((f) => f.fundName)).size;
+    return `**Mutual Fund Portfolio** 📈\n• Funds tracked: **${fundCount}**\n• Total invested: **${formatINR(invested)}**\n• Current value: **${formatINR(mfTotal)}**\n• Gain/Loss: **${formatINR(gain)} (${gainPct}%)**\n\n${gain >= 0 ? "Your SIPs are compounding nicely! Stay the course." : "Markets fluctuate — keep the SIP running for long-term gains."}`;
   }
 
-  if (/goal|future|target/.test(q)) {
-    if (!nextGoal) return "Add future goals with target, saved/progress, and due date. I will calculate gaps and monthly run-rate.";
-    const gap = Math.max(0, (nextGoal.target || 0) - (nextGoal.saved || 0));
-    return `Nearest goal is ${nextGoal.name}, due ${formatDate(nextGoal.dueDate)}. Gap is ${formatINR(gap)}. If this is money-based, divide that gap by the months left to set the monthly contribution target.`;
+  // ─── STOCKS ──────────────────────────────────────────────────────────────────
+  if (/\bstock|equity|share|nse|bse/.test(q) && !/us stock|usstocks|s&p/.test(q)) {
+    const total = sum(state.stocks, "value");
+    const mine = sum(state.stocks.filter((s) => (s.owner || "Me") === "Me"), "value");
+    const hers = sum(state.stocks.filter((s) => s.owner === "Wife"), "value");
+    return `**Indian Stocks** 🏦\n• Total value: **${formatINR(total)}**\n• Prafful's stocks: **${formatINR(mine)}**\n• Wife's stocks: **${formatINR(hers)}**\n• Entries tracked: **${state.stocks.length}**`;
   }
 
-  if (/today|task|todo|routine|exercise|workout|health/.test(q)) {
-    const pending = state.tasks.filter((task) => !task.done).slice(0, 3);
-    const workoutToday = state.workouts.some((workout) => sameDay(workout.date, todayISO()));
-    return `Today: ${pending.length ? pending.map((task) => task.text).join(", ") : "no pending tasks tracked"}. ${
-      workoutToday ? "Workout is already logged." : "Add a 20-30 minute walk or workout to keep the health chain alive."
-    }`;
+  // ─── US STOCKS ────────────────────────────────────────────────────────────────
+  if (/us stock|usstocks|s&p|nasdaq|dollar|foreign/.test(q)) {
+    const total = sum(state.usstocks, "value");
+    return `**US Stocks / Foreign Portfolio** 🌐\n• Total value: **${formatINR(total)}**\n• Entries tracked: **${state.usstocks.length}**\n\n${total === 0 ? "No US stock entries yet. Add them under the US Stocks tab." : "Great diversification with international exposure!"}`;
   }
 
-  return "I can help best when you ask around finance, salary growth, expenses, net worth, goals, interview prep, tasks, or exercise. Upload your sheets and my answers will become much sharper.";
+  // ─── GOLD / SILVER ───────────────────────────────────────────────────────────
+  if (/gold|silver|precious metal/.test(q)) {
+    const gold = sum(state.gold, "value");
+    const silver = sum(state.silver, "value");
+    return `**Precious Metals** 🥇\n• Gold: **${formatINR(gold)}** (${state.gold.length} entries)\n• Silver: **${formatINR(silver)}** (${state.silver.length} entries)\n• Combined: **${formatINR(gold + silver)}**\n\nGold is a great inflation hedge — keep tracking it monthly!`;
+  }
+
+  // ─── CRYPTO ───────────────────────────────────────────────────────────────────
+  if (/crypto|bitcoin|btc|eth|ethereum|web3/.test(q)) {
+    const total = sum(state.crypto, "value");
+    return `**Crypto Portfolio** 🔐\n• Total value: **${formatINR(total)}**\n• Entries tracked: **${state.crypto.length}**\n\n${total === 0 ? "No crypto entries yet. Add them under the Crypto tab." : "Crypto is volatile — treat it as high-risk allocation (<10% of portfolio)."}`;
+  }
+
+  // ─── FD ───────────────────────────────────────────────────────────────────────
+  if (/\bfd\b|fixed deposit|fixed.deposit/.test(q)) {
+    const total = sum(state.fd, "value");
+    const mine = sum(state.fd.filter((f) => (f.owner || "Me") === "Me"), "value");
+    const hers = sum(state.fd.filter((f) => f.owner === "Wife"), "value");
+    return `**Fixed Deposits (FD)** 🏛️\n• Total: **${formatINR(total)}**\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}\n• Entries tracked: **${state.fd.length}**`;
+  }
+
+  // ─── EPF ─────────────────────────────────────────────────────────────────────
+  if (/\bepf\b|provident fund|pf balance/.test(q)) {
+    const total = sum(state.epf, "value");
+    return `**EPF / Provident Fund** 🏢\n• Total balance: **${formatINR(total)}**\n• Entries tracked: **${state.epf.length}**\n\nEPF compounds at 8.25% — it's one of the best guaranteed returns available.`;
+  }
+
+  // ─── PPF ─────────────────────────────────────────────────────────────────────
+  if (/\bppf\b|public provident/.test(q)) {
+    const total = sum(state.ppf, "value");
+    return `**PPF (Public Provident Fund)** 🏦\n• Total balance: **${formatINR(total)}**\n• Entries: **${state.ppf.length}**\n\nPPF has a 15-year lock-in but offers tax-free returns. Great for long-term wealth!`;
+  }
+
+  // ─── BONDS ────────────────────────────────────────────────────────────────────
+  if (/bond|debenture|sgb|sovereign/.test(q)) {
+    const total = sum(state.bonds, "value");
+    return `**Bonds** 📜\n• Total value: **${formatINR(total)}**\n• Entries tracked: **${state.bonds.length}**`;
+  }
+
+  // ─── BANK SAVINGS ────────────────────────────────────────────────────────────
+  if (/bank|saving account|savings account|fd bank|current account/.test(q) && !/fixed deposit/.test(q)) {
+    const total = sum(state.banksaving, "value");
+    return `**Bank Savings** 🏦\n• Total balance: **${formatINR(total)}**\n• Entries tracked: **${state.banksaving.length}**\n\nKeep 3-6 months of expenses as liquid emergency fund in your savings account.`;
+  }
+
+  // ─── FULL INVESTMENT PORTFOLIO BREAKDOWN ─────────────────────────────────────
+  if (/portfolio|investment|all invest|breakdown|where.*invest/.test(q)) {
+    const mf = sum(state.mutualFunds, "currentValue");
+    const stocks = sum(state.stocks, "value");
+    const fd = sum(state.fd, "value");
+    const epf = sum(state.epf, "value");
+    const ppf = sum(state.ppf, "value");
+    const gold = sum(state.gold, "value");
+    const silver = sum(state.silver, "value");
+    const crypto = sum(state.crypto, "value");
+    const usst = sum(state.usstocks, "value");
+    const bank = sum(state.banksaving, "value");
+    const bonds = sum(state.bonds, "value");
+    const others = sum(state.others, "value");
+    const total = mf + stocks + fd + epf + ppf + gold + silver + crypto + usst + bank + bonds + others;
+    return `**Full Investment Portfolio** 💹\n• Mutual Funds: ${formatINR(mf)}\n• Stocks: ${formatINR(stocks)}\n• FD: ${formatINR(fd)}\n• EPF: ${formatINR(epf)}\n• PPF: ${formatINR(ppf)}\n• Gold: ${formatINR(gold)}\n• Silver: ${formatINR(silver)}\n• Crypto: ${formatINR(crypto)}\n• US Stocks: ${formatINR(usst)}\n• Bank Savings: ${formatINR(bank)}\n• Bonds: ${formatINR(bonds)}\n• Others: ${formatINR(others)}\n• **Total: ${formatINR(total)}**`;
+  }
+
+  // ─── LIABILITIES ─────────────────────────────────────────────────────────────
+  if (/liabilit|loan|debt|emi|borrow|owe/.test(q)) {
+    const total = metrics.liabilities;
+    const entries = state.liabilities.sort((a, b) => b.value - a.value);
+    const top = entries.slice(0, 3).map((l) => `• ${l.name}: **${formatINR(l.value)}**`).join("\n");
+    return `**Liabilities / Loans** ⚠️\n• Total outstanding: **${formatINR(total)}**\n${top || "• No liabilities tracked yet"}\n\nPrioritize high-interest loans (credit cards, personal loans) for repayment first.`;
+  }
+
+  // ─── GOALS ────────────────────────────────────────────────────────────────────
+  if (/goal|future|target|dream|plan|ambition/.test(q)) {
+    if (!state.goals.length) return "No goals tracked yet. Add goals like home purchase, vacation, or education fund with target amount and due date!";
+    const completed = state.goals.filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0);
+    const inProgress = state.goals.filter((g) => toNumber(g.saved) < toNumber(g.target) || !toNumber(g.target));
+    const nearestLines = sortedGoals.slice(0, 3).map((g) => {
+      const gap = Math.max(0, toNumber(g.target) - toNumber(g.saved));
+      return `• **${g.name}** (${g.owner || "Me"}): Gap ${formatINR(gap)}, due ${formatDate(g.dueDate)}`;
+    });
+    return `**Goals Tracker** 🎯\n• Total goals: **${state.goals.length}** (${completed.length} completed, ${inProgress.length} in progress)\n${nearestLines.join("\n")}\n\nNear goal: **${nextGoal?.name}** due ${formatDate(nextGoal?.dueDate)}.`;
+  }
+
+  // ─── TASKS / TO-DO ────────────────────────────────────────────────────────────
+  if (/task|todo|to.do|pending|due|checklist/.test(q)) {
+    const byArea = groupBy(pendingTasks, (t) => t.area || "General");
+    const areaLines = Object.entries(byArea).slice(0, 4).map(([area, items]) => `• **${area}**: ${items.length} pending`).join("\n");
+    return `**To-Do List** ✅\n• Pending tasks: **${pendingTasks.length}**\n• Completed tasks: **${doneTasks.length}**\n${areaLines || "• No tasks categorized yet"}\n\nTop pending: ${pendingTasks.slice(0, 3).map((t) => t.text).join(", ") || "none"}`;
+  }
+
+  // ─── HABITS ──────────────────────────────────────────────────────────────────
+  if (/habit|streak|routine|consistent|discipline|daily|weekly/.test(q)) {
+    if (!state.habits.length) return "No habits tracked yet. Add daily habits like reading, exercise, or learning and I'll track your streaks!";
+    const topStreak = [...state.habits].sort((a, b) => (b.streak || 0) - (a.streak || 0))[0];
+    const myLines = myHabits.map((h) => `• ${h.name} — 🔥 ${h.streak || 0} day streak`).join("\n");
+    const wifeLines = wifeHabits.filter((h) => h.owner === "Wife").map((h) => `• ${h.name} — 🔥 ${h.streak || 0} day streak`).join("\n");
+    return `**Habit Tracker** 🔥\n**Your habits (Prafful):**\n${myLines || "• No habits tracked for you yet"}\n\n**Wife's habits:**\n${wifeLines || "• No habits tracked for wife yet"}\n\nBest streak: **${topStreak.name}** at ${topStreak.streak || 0} days! Keep it going!`;
+  }
+
+  // ─── EXERCISE / WORKOUTS ─────────────────────────────────────────────────────
+  if (/exercise|workout|gym|walk|run|yoga|fitness|health|active/.test(q)) {
+    const recent = state.workouts.slice(-7);
+    const totalMinutes = recent.reduce((s, w) => s + toNumber(w.minutes), 0);
+    const todayWorked = state.workouts.some((w) => sameDay(w.date, todayISO()));
+    const byType = groupBy(recent, (w) => w.type || "General");
+    const typeLines = Object.entries(byType).map(([type, items]) => `• ${type}: ${items.length}x`).join("\n");
+    return `**Exercise Log (Last 7 entries)** 🏃\n• Sessions: **${recent.length}**\n• Total minutes: **${totalMinutes} min**\n${typeLines}\n\n${todayWorked ? "✅ You already worked out today. Amazing!" : "💡 No workout logged today yet — even a 20-min walk counts!"}`;
+  }
+
+  // ─── DEVOPS / SRE CAREER ────────────────────────────────────────────────────
+  if (/devops|sre|site reliab|kubernetes|k8s|cloud|aws|gcp|azure|terraform|jenkins|ci.cd|monitoring|infra/.test(q)) {
+    const devopsTopics = myStudies;
+    if (!devopsTopics.length) return "No DevOps/SRE roadmap topics added yet. Go to Career → DevOps/SRE tab and start adding topics!";
+    const avgConf = devopsTopics.length ? Math.round(devopsTopics.reduce((s, t) => s + (t.confidence || 0), 0) / devopsTopics.length) : 0;
+    const completed = devopsTopics.filter((t) => t.status === "Completed").length;
+    const inProg = devopsTopics.filter((t) => t.status === "In progress").length;
+    const focus = weakestMyTopic;
+    return `**Your DevOps/SRE Roadmap** 🚀\n• Total topics: **${devopsTopics.length}** (${completed} done, ${inProg} in progress)\n• Average confidence: **${avgConf}%**\n• Focus area: **${focus?.topic || "all good!"}** (${focus?.confidence || 0}% confidence)\n\nTop 3 topics: ${devopsTopics.slice(0, 3).map((t) => `${t.topic} (${t.confidence || 0}%)`).join(", ")}\n\nKeep pushing — SRE + DevOps skills are in high demand!`;
+  }
+
+  // ─── ETL / DATA ENGINEER (WIFE) ──────────────────────────────────────────────
+  if (/etl|data engineer|airflow|spark|pipeline|dbt|warehouse|data engi|wife.*career|wife.*study/.test(q)) {
+    const etlTopics = wifeStudies;
+    if (!etlTopics.length) return "No ETL/Data Engineering roadmap topics added for wife yet. Go to Career → ETL/Data tab and start adding topics!";
+    const avgConf = etlTopics.length ? Math.round(etlTopics.reduce((s, t) => s + (t.confidence || 0), 0) / etlTopics.length) : 0;
+    const completed = etlTopics.filter((t) => t.status === "Completed").length;
+    const inProg = etlTopics.filter((t) => t.status === "In progress").length;
+    return `**Wife's ETL/Data Engineering Roadmap** 📊\n• Total topics: **${etlTopics.length}** (${completed} done, ${inProg} in progress)\n• Average confidence: **${avgConf}%**\n• Focus area: **${weakestWifeTopic?.topic || "all good!"}** (${weakestWifeTopic?.confidence || 0}% confidence)\n\nTop 3 topics: ${etlTopics.slice(0, 3).map((t) => `${t.topic} (${t.confidence || 0}%)`).join(", ")}\n\nData engineering is a hot field — consistency is key!`;
+  }
+
+  // ─── CAREER SUMMARY ──────────────────────────────────────────────────────────
+  if (/career|study|roadmap|learn|skill|progress|ready|switch/.test(q)) {
+    const myAvg = myStudies.length ? Math.round(myStudies.reduce((s, t) => s + (t.confidence || 0), 0) / myStudies.length) : 0;
+    const wifeAvg = wifeStudies.length ? Math.round(wifeStudies.reduce((s, t) => s + (t.confidence || 0), 0) / wifeStudies.length) : 0;
+    return `**Career Roadmap Summary** 🎓\n• **Prafful (SRE/DevOps)**: ${myStudies.length} topics, ${myAvg}% avg confidence\n  Focus: ${weakestMyTopic?.topic || "add topics"}\n• **Wife (ETL/Data Eng)**: ${wifeStudies.length} topics, ${wifeAvg}% avg confidence\n  Focus: ${weakestWifeTopic?.topic || "add topics"}\n\n${weakestMyTopic ? `This week, prioritize **${weakestMyTopic.topic}** — it needs the most attention.` : "Add study topics to get personalized recommendations!"}`;
+  }
+
+  // ─── TODAY'S DAILY PLAN ──────────────────────────────────────────────────────
+  if (/today|daily plan|what.*do|morning|tonight|focus/.test(q)) {
+    const todayTasks = pendingTasks.slice(0, 3);
+    const worked = state.workouts.some((w) => sameDay(w.date, todayISO()));
+    const topHabit = [...myHabits].sort((a, b) => (b.streak || 0) - (a.streak || 0))[0];
+    return `**Today's Plan for Prafful** 📅\n• **Tasks**: ${todayTasks.length ? todayTasks.map((t) => t.text).join(", ") : "All clear! No pending tasks."}\n• **Exercise**: ${worked ? "✅ Already logged" : "⚠️ Not logged yet — add a 20-30 min session!"}\n• **Habit to protect**: ${topHabit ? `${topHabit.name} (🔥 ${topHabit.streak || 0} day streak)` : "Add habits to track"}\n• **Study focus**: ${weakestMyTopic?.topic || "Add career topics for daily focus"}\n\nYou've got this, Prafful! 💪`;
+  }
+
+  // ─── COMPARISON (ME vs WIFE) ─────────────────────────────────────────────────
+  if (/compare|vs|versus|both|together|couple|family|husband|wife/.test(q)) {
+    const myIncome = sum(state.income.filter((i) => (i.person || "Me") === "Me"), "amount");
+    const wifeIncome = sum(state.income.filter((i) => i.person === "Wife"), "amount");
+    const myMf = sum(state.mutualFunds.filter((f) => (f.owner || "Me") === "Me"), "currentValue");
+    const wifeMf = sum(state.mutualFunds.filter((f) => f.owner === "Wife"), "currentValue");
+    return `**Prafful vs Wife Snapshot** 👫\n• Income — Prafful: ${formatINR(myIncome)} | Wife: ${formatINR(wifeIncome)}\n• MF Portfolio — Prafful: ${formatINR(myMf)} | Wife: ${formatINR(wifeMf)}\n• Career topics — Prafful: ${myStudies.length} | Wife: ${wifeStudies.length}\n• Goals — Prafful: ${myGoals.length} | Wife: ${wifeGoals.length}\n• Habits — Prafful: ${myHabits.length} | Wife: ${wifeHabits.filter((h) => h.owner === "Wife").length}`;
+  }
+
+  // ─── QUICK STATS / HOW AM I DOING ────────────────────────────────────────────
+  if (/how.*doing|quick.*stat|overview|status|snapshot|summary|all/.test(q)) {
+    return `**Life Ledger Snapshot** 🌟\n• 💰 Net Worth: **${formatINR(metrics.netWorth)}**\n• 📊 This Month Savings: **${formatINR(metrics.monthIncome - metrics.monthExpenses)}** (${metrics.savingsRate}% rate)\n• 🏦 Total Investments: **${formatINR(metrics.assets)}**\n• ✅ Pending Tasks: **${pendingTasks.length}**\n• 🔥 Habits: **${state.habits.length}** tracked\n• 🎯 Goals: **${state.goals.length}** (${state.goals.filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0).length} completed)\n• 🚀 Career Topics: **${myStudies.length}** (DevOps) + **${wifeStudies.length}** (ETL)`;
+  }
+
+  // ─── FALLBACK ─────────────────────────────────────────────────────────────────
+  return `I understand simple questions about your Life Ledger! 😊 Try asking:\n• "How much did we save this month?"\n• "What's my net worth?"\n• "How is my DevOps roadmap going?"\n• "Show me my habits"\n• "What are my pending tasks?"\n• "How are our goals looking?"\n• "Compare me and my wife"\n• "Show my portfolio breakdown"`;
 }
 
 function calculateMetrics() {
