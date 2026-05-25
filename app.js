@@ -626,6 +626,11 @@ function bindFinanceTabs() {
     renderExpenseExplorer();
   });
 
+  document.getElementById("expenseSearchInput")?.addEventListener("input", () => {
+    activeExpensePage = 0;
+    renderExpenseExplorer(false);
+  });
+
   document.getElementById("expensePagePrev")?.addEventListener("click", () => {
     activeExpensePage = Math.max(0, activeExpensePage - 1);
     renderExpenseExplorer(false);
@@ -2380,10 +2385,28 @@ function renderExpenseExplorer(refreshMonthList = true) {
   const bucket = getExpenseMonthIndex().get(activeExpenseMonth);
   const allRows = bucket?.rows || [];
 
+  const searchInput = document.getElementById("expenseSearchInput");
+  const searchVal = searchInput ? searchInput.value.toLowerCase().trim() : "";
+
   const filteredRows = allRows.filter(item => {
     const norm = normalizeOwner(item.paidBy || "Both");
-    if (activeExpenseOwner === "Both") return true;
-    return norm === activeExpenseOwner || norm === "Both";
+    if (activeExpenseOwner !== "Both" && norm !== activeExpenseOwner && norm !== "Both") return false;
+
+    if (searchVal) {
+      const category = String(item.category || "").toLowerCase();
+      const note = String(item.note || "").toLowerCase();
+      const paidBy = String(item.paidBy || "").toLowerCase();
+      const amount = String(item.amount || "");
+      const date = String(item.date || "");
+      if (!category.includes(searchVal) && 
+          !note.includes(searchVal) && 
+          !paidBy.includes(searchVal) &&
+          !amount.includes(searchVal) &&
+          !date.includes(searchVal)) {
+        return false;
+      }
+    }
+    return true;
   });
 
   const total = sum(filteredRows, "amount");

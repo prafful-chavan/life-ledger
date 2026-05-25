@@ -433,12 +433,13 @@
                   <div class="stack-list" id="expenseCategoryBreakdown"></div>
                 </section>
                 <section class="panel soft-panel">
-                  <div class="panel-header">
+                  <div class="panel-header" style="flex-wrap: wrap; gap: 12px; align-items: center;">
                     <div>
                       <h3>Transactions</h3>
                       <p id="expensePageInfo" class="muted-small"></p>
                     </div>
-                    <div class="panel-actions" style="display: flex; gap: 8px;">
+                    <input type="text" id="expenseSearchInput" placeholder="Search transactions..." style="font-size: 16px; padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--input-bg); color: var(--ink); outline: none; width: 220px; max-width: 100%;" />
+                    <div class="panel-actions" style="display: flex; gap: 8px; margin-left: auto;">
                       <button class="secondary-button" type="button" id="toggleExpenseTableZoom">🔍 Expand</button>
                       <button class="secondary-button" type="button" id="expensePagePrev">Previous</button>
                       <button class="secondary-button" type="button" id="expensePageNext">Next</button>
