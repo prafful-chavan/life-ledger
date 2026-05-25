@@ -557,16 +557,20 @@
       }
     });
 
-    document.getElementById("logoutButton")?.addEventListener("click", () => LifeLedgerAuth.logout());
+    document.querySelectorAll("#logoutButton, #settingsLogoutButton").forEach(btn => {
+      btn.addEventListener("click", () => LifeLedgerAuth.logout());
+    });
 
-    document.getElementById("connectDriveButton")?.addEventListener("click", async () => {
-      try {
-        await LifeLedgerAuth.connectDriveAndSync();
-        updateDriveBadge();
-        toastAuth("Google Drive connected. Changes sync automatically.");
-      } catch (error) {
-        toastAuth(error.message);
-      }
+    document.querySelectorAll("#connectDriveButton, #settingsConnectDriveButton").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await LifeLedgerAuth.connectDriveAndSync();
+          updateDriveBadge();
+          toastAuth("Google Drive connected. Changes sync automatically.");
+        } catch (error) {
+          toastAuth(error.message);
+        }
+      });
     });
 
     document.getElementById("restoreDriveButton")?.addEventListener("click", () => {
@@ -589,25 +593,27 @@
       showAuthPanel("restore");
     });
 
-    document.getElementById("syncDriveButton")?.addEventListener("click", async () => {
-      const btn = document.getElementById("syncDriveButton");
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = "Syncing…";
-      }
-      try {
-        const msg = await syncWithDrive(false);
-        updateDriveBadge();
-        toastAuth(msg);
-      } catch (error) {
-        console.warn(error);
-        toastAuth(error.message);
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = "Sync now";
+    document.querySelectorAll("#syncDriveButton, #settingsSyncDriveButton").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const btns = document.querySelectorAll("#syncDriveButton, #settingsSyncDriveButton");
+        btns.forEach(b => {
+          b.disabled = true;
+          b.textContent = "Syncing…";
+        });
+        try {
+          const msg = await syncWithDrive(false);
+          updateDriveBadge();
+          toastAuth(msg);
+        } catch (error) {
+          console.warn(error);
+          toastAuth(error.message);
+        } finally {
+          btns.forEach(b => {
+            b.disabled = false;
+            b.textContent = b.id === "settingsSyncDriveButton" ? "Sync now" : "Sync now";
+          });
         }
-      }
+      });
     });
 
     document.querySelectorAll("#loginPassword, #setupPassword, #setupPasswordConfirm, #restorePassword").forEach((input) => {
@@ -631,11 +637,12 @@
   }
 
   function updateDriveBadge() {
-    const badge = document.getElementById("driveStatusBadge");
-    if (!badge) return;
+    const badges = document.querySelectorAll("#driveStatusBadge, #settingsDriveStatusBadge");
     const { connected } = LifeLedgerAuth.driveStatus();
-    badge.textContent = connected ? "Drive linked" : "Drive offline";
-    badge.classList.toggle("good", connected);
+    badges.forEach(badge => {
+      badge.textContent = connected ? "Drive linked" : "Drive offline";
+      badge.classList.toggle("good", connected);
+    });
   }
 
   window.LifeLedgerAuth = LifeLedgerAuth;

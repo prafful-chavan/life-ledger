@@ -143,6 +143,7 @@
           </div>
           <div class="topbar-actions">
             <button class="secondary-button" type="button" id="themeToggle" aria-pressed="false">Dark mode</button>
+            <button class="secondary-button" type="button" data-open-modal="settingsModal" id="settingsButton" aria-label="Settings">⚙️ Settings</button>
             <button class="secondary-button danger-button" type="button" data-open-modal="resetModal">Reset data</button>
             <button class="primary-button" type="button" data-open-modal="importModal">Upload sheet</button>
           </div>
@@ -1176,6 +1177,52 @@
           <button type="button" data-reset-scope="workouts">Exercise</button>
           <button type="button" data-reset-scope="chat">Assistant chat</button>
           <button class="danger-reset" type="button" data-reset-scope="all">Everything</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Configure</p>
+            <h2 id="settingsTitle">App settings</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+
+        <div class="settings-section">
+          <h4>Sync & Backup</h4>
+          <p class="muted-small" style="margin-bottom: 12px;">Google Drive synchronization status and data export.</p>
+          <div class="settings-row">
+            <span>Status:</span>
+            <span class="status-badge" id="settingsDriveStatusBadge">Drive offline</span>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 12px;">
+            <button class="secondary-button" type="button" id="settingsConnectDriveButton" style="flex: 1;">Link Drive</button>
+            <button class="secondary-button" type="button" id="settingsSyncDriveButton" style="flex: 1;">Sync now</button>
+          </div>
+          <button class="secondary-button" type="button" id="settingsExportDataButton" style="width: 100%; margin-top: 8px;">📤 Export backup JSON</button>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section">
+          <h4>Preferences</h4>
+          <div class="settings-row" style="margin-top: 8px;">
+            <span>Display mode:</span>
+            <button class="secondary-button" type="button" id="settingsThemeToggle" style="padding: 6px 12px;">Toggle Theme</button>
+          </div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section">
+          <h4>Danger Zone</h4>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button class="secondary-button danger-button" type="button" data-open-modal="resetModal" style="flex: 1;">Reset data...</button>
+            <button class="secondary-button danger-button" type="button" id="settingsLogoutButton" style="flex: 1;">Sign out</button>
+          </div>
         </div>
       </div>
     </div>

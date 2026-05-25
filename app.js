@@ -520,11 +520,11 @@ function saveTheme(theme) {
 function applyTheme(theme) {
   const normalizedTheme = theme === "dark" ? "dark" : "light";
   document.body.dataset.theme = normalizedTheme;
-  const button = document.getElementById("themeToggle");
-  if (button) {
+  const buttons = document.querySelectorAll("#themeToggle, #settingsThemeToggle");
+  buttons.forEach(button => {
     button.textContent = normalizedTheme === "dark" ? "Light mode" : "Dark mode";
     button.setAttribute("aria-pressed", String(normalizedTheme === "dark"));
-  }
+  });
 }
 
 function normalizeData(data) {
@@ -561,15 +561,14 @@ function ensureIds(items, prefix) {
 }
 
 function bindTheme() {
-  const button = document.getElementById("themeToggle");
-  if (!button) return;
-
   applyTheme(loadTheme());
-  button.addEventListener("click", () => {
-    const nextTheme = document.body.dataset.theme === "dark" ? "light" : "dark";
-    applyTheme(nextTheme);
-    saveTheme(nextTheme);
-    renderCashflowChart();
+  document.querySelectorAll("#themeToggle, #settingsThemeToggle").forEach(button => {
+    button.addEventListener("click", () => {
+      const nextTheme = document.body.dataset.theme === "dark" ? "light" : "dark";
+      applyTheme(nextTheme);
+      saveTheme(nextTheme);
+      renderCashflowChart();
+    });
   });
 }
 
@@ -950,14 +949,16 @@ function bindChat() {
 }
 
 function bindExport() {
-  document.getElementById("exportDataButton").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `life-ledger-backup-${todayISO()}.json`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    toast("Backup exported.");
+  document.querySelectorAll("#exportDataButton, #settingsExportDataButton").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `life-ledger-backup-${todayISO()}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast("Backup exported.");
+    });
   });
 }
 
