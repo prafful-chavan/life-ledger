@@ -1533,6 +1533,33 @@ body.auth-locked .app-shell {
   line-height: 1.45;
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-link {
+  color: var(--brand);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
 .totp-setup {
   display: flex;
   gap: 16px;

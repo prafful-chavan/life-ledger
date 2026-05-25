@@ -139,6 +139,42 @@
     };
   }
 
+  function mergeVaultData(localData, remoteData) {
+    if (!localData) return remoteData;
+    if (!remoteData) return localData;
+    const merged = { ...localData };
+    const arrayKeys = [
+      'income', 'expenses', 'assets', 'liabilities',
+      'mutualFunds', 'stocks', 'fd', 'epf', 'bonds', 'ppf',
+      'gold', 'silver', 'crypto', 'usstocks', 'banksaving', 'others',
+      'goals', 'tasks', 'studies', 'workouts', 'habits', 'chat'
+    ];
+    arrayKeys.forEach(key => {
+      const localArr = Array.isArray(localData[key]) ? localData[key] : [];
+      const remoteArr = Array.isArray(remoteData[key]) ? remoteData[key] : [];
+      if (!localArr.length && !remoteArr.length) { merged[key] = []; return; }
+      if (!localArr.length) { merged[key] = remoteArr; return; }
+      if (!remoteArr.length) { merged[key] = localArr; return; }
+      // Merge by id, keeping the version from whichever side has it
+      const byId = new Map();
+      localArr.forEach(item => { if (item.id) byId.set(item.id, item); });
+      remoteArr.forEach(item => { if (item.id && !byId.has(item.id)) byId.set(item.id, item); });
+      // Also keep items without ids (shouldn't happen but safety)
+      const noIdLocal = localArr.filter(item => !item.id);
+      const noIdRemote = remoteArr.filter(item => !item.id);
+      merged[key] = [...byId.values(), ...noIdLocal, ...noIdRemote];
+    });
+    return merged;
+  }
+
+  function countEntries(data) {
+    if (!data) return 0;
+    return ['income','expenses','assets','liabilities','mutualFunds','stocks',
+      'fd','epf','bonds','ppf','gold','silver','crypto','usstocks',
+      'banksaving','others','goals','tasks','studies','workouts','habits'
+    ].reduce((total, key) => total + (Array.isArray(data[key]) ? data[key].length : 0), 0);
+  }
+
   async function loadVaultFromDrive() {
     if (!window.LifeLedgerDrive?.tryRestoreVault) return null;
     try {
@@ -193,6 +229,7 @@
       iv,
       ciphertext,
       updatedAt: new Date().toISOString(),
+      entryCount: countEntries(innerPayload?.data),
     };
   }
 
@@ -344,18 +381,34 @@
         try {
           const inner = await openVault(password, remoteVault);
           if (inner && inner.data) {
-            vaultMeta = remoteVault;
-            await window.LifeLedgerVaultStore.save(remoteVault);
-            unlockedPayload = { ...inner, _sessionPassword: password };
-            window.LifeLedgerApp?.bootstrap(inner.data);
-            return "Synced: Newer data pulled from Google Drive.";
+            const localData = unlockedPayload.data;
+            const remoteData = inner.data;
+            const localCount = countEntries(localData);
+            const remoteCount = countEntries(remoteData);
+            // Safety: if local has significantly more data, don't overwrite — merge instead
+            const mergedData = mergeVaultData(localData, remoteData);
+            const mergedCount = countEntries(mergedData);
+            // Rebuild vault with merged data
+            const mergedInner = vaultInnerPayload(mergedData, inner.totpSecret || unlockedPayload.totpSecret);
+            const mergedVault = await buildVault(password, mergedInner);
+            await saveVaultFile(mergedVault);
+            unlockedPayload = { ...mergedInner, _sessionPassword: password };
+            window.LifeLedgerApp?.bootstrap(mergedData);
+            console.log(`[auth.js] Sync merged: local=${localCount}, remote=${remoteCount}, merged=${mergedCount}`);
+            return `Synced: Merged local (${localCount} entries) + Drive (${remoteCount} entries) → ${mergedCount} total.`;
           } else {
             throw new Error("Invalid remote vault structure.");
           }
         } catch (e) {
+          if (e.message?.includes("Invalid remote vault")) throw e;
           throw new Error("Google Drive has newer changes, but they couldn't be decrypted with your current password. Please sign out and log back in.");
         }
       } else {
+        // Safety check: if local has more entries, don't replace while locked!
+        if (vaultMeta && (vaultMeta.entryCount || 0) > (remoteVault.entryCount || 0)) {
+          console.warn(`[auth.js] Remote vault has newer timestamp but fewer entries (${remoteVault.entryCount || 0} vs local ${vaultMeta.entryCount || 0}). Postponing sync until unlocked to perform a merge.`);
+          return "Not synced: Remote has fewer entries. Unlock to merge.";
+        }
         vaultMeta = remoteVault;
         await window.LifeLedgerVaultStore.save(remoteVault);
         return "Synced: Updated local vault from Google Drive. Unlock to view.";
@@ -390,23 +443,27 @@
 
       if (!vaultMeta) {
         showGate("auth");
-        showAuthPanel("setup");
+        // If there's a known Drive link, show the restore panel (not setup)
         if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+          showAuthPanel("restore");
           setAuthMessage(
-            "setupHint",
-            "A Google Drive vault backup was detected. Click 'Link Google Drive' below to link and download your vault.",
+            "restoreMessage",
+            "Your vault is on Google Drive. Restore it to continue.",
             false
           );
         } else if (legacy) {
+          showAuthPanel("setup");
           setAuthMessage(
             "setupHint",
             "Existing data on this device will be encrypted and moved into your vault on setup.",
             false
           );
         } else {
+          // No local vault, no Drive link → show restore panel with both options
+          showAuthPanel("restore");
           setAuthMessage(
-            "setupHint",
-            "No vault on this device. If you used Google Drive before, click Restore on the sign-in screen after creating once, or restore from Drive.",
+            "restoreMessage",
+            "",
             false
           );
         }
@@ -520,6 +577,18 @@
       performRestore("setupMessage");
     });
 
+    document.getElementById("restoreFromDriveButton")?.addEventListener("click", () => {
+      performRestore("restoreMessage");
+    });
+
+    document.getElementById("goToSetupButton")?.addEventListener("click", () => {
+      showAuthPanel("setup");
+    });
+
+    document.getElementById("goToRestoreButton")?.addEventListener("click", () => {
+      showAuthPanel("restore");
+    });
+
     document.getElementById("syncDriveButton")?.addEventListener("click", async () => {
       const btn = document.getElementById("syncDriveButton");
       if (btn) {
@@ -541,12 +610,13 @@
       }
     });
 
-    document.querySelectorAll("#loginPassword, #setupPassword, #setupPasswordConfirm").forEach((input) => {
+    document.querySelectorAll("#loginPassword, #setupPassword, #setupPasswordConfirm, #restorePassword").forEach((input) => {
       input.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
         const panel = document.querySelector("[data-auth-panel]:not([hidden])")?.dataset.authPanel;
         if (panel === "login") document.getElementById("loginButton")?.click();
         if (panel === "setup") document.getElementById("createVaultButton")?.click();
+        if (panel === "restore") document.getElementById("restoreFromDriveButton")?.click();
       });
     });
   }

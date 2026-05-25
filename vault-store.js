@@ -55,6 +55,17 @@
     }
   }
 
+  function isValidVault(vault) {
+    return (
+      vault &&
+      typeof vault === "object" &&
+      vault.v &&
+      vault.salt &&
+      vault.iv &&
+      vault.ciphertext
+    );
+  }
+
   window.LifeLedgerVaultStore = {
     async load() {
       let vault = null;
@@ -64,8 +75,10 @@
         console.warn("IndexedDB load failed:", err);
       }
 
-      if (vault) {
+      if (isValidVault(vault)) {
         return vault;
+      } else if (vault) {
+        console.warn("IndexedDB vault failed integrity check.");
       }
 
       // Fallback 1: LocalStorage backup
@@ -73,13 +86,15 @@
         const backupRaw = localStorage.getItem(BACKUP_LOCAL_KEY);
         if (backupRaw) {
           const backupVault = JSON.parse(backupRaw);
-          if (backupVault) {
-            console.log("IndexedDB empty/evicted. Restored vault from localStorage backup.");
+          if (isValidVault(backupVault)) {
+            console.log("IndexedDB empty/evicted/corrupted. Restored vault from localStorage backup.");
             // Re-populate IndexedDB in background
             idbSet(VAULT_KEY, backupVault).catch(err => 
               console.warn("Failed to restore IndexedDB from backup:", err)
             );
             return backupVault;
+          } else {
+            console.warn("LocalStorage backup vault failed integrity check.");
           }
         }
       } catch (err) {
@@ -88,7 +103,7 @@
 
       // Fallback 2: Legacy local vault
       const legacy = readLegacyLocalVault();
-      if (legacy) {
+      if (isValidVault(legacy)) {
         await this.save(legacy);
         localStorage.removeItem(LEGACY_LOCAL_KEY);
         return legacy;
@@ -97,18 +112,37 @@
     },
 
     async save(vault) {
+      let idbSuccess = false;
+
       // Primary write to IndexedDB
-      await idbSet(VAULT_KEY, vault);
+      try {
+        await idbSet(VAULT_KEY, vault);
+        idbSuccess = true;
+      } catch (err) {
+        console.warn("IndexedDB save failed:", err);
+      }
 
       // Secondary write/backup to localStorage (as long as it fits)
       try {
         if (vault) {
-          localStorage.setItem(BACKUP_LOCAL_KEY, JSON.stringify(vault));
+          const json = JSON.stringify(vault);
+          localStorage.setItem(BACKUP_LOCAL_KEY, json);
+          // If IndexedDB failed, localStorage is our only copy — verify it saved
+          if (!idbSuccess) {
+            const verify = localStorage.getItem(BACKUP_LOCAL_KEY);
+            if (!verify) {
+              throw new Error("Both IndexedDB and localStorage save failed.");
+            }
+            console.warn("IndexedDB failed but localStorage backup succeeded.");
+          }
         } else {
           localStorage.removeItem(BACKUP_LOCAL_KEY);
         }
       } catch (err) {
         console.warn("Failed to write vault backup to localStorage (likely quota exceeded):", err);
+        if (!idbSuccess) {
+          throw new Error("Could not save vault to any storage. Check your browser storage settings.");
+        }
       }
 
       try {

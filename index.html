@@ -30,6 +30,7 @@
           </div>
         </div>
 
+        <!-- Panel 1: Setup (first-time only) -->
         <section data-auth-panel="setup" class="auth-panel">
           <h2>Create your vault</h2>
           <p class="muted-small" id="setupHint">First-time setup on this browser.</p>
@@ -45,8 +46,12 @@
           <p class="auth-message" id="setupMessage"></p>
           <p class="muted-small auth-footnote" style="text-align: center; margin: 16px 0 8px;">— or —</p>
           <button class="secondary-button auth-secondary" type="button" id="setupRestoreDriveButton">Restore vault from Google Drive</button>
+          <p class="muted-small auth-footnote" style="text-align: center; margin: 8px 0 0;">
+            Already have a vault? <a href="#" id="goToRestoreButton" class="auth-link">Restore from Google Drive</a>
+          </p>
         </section>
 
+        <!-- Panel 2: Login (vault exists on device) -->
         <section data-auth-panel="login" class="auth-panel" hidden>
           <h2>Sign in</h2>
           <p class="muted-small">Your vault is saved on this device. Enter the same password you created earlier.</p>
@@ -65,6 +70,22 @@
             Refreshing the page should not ask you to create a new vault. If it does, restore from Drive above.
           </p>
         </section>
+
+        <!-- Panel 3: Restore (incognito / new device — no local vault) -->
+        <section data-auth-panel="restore" class="auth-panel" hidden>
+          <h2>Welcome back</h2>
+          <p class="muted-small">No vault on this device. Restore your existing vault from Google Drive to continue.</p>
+          <button class="primary-button auth-submit" type="button" id="restoreFromDriveButton" style="margin-bottom: 12px;">
+            🔑 Restore vault from Google Drive
+          </button>
+          <p class="auth-message" id="restoreMessage"></p>
+          <div class="auth-divider">
+            <span>or create a new vault</span>
+          </div>
+          <p class="muted-small" style="margin-bottom: 8px;">If this is your first time, create a new vault below.</p>
+          <button class="secondary-button auth-secondary" type="button" id="goToSetupButton">Create a new vault</button>
+        </section>
+
       </div>
     </div>
 
