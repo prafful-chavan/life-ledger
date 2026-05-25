@@ -501,64 +501,8 @@ function invalidateExpenseCache() {
   expenseMonthIndexCache = null;
 }
 
-function getEntrySignature(item, key) {
-  if (!item) return "";
-  const clean = (val) => String(val || "").trim().toLowerCase();
-  const cleanNum = (val) => {
-    const num = Number(val);
-    return isNaN(num) ? 0 : num;
-  };
-  switch (key) {
-    case 'income':
-      return `income|${clean(item.date)}|${clean(item.person)}|${clean(item.source)}|${cleanNum(item.amount)}`;
-    case 'expenses':
-      return `expense|${clean(item.date)}|${clean(item.category)}|${clean(item.paidBy)}|${cleanNum(item.amount)}|${clean(item.note)}`;
-    case 'mutualFunds':
-      return `mf|${clean(item.fundName)}|${cleanNum(item.units)}|${cleanNum(item.invested)}|${clean(item.purchaseDate || item.date)}`;
-    case 'stocks':
-      return `stock|${clean(item.symbol || item.name)}|${cleanNum(item.quantity || item.qty)}|${cleanNum(item.value || item.price)}|${clean(item.date)}|${clean(item.owner)}`;
-    case 'fd':
-    case 'epf':
-    case 'bonds':
-    case 'ppf':
-    case 'gold':
-    case 'silver':
-    case 'crypto':
-    case 'usstocks':
-    case 'banksaving':
-    case 'others':
-    case 'assets':
-    case 'liabilities':
-      return `${key}|${clean(item.name || item.category)}|${cleanNum(item.value)}|${clean(item.owner)}|${clean(item.date)}`;
-    case 'goals':
-      return `goal|${clean(item.name)}|${clean(item.owner)}|${cleanNum(item.target)}`;
-    case 'tasks':
-      return `task|${clean(item.text)}|${clean(item.area)}|${clean(item.date)}`;
-    case 'studies':
-      return `study|${clean(item.topic)}|${clean(item.owner)}`;
-    case 'workouts':
-      return `workout|${clean(item.date)}|${clean(item.type)}|${cleanNum(item.minutes)}`;
-    case 'habits':
-      return `habit|${clean(item.name)}|${clean(item.owner)}|${clean(item.frequency)}`;
-    default:
-      return clean(item.id);
-  }
-}
-
-function appendArray(target, source, key) {
-  const seenSignatures = new Set(target.map(item => getEntrySignature(item, key)));
-  const seenIds = new Set(target.map(item => item.id).filter(Boolean));
-
-  for (let i = 0; i < source.length; i += 1) {
-    const item = source[i];
-    if (item.id && seenIds.has(item.id)) continue;
-    const sig = getEntrySignature(item, key);
-    if (sig && seenSignatures.has(sig)) continue;
-
-    if (item.id) seenIds.add(item.id);
-    if (sig) seenSignatures.add(sig);
-    target.push(item);
-  }
+function appendArray(target, source) {
+  for (let i = 0; i < source.length; i += 1) target.push(source[i]);
 }
 
 function loadTheme() {
@@ -1622,29 +1566,29 @@ function mapRowToKind(row, kind) {
 
 function mergeImportedData(imported) {
   const normalized = normalizeData(imported);
-  appendArray(state.income, normalized.income, 'income');
-  appendArray(state.expenses, normalized.expenses, 'expenses');
-  appendArray(state.assets, normalized.assets, 'assets');
-  appendArray(state.liabilities, normalized.liabilities, 'liabilities');
-  appendArray(state.mutualFunds, normalized.mutualFunds, 'mutualFunds');
-  appendArray(state.stocks, normalized.stocks, 'stocks');
-  appendArray(state.goals, normalized.goals, 'goals');
-  appendArray(state.tasks, normalized.tasks, 'tasks');
-  appendArray(state.studies, normalized.studies, 'studies');
-  appendArray(state.workouts, normalized.workouts, 'workouts');
-  appendArray(state.habits, normalized.habits, 'habits');
+  appendArray(state.income, normalized.income);
+  appendArray(state.expenses, normalized.expenses);
+  appendArray(state.assets, normalized.assets);
+  appendArray(state.liabilities, normalized.liabilities);
+  appendArray(state.mutualFunds, normalized.mutualFunds);
+  appendArray(state.stocks, normalized.stocks);
+  appendArray(state.goals, normalized.goals);
+  appendArray(state.tasks, normalized.tasks);
+  appendArray(state.studies, normalized.studies);
+  appendArray(state.workouts, normalized.workouts);
+  appendArray(state.habits, normalized.habits);
   
   // Merge simple asset types
-  appendArray(state.fd, normalized.fd, 'fd');
-  appendArray(state.epf, normalized.epf, 'epf');
-  appendArray(state.bonds, normalized.bonds, 'bonds');
-  appendArray(state.ppf, normalized.ppf, 'ppf');
-  appendArray(state.gold, normalized.gold, 'gold');
-  appendArray(state.silver, normalized.silver, 'silver');
-  appendArray(state.crypto, normalized.crypto, 'crypto');
-  appendArray(state.usstocks, normalized.usstocks, 'usstocks');
-  appendArray(state.banksaving, normalized.banksaving, 'banksaving');
-  appendArray(state.others, normalized.others, 'others');
+  appendArray(state.fd, normalized.fd);
+  appendArray(state.epf, normalized.epf);
+  appendArray(state.bonds, normalized.bonds);
+  appendArray(state.ppf, normalized.ppf);
+  appendArray(state.gold, normalized.gold);
+  appendArray(state.silver, normalized.silver);
+  appendArray(state.crypto, normalized.crypto);
+  appendArray(state.usstocks, normalized.usstocks);
+  appendArray(state.banksaving, normalized.banksaving);
+  appendArray(state.others, normalized.others);
 }
 
 function normalizeOwner(value) {
