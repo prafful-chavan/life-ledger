@@ -139,6 +139,50 @@
     };
   }
 
+  function getEntrySignature(item, key) {
+    if (!item) return "";
+    const clean = (val) => String(val || "").trim().toLowerCase();
+    const cleanNum = (val) => {
+      const num = Number(val);
+      return isNaN(num) ? 0 : num;
+    };
+    switch (key) {
+      case 'income':
+        return `income|${clean(item.date)}|${clean(item.person)}|${clean(item.source)}|${cleanNum(item.amount)}`;
+      case 'expenses':
+        return `expense|${clean(item.date)}|${clean(item.category)}|${clean(item.paidBy)}|${cleanNum(item.amount)}|${clean(item.note)}`;
+      case 'mutualFunds':
+        return `mf|${clean(item.fundName)}|${cleanNum(item.units)}|${cleanNum(item.invested)}|${clean(item.purchaseDate || item.date)}`;
+      case 'stocks':
+        return `stock|${clean(item.symbol || item.name)}|${cleanNum(item.quantity || item.qty)}|${cleanNum(item.value || item.price)}|${clean(item.date)}|${clean(item.owner)}`;
+      case 'fd':
+      case 'epf':
+      case 'bonds':
+      case 'ppf':
+      case 'gold':
+      case 'silver':
+      case 'crypto':
+      case 'usstocks':
+      case 'banksaving':
+      case 'others':
+      case 'assets':
+      case 'liabilities':
+        return `${key}|${clean(item.name || item.category)}|${cleanNum(item.value)}|${clean(item.owner)}|${clean(item.date)}`;
+      case 'goals':
+        return `goal|${clean(item.name)}|${clean(item.owner)}|${cleanNum(item.target)}`;
+      case 'tasks':
+        return `task|${clean(item.text)}|${clean(item.area)}|${clean(item.date)}`;
+      case 'studies':
+        return `study|${clean(item.topic)}|${clean(item.owner)}`;
+      case 'workouts':
+        return `workout|${clean(item.date)}|${clean(item.type)}|${cleanNum(item.minutes)}`;
+      case 'habits':
+        return `habit|${clean(item.name)}|${clean(item.owner)}|${clean(item.frequency)}`;
+      default:
+        return clean(item.id);
+    }
+  }
+
   function mergeVaultData(localData, remoteData) {
     if (!localData) return remoteData;
     if (!remoteData) return localData;
@@ -155,14 +199,31 @@
       if (!localArr.length && !remoteArr.length) { merged[key] = []; return; }
       if (!localArr.length) { merged[key] = remoteArr; return; }
       if (!remoteArr.length) { merged[key] = localArr; return; }
-      // Merge by id, keeping the version from whichever side has it
-      const byId = new Map();
-      localArr.forEach(item => { if (item.id) byId.set(item.id, item); });
-      remoteArr.forEach(item => { if (item.id && !byId.has(item.id)) byId.set(item.id, item); });
-      // Also keep items without ids (shouldn't happen but safety)
-      const noIdLocal = localArr.filter(item => !item.id);
-      const noIdRemote = remoteArr.filter(item => !item.id);
-      merged[key] = [...byId.values(), ...noIdLocal, ...noIdRemote];
+
+      // Deduplicate and merge by ID and natural signature
+      const mergedList = [];
+      const seenIds = new Set();
+      const seenSignatures = new Set();
+
+      const addItem = (item) => {
+        if (!item) return;
+        if (item.id) {
+          if (seenIds.has(item.id)) return;
+          seenIds.add(item.id);
+        }
+        const sig = getEntrySignature(item, key);
+        if (sig) {
+          if (seenSignatures.has(sig)) return;
+          seenSignatures.add(sig);
+        }
+        mergedList.push(item);
+      };
+
+      // Keep local first, then remote
+      localArr.forEach(addItem);
+      remoteArr.forEach(addItem);
+
+      merged[key] = mergedList;
     });
     return merged;
   }

@@ -15,7 +15,7 @@
 
   function getStoredToken() {
     try {
-      const raw = sessionStorage.getItem(TOKEN_CACHE_KEY);
+      const raw = localStorage.getItem(TOKEN_CACHE_KEY);
       if (!raw) return null;
       const data = JSON.parse(raw);
       if (data.accessToken && data.expiresAt && Date.now() < data.expiresAt - 120000) {
@@ -29,7 +29,7 @@
     try {
       accessToken = token;
       const expiresAt = Date.now() + (expiresIn || 3600) * 1000;
-      sessionStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ accessToken, expiresAt }));
+      localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ accessToken, expiresAt }));
     } catch (e) {}
   }
 
@@ -74,6 +74,10 @@
 
   function requestAccessToken(options = {}) {
     return new Promise((resolve, reject) => {
+      if (options.silent) {
+        reject(new Error("Drive sync offline. Click Sync to reconnect Google Drive."));
+        return;
+      }
       ensureTokenClient()
         .then(() => {
           tokenClient.callback = (response) => {
