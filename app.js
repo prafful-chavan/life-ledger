@@ -439,6 +439,7 @@ function bootstrapApp(initialState) {
   bindChat();
   bindExport();
   bindDashboard();
+  bindGoals();
   renderAll();
   refreshMutualFundNAVs(false);
 }
@@ -1979,21 +1980,66 @@ function renderDashboardAnalysis() {
   if (goalContainer) {
     goalContainer.innerHTML = "";
     if (state.goals.length === 0) {
-      goalContainer.innerHTML = `<div class="empty-state">No goals set.</div>`;
+      goalContainer.innerHTML = `<div class="empty-state">No goals set yet.</div>`;
     } else {
-      state.goals.slice(0, 3).forEach((goal) => {
-        const progress = clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
-        const row = document.createElement("div");
-        row.style.marginBottom = "10px";
-        row.innerHTML = `
-          <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
-            <span><strong>${escapeHTML(goal.name)}</strong> (${escapeHTML(goal.owner)})</span>
-            <span>${formatINR(goal.saved)} / ${formatINR(goal.target)}</span>
-          </div>
-          <div class="bar-track"><div class="bar-fill" style="width:${progress}%"></div></div>
-        `;
-        goalContainer.append(row);
+      // Calculate overall progress stats
+      let totalTarget = 0;
+      let totalSaved = 0;
+      state.goals.forEach(g => {
+        totalTarget += (g.target || 0);
+        totalSaved += (g.saved || 0);
       });
+      const overallPct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
+
+      // Stats banner inside the progression card
+      const statsBanner = document.createElement("div");
+      statsBanner.style.display = "flex";
+      statsBanner.style.justifyContent = "space-between";
+      statsBanner.style.background = "var(--input-bg)";
+      statsBanner.style.padding = "8px 12px";
+      statsBanner.style.borderRadius = "var(--radius)";
+      statsBanner.style.marginBottom = "12px";
+      statsBanner.style.fontSize = "12px";
+      statsBanner.style.fontWeight = "700";
+      statsBanner.style.border = "1px solid var(--line)";
+      statsBanner.innerHTML = `
+        <span style="color:var(--muted)">Saved: <strong style="color:var(--ink)">${formatINR(totalSaved)}</strong></span>
+        <span style="color:var(--brand)">${overallPct}% complete</span>
+      `;
+      goalContainer.append(statsBanner);
+
+      // List top 3 upcoming, active goals
+      const activeGoals = state.goals
+        .filter(g => (g.saved || 0) < (g.target || 1) || (g.target || 0) === 0)
+        .sort((a, b) => new Date(a.dueDate || "2999-12-31") - new Date(b.dueDate || "2999-12-31"))
+        .slice(0, 3);
+
+      if (activeGoals.length === 0) {
+        goalContainer.innerHTML += `<div class="empty-state">🎉 All goals completed!</div>`;
+      } else {
+        activeGoals.forEach((goal) => {
+          const progress = clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
+          const timeInfo = calculateTimeRemaining(goal.dueDate);
+          const catConfig = getGoalCategoryConfig(goal.category);
+          
+          const row = document.createElement("div");
+          row.style.marginBottom = "12px";
+          row.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-bottom:4px; font-weight:700;">
+              <span style="color:var(--ink);">${catConfig.emoji} ${escapeHTML(goal.name)}</span>
+              <span style="color:var(--muted); font-size:11px;">${Math.round(progress)}%</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:6px; color:var(--muted);">
+              <span>${formatINR(goal.saved)} / ${formatINR(goal.target)}</span>
+              <span class="${timeInfo.class}" style="font-weight:600; padding:2px 6px; border-radius:4px; background:var(--bg); border:1px solid var(--line);">${timeInfo.text}</span>
+            </div>
+            <div class="goal-progress-bar-track" style="margin-bottom:0; height:6px;">
+              <div class="goal-progress-bar-fill" style="width:${progress}%;"></div>
+            </div>
+          `;
+          goalContainer.append(row);
+        });
+      }
     }
   }
 
@@ -2852,35 +2898,231 @@ function renderCareer() {
   }
 }
 
+function calculateTimeRemaining(dueDateStr) {
+  if (!dueDateStr) return { text: "No due date", class: "" };
+  const due = new Date(dueDateStr);
+  if (isNaN(due.getTime())) return { text: "No due date", class: "" };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  const diffTime = due - today;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    const days = Math.abs(diffDays);
+    if (days === 1) return { text: "⚠️ Overdue by 1 day", class: "overdue-tag urgent" };
+    if (days < 30) return { text: `⚠️ Overdue by ${days} days`, class: "overdue-tag urgent" };
+    const months = Math.floor(days / 30);
+    if (months === 1) return { text: "⚠️ Overdue by 1 month", class: "overdue-tag urgent" };
+    return { text: `⚠️ Overdue by ${months} months`, class: "overdue-tag urgent" };
+  } else if (diffDays === 0) {
+    return { text: "📅 Due Today", class: "urgent" };
+  } else if (diffDays === 1) {
+    return { text: "📅 Due Tomorrow", class: "urgent" };
+  } else if (diffDays < 30) {
+    return { text: `📅 ${diffDays} days left`, class: diffDays <= 7 ? "urgent" : "" };
+  } else {
+    const months = Math.floor(diffDays / 30);
+    if (months < 12) {
+      if (months === 1) return { text: `📅 1 month left`, class: "" };
+      return { text: `📅 ${months} months left`, class: "" };
+    } else {
+      const years = (diffDays / 365).toFixed(1);
+      return { text: `📅 ${years} years left`, class: "" };
+    }
+  }
+}
+
+function getGoalCategoryConfig(category) {
+  const cat = String(category || "").trim().toLowerCase();
+  if (cat.includes("finance") || cat.includes("money") || cat.includes("saving") || cat.includes("investment")) {
+    return { emoji: "💰", class: "cat-finance" };
+  }
+  if (cat.includes("career") || cat.includes("job") || cat.includes("prep") || cat.includes("study") || cat.includes("work")) {
+    return { emoji: "💼", class: "cat-career" };
+  }
+  if (cat.includes("travel") || cat.includes("trip") || cat.includes("vacation") || cat.includes("flight")) {
+    return { emoji: "✈️", class: "cat-travel" };
+  }
+  if (cat.includes("health") || cat.includes("exercise") || cat.includes("medical") || cat.includes("fit")) {
+    return { emoji: "🩺", class: "cat-health" };
+  }
+  if (cat.includes("personal") || cat.includes("family") || cat.includes("milestone") || cat.includes("life")) {
+    return { emoji: "🎓", class: "cat-personal" };
+  }
+  return { emoji: "✨", class: "cat-other" };
+}
+
 function renderGoals() {
-  const container = document.getElementById("goalList");
+  const container = document.getElementById("goalsGrid");
   if (!container) return;
   container.innerHTML = "";
 
-  if (state.goals.length === 0) {
-    container.innerHTML = `<div class="empty-state">No goals set yet. Click "Add goal" above.</div>`;
+  const searchInput = document.getElementById("goalSearchInput");
+  const categoryFilter = document.getElementById("goalCategoryFilter");
+  const ownerFilter = document.getElementById("goalOwnerFilter");
+  const statusFilter = document.getElementById("goalStatusFilter");
+  const sortSelector = document.getElementById("goalSortSelector");
+
+  const searchVal = searchInput ? searchInput.value.toLowerCase().trim() : "";
+  const categoryVal = categoryFilter ? categoryFilter.value : "All";
+  const ownerVal = ownerFilter ? ownerFilter.value : "All";
+  const statusVal = statusFilter ? statusFilter.value : "All";
+  const sortVal = sortSelector ? sortSelector.value : "dueDate";
+
+  // Calculate stats on ALL goals first (before filtering)
+  let activeCount = 0;
+  let completedCount = 0;
+  let totalTarget = 0;
+  let totalSaved = 0;
+
+  state.goals.forEach(goal => {
+    const isCompleted = (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
+    if (isCompleted) {
+      completedCount++;
+    } else {
+      activeCount++;
+    }
+    totalTarget += (goal.target || 0);
+    totalSaved += (goal.saved || 0);
+  });
+
+  const statActiveEl = document.getElementById("goalStatActive");
+  const statCompletedEl = document.getElementById("goalStatCompleted");
+  const statProgressEl = document.getElementById("goalStatProgress");
+  const statProgressPercentEl = document.getElementById("goalStatProgressPercent");
+
+  if (statActiveEl) statActiveEl.textContent = activeCount;
+  if (statCompletedEl) statCompletedEl.textContent = completedCount;
+  if (statProgressEl) statProgressEl.textContent = `${formatINR(totalSaved)} / ${formatINR(totalTarget)}`;
+  if (statProgressPercentEl) {
+    const pct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
+    statProgressPercentEl.textContent = `${pct}% overall progress`;
+  }
+
+  // Now apply filtering
+  let filtered = state.goals.filter(goal => {
+    // Search
+    if (searchVal) {
+      const name = String(goal.name || "").toLowerCase();
+      const category = String(goal.category || "").toLowerCase();
+      if (!name.includes(searchVal) && !category.includes(searchVal)) return false;
+    }
+    // Category
+    if (categoryVal !== "All") {
+      const catConfig = getGoalCategoryConfig(goal.category);
+      const normalizedCat = String(goal.category || "").toLowerCase();
+      if (categoryVal.toLowerCase() === "finance" && !normalizedCat.includes("finance") && !normalizedCat.includes("money") && !normalizedCat.includes("saving") && !normalizedCat.includes("investment")) return false;
+      if (categoryVal.toLowerCase() === "career" && !normalizedCat.includes("career") && !normalizedCat.includes("job") && !normalizedCat.includes("prep") && !normalizedCat.includes("study") && !normalizedCat.includes("work")) return false;
+      if (categoryVal.toLowerCase() === "travel" && !normalizedCat.includes("travel") && !normalizedCat.includes("trip") && !normalizedCat.includes("vacation") && !normalizedCat.includes("flight")) return false;
+      if (categoryVal.toLowerCase() === "health" && !normalizedCat.includes("health") && !normalizedCat.includes("exercise") && !normalizedCat.includes("medical") && !normalizedCat.includes("fit")) return false;
+      if (categoryVal.toLowerCase() === "personal" && !normalizedCat.includes("personal") && !normalizedCat.includes("family") && !normalizedCat.includes("milestone") && !normalizedCat.includes("life")) return false;
+      if (categoryVal.toLowerCase() === "other" && catConfig.class !== "cat-other") return false;
+    }
+    // Owner
+    if (ownerVal !== "All" && goal.owner !== ownerVal) return false;
+    // Status
+    const isCompleted = (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
+    if (statusVal === "Completed" && !isCompleted) return false;
+    if (statusVal === "Active" && isCompleted) return false;
+    if (statusVal === "Overdue") {
+      if (isCompleted) return false;
+      const timeInfo = calculateTimeRemaining(goal.dueDate);
+      if (!timeInfo.text.includes("Overdue")) return false;
+    }
+    return true;
+  });
+
+  // Apply sorting
+  filtered.sort((a, b) => {
+    if (sortVal === "dueDate") {
+      return new Date(a.dueDate || "2999-12-31") - new Date(b.dueDate || "2999-12-31");
+    }
+    if (sortVal === "progressDesc") {
+      const pctA = (a.saved || 0) / Math.max(1, a.target || 1);
+      const pctB = (b.saved || 0) / Math.max(1, b.target || 1);
+      return pctB - pctA;
+    }
+    if (sortVal === "progressAsc") {
+      const pctA = (a.saved || 0) / Math.max(1, a.target || 1);
+      const pctB = (b.saved || 0) / Math.max(1, b.target || 1);
+      return pctA - pctB;
+    }
+    if (sortVal === "targetDesc") {
+      return (b.target || 0) - (a.target || 0);
+    }
+    if (sortVal === "nameAsc") {
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    }
+    return 0;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">No goals match the selected filters.</div>`;
     return;
   }
 
-  state.goals.forEach((goal) => {
+  filtered.forEach(goal => {
+    const isCompleted = (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
     const progress = clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
-    const element = document.createElement("div");
-    element.className = "stack-row";
-    element.innerHTML = `
-      <div style="flex: 1;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div class="stack-title">${escapeHTML(goal.name)}</div>
-          <div class="actions-wrapper" style="margin-left: auto; margin-right: 12px;">
+    const catConfig = getGoalCategoryConfig(goal.category);
+    const timeInfo = isCompleted ? { text: "✅ Completed!", class: "completed-tag" } : calculateTimeRemaining(goal.dueDate);
+
+    const card = document.createElement("div");
+    card.className = `goal-card ${isCompleted ? "completed-card" : ""} ${timeInfo.text.includes("Overdue") ? "overdue" : ""}`;
+    card.innerHTML = `
+      <div>
+        <div class="goal-card-top">
+          <div class="goal-badges">
+            <span class="goal-badge ${catConfig.class}">${catConfig.emoji} ${escapeHTML(goal.category || "Goal")}</span>
+            <span class="goal-badge owner-tag">${escapeHTML(goal.owner || "Both")}</span>
+          </div>
+          <div class="goal-card-actions actions-wrapper">
             <button class="action-btn edit-btn" type="button" data-kind="goal" data-id="${goal.id}" title="Edit goal">✏️</button>
             <button class="action-btn delete-btn" type="button" data-kind="goal" data-id="${goal.id}" title="Delete goal">🗑️</button>
           </div>
-          <div class="stack-value">${formatINR(goal.saved || 0)} / ${formatINR(goal.target || 0)}</div>
         </div>
-        <div class="stack-meta" style="margin-top: 4px;">${escapeHTML(goal.category || "Goal")} • ${goal.owner || "Both"} • due ${formatDate(goal.dueDate)}</div>
-        <div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:${progress}%"></div></div>
+        <h3 class="goal-card-title">${escapeHTML(goal.name)}</h3>
+        <div class="goal-time-left ${timeInfo.class}">${timeInfo.text}</div>
+        
+        <div class="goal-progress-info">
+          <span>${formatINR(goal.saved || 0)} saved</span>
+          <span class="goal-progress-percent">${Math.round(progress)}%</span>
+        </div>
+        <div class="goal-progress-bar-track">
+          <div class="goal-progress-bar-fill" style="width: ${progress}%"></div>
+        </div>
+        <div style="font-size:12px; font-weight:700; color:var(--muted); margin-bottom: 14px;">
+          Target: ${formatINR(goal.target || 0)} ${goal.dueDate ? `by ${formatDate(goal.dueDate)}` : ""}
+        </div>
+      </div>
+      
+      <div class="goal-quick-contribute">
+        <span>Add progress:</span>
+        <form class="quick-contribute-form" data-id="${goal.id}">
+          <input type="number" class="quick-contribute-input" placeholder="Amount" required min="1" step="any" inputmode="decimal" />
+          <button type="submit" class="quick-contribute-btn">+</button>
+        </form>
       </div>
     `;
-    container.append(element);
+
+    // Bind quick contribute form
+    const quickForm = card.querySelector(".quick-contribute-form");
+    quickForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = quickForm.querySelector(".quick-contribute-input");
+      const amount = toNumber(input.value);
+      if (amount > 0) {
+        goal.saved = (goal.saved || 0) + amount;
+        await saveData(true); // Save and trigger sync
+        renderAll();
+        toast(`Added ${formatINR(amount)} to "${goal.name}". Progress updated! 🎯`);
+      }
+    });
+
+    container.append(card);
   });
 }
 
@@ -4283,6 +4525,33 @@ function renderExpensesAnalysis() {
       <div style="font-size: 0.8rem; font-weight: 600; color: var(--ink);">${escapeHTML(tip.action)}</div>
     `;
     budgetOptimizationContainer.append(itemEl);
+  });
+}
+
+function bindGoals() {
+  const searchInput = document.getElementById("goalSearchInput");
+  const categoryFilter = document.getElementById("goalCategoryFilter");
+  const ownerFilter = document.getElementById("goalOwnerFilter");
+  const statusFilter = document.getElementById("goalStatusFilter");
+  const sortSelector = document.getElementById("goalSortSelector");
+
+  const listener = () => renderGoals();
+
+  searchInput?.addEventListener("input", listener);
+  categoryFilter?.addEventListener("change", listener);
+  ownerFilter?.addEventListener("change", listener);
+  statusFilter?.addEventListener("change", listener);
+  sortSelector?.addEventListener("change", listener);
+
+  // Click handler to redirect dashboard link to goals panel
+  document.getElementById("dashboardGoalPanel")?.addEventListener("click", () => {
+    activeView = "goals";
+    document.querySelectorAll(".nav-item").forEach((item) => {
+      item.classList.toggle("active", item.dataset.view === "goals");
+    });
+    renderAll();
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 }
 

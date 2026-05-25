@@ -209,10 +209,13 @@
               <div class="focus-list" id="todayFocus"></div>
             </section>
 
-            <section class="panel">
+            <section class="panel linkable-panel" id="dashboardGoalPanel">
               <div class="panel-header">
                 <div>
-                  <h3>Goal progression</h3>
+                  <h3 style="display: flex; justify-content: space-between; align-items: center;">
+                    Goal progression
+                    <span style="font-size: 14px; font-weight: normal; color: var(--brand);">View all →</span>
+                  </h3>
                   <p>Aggregate savings towards targets.</p>
                 </div>
               </div>
@@ -975,15 +978,60 @@
             <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="goal">Add goal</button>
           </div>
 
-          <section class="panel">
-            <div class="panel-header">
-              <div>
-                <h3>Future goals</h3>
-                <p>Track your shared family goals and personal milestones.</p>
-              </div>
+          <!-- Goal Stats Cards -->
+          <div class="goals-stats-grid">
+            <div class="goal-stat-card">
+              <div class="stat-label">Active Goals</div>
+              <div class="stat-value" id="goalStatActive">0</div>
             </div>
-            <div id="goalList" class="stack-list"></div>
-          </section>
+            <div class="goal-stat-card">
+              <div class="stat-label">Completed Goals</div>
+              <div class="stat-value" id="goalStatCompleted">0</div>
+            </div>
+            <div class="goal-stat-card highlight">
+              <div class="stat-label">Overall Progression</div>
+              <div class="stat-value" id="goalStatProgress">₹0 / ₹0</div>
+              <div class="stat-sub" id="goalStatProgressPercent">0% complete</div>
+            </div>
+          </div>
+
+          <!-- Filters and Search -->
+          <div class="goals-filter-bar">
+            <input type="text" id="goalSearchInput" placeholder="Search goals..." class="search-input" />
+            <div class="filter-dropdowns">
+              <select id="goalCategoryFilter" class="filter-select" aria-label="Filter by category">
+                <option value="All">All Categories</option>
+                <option value="Finance">💰 Finance</option>
+                <option value="Career">💼 Career</option>
+                <option value="Travel">✈️ Travel</option>
+                <option value="Health">🩺 Health</option>
+                <option value="Personal">🎓 Personal</option>
+                <option value="Other">✨ Other</option>
+              </select>
+              <select id="goalOwnerFilter" class="filter-select" aria-label="Filter by owner">
+                <option value="All">All Owners</option>
+                <option value="Me">Me</option>
+                <option value="Wife">Wife</option>
+                <option value="Both">Both</option>
+              </select>
+              <select id="goalStatusFilter" class="filter-select" aria-label="Filter by status">
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Completed">Completed</option>
+                <option value="Overdue">Overdue</option>
+              </select>
+              <select id="goalSortSelector" class="filter-select" aria-label="Sort goals">
+                <option value="dueDate">Due Date (Soonest)</option>
+                <option value="progressDesc">Progress % (Highest)</option>
+                <option value="progressAsc">Progress % (Lowest)</option>
+                <option value="targetDesc">Target Value (Largest)</option>
+                <option value="nameAsc">Goal Name (A-Z)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Goals Visual Grid -->
+          <div id="goalsGrid" class="goals-grid"></div>
         </section>
 
         <section class="view" id="todo" aria-labelledby="todoTitle">
