@@ -2520,6 +2520,13 @@ function renderMutualFundsPanel() {
   if (!table) return;
   const targetThead = table.querySelector("thead");
 
+  // Update the "NAV as of …" label in the panel header
+  const navDateEl = document.getElementById("navDateLabel");
+  if (navDateEl) {
+    const sampleWithDate = state.mutualFunds.find(t => t.navDate);
+    navDateEl.textContent = sampleWithDate?.navDate ? `NAV: ${sampleWithDate.navDate}` : '';
+  }
+
   const rows = [...state.mutualFunds]
     .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
     .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
@@ -2550,7 +2557,34 @@ function renderMutualFundsPanel() {
   }
   const portfolioXirr = calculateXIRR(portfolioFlows);
 
+  // ── 1-Day change across the entire portfolio ──────────────────────────────
+  // Sum (units × latestNav) - (units × prevNav) for all holdings with prevNav
+  let oneDayChange = 0;
+  let oneDayHasPrev = false;
+  {
+    const byFundPrev = {};
+    rows.forEach(t => {
+      const key = t.fundName || 'Unknown';
+      if (!byFundPrev[key]) byFundPrev[key] = { units: 0, latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || null };
+      byFundPrev[key].units += toNumber(t.units);
+      if (t.latestNav) byFundPrev[key].latestNav = toNumber(t.latestNav);
+      if (t.prevNav)  { byFundPrev[key].prevNav = toNumber(t.prevNav); oneDayHasPrev = true; }
+    });
+    Object.values(byFundPrev).forEach(f => {
+      if (f.prevNav) oneDayChange += f.units * (f.latestNav - f.prevNav);
+    });
+  }
+  const oneDayPct = oneDayHasPrev && current > 0 ? (oneDayChange / (current - oneDayChange)) * 100 : 0;
+
   if (summary) {
+    const navDateLabel = (() => {
+      const sampleNav = state.mutualFunds.find(t => t.navDate);
+      return sampleNav?.navDate ? `NAV as of ${sampleNav.navDate}` : 'Live NAV';
+    })();
+
+    const dayChangeColor = oneDayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const dayChangeArrow = oneDayChange >= 0 ? '▲' : '▼';
+
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">Invested (${activeHoldingsOwner})</div>
@@ -2560,12 +2594,17 @@ function renderMutualFundsPanel() {
       <article class="metric-card compact-metric">
         <div class="label">Current value</div>
         <div class="value">${formatINR(current)}</div>
-        <div class="hint">${formatINR(gain)} ${gain >= 0 ? "gain 📈" : "loss 📉"}</div>
+        <div class="hint">${formatINR(gain)} ${gain >= 0 ? 'gain 📈' : 'loss 📉'} &nbsp;·&nbsp; <span style="font-size:0.75em;opacity:0.7">${navDateLabel}</span></div>
       </article>
       <article class="metric-card compact-metric">
         <div class="label">Portfolio XIRR</div>
-        <div class="value" style="color: ${portfolioXirr >= 0 ? "var(--good)" : "var(--danger)"};">${portfolioXirr.toFixed(2)}%</div>
+        <div class="value" style="color: ${portfolioXirr >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)'}">${portfolioXirr.toFixed(2)}%</div>
         <div class="hint">Overall ROI: ${formatPercent(roi)}</div>
+      </article>
+      <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
+        <div class="label">1-Day Change</div>
+        <div class="value" style="color: ${dayChangeColor}">${oneDayHasPrev ? `${dayChangeArrow} ${formatINR(Math.abs(oneDayChange))}` : '—'}</div>
+        <div class="hint">${oneDayHasPrev ? `${oneDayChange >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh NAVs to see'}</div>
       </article>
     `;
   }
@@ -2588,13 +2627,18 @@ function renderMutualFundsPanel() {
 
     const groups = groupBy(rows, item => item.fundName);
     const holdings = Object.entries(groups).map(([fundName, txns]) => {
-      const totalInvested = sum(txns, "invested");
-      const totalUnits = sum(txns, "units");
+      const totalInvested = sum(txns, 'invested');
+      const totalUnits = sum(txns, 'units');
       const latestNav = txns[0].latestNav || txns[0].nav;
+      const prevNav = txns[0].prevNav || null;
       const currentValue = totalUnits * latestNav;
       const gain = currentValue - totalInvested;
       const roi = totalInvested ? (gain / totalInvested) * 100 : 0;
       const avgNav = totalUnits ? (totalInvested / totalUnits) : 0;
+
+      // 1-Day change for this holding
+      const dayChange = prevNav ? totalUnits * (latestNav - prevNav) : null;
+      const dayChangePct = prevNav && latestNav ? ((latestNav - prevNav) / prevNav) * 100 : null;
 
       const cashFlows = txns.map(t => ({
         date: new Date(t.purchaseDate || t.date || Date.now()),
@@ -2614,12 +2658,31 @@ function renderMutualFundsPanel() {
         avgNav,
         totalInvested,
         latestNav,
+        prevNav,
         currentValue,
         gain,
         roi,
-        xirr
+        xirr,
+        dayChange,
+        dayChangePct,
       };
     }).sort((a, b) => b.currentValue - a.currentValue);
+
+    if (targetThead) {
+      targetThead.innerHTML = `
+        <tr>
+          <th>Fund</th>
+          <th>Units</th>
+          <th>Avg. NAV</th>
+          <th>Invested</th>
+          <th>Latest NAV</th>
+          <th>Current Value</th>
+          <th>1-Day Change</th>
+          <th>Gain / Loss</th>
+          <th>XIRR</th>
+        </tr>
+      `;
+    }
 
     renderRows(
       table,
@@ -2632,16 +2695,22 @@ function renderMutualFundsPanel() {
         formatINR(item.latestNav),
         formatINR(item.currentValue),
         (() => {
-          const color = item.gain >= 0 ? "var(--good)" : "var(--danger)";
+          if (item.dayChange === null) return '<span style="opacity:0.4">—</span>';
+          const color = item.dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+          const arrow = item.dayChange >= 0 ? '▲' : '▼';
+          return `<span style="color:${color};font-weight:600">${arrow} ${formatINR(Math.abs(item.dayChange))} <small>(${item.dayChange >= 0 ? '+' : ''}${item.dayChangePct.toFixed(2)}%)</small></span>`;
+        })(),
+        (() => {
+          const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
           return `<span style="color: ${color}; font-weight: 600;">${formatINR(item.gain)} (${formatPercent(item.roi)})</span>`;
         })(),
         (() => {
-          const color = item.xirr >= 0 ? "var(--good)" : "var(--danger)";
+          const color = item.xirr >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
           return `<span style="color: ${color}; font-weight: 600;">${item.xirr.toFixed(2)}%</span>`;
         })()
       ],
       `No mutual funds for ${activeHoldingsOwner}.`,
-      8
+      9
     );
   } else {
     if (targetThead) {
@@ -4054,7 +4123,31 @@ function generateUUID() {
 }
 
 // Mutual Fund API Cache & Resolver Utilities
-const MF_CACHE_EXPIRY = 12 * 60 * 60 * 1000; // 12 hours
+// NAVs refresh if: forced, or cache is older than 4 hours, or the stored NAV date differs from today
+const MF_CACHE_EXPIRY = 4 * 60 * 60 * 1000; // 4 hours (was 12 — reduced so same-day NAV updates are picked up)
+
+function getTodayDateStr() {
+  // Returns DD-MM-YYYY matching mfapi.in date format
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}-${mm}-${d.getFullYear()}`;
+}
+
+function isNavStale(cached) {
+  if (!cached) return true;
+  // Stale if older than MF_CACHE_EXPIRY
+  if (Date.now() - (cached.timestamp || 0) > MF_CACHE_EXPIRY) return true;
+  // Stale if today's date doesn't match cached nav date (new trading day)
+  // NAVs are published after ~9 PM IST for that day's close
+  const todayStr = getTodayDateStr();
+  if (cached.date && cached.date !== todayStr) {
+    // Only force-refresh after 9 PM IST (3:30 PM UTC)
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    if (nowIST.getHours() >= 21) return true; // After 9 PM IST, today's NAV is available
+  }
+  return false;
+}
 
 function updateMutualFundsFromCache() {
   const codesCache = getFundCodesCache();
@@ -4066,6 +4159,8 @@ function updateMutualFundsFromCache() {
       const cachedNavObj = navCache[cachedCodeObj.schemeCode];
       if (cachedNavObj) {
         item.latestNav = cachedNavObj.nav;
+        item.navDate = cachedNavObj.date || null;
+        item.prevNav = cachedNavObj.prevNav || null;
         item.currentValue = toNumber(item.units) * cachedNavObj.nav;
       }
     }
@@ -4184,49 +4279,69 @@ async function refreshMutualFundNAVs(force = false) {
 
   try {
     const codesCache = await resolveSchemeCodes(uniqueNames);
-    const schemeCodes = uniqueNames.map(name => codesCache[name]?.schemeCode).filter(Boolean);
-    
-    if (schemeCodes.length === 0) return;
-    
-    toast("Refreshing mutual fund Net Asset Values...");
+    const schemeEntries = uniqueNames
+      .map(name => ({ name, code: codesCache[name]?.schemeCode }))
+      .filter(e => e.code);
+
+    if (schemeEntries.length === 0) return;
+
     const navCache = getNavCache();
     const now = Date.now();
     let updatedCount = 0;
-    
-    for (const code of schemeCodes) {
+
+    // Show spinner only if we are going to actually fetch
+    const needsFetch = force || schemeEntries.some(e => isNavStale(navCache[e.code]));
+    if (needsFetch) toast('Refreshing mutual fund NAVs from mfapi.in…');
+
+    for (const { name, code } of schemeEntries) {
       const cached = navCache[code];
-      if (!force && cached && (now - cached.timestamp < MF_CACHE_EXPIRY)) {
-        continue;
+
+      if (!force && !isNavStale(cached)) {
+        continue; // cache is fresh — skip fetch
       }
-      
+
       try {
-        const response = await fetch(`https://api.mfapi.in/mf/${code}/latest`);
+        // Fetch full history — data[0] = latest, data[1] = previous trading day
+        // This is needed for 1-day change calculation
+        const response = await fetch(`https://api.mfapi.in/mf/${code}`);
         if (!response.ok) continue;
         const json = await response.json();
-        if (json && json.status === "SUCCESS" && json.data && json.data[0]) {
+
+        if (json && json.status === 'SUCCESS' && Array.isArray(json.data) && json.data[0]) {
+          const todayEntry = json.data[0];
+          const prevEntry = json.data[1] || null;
+
           navCache[code] = {
-            nav: toNumber(json.data[0].nav),
-            date: json.data[0].date,
-            timestamp: now
+            nav: toNumber(todayEntry.nav),
+            date: todayEntry.date,
+            prevNav: prevEntry ? toNumber(prevEntry.nav) : null,
+            prevDate: prevEntry ? prevEntry.date : null,
+            timestamp: now,
           };
           updatedCount += 1;
         }
-        await new Promise(r => setTimeout(r, 50));
+        // Small delay to avoid hammering the API
+        await new Promise(r => setTimeout(r, 80));
       } catch (e) {
-        console.warn(`Failed to fetch NAV for ${code}:`, e);
+        console.warn(`Failed to fetch NAV for ${code} (${name}):`, e);
       }
     }
-    
+
     if (updatedCount > 0 || force) {
       saveNavCache(navCache);
-      toast(updatedCount > 0 ? `Refreshed ${updatedCount} NAVs.` : "NAVs are up to date.");
-      
+      if (needsFetch) {
+        toast(updatedCount > 0 ? `✓ Updated ${updatedCount} NAV${updatedCount > 1 ? 's' : ''} from mfapi.in` : 'NAVs are already up to date.');
+      }
+
+      // Push freshened NAVs into state
       state.mutualFunds.forEach(item => {
         const cachedCodeObj = codesCache[item.fundName];
         if (cachedCodeObj) {
           const cachedNavObj = navCache[cachedCodeObj.schemeCode];
           if (cachedNavObj) {
             item.latestNav = cachedNavObj.nav;
+            item.navDate = cachedNavObj.date;
+            item.prevNav = cachedNavObj.prevNav;
             item.currentValue = toNumber(item.units) * cachedNavObj.nav;
           }
         }
@@ -4235,7 +4350,8 @@ async function refreshMutualFundNAVs(force = false) {
       renderMutualFundsPanel();
     }
   } catch (err) {
-    console.error("Failed to refresh mutual fund NAVs:", err);
+    console.error('Failed to refresh mutual fund NAVs:', err);
+    toast('⚠ NAV refresh failed — showing cached values.');
   }
 }
 

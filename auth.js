@@ -195,18 +195,42 @@
     }
   }
 
+  /**
+   * Load the vault, preferring whichever copy (local or Drive) is newer.
+   * This ensures a fresh device always gets the latest data from Drive.
+   */
   async function loadVaultFile() {
+    let local = null;
     if (window.LifeLedgerVaultStore) {
-      const local = await window.LifeLedgerVaultStore.load();
-      if (local) return local;
+      local = await window.LifeLedgerVaultStore.load();
     }
 
     const remote = await loadVaultFromDrive();
-    if (remote && window.LifeLedgerVaultStore) {
-      await window.LifeLedgerVaultStore.save(remote);
+
+    if (!local && !remote) return null;
+    if (!local) {
+      // Fresh device — save Drive vault locally
+      if (window.LifeLedgerVaultStore) await window.LifeLedgerVaultStore.save(remote);
+      console.log("[auth.js] Loaded vault from Drive (no local copy).");
       return remote;
     }
-    return remote;
+    if (!remote) {
+      console.log("[auth.js] Loaded vault from local storage (Drive unavailable).");
+      return local;
+    }
+
+    const localTime = new Date(local.updatedAt || 0).getTime();
+    const remoteTime = new Date(remote.updatedAt || 0).getTime();
+
+    if (remoteTime > localTime) {
+      // Drive has newer data — use it and update local
+      if (window.LifeLedgerVaultStore) await window.LifeLedgerVaultStore.save(remote);
+      console.log(`[auth.js] Drive vault is newer (${remote.updatedAt} vs local ${local.updatedAt}). Using Drive copy.`);
+      return remote;
+    }
+
+    console.log(`[auth.js] Local vault is current. Using local copy.`);
+    return local;
   }
 
   async function saveVaultFile(vault) {
@@ -292,30 +316,64 @@
     console.log("[auth.js] App data persistence completed successfully.");
   }
 
+  // Background sync poller — runs every 60 seconds while the app is unlocked
+  let syncPollerTimer = null;
+
+  function startSyncPoller() {
+    stopSyncPoller();
+    if (!window.LifeLedgerDrive?.isConnected?.()) return;
+
+    syncPollerTimer = setInterval(async () => {
+      if (!unlockedPayload) { stopSyncPoller(); return; }
+      try {
+        const msg = await syncWithDrive(true); // silent — no popup
+        if (msg && (msg.includes("Merged") || msg.includes("pulled"))) {
+          updateDriveBadge();
+          markLastSynced();
+          toastAuth("\u2713 " + msg);
+          console.log("[auth.js] Background sync:", msg);
+        } else if (msg && msg.includes("up to date")) {
+          markLastSynced(); // still update timestamp even if no changes
+        }
+      } catch (e) {
+        // Silent failure — don't bother the user unless they explicitly sync
+        console.warn("[auth.js] Background sync failed:", e.message);
+      }
+    }, 60 * 1000); // every 60 seconds
+  }
+
+  function stopSyncPoller() {
+    if (syncPollerTimer) {
+      clearInterval(syncPollerTimer);
+      syncPollerTimer = null;
+    }
+  }
+
   function unlockApp(inner, password, isAutoUnlock = false) {
     unlockedPayload = { ...inner, _sessionPassword: password };
     saveRememberedPassword(password);
     showGate("app");
     window.LifeLedgerApp?.bootstrap(inner.data);
 
-    if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+    if (window.LifeLedgerDrive?.isConnected?.()) {
       const runSync = async () => {
         try {
-          const msg = await syncWithDrive(isAutoUnlock);
+          const msg = await syncWithDrive(true); // silent first run
           updateDriveBadge();
-          if (msg.includes("pulled") || msg.includes("restored")) {
-            toastAuth(msg);
+          markLastSynced();
+          if (msg && (msg.includes("Merged") || msg.includes("pulled") || msg.includes("restored"))) {
+            toastAuth("✓ " + msg);
           }
         } catch (error) {
-          console.warn("Auto-sync failed:", error);
+          console.warn("Auto-sync on unlock failed:", error.message);
         }
       };
 
-      if (isAutoUnlock) {
-        setTimeout(runSync, 50);
-      } else {
-        runSync();
-      }
+      // Slight delay so the UI can render first
+      setTimeout(runSync, 300);
+
+      // Start polling for changes every 60 seconds
+      setTimeout(startSyncPoller, 5000);
     }
   }
 
@@ -527,6 +585,7 @@
     },
 
     logout() {
+      stopSyncPoller();
       clearSession();
       unlockedPayload = null;
       showGate("auth");
@@ -613,6 +672,7 @@
         try {
           const msg = await syncWithDrive(false);
           updateDriveBadge();
+          markLastSynced();
           toastAuth(msg);
         } catch (error) {
           console.warn(error);
@@ -620,7 +680,7 @@
         } finally {
           btns.forEach(b => {
             b.disabled = false;
-            b.textContent = b.id === "settingsSyncDriveButton" ? "Sync now" : "Sync now";
+            b.textContent = "⟳ Sync now";
           });
         }
       });
@@ -650,15 +710,44 @@
     const badges = document.querySelectorAll("#driveStatusBadge, #settingsDriveStatusBadge");
     const { connected } = LifeLedgerAuth.driveStatus();
     badges.forEach(badge => {
-      badge.textContent = connected ? "Drive linked" : "Drive offline";
+      badge.textContent = connected ? "Drive linked ✓" : "Drive offline";
       badge.classList.toggle("good", connected);
     });
+  }
+
+  function markLastSynced() {
+    try {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const dateStr = now.toLocaleDateString([], { month: "short", day: "numeric" });
+      const label = document.getElementById("lastSyncedLabel");
+      const timeEl = document.getElementById("lastSyncedTime");
+      if (label) label.style.display = "";
+      if (timeEl) timeEl.textContent = `${dateStr}, ${timeStr}`;
+      // Persist so page reload shows correct time
+      localStorage.setItem("lifeLedgerLastSync", now.toISOString());
+    } catch (e) {}
+  }
+
+  function restoreLastSyncedLabel() {
+    try {
+      const raw = localStorage.getItem("lifeLedgerLastSync");
+      if (!raw) return;
+      const d = new Date(raw);
+      const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const dateStr = d.toLocaleDateString([], { month: "short", day: "numeric" });
+      const label = document.getElementById("lastSyncedLabel");
+      const timeEl = document.getElementById("lastSyncedTime");
+      if (label) label.style.display = "";
+      if (timeEl) timeEl.textContent = `${dateStr}, ${timeStr}`;
+    } catch (e) {}
   }
 
   window.LifeLedgerAuth = LifeLedgerAuth;
 
   document.addEventListener("DOMContentLoaded", async () => {
     bindAuthUi();
+    restoreLastSyncedLabel();
     await LifeLedgerAuth.init();
     updateDriveBadge();
   });

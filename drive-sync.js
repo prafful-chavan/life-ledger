@@ -1,24 +1,35 @@
 /**
  * Google Drive sync — stores encrypted vault only (never plaintext finance data).
  * Requires config.js with GOOGLE_CLIENT_ID from Google Cloud Console.
+ *
+ * Key improvements:
+ *  - Token is always stored/cleared from localStorage (never sessionStorage)
+ *  - tryRestoreVault() will search Drive even without a cached fileId
+ *  - findVaultFile() cleans up duplicate vault files on Drive (keeps newest)
+ *  - 401 errors properly clear the localStorage token cache
+ *  - Exported pollForChanges() lets auth.js run a background poller
  */
 (function () {
   const VAULT_FILENAME = "life-ledger-vault.enc.json";
   const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
   const FILE_ID_KEY = "lifeLedgerDriveFileId:v1";
+  const TOKEN_CACHE_KEY = "lifeLedgerDriveToken:v1";
+
+  // Two-minute grace before considering a token expired (avoids mid-request expiry)
+  const TOKEN_GRACE_MS = 2 * 60 * 1000;
 
   let accessToken = null;
   let tokenClient = null;
   let fileId = localStorage.getItem(FILE_ID_KEY) || null;
 
-  const TOKEN_CACHE_KEY = "lifeLedgerDriveToken:v1";
+  // ─── Token helpers ────────────────────────────────────────────────────────
 
   function getStoredToken() {
     try {
       const raw = localStorage.getItem(TOKEN_CACHE_KEY);
       if (!raw) return null;
       const data = JSON.parse(raw);
-      if (data.accessToken && data.expiresAt && Date.now() < data.expiresAt - 120000) {
+      if (data.accessToken && data.expiresAt && Date.now() < data.expiresAt - TOKEN_GRACE_MS) {
         return data.accessToken;
       }
     } catch (e) {}
@@ -33,49 +44,65 @@
     } catch (e) {}
   }
 
+  function clearToken() {
+    accessToken = null;
+    try {
+      localStorage.removeItem(TOKEN_CACHE_KEY);
+    } catch (e) {}
+  }
+
+  // ─── Client ID ────────────────────────────────────────────────────────────
+
   function getClientId() {
     return window.LIFE_LEDGER_CONFIG?.GOOGLE_CLIENT_ID || "";
   }
 
+  function isConfigured() {
+    const id = getClientId();
+    return Boolean(id && !id.includes("YOUR_CLIENT_ID"));
+  }
+
+  // ─── Google API loader ────────────────────────────────────────────────────
+
   function waitForGoogle() {
     return new Promise((resolve, reject) => {
-      if (window.google?.accounts?.oauth2) {
-        resolve();
-        return;
-      }
+      if (window.google?.accounts?.oauth2) { resolve(); return; }
       let attempts = 0;
       const timer = setInterval(() => {
         attempts += 1;
         if (window.google?.accounts?.oauth2) {
           clearInterval(timer);
           resolve();
-        } else if (attempts > 80) {
+        } else if (attempts > 100) {
           clearInterval(timer);
-          reject(new Error("Google sign-in failed to load. Check your connection."));
+          reject(new Error("Google sign-in failed to load. Check your internet connection."));
         }
       }, 100);
     });
   }
 
   async function ensureTokenClient() {
-    const clientId = getClientId();
-    if (!clientId || clientId.includes("YOUR_CLIENT_ID")) {
-      throw new Error("Add your Google Client ID in config.js (see config.example.js).");
-    }
+    if (!isConfigured()) throw new Error("Add your Google Client ID in config.js.");
     await waitForGoogle();
     if (!tokenClient) {
       tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
+        client_id: getClientId(),
         scope: DRIVE_SCOPE,
         callback: () => {},
       });
     }
   }
 
+  // ─── Token acquisition ────────────────────────────────────────────────────
+
+  /**
+   * Request an OAuth2 access token.
+   * `silent=true` means we will NOT show a popup — only use the cached token.
+   */
   function requestAccessToken(options = {}) {
     return new Promise((resolve, reject) => {
       if (options.silent) {
-        reject(new Error("Drive sync offline. Click Sync to reconnect Google Drive."));
+        reject(new Error("Drive sync offline. Tap ′Sync′ to reconnect Google Drive."));
         return;
       }
       ensureTokenClient()
@@ -85,22 +112,27 @@
               reject(new Error(response.error_description || response.error));
               return;
             }
-            const token = response.access_token;
-            storeToken(token, response.expires_in);
-            resolve(token);
+            storeToken(response.access_token, response.expires_in);
+            resolve(response.access_token);
           };
-          const prompt = options.silent ? "" : "select_account";
-          tokenClient.requestAccessToken({ prompt });
+          // No prompt so we don't show the account chooser if already signed in
+          tokenClient.requestAccessToken({ prompt: "" });
         })
         .catch(reject);
     });
   }
 
+  // ─── Fetch wrapper ────────────────────────────────────────────────────────
+
   async function driveFetch(url, options = {}) {
+    // Restore cached token if needed
     if (!accessToken) {
       accessToken = getStoredToken();
-      if (!accessToken) await requestAccessToken(options);
     }
+    if (!accessToken) {
+      await requestAccessToken(options);
+    }
+
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -108,66 +140,112 @@
         ...(options.headers || {}),
       },
     });
+
     if (response.status === 401) {
-      accessToken = null;
-      sessionStorage.removeItem(TOKEN_CACHE_KEY);
+      // Token expired — clear cache and retry (once) with a fresh token
+      clearToken();
+      if (options.silent) {
+        throw new Error("Drive token expired. Tap Sync to reconnect.");
+      }
       await requestAccessToken(options);
+      // Retry the original request with the new token
       return driveFetch(url, options);
     }
+
     return response;
   }
 
+  // ─── File discovery ───────────────────────────────────────────────────────
+
+  /**
+   * Find the vault file on Drive. If multiple copies exist (e.g., re-uploads), 
+   * keep the newest one and trash any others to avoid confusion.
+   */
   async function findVaultFile(options = {}) {
     const query = encodeURIComponent(
       `name='${VAULT_FILENAME}' and trashed=false and mimeType='application/json'`
     );
     const response = await driveFetch(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=5`,
+      `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=10`,
       options
     );
     if (!response.ok) throw new Error("Could not search Google Drive.");
     const data = await response.json();
     const files = data.files || [];
     if (!files.length) return null;
+
+    // Sort newest first
     files.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-    return files[0].id;
+
+    const primary = files[0].id;
+
+    // Quietly trash any duplicate files in the background
+    if (files.length > 1) {
+      const duplicates = files.slice(1);
+      duplicates.forEach(async (f) => {
+        try {
+          await driveFetch(
+            `https://www.googleapis.com/drive/v3/files/${f.id}`,
+            { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trashed: true }), silent: true }
+          );
+          console.log(`[drive-sync] Trashed duplicate vault file: ${f.id}`);
+        } catch (e) {
+          console.warn("[drive-sync] Could not trash duplicate:", e);
+        }
+      });
+    }
+
+    return primary;
   }
 
+  // ─── Load / Save ──────────────────────────────────────────────────────────
+
   async function loadVault(options = {}) {
-    if (!getClientId() || getClientId().includes("YOUR_CLIENT_ID")) return null;
+    if (!isConfigured()) return null;
     try {
-      if (!accessToken) {
-        accessToken = getStoredToken();
-        if (!accessToken) {
-          // If silent is requested, do not call requestAccessToken unless we are silent
-          // Actually, findVaultFile or driveFetch will do it.
-        }
+      // Restore cached token first (so we don't show popups)
+      if (!accessToken) accessToken = getStoredToken();
+
+      // Resolve file ID — check cache then search Drive
+      let id = fileId;
+      if (!id) {
+        id = await findVaultFile(options);
       }
-      const id = fileId || (await findVaultFile(options));
       if (!id) return null;
+
       fileId = id;
       localStorage.setItem(FILE_ID_KEY, id);
+
       const response = await driveFetch(
         `https://www.googleapis.com/drive/v3/files/${id}?alt=media`,
         options
       );
-      if (!response.ok) return null;
+      if (!response.ok) {
+        if (response.status === 404) {
+          // File was deleted from Drive — reset our cached ID so we search again next time
+          fileId = null;
+          localStorage.removeItem(FILE_ID_KEY);
+        }
+        return null;
+      }
       return response.json();
     } catch (error) {
-      console.warn("Drive load:", error);
+      console.warn("[drive-sync] Load vault:", error.message);
       return null;
     }
   }
 
   async function saveVault(vault, options = {}) {
-    if (!getClientId() || getClientId().includes("YOUR_CLIENT_ID")) return false;
+    if (!isConfigured()) return false;
     const body = JSON.stringify(vault);
 
+    // Resolve file ID
     if (!fileId) {
       fileId = await findVaultFile(options);
     }
 
     if (fileId) {
+      // Update existing file
       const response = await driveFetch(
         `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
         {
@@ -177,26 +255,29 @@
           ...options,
         }
       );
-      if (!response.ok) throw new Error("Failed to update vault on Google Drive.");
+      if (response.status === 404) {
+        // File deleted remotely — create a new one
+        fileId = null;
+        localStorage.removeItem(FILE_ID_KEY);
+        return saveVault(vault, options);
+      }
+      if (!response.ok) throw new Error(`Failed to update vault on Google Drive (HTTP ${response.status}).`);
     } else {
+      // Create new file (multipart upload)
       const metadata = {
         name: VAULT_FILENAME,
         mimeType: "application/json",
         description: "Encrypted Life Ledger vault — do not edit manually",
       };
       const form = new FormData();
-      form.append(
-        "metadata",
-        new Blob([JSON.stringify(metadata)], { type: "application/json" })
-      );
+      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
       form.append("file", new Blob([body], { type: "application/json" }));
 
       if (!accessToken) {
         accessToken = getStoredToken();
-        if (!accessToken) {
-          await requestAccessToken(options);
-        }
+        if (!accessToken) await requestAccessToken(options);
       }
+
       const response = await fetch(
         "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
         {
@@ -206,12 +287,11 @@
         }
       );
       if (response.status === 401) {
-        accessToken = null;
-        sessionStorage.removeItem(TOKEN_CACHE_KEY);
+        clearToken();
         await requestAccessToken(options);
         return saveVault(vault, options);
       }
-      if (!response.ok) throw new Error("Failed to create vault on Google Drive.");
+      if (!response.ok) throw new Error(`Failed to create vault on Google Drive (HTTP ${response.status}).`);
       const created = await response.json();
       fileId = created.id;
       localStorage.setItem(FILE_ID_KEY, fileId);
@@ -219,25 +299,73 @@
     return true;
   }
 
+  // ─── Try restore (used during boot) ──────────────────────────────────────
+
+  /**
+   * Attempt to silently load the vault from Drive.
+   * This will succeed if:
+   *   (a) we have a cached access token that's still valid, OR
+   *   (b) we have a cached fileId and the token can be refreshed silently by the browser
+   *
+   * It will NOT show a popup. Returns null on failure.
+   */
   async function tryRestoreVault() {
-    if (!getClientId() || getClientId().includes("YOUR_CLIENT_ID")) return null;
-    if (!localStorage.getItem(FILE_ID_KEY)) return null;
+    if (!isConfigured()) return null;
+    // We need either a cached token or a cached file ID to proceed silently
+    const hasToken = Boolean(getStoredToken());
+    const hasFileId = Boolean(localStorage.getItem(FILE_ID_KEY));
+    if (!hasToken && !hasFileId) {
+      console.log("[drive-sync] tryRestoreVault: no cached token and no file ID, skipping silent restore.");
+      return null;
+    }
     try {
-      return await loadVault();
+      // Try silently — if no token, driveFetch will throw (silent=true)
+      return await loadVault({ silent: !hasToken });
     } catch (error) {
-      console.warn("Drive restore:", error);
+      console.warn("[drive-sync] Silent restore failed:", error.message);
       return null;
     }
   }
 
+  // ─── Get remote vault metadata (timestamp only, no download) ─────────────
+
+  async function getRemoteVaultMeta(options = {}) {
+    if (!isConfigured()) return null;
+    if (!accessToken) accessToken = getStoredToken();
+    if (!accessToken) return null; // can't check without a token
+
+    try {
+      let id = fileId;
+      if (!id) {
+        id = await findVaultFile({ silent: true });
+        if (id) {
+          fileId = id;
+          localStorage.setItem(FILE_ID_KEY, id);
+        }
+      }
+      if (!id) return null;
+
+      const response = await driveFetch(
+        `https://www.googleapis.com/drive/v3/files/${id}?fields=id,modifiedTime,size`,
+        { silent: true }
+      );
+      if (!response.ok) return null;
+      return response.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ─── Public API ───────────────────────────────────────────────────────────
+
   window.LifeLedgerDrive = {
     async connect() {
       await requestAccessToken({ silent: false });
-      const remote = await loadVault({ silent: false });
       return Boolean(accessToken);
     },
 
     tryRestoreVault,
+    getRemoteVaultMeta,
 
     hasLinkedDrive() {
       return Boolean(localStorage.getItem(FILE_ID_KEY));
@@ -248,15 +376,21 @@
     },
 
     isConnected() {
-      return Boolean(accessToken || localStorage.getItem(FILE_ID_KEY));
+      return Boolean(accessToken || getStoredToken() || localStorage.getItem(FILE_ID_KEY));
     },
 
     status() {
-      const configured = Boolean(getClientId() && !getClientId().includes("YOUR_CLIENT_ID"));
       return {
-        configured,
-        connected: Boolean(accessToken || fileId),
+        configured: isConfigured(),
+        connected: Boolean(accessToken || getStoredToken() || fileId),
         fileId,
+        tokenExpiry: (() => {
+          try {
+            const raw = localStorage.getItem(TOKEN_CACHE_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw).expiresAt || null;
+          } catch { return null; }
+        })(),
       };
     },
 

@@ -128,8 +128,9 @@
 
         <div class="sidebar-footer">
           <p class="muted-small">Encrypted vault · <span id="driveStatusBadge">Drive offline</span></p>
+          <p class="muted-small" id="lastSyncedLabel" style="font-size:0.7rem;opacity:0.65;margin-top:-4px;display:none;">Last synced: <span id="lastSyncedTime">—</span></p>
           <button class="ghost-button" type="button" id="connectDriveButton">Link Google Drive</button>
-          <button class="ghost-button" type="button" id="syncDriveButton">Sync now</button>
+          <button class="ghost-button" type="button" id="syncDriveButton">⟳ Sync now</button>
           <button class="ghost-button" type="button" id="exportDataButton">Export backup</button>
           <button class="ghost-button danger-text" type="button" id="logoutButton">Sign out</button>
         </div>
@@ -472,7 +473,8 @@
                   <h3>Mutual funds</h3>
                   <p>Folio, AMC, SIP, NAV, invested vs current value — separate view for you and your wife.</p>
                 </div>
-                <div class="panel-actions" style="display: flex; gap: 8px;">
+                <div class="panel-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                  <span id="navDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
                   <button class="secondary-button" type="button" id="refreshMutualFundNAVsBtn">🔄 Refresh NAVs</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">Add fund</button>
                 </div>
