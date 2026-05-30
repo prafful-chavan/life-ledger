@@ -4095,10 +4095,11 @@ function toast(message) {
 
 function getFundCodesCache() {
   try {
-    const cache = localStorage.getItem("lifeLedgerFundCodes:v2");
+    const cache = localStorage.getItem("lifeLedgerFundCodes:v3");
     if (!cache) {
-      // Clean up legacy cache
+      // Clean up legacy caches
       localStorage.removeItem("lifeLedgerFundCodes");
+      localStorage.removeItem("lifeLedgerFundCodes:v2");
       return {};
     }
     return JSON.parse(cache);
@@ -4109,7 +4110,7 @@ function getFundCodesCache() {
 
 function saveFundCodesCache(cache) {
   try {
-    localStorage.setItem("lifeLedgerFundCodes:v2", JSON.stringify(cache));
+    localStorage.setItem("lifeLedgerFundCodes:v3", JSON.stringify(cache));
   } catch (e) {
     console.warn("Failed to write fund codes cache:", e);
   }
@@ -4291,79 +4292,6 @@ function saveNavCache(cache) {
   }
 }
 
-function inferAmc(fundName) {
-  if (!fundName) return "";
-  const parts = fundName.split(/\s+/);
-  return parts[0] || "";
-}
-
-async function resolveSchemeCodes(fundNames) {
-  if (!fundNames || fundNames.length === 0) return getFundCodesCache();
-  const cache = getFundCodesCache();
-  const missing = fundNames.filter(name => !cache[name]);
-  
-  if (missing.length === 0) return cache;
-  
-  toast("Fetching mutual fund master list to resolve codes...");
-  try {
-    const response = await fetch("https://api.mfapi.in/mf");
-    if (!response.ok) throw new Error("Failed to fetch mutual fund master list.");
-    const allFunds = await response.json();
-    
-    missing.forEach(query => {
-      const queryLower = query.toLowerCase().replace(/[^a-z0-9\s]+/g, ' ');
-      const queryWords = queryLower.split(/\s+/).filter(w => w.length > 1);
-      
-      const noiseWords = new Set([
-        "me", "wife", "sip", "lumpsum", "mutual", "fund", "funds", 
-        "investment", "investments", "my", "our", "portfolio", "she", 
-        "he", "both", "direct", "regular", "growth", "idcw", "dividend", 
-        "payout", "reinvestment", "plan", "option"
-      ]);
-      
-      const amcCandidates = queryWords.filter(w => !noiseWords.has(w));
-      const amcWord = amcCandidates[0];
-      let best = null;
-      let bestScore = -Infinity;
-      
-      const isGrowthPreferred = !query.toLowerCase().includes('dividend') && !query.toLowerCase().includes('idcw');
-      const isDirectPreferred = !query.toLowerCase().includes('regular');
-
-      for (const scheme of allFunds) {
-        const name = scheme.schemeName;
-        const nameLower = name.toLowerCase();
-        const schemeWords = nameLower.replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(w => w.length > 1);
-        
-        if (amcWord && !schemeWords.includes(amcWord)) continue;
-        
-        const overlap = queryWords.filter(w => schemeWords.includes(w)).length;
-        if (overlap === 0) continue;
-        
-        let score = (overlap * 100) - Math.abs(name.length - query.length);
-        if (isGrowthPreferred && nameLower.includes('growth')) score += 50;
-        if (isDirectPreferred && nameLower.includes('direct')) score += 20;
-
-        if (score > bestScore) {
-          bestScore = score;
-          best = scheme;
-        }
-      }
-      
-      if (best) {
-        cache[query] = {
-          schemeCode: best.schemeCode,
-          schemeName: best.schemeName
-        };
-      }
-    });
-    
-    saveFundCodesCache(cache);
-  } catch (err) {
-    console.error("Failed to resolve scheme codes:", err);
-    toast("Failed to resolve mutual fund codes. Using cached details.");
-  }
-  return cache;
-}
 
 async function refreshMutualFundNAVs(force = false) {
   const uniqueNames = [...new Set(state.mutualFunds.map(item => item.fundName).filter(Boolean))];
