@@ -233,29 +233,61 @@
     return local;
   }
 
+  let activeUploadPromise = null;
+  let nextUploadVault = null;
+
+  function triggerDriveUpload(vault) {
+    if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) return;
+
+    nextUploadVault = vault;
+
+    if (activeUploadPromise) {
+      return;
+    }
+
+    const runUpload = async () => {
+      const currentVault = nextUploadVault;
+      nextUploadVault = null;
+      if (!currentVault) return;
+
+      activeUploadPromise = (async () => {
+        try {
+          console.log("[auth.js] Uploading vault backup to Google Drive in background...");
+          await window.LifeLedgerDrive.saveVault(currentVault);
+          console.log("[auth.js] Google Drive upload completed successfully.");
+          updateDriveBadge();
+          markLastSynced();
+        } catch (error) {
+          console.warn("Drive sync failed:", error);
+          toastAuth("Google Drive sync failed. Will retry on next change.");
+        }
+      })();
+
+      await activeUploadPromise;
+      activeUploadPromise = null;
+
+      if (nextUploadVault) {
+        runUpload();
+      }
+    };
+
+    runUpload();
+  }
+
   async function saveVaultFile(vault) {
     if (!window.LifeLedgerVaultStore) {
       throw new Error("Vault storage is not available.");
     }
-    console.log("[auth.js] Saving vault file, size:", JSON.stringify(vault).length, "chars");
+    console.log("[auth.js] Saving vault file locally, size:", JSON.stringify(vault).length, "chars");
     await window.LifeLedgerVaultStore.save(vault);
     vaultMeta = vault;
 
-    if (window.LifeLedgerDrive?.hasLinkedDrive?.()) {
-      try {
-        console.log("[auth.js] Uploading vault backup to Google Drive...");
-        await window.LifeLedgerDrive.saveVault(vault);
-        console.log("[auth.js] Google Drive upload completed successfully.");
-      } catch (error) {
-        console.warn("Drive sync failed:", error);
-        toastAuth("Saved on this device. Google Drive sync failed — use Sync now later.");
-      }
-    }
+    triggerDriveUpload(vault);
   }
 
-  async function buildVault(password, innerPayload) {
-    const salt = randomBytes(16);
-    const key = await deriveAesKey(password, salt);
+  async function buildVault(password, innerPayload, existingSalt = null, existingKey = null) {
+    const salt = existingSalt || randomBytes(16);
+    const key = existingKey || await deriveAesKey(password, salt);
     const { iv, ciphertext } = await encryptJson(key, innerPayload);
     return {
       v: 1,
@@ -307,10 +339,14 @@
     console.log("[auth.js] Persisting updated app data to storage...");
     unlockedPayload.data = data;
     const password = unlockedPayload._sessionPassword;
+    const salt = unlockedPayload._salt;
+    const sessionKey = unlockedPayload._sessionKey;
     if (!password || !vaultMeta) throw new Error("Session expired — sign in again");
     const vault = await buildVault(
       password,
-      vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret)
+      vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret),
+      salt,
+      sessionKey
     );
     await saveVaultFile(vault);
     console.log("[auth.js] App data persistence completed successfully.");
@@ -349,8 +385,13 @@
     }
   }
 
-  function unlockApp(inner, password, isAutoUnlock = false) {
-    unlockedPayload = { ...inner, _sessionPassword: password };
+  function unlockApp(inner, password, salt = null, key = null) {
+    unlockedPayload = { 
+      ...inner, 
+      _sessionPassword: password,
+      _salt: salt,
+      _sessionKey: key
+    };
     saveRememberedPassword(password);
     showGate("app");
     window.LifeLedgerApp?.bootstrap(inner.data);
@@ -382,9 +423,11 @@
     const remembered = readRememberedPassword();
     if (!remembered) return false;
     try {
-      const inner = await openVault(remembered, vaultMeta);
+      const salt = base64ToBytes(vaultMeta.salt);
+      const key = await deriveAesKey(remembered, salt);
+      const inner = await decryptJson(key, vaultMeta.iv, vaultMeta.ciphertext);
       if (!inner?.data) return false;
-      unlockApp(inner, remembered, true);
+      unlockApp(inner, remembered, salt, key);
       return true;
     } catch {
       localStorage.removeItem(REMEMBER_KEY);
@@ -458,9 +501,14 @@
             const mergedCount = countEntries(mergedData);
             // Rebuild vault with merged data
             const mergedInner = vaultInnerPayload(mergedData, inner.totpSecret || unlockedPayload.totpSecret);
-            const mergedVault = await buildVault(password, mergedInner);
+            const mergedVault = await buildVault(password, mergedInner, unlockedPayload._salt, unlockedPayload._sessionKey);
             await saveVaultFile(mergedVault);
-            unlockedPayload = { ...mergedInner, _sessionPassword: password };
+            unlockedPayload = { 
+              ...mergedInner, 
+              _sessionPassword: password, 
+              _salt: unlockedPayload._salt, 
+              _sessionKey: unlockedPayload._sessionKey 
+            };
             window.LifeLedgerApp?.bootstrap(mergedData);
             console.log(`[auth.js] Sync merged: local=${localCount}, remote=${remoteCount}, merged=${mergedCount}`);
             return `Synced: Merged local (${localCount} entries) + Drive (${remoteCount} entries) → ${mergedCount} total.`;
@@ -561,23 +609,29 @@
         legacy || window.LifeLedgerApp?.defaultData?.() || {},
         null
       );
-      const vault = await buildVault(password, inner);
+      const salt = randomBytes(16);
+      const key = await deriveAesKey(password, salt);
+      const vault = await buildVault(password, inner, salt, key);
       await saveVaultFile(vault);
       if (legacy) localStorage.removeItem("lifeLedgerData:v1");
 
-      unlockApp(inner, password, false);
+      unlockApp(inner, password, salt, key);
     },
 
     async login(password) {
       if (!vaultMeta) throw new Error("No vault found. Create an account first.");
       let inner;
+      let salt;
+      let key;
       try {
-        inner = await openVault(password, vaultMeta);
+        salt = base64ToBytes(vaultMeta.salt);
+        key = await deriveAesKey(password, salt);
+        inner = await decryptJson(key, vaultMeta.iv, vaultMeta.ciphertext);
       } catch {
         throw new Error("Wrong password or corrupted vault.");
       }
       if (!inner?.data) throw new Error("Vault format is invalid.");
-      unlockApp(inner, password, false);
+      unlockApp(inner, password, salt, key);
     },
 
     async saveAppData(data) {
