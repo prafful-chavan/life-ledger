@@ -233,6 +233,45 @@
     return local;
   }
 
+  let currentSyncState = "synced"; // "syncing", "synced", "failed"
+
+  function updateSyncStatusUI(state) {
+    currentSyncState = state;
+    const badge = document.getElementById("topbarSyncStatus");
+    if (!badge) return;
+
+    if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+      badge.style.display = "none";
+      return;
+    }
+
+    badge.style.display = "flex";
+    badge.className = "sync-status " + state;
+    
+    const iconEl = badge.querySelector(".sync-icon");
+    const textEl = badge.querySelector(".sync-text");
+
+    if (state === "syncing") {
+      if (iconEl) iconEl.textContent = "⟳";
+      if (textEl) textEl.textContent = "Saving to Drive...";
+    } else if (state === "synced") {
+      if (iconEl) iconEl.textContent = "✓";
+      if (textEl) textEl.textContent = "Saved to Drive";
+    } else if (state === "failed") {
+      if (iconEl) iconEl.textContent = "⚠";
+      if (textEl) textEl.textContent = "Sync failed (retry)";
+    }
+  }
+
+  // Register beforeunload handler to warn users if sync is in progress
+  window.addEventListener("beforeunload", (event) => {
+    if (currentSyncState === "syncing") {
+      event.preventDefault();
+      event.returnValue = "Google Drive sync is in progress. Are you sure you want to leave?";
+      return event.returnValue;
+    }
+  });
+
   let activeUploadPromise = null;
   let nextUploadVault = null;
 
@@ -250,6 +289,8 @@
       nextUploadVault = null;
       if (!currentVault) return;
 
+      updateSyncStatusUI("syncing");
+
       activeUploadPromise = (async () => {
         try {
           console.log("[auth.js] Uploading vault backup to Google Drive in background...");
@@ -257,9 +298,11 @@
           console.log("[auth.js] Google Drive upload completed successfully.");
           updateDriveBadge();
           markLastSynced();
+          updateSyncStatusUI("synced");
         } catch (error) {
           console.warn("Drive sync failed:", error);
           toastAuth("Google Drive sync failed. Will retry on next change.");
+          updateSyncStatusUI("failed");
         }
       })();
 
@@ -396,6 +439,8 @@
     showGate("app");
     window.LifeLedgerApp?.bootstrap(inner.data);
 
+    updateSyncStatusUI(window.LifeLedgerDrive?.hasLinkedDrive?.() ? "synced" : "offline");
+
     if (window.LifeLedgerDrive?.isConnected?.()) {
       const runSync = async () => {
         try {
@@ -463,77 +508,99 @@
   }
 
   async function syncWithDrive(silent = true) {
-    if (!window.LifeLedgerDrive?.isConnected()) {
-      if (silent) return "Not synced: Google Drive not connected.";
-      await window.LifeLedgerDrive.connect();
+    if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+      return "Not synced: Google Drive not connected.";
     }
 
-    const remoteVault = await window.LifeLedgerDrive.loadVault({ silent });
-    if (!remoteVault) {
-      if (vaultMeta) {
-        await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
-        return "Synced: Local vault pushed to Google Drive.";
+    updateSyncStatusUI("syncing");
+
+    try {
+      if (!window.LifeLedgerDrive?.isConnected()) {
+        if (silent) {
+          updateSyncStatusUI("failed");
+          return "Not synced: Google Drive not connected.";
+        }
+        await window.LifeLedgerDrive.connect();
       }
-      throw new Error("No vault found to sync.");
-    }
 
-    if (!vaultMeta) {
-      await window.LifeLedgerVaultStore.save(remoteVault);
-      vaultMeta = remoteVault;
-      return "Synced: Vault restored from Google Drive.";
-    }
-
-    const localTime = new Date(vaultMeta.updatedAt || 0).getTime();
-    const remoteTime = new Date(remoteVault.updatedAt || 0).getTime();
-
-    if (remoteTime > localTime) {
-      if (unlockedPayload) {
-        const password = unlockedPayload._sessionPassword;
-        try {
-          const inner = await openVault(password, remoteVault);
-          if (inner && inner.data) {
-            const localData = unlockedPayload.data;
-            const remoteData = inner.data;
-            const localCount = countEntries(localData);
-            const remoteCount = countEntries(remoteData);
-            // Safety: if local has significantly more data, don't overwrite — merge instead
-            const mergedData = mergeVaultData(localData, remoteData);
-            const mergedCount = countEntries(mergedData);
-            // Rebuild vault with merged data
-            const mergedInner = vaultInnerPayload(mergedData, inner.totpSecret || unlockedPayload.totpSecret);
-            const mergedVault = await buildVault(password, mergedInner, unlockedPayload._salt, unlockedPayload._sessionKey);
-            await saveVaultFile(mergedVault);
-            unlockedPayload = { 
-              ...mergedInner, 
-              _sessionPassword: password, 
-              _salt: unlockedPayload._salt, 
-              _sessionKey: unlockedPayload._sessionKey 
-            };
-            window.LifeLedgerApp?.bootstrap(mergedData);
-            console.log(`[auth.js] Sync merged: local=${localCount}, remote=${remoteCount}, merged=${mergedCount}`);
-            return `Synced: Merged local (${localCount} entries) + Drive (${remoteCount} entries) → ${mergedCount} total.`;
-          } else {
-            throw new Error("Invalid remote vault structure.");
-          }
-        } catch (e) {
-          if (e.message?.includes("Invalid remote vault")) throw e;
-          throw new Error("Google Drive has newer changes, but they couldn't be decrypted with your current password. Please sign out and log back in.");
+      const remoteVault = await window.LifeLedgerDrive.loadVault({ silent });
+      if (!remoteVault) {
+        if (vaultMeta) {
+          await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
+          updateSyncStatusUI("synced");
+          return "Synced: Local vault pushed to Google Drive.";
         }
-      } else {
-        // Safety check: if local has more entries, don't replace while locked!
-        if (vaultMeta && (vaultMeta.entryCount || 0) > (remoteVault.entryCount || 0)) {
-          console.warn(`[auth.js] Remote vault has newer timestamp but fewer entries (${remoteVault.entryCount || 0} vs local ${vaultMeta.entryCount || 0}). Postponing sync until unlocked to perform a merge.`);
-          return "Not synced: Remote has fewer entries. Unlock to merge.";
-        }
-        vaultMeta = remoteVault;
+        throw new Error("No vault found to sync.");
+      }
+
+      if (!vaultMeta) {
         await window.LifeLedgerVaultStore.save(remoteVault);
-        return "Synced: Updated local vault from Google Drive. Unlock to view.";
+        vaultMeta = remoteVault;
+        updateSyncStatusUI("synced");
+        return "Synced: Vault restored from Google Drive.";
       }
-    } else if (localTime > remoteTime) {
-      await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
-      return "Synced: Local changes pushed to Google Drive.";
-    } else {
-      return "Synced: Already up to date.";
+
+      const localTime = new Date(vaultMeta.updatedAt || 0).getTime();
+      const remoteTime = new Date(remoteVault.updatedAt || 0).getTime();
+
+      if (remoteTime > localTime) {
+        if (unlockedPayload) {
+          const password = unlockedPayload._sessionPassword;
+          try {
+            const inner = await openVault(password, remoteVault);
+            if (inner && inner.data) {
+              const localData = unlockedPayload.data;
+              const remoteData = inner.data;
+              const localCount = countEntries(localData);
+              const remoteCount = countEntries(remoteData);
+              // Safety: if local has significantly more data, don't overwrite — merge instead
+              const mergedData = mergeVaultData(localData, remoteData);
+              const mergedCount = countEntries(mergedData);
+              // Rebuild vault with merged data
+              const mergedInner = vaultInnerPayload(mergedData, inner.totpSecret || unlockedPayload.totpSecret);
+              const mergedVault = await buildVault(password, mergedInner, unlockedPayload._salt, unlockedPayload._sessionKey);
+              await saveVaultFile(mergedVault);
+              unlockedPayload = { 
+                ...mergedInner, 
+                _sessionPassword: password, 
+                _salt: unlockedPayload._salt, 
+                _sessionKey: unlockedPayload._sessionKey 
+              };
+              window.LifeLedgerApp?.bootstrap(mergedData);
+              console.log(`[auth.js] Sync merged: local=${localCount}, remote=${remoteCount}, merged=${mergedCount}`);
+              updateSyncStatusUI("synced");
+              return `Synced: Merged local (${localCount} entries) + Drive (${remoteCount} entries) → ${mergedCount} total.`;
+            } else {
+              throw new Error("Invalid remote vault structure.");
+            }
+          } catch (e) {
+            updateSyncStatusUI("failed");
+            if (e.message?.includes("Invalid remote vault")) throw e;
+            throw new Error("Google Drive has newer changes, but they couldn't be decrypted with your current password. Please sign out and log back in.");
+          }
+        } else {
+          // Safety check: if local has more entries, don't replace while locked!
+          if (vaultMeta && (vaultMeta.entryCount || 0) > (remoteVault.entryCount || 0)) {
+            console.warn(`[auth.js] Remote vault has newer timestamp but fewer entries (${remoteVault.entryCount || 0} vs local ${vaultMeta.entryCount || 0}). Postponing sync until unlocked to perform a merge.`);
+            updateSyncStatusUI("failed");
+            return "Not synced: Remote has fewer entries. Unlock to merge.";
+          }
+          vaultMeta = remoteVault;
+          await window.LifeLedgerVaultStore.save(remoteVault);
+          updateSyncStatusUI("synced");
+          return "Synced: Updated local vault from Google Drive. Unlock to view.";
+        }
+      } else if (localTime > remoteTime) {
+        await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
+        updateSyncStatusUI("synced");
+        return "Synced: Local changes pushed to Google Drive.";
+      } else {
+        updateSyncStatusUI("synced");
+        return "Synced: Already up to date.";
+      }
+    } catch (err) {
+      updateSyncStatusUI("failed");
+      throw err;
     }
   }
 
@@ -738,6 +805,15 @@
           });
         }
       });
+    });
+
+    document.getElementById("topbarSyncStatus")?.addEventListener("click", () => {
+      if (currentSyncState === "failed") {
+        const syncBtn = document.getElementById("syncDriveButton");
+        if (syncBtn && !syncBtn.disabled) {
+          syncBtn.click();
+        }
+      }
     });
 
     document.querySelectorAll("#loginPassword, #setupPassword, #setupPasswordConfirm, #restorePassword").forEach((input) => {

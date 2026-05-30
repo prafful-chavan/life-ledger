@@ -8,15 +8,15 @@
       content="A private personal finance, career, goals, routine, and family dashboard."
     />
     <title>Prafful's & Archana Life Ledger</title>
-    <link rel="stylesheet" href="styles.css?v=1.0.6" />
+    <link rel="stylesheet" href="styles.css?v=1.0.7" />
     <script src="config.example.js"></script>
     <script src="config.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-    <script defer src="vault-store.js?v=1.0.6"></script>
-    <script defer src="drive-sync.js?v=1.0.6"></script>
-    <script defer src="app.js?v=1.0.6"></script>
-    <script defer src="auth.js?v=1.0.6"></script>
+    <script defer src="vault-store.js?v=1.0.7"></script>
+    <script defer src="drive-sync.js?v=1.0.7"></script>
+    <script defer src="app.js?v=1.0.7"></script>
+    <script defer src="auth.js?v=1.0.7"></script>
   </head>
   <body class="auth-locked">
     <div class="auth-gate" id="authGate">
@@ -143,6 +143,10 @@
             <h2 id="todayTitle">Your growth dashboard</h2>
           </div>
           <div class="topbar-actions">
+            <div class="sync-status" id="topbarSyncStatus" style="display: none;">
+              <span class="sync-icon" aria-hidden="true">✓</span>
+              <span class="sync-text">Saved to Drive</span>
+            </div>
             <button class="secondary-button" type="button" id="themeToggle" aria-pressed="false">Dark mode</button>
             <button class="secondary-button" type="button" data-open-modal="settingsModal" id="settingsButton" aria-label="Settings">⚙️ Settings</button>
             <button class="secondary-button danger-button" type="button" data-open-modal="resetModal">Reset data</button>

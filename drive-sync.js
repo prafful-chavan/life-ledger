@@ -134,9 +134,12 @@
     }
 
     const response = await fetch(url, {
+      cache: "no-cache",
       ...options,
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
         ...(options.headers || {}),
       },
     });
