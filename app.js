@@ -451,6 +451,7 @@ function bootstrapApp(initialState) {
     bindGoals();
     bindTodoAndKeepEvents();
     bindExerciseEvents();
+    bindHabitsEvents();
     isAppInitialized = true;
   }
   renderAll();
@@ -1259,8 +1260,14 @@ function buildQuickAddForm(kind, editId = null) {
         }
       });
     }
-    if (kind === "asset" || kind === "liability" || kind === "goal" || kind === "study" || kind === "habit") {
+    if (kind === "asset" || kind === "liability" || kind === "goal" || kind === "study") {
       entry.owner = normalizeOwner(entry.owner);
+    }
+    if (kind === "habit") {
+      entry.owner = normalizeOwner(entry.owner);
+      if (!entry.history) entry.history = [];
+      if (entry.streak === undefined) entry.streak = 0;
+      if (entry.bestStreak === undefined) entry.bestStreak = entry.streak;
     }
 
     if (existingEntry) {
@@ -1822,6 +1829,7 @@ function renderAll() {
   renderGoals();
   renderTodoView();
   renderExerciseView();
+  renderHabitsView();
   renderDashboardAnalysis();
   renderChat();
 }
@@ -3188,43 +3196,6 @@ function renderCareer() {
     renderRoadmap("devopsStudyBoard", "readinessList", "Me");
   } else if (activeCareerTab === "dataeng") {
     renderRoadmap("dataengStudyBoard", "wifeReadinessList", "Wife");
-  } else if (activeCareerTab === "habits") {
-    const listContainer = document.getElementById("habitsList");
-    if (listContainer) {
-      listContainer.innerHTML = "";
-      if (state.habits.length === 0) {
-        listContainer.innerHTML = `<div class="empty-state">No habits tracked yet. Click "Add habit" above.</div>`;
-      } else {
-        state.habits.forEach((habit) => {
-          const row = document.createElement("div");
-          row.className = "stack-row";
-          row.style.display = "flex";
-          row.style.justifyContent = "space-between";
-          row.style.alignItems = "center";
-          row.innerHTML = `
-            <div>
-              <div class="stack-title">${escapeHTML(habit.name)}</div>
-              <div class="stack-meta">${escapeHTML(habit.frequency || "Daily")} • ${escapeHTML(habit.owner || "Both")}</div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <span style="font-weight: 700; color: #f59e0b;">🔥 ${habit.streak || 0} streak</span>
-              <button class="log-habit-btn" type="button" data-id="${habit.id}">Check in</button>
-              <div class="actions-wrapper">
-                <button class="action-btn edit-btn" type="button" data-kind="habit" data-id="${habit.id}" title="Edit habit">✏️</button>
-                <button class="action-btn delete-btn" type="button" data-kind="habit" data-id="${habit.id}" title="Delete habit">🗑️</button>
-              </div>
-            </div>
-          `;
-          row.querySelector(".log-habit-btn").addEventListener("click", async () => {
-            habit.streak = (toNumber(habit.streak) || 0) + 1;
-            renderCareer();
-            toast(`Streaked! ${habit.name} streak is now ${habit.streak}. 🔥`);
-            saveData(true);
-          });
-          listContainer.append(row);
-        });
-      }
-    }
   }
 }
 
@@ -4353,6 +4324,223 @@ function renderWorkoutConsistencyChart() {
   });
 }
 
+function bindHabitsEvents() {
+  const btnLog = document.getElementById("btnLogHabitManual");
+  if (btnLog) {
+    btnLog.addEventListener("click", () => {
+      buildQuickAddForm("habit");
+      openModal("quickAddModal");
+    });
+  }
+}
+
+function recalculateHabitStreaks(habit) {
+  if (!habit.history) habit.history = [];
+  const completions = [...new Set(habit.history)].sort().reverse();
+  
+  if (completions.length === 0) {
+    habit.streak = 0;
+    return;
+  }
+  
+  let streak = 0;
+  let checkDate = new Date();
+  
+  const toISO = (d) => dateToISODate(d);
+  
+  const todayStr = toISO(checkDate);
+  checkDate.setDate(checkDate.getDate() - 1);
+  const yesterdayStr = toISO(checkDate);
+  
+  if (completions[0] === todayStr || completions[0] === yesterdayStr) {
+    streak = 1;
+    let curr = new Date(parseCalendarDate(completions[0]));
+    
+    for (let i = 1; i < completions.length; i++) {
+      curr.setDate(curr.getDate() - 1);
+      const expected = toISO(curr);
+      if (completions[i] === expected) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+  } else {
+    streak = 0;
+  }
+  
+  habit.streak = streak;
+  if (streak > (habit.bestStreak || 0)) {
+    habit.bestStreak = streak;
+  }
+}
+
+function renderHabitsView() {
+  const grid = document.getElementById("habitsDashboardGrid");
+  const rateEl = document.getElementById("habitCompletionRate");
+  const countEl = document.getElementById("habitActiveCount");
+  const bestEl = document.getElementById("habitBestStreak");
+  const todayEl = document.getElementById("habitTodayProgress");
+
+  if (!grid) return;
+
+  grid.innerHTML = "";
+
+  const habits = state.habits || [];
+  countEl.textContent = habits.length;
+
+  let totalBestStreak = 0;
+  let totalCompletionsToday = 0;
+  let totalCompletionsThisWeek = 0;
+
+  const last7Days = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    last7Days.push(d);
+  }
+
+  habits.forEach((habit) => {
+    if (!habit.history) habit.history = [];
+    recalculateHabitStreaks(habit);
+
+    if (habit.bestStreak > totalBestStreak) totalBestStreak = habit.bestStreak;
+
+    const todayStr = todayISO();
+    if (habit.history.includes(todayStr)) totalCompletionsToday++;
+
+    const weeklySet = new Set(habit.history);
+    last7Days.forEach((d) => {
+      if (weeklySet.has(dateToISODate(d))) totalCompletionsThisWeek++;
+    });
+  });
+
+  bestEl.textContent = `${totalBestStreak} days`;
+  todayEl.textContent = `${totalCompletionsToday} / ${habits.length}`;
+
+  const weeklyPossible = habits.length * 7;
+  const rate = weeklyPossible > 0 ? Math.round((totalCompletionsThisWeek / weeklyPossible) * 100) : 0;
+  rateEl.textContent = `${rate}%`;
+
+  if (habits.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--muted);">No habits tracked yet. Click "Add Habit" above!</div>`;
+  } else {
+    habits.forEach((habit) => {
+      const card = document.createElement("div");
+      card.className = `keep-card ${habit.color || "default"}`;
+
+      let calendarHtml = `<div class="habit-calendar">`;
+      last7Days.forEach((d) => {
+        const dStr = dateToISODate(d);
+        const isDone = habit.history.includes(dStr);
+        const dayLetter = d.toLocaleDateString("en-US", { weekday: "narrow" });
+        const isToday = dStr === todayISO();
+        
+        calendarHtml += `
+          <div class="habit-day-col">
+            <span class="habit-day-label">${dayLetter}</span>
+            <div class="habit-day-circle ${isDone ? "active" : ""} ${isToday ? "today" : ""}" data-date="${dStr}" title="${formatDate(dStr)}">
+              ${isDone ? "✓" : d.getDate()}
+            </div>
+          </div>
+        `;
+      });
+      calendarHtml += `</div>`;
+
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const thisMonthCompletions = habit.history.filter((h) => {
+        const hDate = parseCalendarDate(h);
+        return hDate && hDate.getFullYear() === now.getFullYear() && hDate.getMonth() === now.getMonth();
+      }).length;
+      
+      const monthRate = Math.round((thisMonthCompletions / daysInMonth) * 100);
+      const todayStr = todayISO();
+
+      card.innerHTML = `
+        <div>
+          <div class="keep-card-header" style="margin-bottom: 8px;">
+            <h4 class="keep-card-title">${escapeHTML(habit.name)}</h4>
+            <div class="actions-wrapper">
+              <button class="action-btn edit-btn btn-edit-habit" type="button" title="Edit habit">✏️</button>
+              <button class="action-btn delete-btn btn-delete-habit" type="button" title="Delete habit">🗑️</button>
+            </div>
+          </div>
+          <div style="font-size: 11px; color: var(--muted); margin-bottom: 12px; display:flex; gap:6px;">
+            <span class="badge-category">${escapeHTML(habit.frequency || "Daily")}</span>
+            <span class="badge-category">${escapeHTML(habit.owner || "Both")}</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <span style="font-weight: 700; color: #f59e0b; font-size:13px;">🔥 ${habit.streak || 0} streak</span>
+            <span style="font-weight: 700; color: #10b981; font-size:12px;">👑 Best: ${habit.bestStreak || 0}</span>
+          </div>
+
+          ${calendarHtml}
+        </div>
+
+        <div>
+          <div style="margin-top: 10px; font-size: 11px;">
+            <div style="display:flex; justify-content:space-between; color: var(--muted); font-weight:700;">
+              <span>Monthly consistency</span>
+              <span>${monthRate}%</span>
+            </div>
+            <div class="habit-progress-bar-wrapper">
+              <div class="habit-progress-bar" style="width: ${monthRate}%;"></div>
+            </div>
+          </div>
+
+          <div class="keep-card-footer" style="margin-top:12px;">
+            <button type="button" class="secondary-button btn-checkin-today" style="width: 100%; padding: 6px; font-weight: 700; font-size: 12px;">
+              ${habit.history.includes(todayStr) ? "✓ Done for Today" : "🔥 Log Today"}
+            </button>
+          </div>
+        </div>
+      `;
+
+      card.querySelectorAll(".habit-day-circle").forEach((circle) => {
+        circle.addEventListener("click", async () => {
+          const clickedDate = circle.dataset.date;
+          if (habit.history.includes(clickedDate)) {
+            habit.history = habit.history.filter((h) => h !== clickedDate);
+          } else {
+            habit.history.push(clickedDate);
+          }
+          renderAll();
+          await saveData(true);
+        });
+      });
+
+      card.querySelector(".btn-checkin-today").addEventListener("click", async () => {
+        const todayStr = todayISO();
+        if (habit.history.includes(todayStr)) {
+          habit.history = habit.history.filter((h) => h !== todayStr);
+        } else {
+          habit.history.push(todayStr);
+        }
+        renderAll();
+        await saveData(true);
+      });
+
+      card.querySelector(".btn-edit-habit").addEventListener("click", () => {
+        buildQuickAddForm("habit", habit.id);
+        openModal("quickAddModal");
+      });
+
+      card.querySelector(".btn-delete-habit").addEventListener("click", async () => {
+        if (confirm(`Delete habit "${habit.name}"?`)) {
+          state.habits = state.habits.filter((h) => h.id !== habit.id);
+          renderAll();
+          toast("Habit deleted.");
+          await saveData(true);
+        }
+      });
+
+      grid.append(card);
+    });
+  }
+}
+
 function renderChat() {
   const log = document.getElementById("chatLog");
   log.innerHTML = "";
@@ -5149,10 +5337,11 @@ function viewTitle(view) {
     {
       dashboard: "Your growth dashboard",
       finance: "Money, salary, and net worth",
-      career: "Career Roadmaps & Habits",
+      career: "Career Roadmaps",
       goals: "Goals Tracker",
       todo: "To-Do List & Keep Notes",
       exercise: "Exercise & Workout Tracker",
+      habits: "Habit Tracker & Streaks",
       assistant: "Ask your dashboard",
     }[view] || "Life Ledger"
   );

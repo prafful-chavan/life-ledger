@@ -124,6 +124,10 @@
             <span aria-hidden="true">🏋️</span>
             <span>Exercise</span>
           </button>
+          <button class="nav-item" type="button" data-view="habits">
+            <span aria-hidden="true">🔥</span>
+            <span>Habits</span>
+          </button>
           <button class="nav-item" type="button" data-view="assistant">
             <span aria-hidden="true">?</span>
             <span>Hey Prafful</span>
@@ -912,8 +916,8 @@
         <section class="view" id="career" aria-labelledby="careerTitle">
           <div class="section-heading">
             <div>
-              <h2 id="careerTitle">Career Roadmap &amp; Habits</h2>
-              <p>Roadmaps for DevOps, SRE, MLOps, ETL, Data Engineering, and habit trackers.</p>
+              <h2 id="careerTitle">Career Roadmap</h2>
+              <p>Study roadmaps for DevOps, SRE, MLOps, ETL, and Data Engineering.</p>
             </div>
             <button class="primary-button" type="button" id="careerAddBtn" data-open-modal="quickAddModal" data-kind="study">Add topic</button>
           </div>
@@ -921,7 +925,6 @@
           <div class="tabs" role="tablist" aria-label="Career tabs">
             <button class="tab-button active" type="button" data-career-tab="devops">DevOps &amp; SRE</button>
             <button class="tab-button" type="button" data-career-tab="dataeng">Data Engineering</button>
-            <button class="tab-button" type="button" data-career-tab="habits">Habit Tracker</button>
           </div>
 
           <div class="career-tab active" id="career-devops">
@@ -968,18 +971,6 @@
                 <div id="wifeReadinessList" class="stack-list"></div>
               </section>
             </div>
-          </div>
-
-          <div class="career-tab" id="career-habits">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <h3>Habit Tracker</h3>
-                  <p>Daily and weekly rituals to build consistency.</p>
-                </div>
-              </div>
-              <div id="habitsList" class="stack-list"></div>
-            </section>
           </div>
         </section>
 
@@ -1209,6 +1200,43 @@
               <div id="exerciseHistoryFeed" class="stack-list"></div>
             </section>
           </div>
+        </section>
+
+        <section class="view" id="habits" aria-labelledby="habitsTitle" hidden>
+          <div class="section-heading">
+            <div>
+              <h2 id="habitsTitle">Habit Tracker</h2>
+              <p>Build consistency with daily and weekly routines.</p>
+            </div>
+            <button class="primary-button" type="button" id="btnLogHabitManual">Add Habit</button>
+          </div>
+
+          <!-- Habit Stats Grid -->
+          <div class="metric-grid" style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+            <div class="metric-card">
+              <p class="eyebrow">Overall Completion</p>
+              <div class="metric-value" id="habitCompletionRate">0%</div>
+              <p class="muted-small">This week</p>
+            </div>
+            <div class="metric-card">
+              <p class="eyebrow">Active Habits</p>
+              <div class="metric-value" id="habitActiveCount">0</div>
+              <p class="muted-small">Currently tracking</p>
+            </div>
+            <div class="metric-card">
+              <p class="eyebrow">Best Streak</p>
+              <div class="metric-value" id="habitBestStreak">0 days</div>
+              <p class="muted-small">All-time record</p>
+            </div>
+            <div class="metric-card">
+              <p class="eyebrow">Today's Progress</p>
+              <div class="metric-value" id="habitTodayProgress">0 / 0</div>
+              <p class="muted-small">Completions today</p>
+            </div>
+          </div>
+
+          <!-- Habits Grid -->
+          <div id="habitsDashboardGrid" class="keep-grid" style="margin-top: 20px;"></div>
         </section>
 
         <section class="view" id="assistant" aria-labelledby="assistantTitle">

@@ -2992,5 +2992,74 @@ body[data-theme="dark"] .goal-time-left {
   border: 1px solid var(--line);
 }
 
-
-
+/* ─── Habit Tracker Premium Styles ──────────────────────────────── */
+.habit-calendar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0;
+}
+.habit-day-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.habit-day-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.habit-day-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+.habit-day-circle:hover {
+  transform: scale(1.15);
+  border-color: var(--muted);
+}
+.habit-day-circle.active {
+  background: rgba(102, 187, 106, 0.25);
+  color: #66bb6a;
+  border: 1.5px solid #66bb6a;
+  box-shadow: 0 0 8px rgba(102, 187, 106, 0.4);
+}
+.habit-day-circle.today {
+  border: 1.5px dashed var(--text);
+}
+.habit-card-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel);
+  padding: 6px 10px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--line);
+  margin-top: 8px;
+}
+.habit-progress-bar-wrapper {
+  background: var(--line);
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.habit-progress-bar {
+  background: #66bb6a;
+  height: 100%;
+  width: 0;
+  transition: width 0.3s;
+}
