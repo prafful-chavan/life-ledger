@@ -756,6 +756,10 @@ function bindFinanceTabs() {
     await refreshMutualFundNAVs(true);
   });
 
+  document.getElementById("syncExpensesFromDriveBtn")?.addEventListener("click", () => {
+    syncExpensesFromDrive();
+  });
+
   const mfHoldingsBtn = document.getElementById("toggleMfViewHoldings");
   const mfTxnsBtn = document.getElementById("toggleMfViewTxns");
   const mfInsightsBtn = document.getElementById("toggleMfViewInsights");
@@ -1293,6 +1297,96 @@ async function runImport(importFn) {
   return result;
 }
 
+async function syncExpensesFromDrive() {
+  if (!window.LifeLedgerDrive || !window.LifeLedgerDrive.isConnected()) {
+    toast("Please connect Google Drive in the settings panel first.");
+    return;
+  }
+
+  const btn = document.getElementById("syncExpensesFromDriveBtn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "☁ Syncing...";
+  }
+
+  toast("Scanning Google Drive for expense files...");
+
+  const targets = [
+    { name: "expenses_me.csv", owner: "Me" },
+    { name: "expenses_wife.csv", owner: "Wife" },
+    { name: "expenses_me.xlsx", owner: "Me" },
+    { name: "expenses_wife.xlsx", owner: "Wife" },
+    { name: "expenses_me.xls", owner: "Me" },
+    { name: "expenses_wife.xls", owner: "Wife" }
+  ];
+
+  let totalAdded = 0;
+  let filesFound = 0;
+
+  try {
+    for (const target of targets) {
+      const fileData = await window.LifeLedgerDrive.downloadRemoteFileByName(target.name);
+      if (fileData) {
+        filesFound++;
+        console.log(`[app.js] Found and downloaded ${target.name} from Google Drive.`);
+        
+        const blob = new Blob([fileData.buffer], { type: target.name.endsWith(".csv") ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        const mockFile = {
+          name: target.name,
+          text: async () => {
+            const td = new TextDecoder();
+            return td.decode(fileData.buffer);
+          },
+          arrayBuffer: () => Promise.resolve(fileData.buffer)
+        };
+
+        const imported = await parseImportFile(mockFile, "expense");
+        if (imported && imported.expenses && imported.expenses.length > 0) {
+          imported.expenses.forEach(exp => {
+            exp.paidBy = target.owner;
+          });
+
+          const existingExpenses = state.expenses || [];
+          let addedForFile = 0;
+          imported.expenses.forEach(incoming => {
+            const isDup = existingExpenses.some(existing => 
+              existing.date === incoming.date &&
+              Math.abs(toNumber(existing.amount) - toNumber(incoming.amount)) < 0.01 &&
+              (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase()
+            );
+            if (!isDup) {
+              existingExpenses.push(incoming);
+              addedForFile++;
+            }
+          });
+          totalAdded += addedForFile;
+        }
+      }
+    }
+
+    if (filesFound === 0) {
+      toast("No expense files (expenses_me.csv/xlsx or expenses_wife.csv/xlsx) found on Google Drive.");
+    } else {
+      if (totalAdded > 0) {
+        invalidateExpenseCache();
+        renderAll();
+        saveData(true);
+        toast(`✓ Synced successfully! Imported ${totalAdded} new expenses from ${filesFound} files.`);
+      } else {
+        toast("✓ All expenses up to date. No new entries found on Google Drive.");
+      }
+    }
+  } catch (error) {
+    console.error("[app.js] Expense sync failed:", error);
+    toast(`Sync failed: ${error.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "☁ Sync from Drive";
+    }
+  }
+}
+
 async function parseImportFile(file, selectedKind) {
   const extension = file.name.split(".").pop().toLowerCase();
   if (extension === "json") {
@@ -1603,7 +1697,18 @@ function mapRowToKind(row, kind) {
 function mergeImportedData(imported) {
   const normalized = normalizeData(imported);
   appendArray(state.income, normalized.income);
-  appendArray(state.expenses, normalized.expenses);
+  // Deduplicated merge for expenses
+  const existingExpenses = state.expenses || [];
+  normalized.expenses.forEach(incoming => {
+    const isDup = existingExpenses.some(existing => 
+      existing.date === incoming.date &&
+      Math.abs(toNumber(existing.amount) - toNumber(incoming.amount)) < 0.01 &&
+      (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase()
+    );
+    if (!isDup) {
+      existingExpenses.push(incoming);
+    }
+  });
   appendArray(state.assets, normalized.assets);
   appendArray(state.liabilities, normalized.liabilities);
   appendArray(state.mutualFunds, normalized.mutualFunds);

@@ -11,7 +11,7 @@
  */
 (function () {
   const VAULT_FILENAME = "life-ledger-vault.enc.json";
-  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly";
   const FILE_ID_KEY = "lifeLedgerDriveFileId:v1";
   const TOKEN_CACHE_KEY = "lifeLedgerDriveToken:v1";
 
@@ -359,6 +359,39 @@
     }
   }
 
+  async function downloadRemoteFileByName(filename, options = {}) {
+    if (!isConfigured()) return null;
+    try {
+      const query = encodeURIComponent(
+        `name='${filename}' and trashed=false`
+      );
+      const response = await driveFetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=1`,
+        { ...options, silent: true }
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      const files = data.files || [];
+      if (!files.length) return null;
+
+      const fileId = files[0].id;
+      const fileRes = await driveFetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        { ...options, silent: true }
+      );
+      if (!fileRes.ok) return null;
+      const buffer = await fileRes.arrayBuffer();
+      return {
+        filename,
+        buffer,
+        modifiedTime: files[0].modifiedTime
+      };
+    } catch (e) {
+      console.warn(`[drive-sync] downloadRemoteFileByName(${filename}):`, e.message);
+      return null;
+    }
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
 
   window.LifeLedgerDrive = {
@@ -399,5 +432,6 @@
 
     loadVault,
     saveVault,
+    downloadRemoteFileByName,
   };
 })();
