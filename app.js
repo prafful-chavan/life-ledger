@@ -233,8 +233,13 @@ const fieldsByKind = {
     ["date", "Date", "date"],
     ["person", "Person", "select"],
     ["source", "Source / company", "text"],
-    ["amount", "Amount", "number"],
     ["type", "Type", "text"],
+    ["grossEarnings", "Gross salary", "number"],
+    ["amount", "Net in-hand", "number"],
+    ["taxTds", "Tax / TDS", "number"],
+    ["basicSalary", "Basic salary", "number"],
+    ["hra", "HRA", "number"],
+    ["pf", "PF", "number"],
   ],
   expense: [
     ["date", "Date", "date"],
@@ -1235,6 +1240,22 @@ function buildQuickAddForm(kind, editId = null) {
     }
     if (kind === "income") {
       entry.person = normalizeOwner(entry.person);
+      entry.netSalary = entry.amount;
+      entry.organization = entry.source;
+      
+      // Build components and deductions maps for complete consistency with Excel/CSV parsed records
+      entry.components = {};
+      salaryComponentFields.forEach(([key]) => {
+        if (entry[key] !== undefined) {
+          entry.components[key] = entry[key];
+        }
+      });
+      entry.deductions = {};
+      deductionFields.forEach(([key]) => {
+        if (entry[key] !== undefined) {
+          entry.deductions[key] = entry[key];
+        }
+      });
     }
     if (kind === "asset" || kind === "liability" || kind === "goal" || kind === "study" || kind === "habit") {
       entry.owner = normalizeOwner(entry.owner);
