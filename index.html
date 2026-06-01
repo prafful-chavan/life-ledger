@@ -120,6 +120,10 @@
             <span aria-hidden="true">📋</span>
             <span>To-Do List</span>
           </button>
+          <button class="nav-item" type="button" data-view="exercise">
+            <span aria-hidden="true">🏋️</span>
+            <span>Exercise</span>
+          </button>
           <button class="nav-item" type="button" data-view="assistant">
             <span aria-hidden="true">?</span>
             <span>Hey Prafful</span>
@@ -1047,34 +1051,162 @@
         <section class="view" id="todo" aria-labelledby="todoTitle">
           <div class="section-heading">
             <div>
-              <h2 id="todoTitle">To-Do List &amp; Exercise</h2>
-              <p>Manage daily tasks and track workout consistency.</p>
+              <h2 id="todoTitle">To-Do List &amp; Keep Notes</h2>
+              <p>Organize projects, checklists, and notes with priorities.</p>
             </div>
-            <div style="display: flex; gap: 8px;">
-              <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="workout">Log workout</button>
-              <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="task">Add task</button>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <div class="search-wrapper">
+                <input type="text" id="todoSearch" placeholder="Search notes..." aria-label="Search notes" style="padding: 8px 12px; font-size: 14px; width: 220px;" />
+              </div>
             </div>
           </div>
 
+          <!-- Filter Chips -->
+          <div class="todo-filters" style="display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px;">
+            <button class="secondary-button active filter-chip" type="button" data-filter="all" style="padding: 6px 12px; font-size: 12px; border-radius: 20px;">All</button>
+            <button class="secondary-button filter-chip" type="button" data-filter="pinned" style="padding: 6px 12px; font-size: 12px; border-radius: 20px;">📌 Pinned</button>
+            <button class="secondary-button filter-chip" type="button" data-filter="High" style="padding: 6px 12px; font-size: 12px; border-radius: 20px;">🔴 High</button>
+            <button class="secondary-button filter-chip" type="button" data-filter="Medium" style="padding: 6px 12px; font-size: 12px; border-radius: 20px;">🟡 Medium</button>
+            <button class="secondary-button filter-chip" type="button" data-filter="Low" style="padding: 6px 12px; font-size: 12px; border-radius: 20px;">🔵 Low</button>
+          </div>
+
+          <!-- Keep-Style Quick Add Card -->
+          <div class="keep-add-container" id="keepAddContainer">
+            <div class="keep-add-collapsed" id="keepAddCollapsed">
+              <span>Take a note or start a checklist...</span>
+              <div class="collapsed-actions">
+                <button type="button" id="btnChecklistMode" title="New checklist">☑️ List</button>
+                <button type="button" id="btnTextNoteMode" title="New note">📝 Note</button>
+              </div>
+            </div>
+            <div class="keep-add-expanded hidden" id="keepAddExpanded">
+              <input type="text" id="keepAddTitle" placeholder="Title" />
+              <textarea id="keepAddNote" placeholder="Take a note..." rows="3"></textarea>
+              
+              <!-- Checklist Editor Container -->
+              <div id="keepAddChecklistContainer" class="hidden" style="margin-top: 10px;">
+                <div id="keepAddChecklistItems" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                <button type="button" class="secondary-button" id="btnAddChecklistItem" style="padding: 4px 10px; font-size: 12px; margin-top: 8px;">+ Add checklist item</button>
+              </div>
+
+              <div class="keep-add-controls">
+                <div class="control-group">
+                  <select id="keepAddPriority" aria-label="Priority">
+                    <option value="Low">Low Priority</option>
+                    <option value="Medium" selected>Medium Priority</option>
+                    <option value="High">High Priority</option>
+                  </select>
+                  <input type="text" id="keepAddArea" placeholder="Category (e.g. Work)" aria-label="Category" />
+                  <button type="button" class="icon-button" id="keepAddPin" title="Pin note" style="padding: 6px 10px;">📌 Pin</button>
+                  
+                  <!-- Color Palette Selector -->
+                  <div class="color-palette-wrapper" style="position: relative; display: inline-block;">
+                    <button type="button" class="icon-button" id="colorPickerTrigger" title="Change color" style="padding: 6px 10px;">🎨 Color</button>
+                    <div class="color-palette-popover hidden" id="keepAddColorPalette" style="position: absolute; bottom: 35px; left: 0; display: flex; gap: 6px; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); z-index: 100;">
+                      <div class="color-dot active" data-color="default" style="width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 2px solid #fff; background: var(--panel-soft);" title="Default"></div>
+                      <div class="color-dot" data-color="red" style="width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line); background: rgba(239, 83, 80, 0.2);" title="Red"></div>
+                      <div class="color-dot" data-color="yellow" style="width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line); background: rgba(251, 192, 45, 0.2);" title="Yellow"></div>
+                      <div class="color-dot" data-color="blue" style="width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line); background: rgba(41, 182, 246, 0.2);" title="Blue"></div>
+                      <div class="color-dot" data-color="green" style="width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line); background: rgba(102, 187, 106, 0.2);" title="Green"></div>
+                      <div class="color-dot" data-color="purple" style="width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line); background: rgba(171, 71, 188, 0.2);" title="Purple"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="control-actions">
+                  <button type="button" class="secondary-button" id="btnCancelKeepAdd">Cancel</button>
+                  <button type="button" class="primary-button" id="btnSaveKeepAdd">Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Keep Cards Container -->
+          <div class="keep-dashboard" style="margin-top: 20px; display: flex; flex-direction: column; gap: 24px;">
+            <!-- Pinned Notes -->
+            <div id="pinnedNotesSection" class="keep-section hidden">
+              <h3 class="keep-section-title" style="font-size: 14px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; letter-spacing: 0.5px;">Pinned</h3>
+              <div id="pinnedNotesGrid" class="keep-grid"></div>
+            </div>
+
+            <!-- Other Notes -->
+            <div id="otherNotesSection" class="keep-section">
+              <h3 class="keep-section-title" id="otherNotesTitle" style="display:none; font-size: 14px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; letter-spacing: 0.5px;">Others</h3>
+              <div id="otherNotesGrid" class="keep-grid"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="exercise" aria-labelledby="exerciseTitle" hidden>
+          <div class="section-heading">
+            <div>
+              <h2 id="exerciseTitle">Exercise &amp; Workout Tracker</h2>
+              <p>Log sessions, track streaks, and view personal records.</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="secondary-button" type="button" id="btnWorkoutTemplates">Templates</button>
+              <button class="primary-button" type="button" id="btnLogWorkoutManual">Log Workout</button>
+            </div>
+          </div>
+
+          <!-- Exercise Metrics Grid -->
+          <div class="metric-grid" style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+            <div class="metric-card" style="grid-column: span 2; display: flex; flex-direction: column; justify-content: space-between;">
+              <p class="eyebrow" style="margin-bottom: 6px;">Monthly Streak ⚡</p>
+              <div class="streak-calendar-wrapper">
+                <div id="streakCalendarHeader" class="streak-cal-header" style="display: flex; justify-content: space-between; font-weight: 700; font-size: 12px; color: var(--muted); margin-bottom: 4px;"></div>
+                <div id="streakCalendarGrid" class="streak-cal-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;"></div>
+              </div>
+            </div>
+            <div class="metric-card">
+              <p class="eyebrow">Sessions This Month</p>
+              <div class="metric-value" id="workoutTotalSessions">0</div>
+              <p class="muted-small" id="workoutTotalSessionsSub">This month</p>
+            </div>
+            <div class="metric-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <p class="eyebrow">Workout Time</p>
+                <div class="metric-value" id="workoutTotalMinutes">0 min</div>
+              </div>
+              <div style="margin-top: 10px;">
+                <p class="eyebrow" style="font-size: 11px; margin-bottom: 2px;">Avg Duration</p>
+                <div class="small-value" id="workoutAvgDuration" style="font-size: 14px; font-weight: 700; color: var(--text);">0 min</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Split Layout: Charts/PRs & History -->
           <div class="split-grid">
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h3>Daily to-do</h3>
-                  <p>Small promises to today.</p>
+                  <h3>Personal Bests &amp; Frequency</h3>
+                  <p>Strength milestones and consistency graph.</p>
                 </div>
               </div>
-              <div id="taskList" class="check-list"></div>
+              
+              <!-- PR list container -->
+              <div class="pr-section" style="margin-top: 12px;">
+                <h4 style="font-size: 13px; color: var(--text); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Personal Records (PRs) 🏆</h4>
+                <div id="workoutPRList" class="pr-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+              </div>
+
+              <!-- SVG consistency chart -->
+              <div class="chart-section" style="margin-top: 24px;">
+                <h4 style="font-size: 13px; color: var(--text); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Workout History (Last 8 Weeks)</h4>
+                <div id="workoutChartContainer" class="workout-chart-wrapper" style="height: 140px; position: relative;">
+                  <svg id="workoutConsistencyChart" style="width: 100%; height: 100%; min-height: 120px; overflow: visible;"></svg>
+                </div>
+              </div>
             </section>
 
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h3>Exercise</h3>
-                  <p>Sessions and consistency.</p>
+                  <h3>Workout Feed</h3>
+                  <p>Recent fitness entries.</p>
                 </div>
               </div>
-              <div id="workoutList" class="stack-list"></div>
+              <div id="exerciseHistoryFeed" class="stack-list"></div>
             </section>
           </div>
         </section>
@@ -1282,6 +1414,88 @@
             <button class="secondary-button danger-button" type="button" id="settingsLogoutButton" style="flex: 1;">Sign out</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="modal" id="workoutTemplatesModal" role="dialog" aria-modal="true" aria-labelledby="workoutTemplatesTitle" hidden>
+      <div class="modal-card" style="max-width: 480px;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Quick start</p>
+            <h2 id="workoutTemplatesTitle">Workout Templates</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <div class="help-box" style="margin-bottom: 16px;">
+          Select a workout preset template to automatically populate common exercises, sets, and weights:
+        </div>
+        <div class="templates-grid" style="display: flex; flex-direction: column; gap: 10px;">
+          <button type="button" class="secondary-button template-btn-item" data-template="push" style="justify-content: flex-start; text-align: left; padding: 12px; font-weight: 700;">💪 Push Day (Bench Press, Overhead Press, Triceps)</button>
+          <button type="button" class="secondary-button template-btn-item" data-template="pull" style="justify-content: flex-start; text-align: left; padding: 12px; font-weight: 700;">💪 Pull Day (Deadlift, Pull-ups, Lat Pulldowns, Biceps)</button>
+          <button type="button" class="secondary-button template-btn-item" data-template="legs" style="justify-content: flex-start; text-align: left; padding: 12px; font-weight: 700;">🦵 Leg Day (Squats, Leg Press, Calves)</button>
+          <button type="button" class="secondary-button template-btn-item" data-template="cardio" style="justify-content: flex-start; text-align: left; padding: 12px; font-weight: 700;">🏃 Cardio Blast (Running, HIIT)</button>
+          <button type="button" class="secondary-button template-btn-item" data-template="yoga" style="justify-content: flex-start; text-align: left; padding: 12px; font-weight: 700;">🧘 Yoga &amp; Flexibility (Stretching, Vinyasa)</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="workoutLoggerModal" role="dialog" aria-modal="true" aria-labelledby="workoutLoggerTitle" hidden>
+      <div class="modal-card" style="max-width: 650px; width: 90%; max-height: 85vh; overflow-y: auto;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Workout details</p>
+            <h2 id="workoutLoggerTitle">Log Workout Session</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+
+        <form id="workoutLoggerForm" class="quick-form">
+          <label>
+            Date
+            <input type="date" id="workoutLogDate" required />
+          </label>
+          <label>
+            Activity Type
+            <select id="workoutLogType" required>
+              <option value="Strength Training">Strength Training</option>
+              <option value="Cardio / Running">Cardio / Running</option>
+              <option value="HIIT / CrossFit">HIIT / CrossFit</option>
+              <option value="Yoga / Stretching">Yoga / Stretching</option>
+              <option value="Sports">Sports</option>
+              <option value="Other Activity">Other Activity</option>
+            </select>
+          </label>
+          <label>
+            Duration (minutes)
+            <input type="number" id="workoutLogMinutes" min="1" required inputmode="decimal" />
+          </label>
+          <label>
+            Intensity
+            <select id="workoutLogIntensity">
+              <option value="Low">Low Intensity</option>
+              <option value="Medium" selected>Medium Intensity</option>
+              <option value="High">High Intensity</option>
+            </select>
+          </label>
+          <label class="full-span">
+            Notes / Comments
+            <input type="text" id="workoutLogNotes" placeholder="How did it feel?" />
+          </label>
+
+          <!-- Exercises list section -->
+          <div class="full-span workout-exercises-section" style="border-top: 1px solid var(--line); padding-top: 16px; margin-top: 10px;">
+            <h4 style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 14px;">
+              Exercises &amp; Sets
+              <button type="button" class="secondary-button" id="btnWorkoutAddExercise" style="padding: 4px 10px; font-size: 11px;">+ Add Exercise</button>
+            </h4>
+            <div id="workoutLogExercisesContainer" class="workout-exercises-container" style="display: flex; flex-direction: column; gap: 16px;"></div>
+          </div>
+
+          <div class="modal-actions full-span" style="border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px;">
+            <button class="secondary-button" type="button" data-close-modal>Cancel</button>
+            <button class="primary-button" type="submit">Save Session</button>
+          </div>
+        </form>
       </div>
     </div>
 

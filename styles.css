@@ -2643,3 +2643,354 @@ body[data-theme="dark"] .goal-time-left {
 }
 
 
+/* ─── Keep-style Card Grid Styles ──────────────────────────────── */
+.keep-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+.keep-card {
+  position: relative;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.keep-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+  border-color: var(--muted);
+}
+.keep-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.keep-card-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.3;
+}
+.keep-card-body {
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.9;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.keep-card-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.keep-checklist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.keep-checklist-row.checked span {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+.keep-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.keep-card-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.badge-priority {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.badge-priority.high { background: rgba(239, 83, 80, 0.2); color: #ef5350; }
+.badge-priority.medium { background: rgba(251, 192, 45, 0.2); color: #fbc02d; }
+.badge-priority.low { background: rgba(41, 182, 246, 0.2); color: #29b6f6; }
+
+.badge-category {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Color Palette custom classes */
+.keep-card.red { background: rgba(239, 83, 80, 0.12); border-color: rgba(239, 83, 80, 0.25); }
+.keep-card.yellow { background: rgba(251, 192, 45, 0.1); border-color: rgba(251, 192, 45, 0.25); }
+.keep-card.blue { background: rgba(41, 182, 246, 0.12); border-color: rgba(41, 182, 246, 0.25); }
+.keep-card.green { background: rgba(102, 187, 106, 0.12); border-color: rgba(102, 187, 106, 0.25); }
+.keep-card.purple { background: rgba(171, 71, 188, 0.12); border-color: rgba(171, 71, 188, 0.25); }
+
+/* Keep Quick Add Container styling */
+.keep-add-container {
+  max-width: 580px;
+  margin: 0 auto 24px auto;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.keep-add-container:focus-within {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  border-color: var(--muted);
+}
+.keep-add-collapsed {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: text;
+  color: var(--muted);
+}
+.collapsed-actions button {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.collapsed-actions button:hover {
+  background: var(--line);
+}
+.keep-add-expanded {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.keep-add-expanded input[type="text"],
+.keep-add-expanded textarea {
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  color: var(--text);
+  font-size: 14px;
+  width: 100%;
+}
+.keep-add-expanded input[type="text"]:focus,
+.keep-add-expanded textarea:focus {
+  outline: none;
+}
+.keep-add-expanded input#keepAddTitle {
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.keep-add-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 8px;
+}
+.keep-add-controls .control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.keep-add-controls select,
+.keep-add-controls input[type="text"] {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  padding: 4px 8px;
+  font-size: 11px;
+  width: auto;
+}
+
+/* Color dot selector styles */
+.color-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  transition: transform 0.15s, border-color 0.15s;
+}
+.color-dot:hover {
+  transform: scale(1.15);
+}
+.color-dot.active {
+  border: 2px solid var(--text) !important;
+}
+
+/* Inline checklist row */
+.checklist-item-editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.checklist-item-editor input[type="text"] {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  padding: 2px 0;
+  font-size: 13px !important;
+}
+.checklist-item-editor input[type="text"]:focus {
+  border-bottom-color: var(--line) !important;
+}
+
+/* Exercise Tracker: Streak Calendar styles */
+.streak-calendar-wrapper {
+  background: var(--panel);
+  padding: 10px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--line);
+}
+.streak-cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 50%;
+  color: var(--muted);
+  transition: all 0.2s;
+  cursor: default;
+}
+.streak-cal-day.active {
+  background: rgba(102, 187, 106, 0.25);
+  color: #66bb6a;
+  box-shadow: 0 0 8px rgba(102, 187, 106, 0.4);
+  border: 1.5px solid #66bb6a;
+}
+.streak-cal-day.today {
+  border: 1.5px dashed var(--text);
+  color: var(--text);
+}
+
+/* Personal records list styles */
+.pr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.pr-item-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+}
+.pr-item-value {
+  font-weight: 800;
+  font-size: 13px;
+  color: #66bb6a;
+  background: rgba(102, 187, 106, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Workout log exercise sets inputs styles */
+.log-exercise-block {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  position: relative;
+}
+.log-sets-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.log-set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.log-set-row input {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  padding: 4px 6px;
+  font-size: 11px;
+  width: 65px;
+  text-align: center;
+}
+
+/* Workout history details block */
+.workout-history-details {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.history-exercise-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-exercise-name {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text);
+}
+.history-sets-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.history-set-badge {
+  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+
+

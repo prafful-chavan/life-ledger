@@ -449,6 +449,8 @@ function bootstrapApp(initialState) {
     bindExport();
     bindDashboard();
     bindGoals();
+    bindTodoAndKeepEvents();
+    bindExerciseEvents();
     isAppInitialized = true;
   }
   renderAll();
@@ -1819,6 +1821,7 @@ function renderAll() {
   renderCareer();
   renderGoals();
   renderTodoView();
+  renderExerciseView();
   renderDashboardAnalysis();
   renderChat();
 }
@@ -3453,67 +3456,901 @@ function renderGoals() {
   });
 }
 
-function renderTodoView() {
-  const taskContainer = document.getElementById("taskList");
-  if (taskContainer) {
-    taskContainer.innerHTML = "";
-    const tasks = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done)).slice(0, 15);
-    if (tasks.length === 0) {
-      taskContainer.innerHTML = `<div class="empty-state">Add a few daily tasks.</div>`;
-    } else {
-      tasks.forEach((task) => {
-        const row = document.createElement("label");
-        row.className = `task-row ${task.done ? "done" : ""}`;
-        row.innerHTML = `
-          <input type="checkbox" ${task.done ? "checked" : ""} aria-label="Toggle task" />
-          <span>
-            <strong>${escapeHTML(task.text)}</strong>
-            <span class="row-subtext">${escapeHTML(task.area || "Personal")} • ${formatDate(task.date)}</span>
-          </span>
-          <div class="actions-wrapper" style="margin-left: auto; display: flex; gap: 8px;">
-            <button class="action-btn edit-btn" type="button" data-kind="task" data-id="${task.id}" title="Edit task">✏️</button>
-            <button class="action-btn delete-btn" type="button" data-kind="task" data-id="${task.id}" title="Delete task">🗑️</button>
-          </div>
-        `;
-        row.querySelector("input").addEventListener("change", async (event) => {
-          task.done = event.target.checked;
-          renderAll();
-          saveData();
-        });
-        taskContainer.append(row);
+let todoFilter = "all";
+let todoSearchQuery = "";
+let currentCardColor = "default";
+let isChecklistMode = false;
+let editTaskId = null;
+let editWorkoutId = null;
+
+function bindTodoAndKeepEvents() {
+  const collapsed = document.getElementById("keepAddCollapsed");
+  const expanded = document.getElementById("keepAddExpanded");
+  const btnChecklist = document.getElementById("btnChecklistMode");
+  const btnTextNote = document.getElementById("btnTextNoteMode");
+  const btnCancel = document.getElementById("btnCancelKeepAdd");
+  const btnSave = document.getElementById("btnSaveKeepAdd");
+  const btnAddChecklist = document.getElementById("btnAddChecklistItem");
+  const colorPickerTrigger = document.getElementById("colorPickerTrigger");
+  const colorPalette = document.getElementById("keepAddColorPalette");
+  const pinBtn = document.getElementById("keepAddPin");
+  
+  if (!collapsed || !expanded) return;
+
+  // Expand container on collapsed click
+  collapsed.addEventListener("click", (e) => {
+    if (e.target.closest("button")) return;
+    collapsed.classList.add("hidden");
+    expanded.classList.remove("hidden");
+    document.getElementById("keepAddTitle").focus();
+  });
+
+  // Cancel notes
+  btnCancel.addEventListener("click", () => {
+    resetKeepAddForm();
+  });
+
+  // Modes toggling
+  btnChecklist.addEventListener("click", () => {
+    collapsed.classList.add("hidden");
+    expanded.classList.remove("hidden");
+    setChecklistMode(true);
+  });
+  
+  btnTextNote?.addEventListener("click", () => {
+    collapsed.classList.add("hidden");
+    expanded.classList.remove("hidden");
+    setChecklistMode(false);
+  });
+
+  // Add checklist item
+  btnAddChecklist.addEventListener("click", () => {
+    addChecklistInputRow();
+  });
+
+  // Color picker popover toggling
+  colorPickerTrigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    colorPalette.classList.toggle("hidden");
+  });
+  
+  // Clicking outside color palette hides it
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".color-palette-wrapper") && colorPalette) {
+      colorPalette.classList.add("hidden");
+    }
+  });
+
+  // Selecting color dot
+  colorPalette.querySelectorAll(".color-dot").forEach((dot) => {
+    dot.addEventListener("click", () => {
+      colorPalette.querySelectorAll(".color-dot").forEach((d) => d.classList.remove("active"));
+      dot.classList.add("active");
+      currentCardColor = dot.dataset.color;
+    });
+  });
+
+  // Pinned toggle
+  let isPinned = false;
+  pinBtn.addEventListener("click", () => {
+    isPinned = !isPinned;
+    pinBtn.textContent = isPinned ? "📌 Pinned" : "📌 Pin";
+    pinBtn.classList.toggle("active", isPinned);
+  });
+
+  // Save Keep note card
+  btnSave.addEventListener("click", async () => {
+    const titleVal = document.getElementById("keepAddTitle").value.trim();
+    const noteVal = document.getElementById("keepAddNote").value.trim();
+    const priorityVal = document.getElementById("keepAddPriority").value;
+    const categoryVal = document.getElementById("keepAddArea").value.trim() || "Personal";
+
+    if (!titleVal && !noteVal && (!isChecklistMode || document.getElementById("keepAddChecklistItems").children.length === 0)) {
+      toast("Note cannot be empty.");
+      return;
+    }
+
+    // Collect checklist items
+    const checklist = [];
+    if (isChecklistMode) {
+      document.querySelectorAll("#keepAddChecklistItems .checklist-item-editor").forEach((row) => {
+        const itemText = row.querySelector('input[type="text"]').value.trim();
+        const itemDone = row.querySelector('input[type="checkbox"]').checked;
+        if (itemText) {
+          checklist.push({ text: itemText, done: itemDone });
+        }
       });
     }
+
+    let task;
+    if (editTaskId) {
+      task = state.tasks.find((t) => t.id === editTaskId);
+    }
+
+    if (task) {
+      task.text = titleVal || (isChecklistMode ? "Checklist" : "Note");
+      task.note = noteVal;
+      task.checklist = checklist.length > 0 ? checklist : undefined;
+      task.priority = priorityVal;
+      task.area = categoryVal;
+      task.color = currentCardColor;
+      task.pinned = isPinned;
+    } else {
+      const newTask = {
+        id: `task-${generateUUID()}`,
+        text: titleVal || (isChecklistMode ? "Checklist" : "Note"),
+        note: noteVal,
+        checklist: checklist.length > 0 ? checklist : undefined,
+        done: false,
+        pinned: isPinned,
+        color: currentCardColor,
+        priority: priorityVal,
+        area: categoryVal,
+        date: todayISO(),
+      };
+      state.tasks.push(newTask);
+    }
+
+    resetKeepAddForm();
+    renderAll();
+    toast(editTaskId ? "Note updated." : "Note added.");
+    await saveData(true);
+  });
+
+  // Search filter
+  document.getElementById("todoSearch")?.addEventListener("input", (e) => {
+    todoSearchQuery = e.target.value.toLowerCase().trim();
+    renderTodoView();
+  });
+
+  // Filter chips click
+  document.querySelectorAll(".todo-filters .filter-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll(".todo-filters .filter-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      todoFilter = chip.dataset.filter;
+      renderTodoView();
+    });
+  });
+
+  function resetKeepAddForm() {
+    document.getElementById("keepAddTitle").value = "";
+    document.getElementById("keepAddNote").value = "";
+    document.getElementById("keepAddChecklistItems").innerHTML = "";
+    document.getElementById("keepAddArea").value = "";
+    document.getElementById("keepAddPriority").value = "Medium";
+    isPinned = false;
+    pinBtn.textContent = "📌 Pin";
+    pinBtn.classList.remove("active");
+    currentCardColor = "default";
+    colorPalette.querySelectorAll(".color-dot").forEach((d) => {
+      d.classList.toggle("active", d.dataset.color === "default");
+    });
+    setChecklistMode(false);
+    editTaskId = null;
+    expanded.classList.add("hidden");
+    collapsed.classList.remove("hidden");
   }
 
-  const workoutContainer = document.getElementById("workoutList");
-  if (workoutContainer) {
-    workoutContainer.innerHTML = "";
-    const workouts = [...state.workouts].sort(sortByDateDesc).slice(0, 10);
-    if (workouts.length === 0) {
-      workoutContainer.innerHTML = `<div class="empty-state">No workouts logged yet.</div>`;
+  function setChecklistMode(active) {
+    isChecklistMode = active;
+    const noteArea = document.getElementById("keepAddNote");
+    const listArea = document.getElementById("keepAddChecklistContainer");
+    if (active) {
+      noteArea.classList.add("hidden");
+      listArea.classList.remove("hidden");
+      if (document.getElementById("keepAddChecklistItems").children.length === 0) {
+        addChecklistInputRow();
+      }
     } else {
-      workouts.forEach((workout) => {
-        const element = document.createElement("div");
-        element.className = "stack-row";
-        element.innerHTML = `
-          <div style="flex: 1; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div class="stack-title">${escapeHTML(workout.type)}</div>
-              <div class="stack-meta">${formatDate(workout.date)} • ${escapeHTML(workout.intensity || "Medium")}</div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <div class="stack-value">${workout.minutes || 0} min</div>
-              <div class="actions-wrapper">
-                <button class="action-btn edit-btn" type="button" data-kind="workout" data-id="${workout.id}" title="Edit workout">✏️</button>
-                <button class="action-btn delete-btn" type="button" data-kind="workout" data-id="${workout.id}" title="Delete workout">🗑️</button>
-              </div>
-            </div>
-          </div>
-        `;
-        workoutContainer.append(element);
-      });
+      noteArea.classList.remove("hidden");
+      listArea.classList.add("hidden");
     }
   }
+}
+
+function addChecklistInputRow(text = "", done = false) {
+  const container = document.getElementById("keepAddChecklistItems");
+  if (!container) return;
+  const row = document.createElement("div");
+  row.className = "checklist-item-editor";
+  row.innerHTML = `
+    <input type="checkbox" ${done ? "checked" : ""} style="width: 16px; height: 16px; cursor: pointer; margin-right: 4px;" />
+    <input type="text" placeholder="List item" value="${escapeHTML(text)}" style="flex: 1;" />
+    <button type="button" class="icon-button btn-remove-item" style="padding: 2px 6px; font-weight:700;">×</button>
+  `;
+  row.querySelector(".btn-remove-item").addEventListener("click", () => row.remove());
+  container.append(row);
+  row.querySelector('input[type="text"]').focus();
+}
+
+function bindExerciseEvents() {
+  const btnLogWorkout = document.getElementById("btnLogWorkoutManual");
+  const btnTemplates = document.getElementById("btnWorkoutTemplates");
+  const btnAddEx = document.getElementById("btnWorkoutAddExercise");
+  const workoutForm = document.getElementById("workoutLoggerForm");
+  
+  if (!btnLogWorkout || !workoutForm) return;
+
+  btnLogWorkout.addEventListener("click", () => {
+    editWorkoutId = null;
+    workoutForm.reset();
+    document.getElementById("workoutLogDate").value = todayISO();
+    document.getElementById("workoutLogExercisesContainer").innerHTML = "";
+    addExerciseLogBlock();
+    openModal("workoutLoggerModal");
+  });
+
+  btnTemplates.addEventListener("click", () => {
+    openModal("workoutTemplatesModal");
+  });
+
+  document.querySelectorAll(".template-btn-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      closeModal(document.getElementById("workoutTemplatesModal"));
+      editWorkoutId = null;
+      workoutForm.reset();
+      document.getElementById("workoutLogDate").value = todayISO();
+      
+      const container = document.getElementById("workoutLogExercisesContainer");
+      container.innerHTML = "";
+      
+      const template = btn.dataset.template;
+      let type = "Strength Training";
+      let minutes = 45;
+      let notes = "";
+      
+      if (template === "push") {
+        notes = "Push Day template (Chest, Shoulders, Triceps)";
+        addExerciseLogBlock("Bench Press", [{ weight: 50, reps: 10 }, { weight: 60, reps: 8 }, { weight: 65, reps: 6 }]);
+        addExerciseLogBlock("Overhead Press", [{ weight: 30, reps: 10 }, { weight: 35, reps: 8 }, { weight: 40, reps: 6 }]);
+        addExerciseLogBlock("Tricep Pushdowns", [{ weight: 15, reps: 12 }, { weight: 20, reps: 10 }, { weight: 20, reps: 10 }]);
+      } else if (template === "pull") {
+        notes = "Pull Day template (Back, Biceps)";
+        addExerciseLogBlock("Deadlift", [{ weight: 60, reps: 10 }, { weight: 80, reps: 8 }, { weight: 90, reps: 5 }]);
+        addExerciseLogBlock("Pull-ups", [{ weight: 0, reps: 8 }, { weight: 0, reps: 8 }, { weight: 0, reps: 6 }]);
+        addExerciseLogBlock("Bicep Curls", [{ weight: 10, reps: 12 }, { weight: 12, reps: 10 }, { weight: 12, reps: 10 }]);
+      } else if (template === "legs") {
+        notes = "Leg Day template (Quads, Hamstrings, Calves)";
+        addExerciseLogBlock("Squats", [{ weight: 60, reps: 10 }, { weight: 70, reps: 8 }, { weight: 80, reps: 6 }]);
+        addExerciseLogBlock("Leg Press", [{ weight: 100, reps: 12 }, { weight: 120, reps: 10 }, { weight: 140, reps: 10 }]);
+        addExerciseLogBlock("Calf Raises", [{ weight: 20, reps: 15 }, { weight: 25, reps: 15 }, { weight: 30, reps: 12 }]);
+      } else if (template === "cardio") {
+        type = "Cardio / Running";
+        minutes = 30;
+        notes = "Cardio template (HIIT Run)";
+        addExerciseLogBlock("Treadmill Run", [{ weight: 0, reps: 1 }]);
+        addExerciseLogBlock("Burpees", [{ weight: 0, reps: 20 }]);
+      } else if (template === "yoga") {
+        type = "Yoga / Stretching";
+        minutes = 40;
+        notes = "Yoga template (Flexibility & Flow)";
+        addExerciseLogBlock("Sun Salutation", [{ weight: 0, reps: 5 }]);
+        addExerciseLogBlock("Hamstring Stretch", [{ weight: 0, reps: 3 }]);
+      }
+      
+      document.getElementById("workoutLogType").value = type;
+      document.getElementById("workoutLogMinutes").value = minutes;
+      document.getElementById("workoutLogNotes").value = notes;
+      
+      openModal("workoutLoggerModal");
+    });
+  });
+
+  btnAddEx.addEventListener("click", () => {
+    addExerciseLogBlock();
+  });
+
+  workoutForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    
+    const dateVal = document.getElementById("workoutLogDate").value;
+    const typeVal = document.getElementById("workoutLogType").value;
+    const minutesVal = toNumber(document.getElementById("workoutLogMinutes").value);
+    const intensityVal = document.getElementById("workoutLogIntensity").value;
+    const notesVal = document.getElementById("workoutLogNotes").value.trim();
+    
+    const exercises = [];
+    document.querySelectorAll("#workoutLogExercisesContainer .log-exercise-block").forEach((block) => {
+      const exName = block.querySelector(".ex-name-input").value.trim();
+      if (!exName) return;
+      
+      const sets = [];
+      block.querySelectorAll(".log-set-row").forEach((row) => {
+        const weight = toNumber(row.querySelector(".set-weight").value);
+        const reps = toNumber(row.querySelector(".set-reps").value);
+        sets.push({ weight, reps });
+      });
+      
+      exercises.push({ name: exName, sets });
+    });
+    
+    if (editWorkoutId) {
+      const workout = state.workouts.find((w) => w.id === editWorkoutId);
+      if (workout) {
+        workout.date = dateVal;
+        workout.type = typeVal;
+        workout.minutes = minutesVal;
+        workout.intensity = intensityVal;
+        workout.notes = notesVal;
+        workout.exercises = exercises.length > 0 ? exercises : undefined;
+      }
+    } else {
+      const newWorkout = {
+        id: `work-${generateUUID()}`,
+        date: dateVal,
+        type: typeVal,
+        minutes: minutesVal,
+        intensity: intensityVal,
+        notes: notesVal,
+        exercises: exercises.length > 0 ? exercises : undefined,
+      };
+      state.workouts.push(newWorkout);
+    }
+    
+    closeModal(document.getElementById("workoutLoggerModal"));
+    renderAll();
+    toast(editWorkoutId ? "Workout updated." : "Workout logged successfully.");
+    await saveData(true);
+  });
+}
+
+function addExerciseLogBlock(name = "", sets = []) {
+  const container = document.getElementById("workoutLogExercisesContainer");
+  if (!container) return;
+  
+  const block = document.createElement("div");
+  block.className = "log-exercise-block";
+  block.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <input type="text" placeholder="Exercise (e.g. Bench Press)" class="ex-name-input" value="${escapeHTML(name)}" style="font-weight: 700; width: 70%; background: transparent; border: none; border-bottom: 1.5px dashed var(--line); font-size: 13px;" required />
+      <button type="button" class="secondary-button btn-remove-ex" style="padding: 2px 6px; font-size: 10px;">Remove</button>
+    </div>
+    <div class="log-sets-container" style="display: flex; flex-direction: column; gap: 6px;"></div>
+    <button type="button" class="secondary-button btn-add-set" style="padding: 4px 8px; font-size: 10px; align-self: flex-start; margin-top: 6px;">+ Add Set</button>
+  `;
+
+  const setsContainer = block.querySelector(".log-sets-container");
+  const addSetBtn = block.querySelector(".btn-add-set");
+  const removeExBtn = block.querySelector(".btn-remove-ex");
+
+  removeExBtn.addEventListener("click", () => block.remove());
+
+  const addSetRow = (weight = "", reps = "") => {
+    const row = document.createElement("div");
+    row.className = "log-set-row";
+    const setNum = setsContainer.children.length + 1;
+    row.innerHTML = `
+      <span style="width: 45px; font-weight:700; color:var(--muted); font-size:11px;">Set ${setNum}</span>
+      <input type="number" placeholder="kg" class="set-weight" min="0" step="any" inputmode="decimal" value="${weight}" style="width: 65px;" required />
+      <span style="opacity: 0.6; font-size:11px;">kg</span>
+      <input type="number" placeholder="reps" class="set-reps" min="1" inputmode="numeric" value="${reps}" style="width: 65px;" required />
+      <span style="opacity: 0.6; font-size:11px;">reps</span>
+      <button type="button" class="icon-button btn-remove-set" style="margin-left: auto;">×</button>
+    `;
+    row.querySelector(".btn-remove-set").addEventListener("click", () => {
+      row.remove();
+      const rows = setsContainer.querySelectorAll(".log-set-row");
+      rows.forEach((r, idx) => {
+        r.querySelector("span").textContent = `Set ${idx + 1}`;
+      });
+    });
+    setsContainer.append(row);
+  };
+
+  addSetBtn.addEventListener("click", () => addSetRow());
+
+  if (sets.length > 0) {
+    sets.forEach((s) => addSetRow(s.weight, s.reps));
+  } else {
+    addSetRow();
+  }
+
+  container.append(block);
+}
+
+function renderTodoView() {
+  const pinnedGrid = document.getElementById("pinnedNotesGrid");
+  const otherGrid = document.getElementById("otherNotesGrid");
+  const pinnedSection = document.getElementById("pinnedNotesSection");
+  const otherTitle = document.getElementById("otherNotesTitle");
+
+  if (!otherGrid) return;
+
+  pinnedGrid.innerHTML = "";
+  otherGrid.innerHTML = "";
+
+  const filtered = state.tasks.filter((task) => {
+    if (todoSearchQuery) {
+      const matchText = (task.text || "").toLowerCase().includes(todoSearchQuery);
+      const matchNote = (task.note || "").toLowerCase().includes(todoSearchQuery);
+      const matchArea = (task.area || "").toLowerCase().includes(todoSearchQuery);
+      const matchChecklist = task.checklist ? task.checklist.some((item) => (item.text || "").toLowerCase().includes(todoSearchQuery)) : false;
+      if (!matchText && !matchNote && !matchArea && !matchChecklist) return false;
+    }
+    
+    if (todoFilter === "High" || todoFilter === "Medium" || todoFilter === "Low") {
+      if (task.priority !== todoFilter) return false;
+    }
+    
+    if (todoFilter === "pinned") {
+      if (!task.pinned) return false;
+    }
+
+    return true;
+  });
+
+  const pinnedTasks = filtered.filter((t) => t.pinned && !t.done);
+  const otherTasks = filtered.filter((t) => !t.pinned && !t.done);
+  const doneTasks = filtered.filter((t) => t.done);
+
+  const mainOthersList = [...otherTasks, ...doneTasks];
+
+  if (pinnedTasks.length > 0) {
+    pinnedSection.classList.remove("hidden");
+    if (otherTitle) otherTitle.style.display = "block";
+    pinnedTasks.forEach((task) => pinnedGrid.append(createKeepCard(task)));
+  } else {
+    pinnedSection.classList.add("hidden");
+    if (otherTitle) otherTitle.style.display = "none";
+  }
+
+  if (mainOthersList.length > 0) {
+    mainOthersList.forEach((task) => otherGrid.append(createKeepCard(task)));
+  } else {
+    otherGrid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--muted);">No matching notes found. Take a note above!</div>`;
+  }
+
+  function createKeepCard(task) {
+    const card = document.createElement("div");
+    card.className = `keep-card ${task.color || "default"} ${task.done ? "done" : ""}`;
+    if (task.done) card.style.opacity = "0.55";
+
+    let checklistHtml = "";
+    if (task.checklist && task.checklist.length > 0) {
+      checklistHtml = `<div class="keep-card-checklist">`;
+      task.checklist.forEach((item, idx) => {
+        checklistHtml += `
+          <label class="keep-checklist-row ${item.done ? "checked" : ""}">
+            <input type="checkbox" ${item.done ? "checked" : ""} data-idx="${idx}" style="cursor:pointer;" />
+            <span>${escapeHTML(item.text)}</span>
+          </label>
+        `;
+      });
+      checklistHtml += `</div>`;
+    }
+
+    card.innerHTML = `
+      <div>
+        <div class="keep-card-header">
+          <h4 class="keep-card-title">${escapeHTML(task.text)}</h4>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="icon-button btn-pin-card" title="${task.pinned ? "Unpin note" : "Pin note"}" style="padding:2px 4px; font-size:13px; background:none; border:none; cursor:pointer;">
+              📌
+            </button>
+            <button type="button" class="icon-button btn-edit-card" title="Edit note" style="padding:2px 4px; font-size:12px; background:none; border:none; cursor:pointer;">✏️</button>
+            <button type="button" class="icon-button btn-delete-card" title="Delete note" style="padding:2px 4px; font-size:12px; background:none; border:none; cursor:pointer;">🗑️</button>
+          </div>
+        </div>
+        
+        ${task.note ? `<div class="keep-card-body" style="margin-top:8px;">${escapeHTML(task.note)}</div>` : ""}
+        ${checklistHtml}
+      </div>
+
+      <div>
+        <div class="keep-card-footer">
+          <label style="display:flex; align-items:center; gap:6px; font-weight:700; color:var(--muted); cursor:pointer;">
+            <input type="checkbox" class="btn-complete-card" ${task.done ? "checked" : ""} /> Done
+          </label>
+          
+          <div class="keep-card-badges" style="display:flex; align-items:center;">
+            <button type="button" class="icon-button btn-cycle-color" title="Change color" style="padding: 2px 4px; font-size: 11px; margin-right: 4px; background:none; border:none; cursor:pointer;">🎨</button>
+            <span class="badge-priority ${task.priority ? task.priority.toLowerCase() : "medium"}">${task.priority || "Medium"}</span>
+            ${task.area ? `<span class="badge-category" style="margin-left:4px;">${escapeHTML(task.area)}</span>` : ""}
+          </div>
+        </div>
+      </div>
+    `;
+
+    card.querySelectorAll(".keep-checklist-row input").forEach((box) => {
+      box.addEventListener("change", async (e) => {
+        const idx = parseInt(box.dataset.idx);
+        task.checklist[idx].done = e.target.checked;
+        renderAll();
+        await saveData();
+      });
+    });
+
+    card.querySelector(".btn-complete-card").addEventListener("change", async (e) => {
+      task.done = e.target.checked;
+      renderAll();
+      await saveData();
+    });
+
+    card.querySelector(".btn-pin-card").addEventListener("click", async () => {
+      task.pinned = !task.pinned;
+      renderAll();
+      await saveData();
+    });
+
+    card.querySelector(".btn-cycle-color").addEventListener("click", async () => {
+      const colors = ["default", "red", "yellow", "blue", "green", "purple"];
+      const currentIdx = colors.indexOf(task.color || "default");
+      const nextIdx = (currentIdx + 1) % colors.length;
+      task.color = colors[nextIdx];
+      renderAll();
+      await saveData();
+    });
+
+    card.querySelector(".btn-edit-card").addEventListener("click", () => {
+      editTaskId = task.id;
+      document.getElementById("keepAddTitle").value = task.text || "";
+      document.getElementById("keepAddNote").value = task.note || "";
+      document.getElementById("keepAddArea").value = task.area || "";
+      document.getElementById("keepAddPriority").value = task.priority || "Medium";
+      
+      const pinBtn = document.getElementById("keepAddPin");
+      const isPinned = !!task.pinned;
+      pinBtn.textContent = isPinned ? "📌 Pinned" : "📌 Pin";
+      pinBtn.classList.toggle("active", isPinned);
+
+      currentCardColor = task.color || "default";
+      const palette = document.getElementById("keepAddColorPalette");
+      palette.querySelectorAll(".color-dot").forEach((d) => {
+        d.classList.toggle("active", d.dataset.color === currentCardColor);
+      });
+
+      const itemsContainer = document.getElementById("keepAddChecklistItems");
+      itemsContainer.innerHTML = "";
+
+      const noteArea = document.getElementById("keepAddNote");
+      const listArea = document.getElementById("keepAddChecklistContainer");
+
+      if (task.checklist && task.checklist.length > 0) {
+        isChecklistMode = true;
+        noteArea.classList.add("hidden");
+        listArea.classList.remove("hidden");
+        task.checklist.forEach((item) => addChecklistInputRow(item.text, item.done));
+      } else {
+        isChecklistMode = false;
+        noteArea.classList.remove("hidden");
+        listArea.classList.add("hidden");
+      }
+
+      document.getElementById("keepAddCollapsed").classList.add("hidden");
+      document.getElementById("keepAddExpanded").classList.remove("hidden");
+      document.getElementById("keepAddContainer").scrollIntoView({ behavior: "smooth" });
+    });
+
+    card.querySelector(".btn-delete-card").addEventListener("click", async () => {
+      if (confirm("Delete this card?")) {
+        state.tasks = state.tasks.filter((t) => t.id !== task.id);
+        renderAll();
+        toast("Card deleted.");
+        await saveData(true);
+      }
+    });
+
+    return card;
+  }
+}
+
+function renderExerciseView() {
+  const historyFeed = document.getElementById("exerciseHistoryFeed");
+  const sessionsEl = document.getElementById("workoutTotalSessions");
+  const minutesEl = document.getElementById("workoutTotalMinutes");
+  const avgEl = document.getElementById("workoutAvgDuration");
+  
+  if (!historyFeed) return;
+  
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  
+  const thisMonthWorkouts = state.workouts.filter((w) => {
+    const wDate = parseCalendarDate(w.date);
+    return wDate && wDate.getFullYear() === currentYear && wDate.getMonth() === currentMonth;
+  });
+
+  const totalSessions = thisMonthWorkouts.length;
+  let totalMinutes = 0;
+  
+  thisMonthWorkouts.forEach((w) => {
+    totalMinutes += w.minutes || 0;
+  });
+  
+  sessionsEl.textContent = totalSessions;
+  minutesEl.textContent = `${totalMinutes} min`;
+  avgEl.textContent = totalSessions > 0 ? `${Math.round(totalMinutes / totalSessions)} min` : "0 min";
+  
+  renderStreakCalendar(currentYear, currentMonth);
+  renderPersonalRecords();
+  renderWorkoutConsistencyChart();
+
+  historyFeed.innerHTML = "";
+  const sortedWorkouts = [...state.workouts].sort(sortByDateDesc).slice(0, 30);
+  
+  if (sortedWorkouts.length === 0) {
+    historyFeed.innerHTML = `<div class="empty-state" style="padding: 40px; text-align: center; color: var(--muted);">No workouts logged yet. Start by logging a session or using a template!</div>`;
+  } else {
+    sortedWorkouts.forEach((workout) => {
+      const card = document.createElement("div");
+      card.className = "stack-row";
+      card.style.flexDirection = "column";
+      card.style.alignItems = "stretch";
+      card.style.gap = "8px";
+      
+      let exercisesHtml = "";
+      if (workout.exercises && workout.exercises.length > 0) {
+        exercisesHtml = `<div class="workout-history-details">`;
+        workout.exercises.forEach((ex) => {
+          const setsList = ex.sets ? ex.sets.map((s, idx) => `<span class="history-set-badge">S${idx + 1}: ${s.reps} × ${s.weight}kg</span>`).join("") : "";
+          exercisesHtml += `
+            <div class="history-exercise-row">
+              <span class="history-exercise-name">${escapeHTML(ex.name)}</span>
+              <div class="history-sets-list">${setsList}</div>
+            </div>
+          `;
+        });
+        exercisesHtml += `</div>`;
+      }
+
+      card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <div>
+            <div class="stack-title" style="font-weight: 700;">${escapeHTML(workout.type)}</div>
+            <div class="stack-meta">${formatDate(workout.date)} • <span class="badge-priority ${workout.intensity === "High" ? "high" : workout.intensity === "Low" ? "low" : "medium"}" style="font-size: 8px; padding: 1px 4px; vertical-align: middle;">${workout.intensity || "Medium"}</span></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="stack-value" style="font-weight: 700;">${workout.minutes || 0} min</div>
+            <div class="actions-wrapper">
+              <button class="action-btn edit-btn btn-edit-workout" type="button" title="Edit workout">✏️</button>
+              <button class="action-btn delete-btn btn-delete-workout" type="button" title="Delete workout">🗑️</button>
+            </div>
+          </div>
+        </div>
+        ${workout.notes ? `<div style="font-size: 11.5px; opacity: 0.8; font-style: italic; color: var(--muted); margin-top: 2px;">Note: ${escapeHTML(workout.notes)}</div>` : ""}
+        ${exercisesHtml}
+      `;
+
+      card.querySelector(".btn-edit-workout").addEventListener("click", () => {
+        editWorkoutId = workout.id;
+        document.getElementById("workoutLogDate").value = workout.date || todayISO();
+        document.getElementById("workoutLogType").value = workout.type || "Strength Training";
+        document.getElementById("workoutLogMinutes").value = workout.minutes || 30;
+        document.getElementById("workoutLogIntensity").value = workout.intensity || "Medium";
+        document.getElementById("workoutLogNotes").value = workout.notes || "";
+        
+        const container = document.getElementById("workoutLogExercisesContainer");
+        container.innerHTML = "";
+        
+        if (workout.exercises && workout.exercises.length > 0) {
+          workout.exercises.forEach((ex) => addExerciseLogBlock(ex.name, ex.sets));
+        } else {
+          addExerciseLogBlock();
+        }
+        
+        openModal("workoutLoggerModal");
+      });
+
+      card.querySelector(".btn-delete-workout").addEventListener("click", async () => {
+        if (confirm("Delete this workout entry?")) {
+          state.workouts = state.workouts.filter((w) => w.id !== workout.id);
+          renderAll();
+          toast("Workout deleted.");
+          await saveData(true);
+        }
+      });
+
+      historyFeed.append(card);
+    });
+  }
+}
+
+function renderStreakCalendar(year, month) {
+  const calHeader = document.getElementById("streakCalendarHeader");
+  const calGrid = document.getElementById("streakCalendarGrid");
+  if (!calHeader || !calGrid) return;
+  
+  calGrid.innerHTML = "";
+  
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  calHeader.innerHTML = `
+    <span>${monthNames[month]} ${year}</span>
+    <span style="font-size:11px; opacity: 0.6;">Streak: ${calculateStreak()} days</span>
+  `;
+  
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  
+  for (let i = 0; i < firstDayIndex; i++) {
+    const emptyCell = document.createElement("div");
+    calGrid.append(emptyCell);
+  }
+  
+  const activeDays = new Set();
+  state.workouts.forEach((w) => {
+    const wDate = parseCalendarDate(w.date);
+    if (wDate && wDate.getFullYear() === year && wDate.getMonth() === month) {
+      activeDays.add(wDate.getDate());
+    }
+  });
+  
+  const today = new Date();
+  
+  for (let day = 1; day <= daysInMonth; day++) {
+    const cell = document.createElement("div");
+    cell.className = "streak-cal-day";
+    cell.textContent = day;
+    
+    if (activeDays.has(day)) {
+      cell.classList.add("active");
+    }
+    
+    if (today.getFullYear() === year && today.getMonth() === month && today.getDate() === day) {
+      cell.classList.add("today");
+    }
+    
+    calGrid.append(cell);
+  }
+}
+
+function calculateStreak() {
+  if (state.workouts.length === 0) return 0;
+  
+  const dates = [...new Set(state.workouts.map((w) => calendarDateToISO(w.date)))]
+    .filter(Boolean)
+    .sort()
+    .reverse();
+    
+  if (dates.length === 0) return 0;
+  
+  let streak = 0;
+  let checkDate = new Date();
+  
+  const toISO = (d) => dateToISODate(d);
+  
+  const todayStr = toISO(checkDate);
+  checkDate.setDate(checkDate.getDate() - 1);
+  const yesterdayStr = toISO(checkDate);
+  
+  if (dates[0] !== todayStr && dates[0] !== yesterdayStr) {
+    return 0;
+  }
+  
+  let lastLoggedDate = parseCalendarDate(dates[0]);
+  if (!lastLoggedDate) return 0;
+  
+  streak = 1;
+  let curr = new Date(lastLoggedDate);
+  
+  for (let i = 1; i < dates.length; i++) {
+    curr.setDate(curr.getDate() - 1);
+    const expected = toISO(curr);
+    if (dates[i] === expected) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  
+  return streak;
+}
+
+function renderPersonalRecords() {
+  const prListEl = document.getElementById("workoutPRList");
+  if (!prListEl) return;
+  
+  prListEl.innerHTML = "";
+  
+  const prs = {};
+  state.workouts.forEach((w) => {
+    if (w.exercises) {
+      w.exercises.forEach((ex) => {
+        const name = (ex.name || "").trim();
+        if (!name) return;
+        
+        let maxWeight = 0;
+        if (ex.sets) {
+          ex.sets.forEach((set) => {
+            const wVal = toNumber(set.weight);
+            if (wVal > maxWeight) maxWeight = wVal;
+          });
+        }
+        
+        if (maxWeight > 0) {
+          if (!prs[name] || maxWeight > prs[name]) {
+            prs[name] = maxWeight;
+          }
+        }
+      });
+    }
+  });
+  
+  const prItems = Object.entries(prs).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  
+  if (prItems.length === 0) {
+    prListEl.innerHTML = `<div style="font-size:12px; opacity:0.6; font-style:italic; padding: 4px 0;">No strength weights logged yet.</div>`;
+  } else {
+    prItems.forEach(([name, weight]) => {
+      const item = document.createElement("div");
+      item.className = "pr-item";
+      item.innerHTML = `
+        <span class="pr-item-name">${escapeHTML(name)}</span>
+        <span class="pr-item-value">${weight} kg</span>
+      `;
+      prListEl.append(item);
+    });
+  }
+}
+
+function renderWorkoutConsistencyChart() {
+  const svg = document.getElementById("workoutConsistencyChart");
+  if (!svg) return;
+  svg.innerHTML = "";
+  
+  const weeks = Array(8).fill(0);
+  const now = new Date();
+  const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+  
+  state.workouts.forEach((w) => {
+    const wDate = parseCalendarDate(w.date);
+    if (!wDate) return;
+    const diffWeeks = Math.floor((now.getTime() - wDate.getTime()) / oneWeekMs);
+    if (diffWeeks >= 0 && diffWeeks < 8) {
+      weeks[7 - diffWeeks]++;
+    }
+  });
+  
+  const width = svg.clientWidth || 300;
+  const height = svg.clientHeight || 120;
+  const paddingLeft = 20;
+  const paddingRight = 10;
+  const paddingTop = 15;
+  const paddingBottom = 20;
+  
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+  
+  const maxVal = Math.max(...weeks, 3);
+  const colWidth = chartWidth / 8;
+  const barWidth = colWidth * 0.6;
+  
+  weeks.forEach((count, i) => {
+    const x = paddingLeft + i * colWidth + (colWidth - barWidth) / 2;
+    const barHeight = (count / maxVal) * chartHeight;
+    const y = height - paddingBottom - barHeight;
+    
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", x);
+    rect.setAttribute("y", y);
+    rect.setAttribute("width", barWidth);
+    rect.setAttribute("height", barHeight);
+    rect.setAttribute("rx", 3);
+    rect.setAttribute("fill", count > 0 ? "var(--primary)" : "var(--line)");
+    rect.setAttribute("opacity", count > 0 ? "0.85" : "0.3");
+    
+    if (count > 0) {
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", x + barWidth / 2);
+      text.setAttribute("y", y - 4);
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("fill", "var(--text)");
+      text.setAttribute("font-size", "10px");
+      text.setAttribute("font-weight", "700");
+      text.textContent = count;
+      svg.append(text);
+    }
+    
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("x", x + barWidth / 2);
+    label.setAttribute("y", height - 6);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("fill", "var(--muted)");
+    label.setAttribute("font-size", "9px");
+    label.textContent = i === 7 ? "Now" : `Wk -${7 - i}`;
+    
+  });
 }
 
 function renderChat() {
@@ -4314,7 +5151,8 @@ function viewTitle(view) {
       finance: "Money, salary, and net worth",
       career: "Career Roadmaps & Habits",
       goals: "Goals Tracker",
-      todo: "Daily To-Do List & Exercise",
+      todo: "To-Do List & Keep Notes",
+      exercise: "Exercise & Workout Tracker",
       assistant: "Ask your dashboard",
     }[view] || "Life Ledger"
   );
