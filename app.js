@@ -2551,7 +2551,8 @@ function renderMutualFundsPanel() {
   const summary = document.getElementById("mfOwnerSummary");
   const table = document.getElementById("mutualFundTable");
   if (!table) return;
-  const targetThead = table.querySelector("thead");
+  const tableEl = table.closest("table");
+  const targetThead = tableEl ? tableEl.querySelector("thead") : null;
 
   // Update the "NAV as of …" label in the panel header
   const navDateEl = document.getElementById("navDateLabel");
@@ -2702,21 +2703,6 @@ function renderMutualFundsPanel() {
   }
 
   if (activeMfView === "holdings") {
-    if (targetThead) {
-      targetThead.innerHTML = `
-        <tr>
-          <th>Fund</th>
-          <th>Total Units</th>
-          <th>Avg. NAV</th>
-          <th>Invested</th>
-          <th>Latest NAV</th>
-          <th>Current Value</th>
-          <th>Gain / Loss</th>
-          <th>XIRR</th>
-        </tr>
-      `;
-    }
-
     const groups = groupBy(rows, item => item.fundName);
     const holdings = Object.entries(groups).map(([fundName, txns]) => {
       const totalInvested = sum(txns, 'invested');
@@ -2747,11 +2733,16 @@ function renderMutualFundsPanel() {
       const codesCache = getFundCodesCache();
       const codeObj = codesCache[fundName];
       let navVs30d = null;
+      let lowestNav30d = null;
       if (codeObj?.schemeCode) {
         const historyCache = getMfHistoryCache();
         const cached = historyCache[codeObj.schemeCode];
-        if (cached?.data && cached.data.length >= 30) {
-          navVs30d = computeNavVs30dAvg(cached.data);
+        if (cached?.data && cached.data.length > 0) {
+          const slice30 = cached.data.slice(-30);
+          lowestNav30d = Math.min(...slice30.map(d => d.nav));
+          if (cached.data.length >= 30) {
+            navVs30d = computeNavVs30dAvg(cached.data);
+          }
         }
       }
 
@@ -2769,6 +2760,7 @@ function renderMutualFundsPanel() {
         dayChange,
         dayChangePct,
         navVs30d,
+        lowestNav30d,
       };
     }).sort((a, b) => b.currentValue - a.currentValue);
 
@@ -2780,6 +2772,8 @@ function renderMutualFundsPanel() {
           <th>Avg. NAV</th>
           <th>Invested</th>
           <th>Latest NAV</th>
+          <th>30D Lowest</th>
+          <th>Invest Signal</th>
           <th>Current Value</th>
           <th>1-Day Change</th>
           <th>Gain / Loss</th>
@@ -2797,6 +2791,20 @@ function renderMutualFundsPanel() {
         formatINR(item.avgNav),
         formatINR(item.totalInvested),
         formatINR(item.latestNav),
+        item.lowestNav30d !== null ? formatINR(item.lowestNav30d) : '<span style="opacity:0.4">—</span>',
+        (() => {
+          if (item.latestNav === null || item.lowestNav30d === null) return '<span style="opacity:0.4">—</span>';
+          const diffPct = ((item.latestNav - item.lowestNav30d) / item.lowestNav30d) * 100;
+          if (item.latestNav <= item.lowestNav30d) {
+            return '<span class="nav-timing-badge badge-low" style="margin:0;font-size:0.7rem;padding:2px 6px;">🔥 Invest Today (30D Low)</span>';
+          } else if (diffPct <= 1.5) {
+            return '<span class="nav-timing-badge badge-below" style="margin:0;font-size:0.7rem;padding:2px 6px;">▼ Buy (Near Low)</span>';
+          } else if (diffPct <= 4) {
+            return '<span class="nav-timing-badge badge-fair" style="margin:0;font-size:0.7rem;padding:2px 6px;">● Hold (Fair)</span>';
+          } else {
+            return '<span class="nav-timing-badge badge-high" style="margin:0;font-size:0.7rem;padding:2px 6px;">▲ Wait (High NAV)</span>';
+          }
+        })(),
         formatINR(item.currentValue),
         (() => {
           if (item.dayChange === null) return '<span style="opacity:0.4">—</span>';
@@ -2814,7 +2822,7 @@ function renderMutualFundsPanel() {
         })()
       ],
       `No mutual funds for ${activeHoldingsOwner}.`,
-      9
+      11
     );
   } else {
     if (targetThead) {
