@@ -428,19 +428,24 @@ const deductionFields = [
 
 applyTheme(loadTheme());
 
+let isAppInitialized = false;
+
 function bootstrapApp(initialState) {
   state = normalizeData(initialState || defaultData);
-  bindTheme();
-  bindNavigation();
-  bindModals();
-  bindFinanceTabs();
-  bindCareerTabs();
-  bindImports();
-  bindReset();
-  bindChat();
-  bindExport();
-  bindDashboard();
-  bindGoals();
+  if (!isAppInitialized) {
+    bindTheme();
+    bindNavigation();
+    bindModals();
+    bindFinanceTabs();
+    bindCareerTabs();
+    bindImports();
+    bindReset();
+    bindChat();
+    bindExport();
+    bindDashboard();
+    bindGoals();
+    isAppInitialized = true;
+  }
   renderAll();
   refreshMutualFundNAVs(false);
 }
