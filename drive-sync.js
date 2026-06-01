@@ -392,6 +392,62 @@
     }
   }
 
+  async function downloadLatestExpenseFile(owner, options = {}) {
+    if (!isConfigured()) return null;
+    try {
+      // Search for any files containing 'Transactions' in the name
+      const query = encodeURIComponent("name contains 'Transactions' and trashed=false");
+      const response = await driveFetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=100`,
+        { ...options, silent: true }
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      const files = data.files || [];
+      if (!files.length) return null;
+
+      // Filter in JS by extension and owner name pattern
+      const isWife = owner === "Wife";
+      const matches = files.filter(f => {
+        const name = f.name.toLowerCase();
+        const hasExt = name.endsWith(".csv") || name.endsWith(".xlsx") || name.endsWith(".xls");
+        if (!hasExt) return false;
+        
+        // Must start with 'transactions'
+        if (!name.startsWith("transactions")) return false;
+
+        if (isWife) {
+          return name.includes("_wife");
+        } else {
+          return !name.includes("_wife");
+        }
+      });
+
+      if (!matches.length) return null;
+
+      // Sort by modifiedTime descending (newest first)
+      matches.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+      const latest = matches[0];
+
+      console.log(`[drive-sync] Found latest expense file for ${owner}: "${latest.name}" (ID: ${latest.id}, Modified: ${latest.modifiedTime})`);
+
+      const fileRes = await driveFetch(
+        `https://www.googleapis.com/drive/v3/files/${latest.id}?alt=media`,
+        { ...options, silent: true }
+      );
+      if (!fileRes.ok) return null;
+      const buffer = await fileRes.arrayBuffer();
+      return {
+        filename: latest.name,
+        buffer,
+        modifiedTime: latest.modifiedTime
+      };
+    } catch (e) {
+      console.warn(`[drive-sync] downloadLatestExpenseFile(${owner}) failed:`, e.message);
+      return null;
+    }
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
 
   window.LifeLedgerDrive = {
@@ -433,5 +489,6 @@
     loadVault,
     saveVault,
     downloadRemoteFileByName,
+    downloadLatestExpenseFile,
   };
 })();

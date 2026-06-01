@@ -1309,30 +1309,22 @@ async function syncExpensesFromDrive() {
     btn.textContent = "☁ Syncing...";
   }
 
-  toast("Scanning Google Drive for expense files...");
+  toast("Scanning Google Drive for latest expense files...");
 
-  const targets = [
-    { name: "expenses_me.csv", owner: "Me" },
-    { name: "expenses_wife.csv", owner: "Wife" },
-    { name: "expenses_me.xlsx", owner: "Me" },
-    { name: "expenses_wife.xlsx", owner: "Wife" },
-    { name: "expenses_me.xls", owner: "Me" },
-    { name: "expenses_wife.xls", owner: "Wife" }
-  ];
-
+  const owners = ["Me", "Wife"];
   let totalAdded = 0;
   let filesFound = 0;
 
   try {
-    for (const target of targets) {
-      const fileData = await window.LifeLedgerDrive.downloadRemoteFileByName(target.name);
+    for (const owner of owners) {
+      const fileData = await window.LifeLedgerDrive.downloadLatestExpenseFile(owner);
       if (fileData) {
         filesFound++;
-        console.log(`[app.js] Found and downloaded ${target.name} from Google Drive.`);
+        console.log(`[app.js] Found and downloaded latest file for ${owner}: "${fileData.filename}"`);
         
-        const blob = new Blob([fileData.buffer], { type: target.name.endsWith(".csv") ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        const blob = new Blob([fileData.buffer], { type: fileData.filename.endsWith(".csv") ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
         const mockFile = {
-          name: target.name,
+          name: fileData.filename,
           text: async () => {
             const td = new TextDecoder();
             return td.decode(fileData.buffer);
@@ -1343,7 +1335,7 @@ async function syncExpensesFromDrive() {
         const imported = await parseImportFile(mockFile, "expense");
         if (imported && imported.expenses && imported.expenses.length > 0) {
           imported.expenses.forEach(exp => {
-            exp.paidBy = target.owner;
+            exp.paidBy = owner;
           });
 
           const existingExpenses = state.expenses || [];
@@ -1365,7 +1357,7 @@ async function syncExpensesFromDrive() {
     }
 
     if (filesFound === 0) {
-      toast("No expense files (expenses_me.csv/xlsx or expenses_wife.csv/xlsx) found on Google Drive.");
+      toast("No expense files matching 'Transactions*.csv/xlsx' found on Google Drive.");
     } else {
       if (totalAdded > 0) {
         invalidateExpenseCache();
