@@ -30,6 +30,7 @@ const defaultData = {
   workouts: [],
   habits: [],
   chat: [],
+  mfMonthlyTarget: { me: 100000, wife: 100000 },
 };
 
 const EXPENSE_PAGE_SIZE = 80;
@@ -447,6 +448,13 @@ function bootstrapApp(initialState) {
 window.LifeLedgerApp = {
   defaultData: () => clone(defaultData),
   bootstrap: bootstrapApp,
+  saveData: saveData,
+  flushSave: () => {
+    if (saveDataTimer) {
+      return saveData(true);
+    }
+    return currentSavePromise || Promise.resolve();
+  }
 };
 
 let saveDataTimer;
@@ -554,6 +562,7 @@ function normalizeData(data) {
     workouts: ensureIds(data.workouts || [], "work"),
     habits: ensureIds(data.habits || [], "habit"),
     chat: data.chat || [],
+    mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
   };
 }
 
@@ -674,9 +683,9 @@ function bindFinanceTabs() {
       const id = deleteBtn.dataset.id;
       if (id && confirm("Are you sure you want to delete this salary entry?")) {
         state.income = state.income.filter(item => item.id !== id);
-        await saveData(true);
         renderIncomeTable();
         toast("Salary entry deleted.");
+        saveData(true);
       }
     }
   });
@@ -692,9 +701,9 @@ function bindFinanceTabs() {
       const id = deleteBtn.dataset.id;
       if (id && confirm("Are you sure you want to delete this mutual fund transaction?")) {
         state.mutualFunds = state.mutualFunds.filter(item => item.id !== id);
-        await saveData(true);
         renderMutualFundsPanel();
         toast("Mutual fund transaction deleted.");
+        saveData(true);
       }
     }
   });
@@ -735,9 +744,9 @@ function bindFinanceTabs() {
         const stateKey = stateKeys[kind];
         if (stateKey && confirm(`Are you sure you want to delete this ${kind} entry?`)) {
           state[stateKey] = (state[stateKey] || []).filter(item => item.id !== id);
-          await saveData(true);
           renderAll();
           toast(`${kind.charAt(0).toUpperCase() + kind.slice(1)} entry deleted.`);
+          saveData(true);
         }
       }
     }
@@ -749,11 +758,17 @@ function bindFinanceTabs() {
 
   const mfHoldingsBtn = document.getElementById("toggleMfViewHoldings");
   const mfTxnsBtn = document.getElementById("toggleMfViewTxns");
+  const mfInsightsBtn = document.getElementById("toggleMfViewInsights");
   
   mfHoldingsBtn?.addEventListener("click", () => {
     activeMfView = "holdings";
     mfHoldingsBtn.classList.add("active");
     mfTxnsBtn?.classList.remove("active");
+    mfInsightsBtn?.classList.remove("active");
+    const tableWrap = document.querySelector('#finance-mutualfunds .table-wrap');
+    const insightsPanel = document.getElementById('mfInsightsPanel');
+    if (tableWrap) tableWrap.style.display = '';
+    if (insightsPanel) insightsPanel.style.display = 'none';
     renderMutualFundsPanel();
   });
   
@@ -761,7 +776,24 @@ function bindFinanceTabs() {
     activeMfView = "txns";
     mfTxnsBtn.classList.add("active");
     mfHoldingsBtn?.classList.remove("active");
+    mfInsightsBtn?.classList.remove("active");
+    const tableWrap = document.querySelector('#finance-mutualfunds .table-wrap');
+    const insightsPanel = document.getElementById('mfInsightsPanel');
+    if (tableWrap) tableWrap.style.display = '';
+    if (insightsPanel) insightsPanel.style.display = 'none';
     renderMutualFundsPanel();
+  });
+
+  mfInsightsBtn?.addEventListener("click", () => {
+    activeMfView = "insights";
+    mfInsightsBtn.classList.add("active");
+    mfHoldingsBtn?.classList.remove("active");
+    mfTxnsBtn?.classList.remove("active");
+    const tableWrap = document.querySelector('#finance-mutualfunds .table-wrap');
+    const insightsPanel = document.getElementById('mfInsightsPanel');
+    if (tableWrap) tableWrap.style.display = 'none';
+    if (insightsPanel) insightsPanel.style.display = '';
+    renderMfInsightsPanel();
   });
 
   document.querySelectorAll("[data-holdings-owner]").forEach((button) => {
@@ -982,16 +1014,14 @@ async function deleteExpense(id) {
 
   state.expenses = state.expenses.filter((exp) => exp.id !== id);
   invalidateExpenseCache();
+  renderAll();
+  toast("Expense deleted.");
 
   try {
-    await saveData(true);
-    toast("Expense deleted.");
+    saveData(true);
   } catch (error) {
     console.error("Failed to delete expense:", error);
-    toast("Failed to delete expense: " + error.message);
   }
-
-  renderAll();
 }
 
 async function resetData(scope) {
@@ -1240,10 +1270,10 @@ function buildQuickAddForm(kind, editId = null) {
     }
 
     invalidateExpenseCache();
-    await saveData(true);
     renderAll();
     closeModal(form.closest(".modal"));
     toast(existingEntry ? "Entry updated." : "Entry saved.");
+    saveData(true);
   };
 }
 
@@ -2073,9 +2103,9 @@ function renderDashboardAnalysis() {
         `;
         row.querySelector(".log-habit-btn").addEventListener("click", async () => {
           habit.streak = (toNumber(habit.streak) || 0) + 1;
-          await saveData(true);
           renderAll();
           toast(`Streaked! ${habit.name} streak is now ${habit.streak}. 🔥`);
+          saveData(true);
         });
         habitContainer.append(row);
       });
@@ -2512,6 +2542,9 @@ function formatMonthKeyLabel(key) {
 function renderHoldingsTabs() {
   renderMutualFundsPanel();
   renderSimpleAssets();
+  if (activeMfView === "insights") {
+    renderMfInsightsPanel();
+  }
 }
 
 function renderMutualFundsPanel() {
@@ -2576,6 +2609,39 @@ function renderMutualFundsPanel() {
   }
   const oneDayPct = oneDayHasPrev && current > 0 ? (oneDayChange / (current - oneDayChange)) * 100 : 0;
 
+  // ── Monthly SIP Budget ──────────────────────────────────────
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const monthName = now.toLocaleString('en-IN', { month: 'long' });
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const daysRemaining = daysInMonth - now.getDate();
+  
+  // Calculate this month's investments by owner
+  const thisMonthInvestments = state.mutualFunds.filter(t => {
+    if (t.transactionType && t.transactionType.toUpperCase() === 'REDEMPTION') return false;
+    const d = new Date(t.purchaseDate || t.date);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+  
+  let sipInvestedThisMonth = 0;
+  let sipTarget = 0;
+  if (activeHoldingsOwner === 'Both') {
+    sipInvestedThisMonth = thisMonthInvestments.reduce((s, t) => s + toNumber(t.invested), 0);
+    sipTarget = toNumber(state.mfMonthlyTarget?.me || 100000) + toNumber(state.mfMonthlyTarget?.wife || 100000);
+  } else if (activeHoldingsOwner === 'Wife') {
+    sipInvestedThisMonth = thisMonthInvestments.filter(t => (t.owner || 'Me') === 'Wife').reduce((s, t) => s + toNumber(t.invested), 0);
+    sipTarget = toNumber(state.mfMonthlyTarget?.wife || 100000);
+  } else {
+    sipInvestedThisMonth = thisMonthInvestments.filter(t => matchHoldingsOwner(t.owner, 'Me')).reduce((s, t) => s + toNumber(t.invested), 0);
+    sipTarget = toNumber(state.mfMonthlyTarget?.me || 100000);
+  }
+  const sipRemaining = Math.max(0, sipTarget - sipInvestedThisMonth);
+  const sipPct = sipTarget > 0 ? Math.min(100, (sipInvestedThisMonth / sipTarget) * 100) : 0;
+  const dayPct = ((now.getDate()) / daysInMonth) * 100;
+  const isBehind = sipPct < (dayPct - 15); // More than 15% behind pace
+  const sipTargetKey = activeHoldingsOwner === 'Wife' ? 'wife' : 'me';
+
   if (summary) {
     const navDateLabel = (() => {
       const sampleNav = state.mutualFunds.find(t => t.navDate);
@@ -2606,7 +2672,33 @@ function renderMutualFundsPanel() {
         <div class="value" style="color: ${dayChangeColor}">${oneDayHasPrev ? `${dayChangeArrow} ${formatINR(Math.abs(oneDayChange))}` : '—'}</div>
         <div class="hint">${oneDayHasPrev ? `${oneDayChange >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh NAVs to see'}</div>
       </article>
+      <article class="metric-card compact-metric" style="border-left: 3px solid var(--brand)">
+        <div class="label">${monthName} Budget</div>
+        <div class="value">${formatINR(sipInvestedThisMonth)} <span style="font-size:0.65em;opacity:0.6">/ ${formatINR(sipTarget)}</span></div>
+        <div class="sip-budget-bar"><div class="sip-budget-bar-fill ${isBehind ? 'behind' : ''}" style="width:${sipPct.toFixed(1)}%"></div></div>
+        <div class="hint">
+          ${sipRemaining > 0 ? `${formatINR(sipRemaining)} remaining · ${daysRemaining}d left` : '✅ Target reached!'}
+          ${isBehind ? ' · ⚠ Behind pace' : ''}
+          ${activeHoldingsOwner === 'Both' ? ` · <span class="sip-edit-target" data-owner="me" style="cursor:pointer;text-decoration:underline;opacity:0.7">Edit Me</span> · <span class="sip-edit-target" data-owner="wife" style="cursor:pointer;text-decoration:underline;opacity:0.7">Edit Wife</span>` : ` · <span class="sip-edit-target" data-owner="${sipTargetKey}" style="cursor:pointer;text-decoration:underline;opacity:0.7" title="Click to edit target">Edit target</span>`}
+        </div>
+      </article>
     `;
+
+    // SIP target edit handler
+    summary.querySelectorAll('.sip-edit-target').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const ownerKey = e.target.dataset.owner;
+        const currentTarget = state.mfMonthlyTarget?.[ownerKey] || 100000;
+        const newVal = prompt(`Set monthly MF investment target for ${ownerKey === 'wife' ? 'Wife' : 'Me'}:`, currentTarget);
+        if (newVal !== null && !isNaN(Number(newVal)) && Number(newVal) > 0) {
+          if (!state.mfMonthlyTarget) state.mfMonthlyTarget = { me: 100000, wife: 100000 };
+          state.mfMonthlyTarget[ownerKey] = Number(newVal);
+          saveData(true);
+          renderMutualFundsPanel();
+          toast(`✓ ${ownerKey === 'wife' ? 'Wife' : 'Me'} monthly target set to ${formatINR(Number(newVal))}`);
+        }
+      });
+    });
   }
 
   if (activeMfView === "holdings") {
@@ -2652,6 +2744,17 @@ function renderMutualFundsPanel() {
       }
       const xirr = calculateXIRR(cashFlows);
 
+      const codesCache = getFundCodesCache();
+      const codeObj = codesCache[fundName];
+      let navVs30d = null;
+      if (codeObj?.schemeCode) {
+        const historyCache = getMfHistoryCache();
+        const cached = historyCache[codeObj.schemeCode];
+        if (cached?.data && cached.data.length >= 30) {
+          navVs30d = computeNavVs30dAvg(cached.data);
+        }
+      }
+
       return {
         fundName,
         totalUnits,
@@ -2665,6 +2768,7 @@ function renderMutualFundsPanel() {
         xirr,
         dayChange,
         dayChangePct,
+        navVs30d,
       };
     }).sort((a, b) => b.currentValue - a.currentValue);
 
@@ -2688,7 +2792,7 @@ function renderMutualFundsPanel() {
       table,
       holdings,
       (item) => [
-        item.fundName,
+        item.fundName + getNavTimingBadgeHtml(item.navVs30d),
         item.totalUnits.toFixed(3),
         formatINR(item.avgNav),
         formatINR(item.totalInvested),
@@ -2979,9 +3083,9 @@ function renderCareer() {
           `;
           row.querySelector(".log-habit-btn").addEventListener("click", async () => {
             habit.streak = (toNumber(habit.streak) || 0) + 1;
-            await saveData(true);
             renderCareer();
             toast(`Streaked! ${habit.name} streak is now ${habit.streak}. 🔥`);
+            saveData(true);
           });
           listContainer.append(row);
         });
@@ -3208,9 +3312,9 @@ function renderGoals() {
       const amount = toNumber(input.value);
       if (amount > 0) {
         goal.saved = (goal.saved || 0) + amount;
-        await saveData(true); // Save and trigger sync
         renderAll();
         toast(`Added ${formatINR(amount)} to "${goal.name}". Progress updated! 🎯`);
+        saveData(true);
       }
     });
 
@@ -3242,8 +3346,8 @@ function renderTodoView() {
         `;
         row.querySelector("input").addEventListener("change", async (event) => {
           task.done = event.target.checked;
-          await saveData();
           renderAll();
+          saveData();
         });
         taskContainer.append(row);
       });
@@ -4125,9 +4229,36 @@ function inferAmc(fundName) {
 async function resolveSchemeCodes(fundNames) {
   if (!fundNames || fundNames.length === 0) return getFundCodesCache();
   const cache = getFundCodesCache();
+
+  // Custom overrides for known difficult scheme codes
+  const overrides = {
+    "large & mid cap fund direct growth": {
+      schemeCode: "152821",
+      schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth"
+    },
+    "large & midcap fund direct growth": {
+      schemeCode: "152821",
+      schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth"
+    },
+    "large and mid cap fund direct growth": {
+      schemeCode: "152821",
+      schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth"
+    }
+  };
+
+  fundNames.forEach(name => {
+    const norm = name.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (overrides[norm]) {
+      cache[name] = overrides[norm];
+    }
+  });
+
   const missing = fundNames.filter(name => !cache[name]);
   
-  if (missing.length === 0) return cache;
+  if (missing.length === 0) {
+    saveFundCodesCache(cache);
+    return cache;
+  }
   
   toast("Fetching mutual fund master list to resolve codes...");
   try {
@@ -4339,6 +4470,9 @@ async function refreshMutualFundNAVs(force = false) {
             timestamp: now,
           };
           updatedCount += 1;
+
+          // Asynchronously pre-fetch and cache full history for Smart Insights
+          fetchHistoricalNAV(code).catch(() => {});
         }
         // Small delay to avoid hammering the API
         await new Promise(r => setTimeout(r, 80));
@@ -4711,6 +4845,462 @@ function bindGoals() {
     renderAll();
     // Scroll to top
     window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
+// ═════════════════════════════════════════════════════════════════
+// SMART INSIGHTS — Historical NAV analysis engine
+// ═════════════════════════════════════════════════════════════════
+
+const MF_HISTORY_CACHE_KEY = 'mfNavHistory:v1';
+const MF_HISTORY_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+function getMfHistoryCache() {
+  try { return JSON.parse(localStorage.getItem(MF_HISTORY_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveMfHistoryCache(cache) {
+  try { localStorage.setItem(MF_HISTORY_CACHE_KEY, JSON.stringify(cache)); } catch {}
+}
+
+async function fetchHistoricalNAV(schemeCode) {
+  const cache = getMfHistoryCache();
+  const cached = cache[schemeCode];
+  if (cached && (Date.now() - cached.timestamp) < MF_HISTORY_TTL && cached.data?.length > 10) {
+    return cached.data;
+  }
+  try {
+    const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}`);
+    if (!res.ok) return cached?.data || [];
+    const json = await res.json();
+    if (json?.status === 'SUCCESS' && Array.isArray(json.data) && json.data.length > 0) {
+      // Parse and sort oldest-first
+      const parsed = json.data.map(d => ({
+        date: parseNavDate(d.date),
+        nav: parseFloat(d.nav)
+      })).filter(d => d.date && !isNaN(d.nav)).reverse();
+      cache[schemeCode] = { data: parsed, timestamp: Date.now() };
+      saveMfHistoryCache(cache);
+      return parsed;
+    }
+  } catch (e) { console.warn(`fetchHistoricalNAV(${schemeCode}) failed:`, e); }
+  return cached?.data || [];
+}
+
+function parseNavDate(dateStr) {
+  // DD-MM-YYYY to Date
+  const [d, m, y] = dateStr.split('-').map(Number);
+  if (!d || !m || !y) return null;
+  return new Date(y, m - 1, d);
+}
+
+// ── Technical Indicators ────────────────────────────────────────
+
+function computeSMA(data, period) {
+  if (data.length < period) return null;
+  const slice = data.slice(-period);
+  return slice.reduce((s, d) => s + d.nav, 0) / period;
+}
+
+function computeRSI(data, period = 14) {
+  if (data.length < period + 1) return null;
+  const recent = data.slice(-(period + 1));
+  let gains = 0, losses = 0;
+  for (let i = 1; i < recent.length; i++) {
+    const change = recent[i].nav - recent[i - 1].nav;
+    if (change > 0) gains += change;
+    else losses -= change;
+  }
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+function computeCAGR(startNav, endNav, years) {
+  if (!startNav || startNav <= 0 || !endNav || years <= 0) return null;
+  return (Math.pow(endNav / startNav, 1 / years) - 1) * 100;
+}
+
+function computeMaxDrawdown(data) {
+  if (data.length < 2) return 0;
+  let peak = data[0].nav;
+  let maxDd = 0;
+  for (const d of data) {
+    if (d.nav > peak) peak = d.nav;
+    const dd = (peak - d.nav) / peak;
+    if (dd > maxDd) maxDd = dd;
+  }
+  return maxDd * 100;
+}
+
+function computeVolatility(data, days = 30) {
+  if (data.length < days + 1) return null;
+  const recent = data.slice(-(days + 1));
+  const returns = [];
+  for (let i = 1; i < recent.length; i++) {
+    returns.push((recent[i].nav - recent[i - 1].nav) / recent[i - 1].nav);
+  }
+  const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+  const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / returns.length;
+  return Math.sqrt(variance) * Math.sqrt(252) * 100; // Annualized
+}
+
+function computeConsistency(data) {
+  // % of rolling 1-year windows where return > 8%
+  if (data.length < 252) return null;
+  let good = 0, total = 0;
+  for (let i = 252; i < data.length; i++) {
+    const startNav = data[i - 252].nav;
+    const endNav = data[i].nav;
+    const ret = ((endNav - startNav) / startNav) * 100;
+    if (ret > 8) good++;
+    total++;
+  }
+  return total > 0 ? (good / total) * 100 : null;
+}
+
+function computeNavVs30dAvg(data) {
+  if (data.length < 30) return null;
+  const avg = data.slice(-30).reduce((s, d) => s + d.nav, 0) / 30;
+  const current = data[data.length - 1].nav;
+  return ((current - avg) / avg) * 100;
+}
+
+function computeFundInsights(navHistory) {
+  const result = {
+    cagr1y: null, cagr3y: null, cagr5y: null,
+    maxDrawdown: 0,
+    sma50: null, sma200: null,
+    rsi14: null,
+    volatility30d: null,
+    consistencyScore: null,
+    navVs30d: null,
+    signalScore: 0,
+    signal: 'hold',
+    signalLabel: 'Hold · Continue SIP',
+    reasons: []
+  };
+  if (!navHistory || navHistory.length < 30) {
+    result.reasons.push('Insufficient data for analysis (need 30+ trading days)');
+    return result;
+  }
+
+  const currentNav = navHistory[navHistory.length - 1].nav;
+  const len = navHistory.length;
+  let score = 0;
+  const reasons = [];
+
+  // CAGR
+  if (len >= 252) {
+    result.cagr1y = computeCAGR(navHistory[len - 252].nav, currentNav, 1);
+    if (result.cagr1y !== null) {
+      if (result.cagr1y > 15) { score += 1; reasons.push(`Strong 1-year return of ${result.cagr1y.toFixed(1)}%`); }
+      else if (result.cagr1y < 0) { score -= 1; reasons.push(`Negative 1-year return of ${result.cagr1y.toFixed(1)}%`); }
+    }
+  }
+  if (len >= 756) {
+    result.cagr3y = computeCAGR(navHistory[len - 756].nav, currentNav, 3);
+    if (result.cagr3y !== null) {
+      if (result.cagr3y > 15) { score += 2; reasons.push(`Excellent 3-year CAGR of ${result.cagr3y.toFixed(1)}%`); }
+      else if (result.cagr3y < 5) { score -= 2; reasons.push(`Weak 3-year CAGR of only ${result.cagr3y.toFixed(1)}%`); }
+    }
+  }
+  if (len >= 1260) {
+    result.cagr5y = computeCAGR(navHistory[len - 1260].nav, currentNav, 5);
+  }
+
+  // Max Drawdown
+  result.maxDrawdown = computeMaxDrawdown(navHistory);
+  if (result.maxDrawdown > 30) { score -= 1; reasons.push(`High max drawdown of ${result.maxDrawdown.toFixed(1)}%`); }
+
+  // SMA Crossover
+  result.sma50 = computeSMA(navHistory, 50);
+  result.sma200 = computeSMA(navHistory, 200);
+  if (result.sma50 && result.sma200) {
+    if (currentNav > result.sma200) { score += 1; reasons.push('NAV is above 200-day moving average (uptrend)'); }
+    else { score -= 1; reasons.push('NAV is below 200-day moving average (downtrend)'); }
+    if (result.sma50 > result.sma200) { score += 1; reasons.push('Golden cross: 50-day SMA above 200-day SMA'); }
+    else { score -= 1; reasons.push('Death cross: 50-day SMA below 200-day SMA'); }
+  }
+
+  // RSI
+  result.rsi14 = computeRSI(navHistory);
+  if (result.rsi14 !== null) {
+    if (result.rsi14 < 30) { score += 2; reasons.push(`RSI at ${result.rsi14.toFixed(0)} — oversold territory (potential buy signal)`); }
+    else if (result.rsi14 < 40) { score += 1; reasons.push(`RSI at ${result.rsi14.toFixed(0)} — approaching oversold`); }
+    else if (result.rsi14 > 70) { score -= 1; reasons.push(`RSI at ${result.rsi14.toFixed(0)} — overbought territory`); }
+  }
+
+  // Volatility
+  result.volatility30d = computeVolatility(navHistory, 30);
+  if (result.volatility30d !== null && result.volatility30d > 25) {
+    score -= 1;
+    reasons.push(`High 30-day volatility at ${result.volatility30d.toFixed(1)}% annualized`);
+  }
+
+  // Consistency
+  result.consistencyScore = computeConsistency(navHistory);
+  if (result.consistencyScore !== null) {
+    if (result.consistencyScore > 70) { score += 1; reasons.push(`${result.consistencyScore.toFixed(0)}% of 1-year periods delivered 8%+ returns`); }
+    else if (result.consistencyScore < 40) { score -= 1; reasons.push(`Only ${result.consistencyScore.toFixed(0)}% of 1-year periods delivered 8%+ returns`); }
+  }
+
+  // NAV vs 30d average
+  result.navVs30d = computeNavVs30dAvg(navHistory);
+  if (result.navVs30d !== null) {
+    if (result.navVs30d <= -5) { score += 2; reasons.push(`NAV is ${Math.abs(result.navVs30d).toFixed(1)}% below its 30-day average — potential entry point`); }
+    else if (result.navVs30d <= -2) { score += 1; reasons.push(`NAV is ${Math.abs(result.navVs30d).toFixed(1)}% below its 30-day average`); }
+    else if (result.navVs30d >= 5) { score -= 1; reasons.push(`NAV is ${result.navVs30d.toFixed(1)}% above its 30-day average — consider waiting for a dip`); }
+  }
+
+  // Final signal
+  result.signalScore = score;
+  if (score >= 4) { result.signal = 'invest'; result.signalLabel = 'Invest More'; }
+  else if (score >= 1) { result.signal = 'hold'; result.signalLabel = 'Hold · Continue SIP'; }
+  else if (score >= -1) { result.signal = 'caution'; result.signalLabel = 'Caution · Avoid Lump Sum'; }
+  else { result.signal = 'exit'; result.signalLabel = 'Review · Consider Exit'; }
+
+  result.reasons = reasons;
+  return result;
+}
+
+// ── NAV Timing Badge HTML ───────────────────────────────────────
+function getNavTimingBadgeHtml(navVs30d) {
+  if (navVs30d === null) return '';
+  if (navVs30d <= -5) return '<span class="nav-timing-badge badge-low">▼ Low · Invest</span>';
+  if (navVs30d <= -2) return '<span class="nav-timing-badge badge-below">▼ Below Avg</span>';
+  if (navVs30d <= 2)  return '<span class="nav-timing-badge badge-fair">● Fair</span>';
+  if (navVs30d <= 5)  return '<span class="nav-timing-badge badge-above">▲ Above Avg</span>';
+  return '<span class="nav-timing-badge badge-high">▲ High · Wait</span>';
+}
+
+// ── Sparkline Drawing ───────────────────────────────────────────
+function drawSparkline(canvas, navData, sma50Arr, sma200Arr) {
+  if (!canvas || !navData || navData.length < 2) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const allNavs = navData.map(d => d.nav);
+  const min = Math.min(...allNavs) * 0.998;
+  const max = Math.max(...allNavs) * 1.002;
+  const range = max - min || 1;
+
+  const toX = (i) => (i / (navData.length - 1)) * w;
+  const toY = (v) => h - ((v - min) / range) * (h - 4) - 2;
+
+  // Fill area under NAV line
+  ctx.beginPath();
+  ctx.moveTo(toX(0), h);
+  navData.forEach((d, i) => ctx.lineTo(toX(i), toY(d.nav)));
+  ctx.lineTo(toX(navData.length - 1), h);
+  ctx.closePath();
+  const isDark = document.body.dataset.theme === 'dark';
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, isDark ? 'rgba(59,130,246,0.15)' : 'rgba(23,107,91,0.1)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // NAV line
+  ctx.beginPath();
+  navData.forEach((d, i) => { i === 0 ? ctx.moveTo(toX(i), toY(d.nav)) : ctx.lineTo(toX(i), toY(d.nav)); });
+  ctx.strokeStyle = isDark ? '#3b82f6' : '#176b5b';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // SMA 50 line (yellow)
+  if (sma50Arr && sma50Arr.length > 1) {
+    const offset = navData.length - sma50Arr.length;
+    ctx.beginPath();
+    sma50Arr.forEach((v, i) => { i === 0 ? ctx.moveTo(toX(i + offset), toY(v)) : ctx.lineTo(toX(i + offset), toY(v)); });
+    ctx.strokeStyle = 'rgba(234,179,8,0.6)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // SMA 200 line (cyan)
+  if (sma200Arr && sma200Arr.length > 1) {
+    const offset = navData.length - sma200Arr.length;
+    ctx.beginPath();
+    sma200Arr.forEach((v, i) => { i === 0 ? ctx.moveTo(toX(i + offset), toY(v)) : ctx.lineTo(toX(i + offset), toY(v)); });
+    ctx.strokeStyle = 'rgba(6,182,212,0.6)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function computeSMAArray(data, period) {
+  const arr = [];
+  for (let i = period - 1; i < data.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += data[j].nav;
+    arr.push(sum / period);
+  }
+  return arr;
+}
+
+// ── Render Smart Insights Panel ─────────────────────────────────
+async function renderMfInsightsPanel() {
+  const panel = document.getElementById('mfInsightsPanel');
+  if (!panel) return;
+
+  // Show loading
+  panel.innerHTML = `
+    <div class="mf-insights-loading">
+      <div class="spinner-dot"></div>
+      <div class="spinner-dot"></div>
+      <div class="spinner-dot"></div>
+      <span>Analyzing fund performance…</span>
+    </div>`;
+
+  const uniqueNames = [...new Set(state.mutualFunds
+    .filter(t => matchHoldingsOwner(t.owner, activeHoldingsOwner))
+    .map(t => t.fundName)
+    .filter(Boolean))];
+
+  if (uniqueNames.length === 0) {
+    panel.innerHTML = `<div style="padding:32px;text-align:center;color:var(--muted)">No mutual funds to analyze for ${activeHoldingsOwner}.</div>`;
+    return;
+  }
+
+  const codesCache = getFundCodesCache();
+  const cards = [];
+
+  for (const fundName of uniqueNames) {
+    const codeObj = codesCache[fundName];
+    if (!codeObj?.schemeCode) {
+      cards.push({ fundName, error: 'Scheme code not resolved' });
+      continue;
+    }
+
+    try {
+      const history = await fetchHistoricalNAV(codeObj.schemeCode);
+      if (!history || history.length < 10) {
+        cards.push({ fundName, error: 'Not enough historical data' });
+        continue;
+      }
+
+      const insights = computeFundInsights(history);
+
+      // Get 1-year slice for sparkline
+      const oneYearData = history.slice(-252);
+      const sma50 = computeSMAArray(oneYearData, 50);
+      const sma200 = history.length >= 200 ? computeSMAArray(history.slice(-452), 200).slice(-oneYearData.length) : [];
+
+      // Calculate fund's invested + current for the selected owner
+      const fundTxns = state.mutualFunds.filter(t => t.fundName === fundName && matchHoldingsOwner(t.owner, activeHoldingsOwner));
+      const totalInvested = fundTxns.reduce((s, t) => s + toNumber(t.invested), 0);
+      const totalUnits = fundTxns.reduce((s, t) => s + toNumber(t.units), 0);
+      const latestNav = history[history.length - 1].nav;
+      const currentValue = totalUnits * latestNav;
+
+      cards.push({
+        fundName, insights, oneYearData, sma50, sma200,
+        totalInvested, currentValue, totalUnits, latestNav
+      });
+    } catch (e) {
+      cards.push({ fundName, error: e.message });
+    }
+
+    // Small delay between fetches
+    await new Promise(r => setTimeout(r, 60));
+  }
+
+  // Sort by signal score descending (best signals first)
+  cards.sort((a, b) => (b.insights?.signalScore || -99) - (a.insights?.signalScore || -99));
+
+  let html = '<div class="insights-grid">';
+
+  for (const card of cards) {
+    if (card.error) {
+      html += `
+        <article class="insight-card" style="opacity: 0.7;">
+          <div class="insight-card-header">
+            <div class="fund-name" title="${escapeHTML(card.fundName)}">${escapeHTML(card.fundName)}</div>
+            <span class="signal-badge signal-caution">No Data</span>
+          </div>
+          <div style="padding: 24px; text-align: center; color: var(--muted); font-size: 0.8rem;">
+            ${escapeHTML(card.error)}
+          </div>
+        </article>
+      `;
+      continue;
+    }
+
+    const ins = card.insights;
+    const signalClass = `signal-${ins.signal}`;
+    const valueGainClass = (card.currentValue - card.totalInvested) >= 0 ? 'positive' : 'negative';
+
+    html += `
+      <article class="insight-card">
+        <div class="insight-card-header">
+          <div class="fund-name" title="${escapeHTML(card.fundName)}">${escapeHTML(card.fundName)}</div>
+          <span class="signal-badge ${signalClass}">${ins.signalLabel}</span>
+        </div>
+        <div class="insight-sparkline">
+          <canvas data-fund="${escapeHTML(card.fundName)}"></canvas>
+        </div>
+        <div class="insight-metrics">
+          <div class="insight-metric-cell">
+            <div class="metric-label">Invested / Value</div>
+            <div class="metric-value">${formatINR(card.totalInvested)} / <span class="${valueGainClass}">${formatINR(card.currentValue)}</span></div>
+          </div>
+          <div class="insight-metric-cell">
+            <div class="metric-label">Latest NAV</div>
+            <div class="metric-value">${formatINR(card.latestNav)} <span style="font-size:0.7em;opacity:0.6">${ins.navVs30d !== null ? `${ins.navVs30d >= 0 ? '+' : ''}${ins.navVs30d.toFixed(1)}% vs 30d avg` : ''}</span></div>
+          </div>
+          <div class="insight-metric-cell">
+            <div class="metric-label">1Y / 3Y CAGR</div>
+            <div class="metric-value">${ins.cagr1y !== null ? `${ins.cagr1y.toFixed(1)}%` : '—'} / ${ins.cagr3y !== null ? `${ins.cagr3y.toFixed(1)}%` : '—'}</div>
+          </div>
+          <div class="insight-metric-cell">
+            <div class="metric-label">RSI / Volatility</div>
+            <div class="metric-value">${ins.rsi14 !== null ? ins.rsi14.toFixed(0) : '—'} / ${ins.volatility30d !== null ? `${ins.volatility30d.toFixed(1)}%` : '—'}</div>
+          </div>
+        </div>
+        <div class="insight-reasons">
+          <div class="insight-reasons-title">Key Indicators</div>
+          <ul>
+            ${ins.reasons.length > 0 
+              ? ins.reasons.map(r => `<li>${escapeHTML(r)}</li>`).join('') 
+              : '<li>Fund performing within normal historical ranges. Continue regular investing.</li>'}
+          </ul>
+        </div>
+      </article>
+    `;
+  }
+
+  html += '</div>';
+  
+  html += `
+    <div class="insight-disclaimer">
+      <strong>Disclaimer</strong>: Smart Insights are generated using quantitative indicators (SMA, RSI, CAGR, volatility) computed from historical NAV data.
+      They do NOT constitute financial advice. Always consult a qualified financial advisor before making investment decisions.
+      Past performance does not guarantee future returns.
+    </div>
+  `;
+
+  panel.innerHTML = html;
+
+  // Draw sparklines after DOM is updated
+  requestAnimationFrame(() => {
+    for (const card of cards) {
+      if (card.error) continue;
+      const canvas = panel.querySelector(`canvas[data-fund="${CSS.escape(card.fundName)}"]`);
+      if (canvas) drawSparkline(canvas, card.oneYearData, card.sma50, card.sma200);
+    }
   });
 }
 

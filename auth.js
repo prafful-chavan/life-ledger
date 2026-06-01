@@ -512,6 +512,19 @@
       return "Not synced: Google Drive not connected.";
     }
 
+    // Flush any pending local saves first
+    if (window.LifeLedgerApp?.flushSave) {
+      await window.LifeLedgerApp.flushSave();
+    }
+
+    // Wait for any active or queued background uploads to complete first
+    if (activeUploadPromise || nextUploadVault) {
+      console.log("[auth.js] Waiting for active/queued background upload to complete before syncing...");
+      while (activeUploadPromise || nextUploadVault) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
     updateSyncStatusUI("syncing");
 
     try {

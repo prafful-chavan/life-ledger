@@ -8,15 +8,15 @@
       content="A private personal finance, career, goals, routine, and family dashboard."
     />
     <title>Prafful's & Archana Life Ledger</title>
-    <link rel="stylesheet" href="styles.css?v=1.0.7" />
+    <link rel="stylesheet" href="styles.css?v=1.0.8" />
     <script src="config.example.js"></script>
     <script src="config.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-    <script defer src="vault-store.js?v=1.0.7"></script>
-    <script defer src="drive-sync.js?v=1.0.7"></script>
-    <script defer src="app.js?v=1.0.7"></script>
-    <script defer src="auth.js?v=1.0.7"></script>
+    <script defer src="vault-store.js?v=1.0.8"></script>
+    <script defer src="drive-sync.js?v=1.0.8"></script>
+    <script defer src="app.js?v=1.0.8"></script>
+    <script defer src="auth.js?v=1.0.8"></script>
   </head>
   <body class="auth-locked">
     <div class="auth-gate" id="authGate">
@@ -491,6 +491,7 @@
                 <div style="margin-left: auto; display: flex; gap: 8px;" class="mf-view-toggle">
                   <button class="owner-pill active" type="button" id="toggleMfViewHoldings">📊 Holdings</button>
                   <button class="owner-pill" type="button" id="toggleMfViewTxns">📜 Transactions</button>
+                  <button class="owner-pill" type="button" id="toggleMfViewInsights">🧠 Smart Insights</button>
                 </div>
               </div>
               <div class="metric-grid compact" id="mfOwnerSummary"></div>
@@ -514,6 +515,7 @@
                   <tbody id="mutualFundTable"></tbody>
                 </table>
               </div>
+              <div id="mfInsightsPanel" class="mf-insights-panel" style="display:none;"></div>
             </section>
           </div>
 
