@@ -2792,7 +2792,7 @@ function renderMutualFundsPanel() {
       table,
       holdings,
       (item) => [
-        item.fundName + getNavTimingBadgeHtml(item.navVs30d),
+        `<span>${escapeHTML(item.fundName)}${getNavTimingBadgeHtml(item.navVs30d)}</span>`,
         item.totalUnits.toFixed(3),
         formatINR(item.avgNav),
         formatINR(item.totalInvested),
