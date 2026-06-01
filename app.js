@@ -541,7 +541,7 @@ function normalizeData(data) {
     ...clone(defaultData),
     ...data,
     income: ensureIds(data.income || [], "inc"),
-    expenses: ensureIds(data.expenses || [], "exp"),
+    expenses: ensureIds(data.expenses || [], "exp").map(exp => ({ ...exp, amount: Math.abs(toNumber(exp.amount)) })),
     assets: ensureIds(data.assets || [], "asset"),
     liabilities: ensureIds(data.liabilities || [], "liab"),
     mutualFunds: ensureIds(data.mutualFunds || [], "mf"),
@@ -1544,7 +1544,7 @@ function mapRowToKind(row, kind) {
       date,
       category: pick(row, ["category", "expensecategory", "type"]) || "General",
       paidBy: normalizeOwner(pick(row, ["paidby", "person", "payer", "owner"]) || "Both"),
-      amount,
+      amount: Math.abs(amount),
       note: pick(row, ["note", "description", "merchant", "remarks"]) || "",
     };
   }
