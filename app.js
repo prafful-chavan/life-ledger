@@ -1500,6 +1500,61 @@ function normalizeRow(row) {
       .trim();
     normalized[cleanKey] = typeof value === "string" ? value.trim() : value;
   });
+
+  if (Object.keys(normalized).some(k => k.startsWith("col"))) {
+    const colKeys = Object.keys(normalized)
+      .filter(k => k.startsWith("col"))
+      .sort((a, b) => {
+        const numA = parseInt(a.replace("col", ""), 10);
+        const numB = parseInt(b.replace("col", ""), 10);
+        return numA - numB;
+      });
+
+    const values = colKeys.map(k => normalized[k]);
+    if (values.length === 4) {
+      normalized.date = values[0];
+      normalized.category = values[1];
+      normalized.amount = values[2];
+      normalized.note = values[3];
+    } else {
+      let dateFound = false;
+      let amountFound = false;
+      let noteFound = "";
+      let categoryFound = "";
+
+      values.forEach(val => {
+        const str = String(val).trim();
+        if (!str) return;
+
+        if (!dateFound && (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(str) || /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(str))) {
+          normalized.date = str;
+          dateFound = true;
+          return;
+        }
+
+        if (!amountFound && /^\-?\d+(\.\d+)?$/.test(str)) {
+          normalized.amount = str;
+          amountFound = true;
+          return;
+        }
+
+        if (!categoryFound && str.length < 20 && /^[A-Za-z\s]+$/.test(str)) {
+          normalized.category = str;
+          categoryFound = true;
+          return;
+        }
+
+        if (!noteFound) {
+          noteFound = str;
+        } else {
+          noteFound += " " + str;
+        }
+      });
+
+      if (noteFound) normalized.note = noteFound;
+    }
+  }
+
   return normalized;
 }
 
@@ -5049,6 +5104,21 @@ function renderStackList(container, rows, mapper) {
   });
 }
 
+function hasCSVHeader(firstRow) {
+  if (!firstRow || firstRow.length === 0) return false;
+  const headerWords = /date|amount|category|description|note|expense|spend|cost|debit|type|payer|paid/i;
+  const hasWord = firstRow.some(cell => headerWords.test(String(cell).trim()));
+  if (hasWord) return true;
+
+  const hasDate = firstRow.some(cell => /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(String(cell).trim()) || /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(String(cell).trim()));
+  const hasNumber = firstRow.some(cell => /^\-?\d+(\.\d+)?$/.test(String(cell).trim()));
+
+  if (hasDate || hasNumber) {
+    return false;
+  }
+  return true;
+}
+
 function parseCSV(text) {
   // Auto-detect delimiter: check first line for tabs vs commas
   const firstLine = text.split(/\r?\n/)[0] || "";
@@ -5087,11 +5157,21 @@ function parseCSV(text) {
     rows.push(row);
   }
 
-  const headers = rows.shift()?.map((header) => header.trim()) || [];
-  console.log(`[parseCSV] Detected delimiter: ${delimiter === "\t" ? "TAB" : "COMMA"}, Headers: [${headers.join(", ")}], Data rows: ${rows.length}`);
-  return rows
-    .filter((cells) => cells.some((cell) => String(cell).trim()))
-    .map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ""])));
+  const cleanRows = rows.filter(r => r.some(cell => String(cell).trim() !== ""));
+  if (cleanRows.length === 0) return [];
+
+  const firstRow = cleanRows[0];
+  let headers = [];
+  let hasHeader = hasCSVHeader(firstRow);
+
+  if (hasHeader) {
+    headers = cleanRows.shift().map(h => h.trim());
+  } else {
+    headers = firstRow.map((_, i) => `col${i}`);
+  }
+
+  console.log(`[parseCSV] Detected delimiter: ${delimiter === "\t" ? "TAB" : "COMMA"}, HasHeader: ${hasHeader}, Headers: [${headers.join(", ")}], Data rows: ${cleanRows.length}`);
+  return cleanRows.map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ""])));
 }
 
 function groupSum(rows, keyFn, valueKey) {
