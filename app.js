@@ -1375,13 +1375,18 @@ async function syncExpensesFromDrive() {
 
           const existingExpenses = state.expenses || [];
           let addedForFile = 0;
+          const pool = [...existingExpenses];
+
           imported.expenses.forEach(incoming => {
-            const isDup = existingExpenses.some(existing => 
+            const matchIndex = pool.findIndex(existing => 
               existing.date === incoming.date &&
               Math.abs(toNumber(existing.amount) - toNumber(incoming.amount)) < 0.01 &&
-              (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase()
+              (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase() &&
+              normalizeOwner(existing.paidBy) === normalizeOwner(incoming.paidBy)
             );
-            if (!isDup) {
+            if (matchIndex >= 0) {
+              pool.splice(matchIndex, 1);
+            } else {
               existingExpenses.push(incoming);
               addedForFile++;
             }
@@ -1726,13 +1731,17 @@ function mergeImportedData(imported) {
   appendArray(state.income, normalized.income);
   // Deduplicated merge for expenses
   const existingExpenses = state.expenses || [];
+  const pool = [...existingExpenses];
   normalized.expenses.forEach(incoming => {
-    const isDup = existingExpenses.some(existing => 
+    const matchIndex = pool.findIndex(existing => 
       existing.date === incoming.date &&
       Math.abs(toNumber(existing.amount) - toNumber(incoming.amount)) < 0.01 &&
-      (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase()
+      (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase() &&
+      normalizeOwner(existing.paidBy) === normalizeOwner(incoming.paidBy)
     );
-    if (!isDup) {
+    if (matchIndex >= 0) {
+      pool.splice(matchIndex, 1);
+    } else {
       existingExpenses.push(incoming);
     }
   });

@@ -226,6 +226,27 @@ h3 {
   gap: 8px;
 }
 
+@media (min-width: 1081px) {
+  .nav-list {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .nav-list::-webkit-scrollbar {
+    width: 4px;
+  }
+  .nav-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .nav-list::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 4px;
+  }
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -1248,6 +1269,8 @@ body[data-theme="dark"] .chat-message.assistant strong {
     max-width: 100%;
     min-width: 0;
     overflow-x: auto;
+    overflow-y: hidden;
+    flex: 0 0 auto;
     padding-bottom: 2px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
