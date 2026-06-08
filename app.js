@@ -1367,11 +1367,19 @@ async function syncExpensesFromDrive() {
         };
 
         const imported = await parseImportFile(mockFile, "expense");
+        console.log(`[app.js] Parsed file for ${owner}: ${imported?.expenses?.length ?? 0} expenses extracted`);
         if (imported && imported.expenses && imported.expenses.length > 0) {
           imported.expenses.forEach(exp => {
             exp.paidBy = owner;
             allNewExpenses.push(exp);
           });
+        } else {
+          // Log the raw CSV text headers for debugging
+          try {
+            const rawText = await mockFile.text();
+            const firstLine = rawText.split('\n')[0];
+            console.warn(`[app.js] WARNING: 0 expenses parsed for ${owner}. CSV headers: "${firstLine}"`);
+          } catch(e) {}
         }
       }
     }
@@ -1552,17 +1560,16 @@ function mapRowToKind(row, kind) {
   }
 
   if (kind === "expense") {
-    const amount = pickNumber(row, ["amount", "expense", "spend", "cost", "debit"]);
-    if (!amount) return null;
-    const date = pickDate(row, ["date", "month", "spentdate", "transactiondate"]);
-    if (!date) return null;
+    const amount = pickNumber(row, ["amount", "transactionamount", "totalamount", "expense", "spend", "cost", "debit", "price", "value", "money", "sum", "total", "payment"]);
+    const date = pickDate(row, ["date", "month", "spentdate", "transactiondate", "createddate", "time", "datetime", "timestamp"]);
+    if (!amount && !date) return null;
     return {
       id: `exp-${generateUUID()}`,
-      date,
-      category: pick(row, ["category", "expensecategory", "type"]) || "General",
+      date: date || todayISO(),
+      category: pick(row, ["category", "expensecategory", "type", "tag", "group", "subcategory", "label"]) || "General",
       paidBy: normalizeOwner(pick(row, ["paidby", "person", "payer", "owner"]) || "Both"),
       amount: Math.abs(amount),
-      note: pick(row, ["note", "description", "merchant", "remarks"]) || "",
+      note: pick(row, ["note", "description", "merchant", "remarks", "title", "name", "memo", "details", "particular", "narration", "payee", "vendor", "store", "shop", "item"]) || "",
     };
   }
 
