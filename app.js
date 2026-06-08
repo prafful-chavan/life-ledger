@@ -1347,8 +1347,8 @@ async function syncExpensesFromDrive() {
   toast("Scanning Google Drive for latest expense files...");
 
   const owners = ["Me", "Wife"];
-  let totalAdded = 0;
   let filesFound = 0;
+  let allNewExpenses = [];
 
   try {
     for (const owner of owners) {
@@ -1357,7 +1357,6 @@ async function syncExpensesFromDrive() {
         filesFound++;
         console.log(`[app.js] Found and downloaded latest file for ${owner}: "${fileData.filename}"`);
         
-        const blob = new Blob([fileData.buffer], { type: fileData.filename.endsWith(".csv") ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
         const mockFile = {
           name: fileData.filename,
           text: async () => {
@@ -1371,27 +1370,8 @@ async function syncExpensesFromDrive() {
         if (imported && imported.expenses && imported.expenses.length > 0) {
           imported.expenses.forEach(exp => {
             exp.paidBy = owner;
+            allNewExpenses.push(exp);
           });
-
-          const existingExpenses = state.expenses || [];
-          let addedForFile = 0;
-          const pool = [...existingExpenses];
-
-          imported.expenses.forEach(incoming => {
-            const matchIndex = pool.findIndex(existing => 
-              existing.date === incoming.date &&
-              Math.abs(toNumber(existing.amount) - toNumber(incoming.amount)) < 0.01 &&
-              (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase() &&
-              normalizeOwner(existing.paidBy) === normalizeOwner(incoming.paidBy)
-            );
-            if (matchIndex >= 0) {
-              pool.splice(matchIndex, 1);
-            } else {
-              existingExpenses.push(incoming);
-              addedForFile++;
-            }
-          });
-          totalAdded += addedForFile;
         }
       }
     }
@@ -1399,14 +1379,11 @@ async function syncExpensesFromDrive() {
     if (filesFound === 0) {
       toast("No expense files matching 'Transactions*.csv/xlsx' found on Google Drive.");
     } else {
-      if (totalAdded > 0) {
-        invalidateExpenseCache();
-        renderAll();
-        saveData(true);
-        toast(`✓ Synced successfully! Imported ${totalAdded} new expenses from ${filesFound} files.`);
-      } else {
-        toast("✓ All expenses up to date. No new entries found on Google Drive.");
-      }
+      state.expenses = allNewExpenses;
+      invalidateExpenseCache();
+      renderAll();
+      await saveData(true);
+      toast(`✓ Synced successfully! Loaded ${allNewExpenses.length} total expenses from ${filesFound} files.`);
     }
   } catch (error) {
     console.error("[app.js] Expense sync failed:", error);
