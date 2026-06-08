@@ -5050,6 +5050,12 @@ function renderStackList(container, rows, mapper) {
 }
 
 function parseCSV(text) {
+  // Auto-detect delimiter: check first line for tabs vs commas
+  const firstLine = text.split(/\r?\n/)[0] || "";
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const delimiter = tabCount > commaCount ? "\t" : ",";
+
   const rows = [];
   let current = "";
   let row = [];
@@ -5063,7 +5069,7 @@ function parseCSV(text) {
       index += 1;
     } else if (char === '"') {
       inQuotes = !inQuotes;
-    } else if (char === "," && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       row.push(current);
       current = "";
     } else if ((char === "\n" || char === "\r") && !inQuotes) {
@@ -5082,6 +5088,7 @@ function parseCSV(text) {
   }
 
   const headers = rows.shift()?.map((header) => header.trim()) || [];
+  console.log(`[parseCSV] Detected delimiter: ${delimiter === "\t" ? "TAB" : "COMMA"}, Headers: [${headers.join(", ")}], Data rows: ${rows.length}`);
   return rows
     .filter((cells) => cells.some((cell) => String(cell).trim()))
     .map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ""])));
