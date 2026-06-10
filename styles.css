@@ -26,6 +26,7 @@
   --chart-expense: #d8913c;
   --radius: 8px;
   --sidebar-width: 280px;
+  --card-solid: rgba(255, 255, 255, 0.92);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -56,6 +57,7 @@ body[data-theme="dark"] {
   --on-ink: #09090b;
   --chart-income: #10b981;
   --chart-expense: #f97316;
+  --card-solid: rgba(30, 30, 35, 0.95);
 }
 
 body[data-theme="dark"]::before {
@@ -64,8 +66,7 @@ body[data-theme="dark"]::before {
   inset: 0;
   z-index: -2;
   background: 
-    radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
-    radial-gradient(circle at 15% 85%, rgba(37, 99, 235, 0.04) 0%, transparent 55%),
+    radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.03) 0%, transparent 60%),
     #09090b;
   pointer-events: none;
 }
@@ -75,11 +76,8 @@ body[data-theme="dark"]::after {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' preserveAspectRatio='xMidYMid slice'%3E%3Cpath d='M-100,500 C300,800 600,200 1000,600 C1200,800 1400,700 1600,800' fill='none' stroke='%233b82f6' stroke-width='80' stroke-linecap='round' filter='blur(80px)' opacity='0.04'/%3E%3Cpath d='M-100,500 C300,800 600,200 1000,600 C1200,800 1400,700 1600,800' fill='none' stroke='%2360a5fa' stroke-width='20' stroke-linecap='round' filter='blur(30px)' opacity='0.06'/%3E%3Cpath d='M-100,500 C300,800 600,200 1000,600 C1200,800 1400,700 1600,800' fill='none' stroke='%23ffffff' stroke-width='4' stroke-linecap='round' filter='blur(4px)' opacity='0.04'/%3E%3C/svg%3E");
-  background-size: cover;
-  background-repeat: no-repeat;
   pointer-events: none;
-  opacity: 0.85;
+  display: none;
 }
 
 * {
@@ -385,6 +383,11 @@ h3 {
 
 .view {
   display: none;
+  contain: content;
+}
+
+.view:not(.active) {
+  content-visibility: hidden;
 }
 
 .view.active {
@@ -446,10 +449,8 @@ h3 {
 .panel {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--panel-translucent);
+  background: var(--card-solid, var(--panel-translucent));
   box-shadow: var(--shadow);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
 }
 
 .metric-card {
@@ -1144,6 +1145,7 @@ body[data-theme="dark"] .chat-message.assistant strong {
   box-shadow: var(--modal-shadow);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  will-change: transform;
 }
 
 .modal-header {
@@ -3086,3 +3088,46 @@ body[data-theme="dark"] .goal-time-left {
   width: 0;
   transition: width 0.3s;
 }
+
+/* App Loading Screen */
+.app-loading {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+.app-loading.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.app-loading-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.app-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--line);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: app-loading-spin 1s linear infinite;
+}
+@keyframes app-loading-spin {
+  to { transform: rotate(360deg); }
+}
+.app-loading p {
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.95rem;
+  margin: 0;
+}
+

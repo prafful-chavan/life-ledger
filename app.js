@@ -474,8 +474,10 @@ let saveDataTimer;
 let isSaving = false;
 let currentSavePromise = null;
 
-function saveData(immediate = false) {
-  invalidateExpenseCache();
+function saveData(immediate = false, kind = null) {
+  if (!kind || kind === "expense" || kind === "expenses" || kind === "income") {
+    invalidateExpenseCache();
+  }
   if (!window.LifeLedgerAuth?.isUnlocked()) return Promise.resolve();
   clearTimeout(saveDataTimer);
 
@@ -554,7 +556,11 @@ function normalizeData(data) {
     ...clone(defaultData),
     ...data,
     income: ensureIds(data.income || [], "inc"),
-    expenses: ensureIds(data.expenses || [], "exp").map(exp => ({ ...exp, amount: Math.abs(toNumber(exp.amount)) })),
+    expenses: ensureIds(data.expenses || [], "exp").map(exp => {
+      const amt = Math.abs(toNumber(exp.amount));
+      if (exp.amount === amt) return exp;
+      return { ...exp, amount: amt };
+    }),
     assets: ensureIds(data.assets || [], "asset"),
     liabilities: ensureIds(data.liabilities || [], "liab"),
     mutualFunds: ensureIds(data.mutualFunds || [], "mf"),
@@ -569,9 +575,15 @@ function normalizeData(data) {
     usstocks: ensureIds(data.usstocks || [], "uss"),
     banksaving: ensureIds(data.banksaving || [], "sav"),
     others: ensureIds(data.others || [], "oth"),
-    goals: ensureIds(data.goals || [], "goal").map(g => ({ ...g, owner: g.owner || "Both" })),
+    goals: ensureIds(data.goals || [], "goal").map(g => {
+      if (g.owner === "Both" || g.owner) return g;
+      return { ...g, owner: "Both" };
+    }),
     tasks: ensureIds(data.tasks || [], "task"),
-    studies: ensureIds(data.studies || [], "study").map(s => ({ ...s, owner: s.owner || "Me" })),
+    studies: ensureIds(data.studies || [], "study").map(s => {
+      if (s.owner === "Me" || s.owner) return s;
+      return { ...s, owner: "Me" };
+    }),
     workouts: ensureIds(data.workouts || [], "work"),
     habits: ensureIds(data.habits || [], "habit"),
     chat: data.chat || [],
@@ -580,7 +592,13 @@ function normalizeData(data) {
 }
 
 function ensureIds(items, prefix) {
-  return items.map((item) => ({ ...item, id: item.id || `${prefix}-${generateUUID()}` }));
+  let changed = false;
+  const result = items.map((item) => {
+    if (item.id) return item;
+    changed = true;
+    return { ...item, id: `${prefix}-${generateUUID()}` };
+  });
+  return result;
 }
 
 function bindTheme() {
@@ -648,10 +666,10 @@ function bindFinanceTabs() {
     renderExpenseExplorer();
   });
 
-  document.getElementById("expenseSearchInput")?.addEventListener("input", () => {
+  document.getElementById("expenseSearchInput")?.addEventListener("input", debounce(() => {
     activeExpensePage = 0;
     renderExpenseExplorer(false);
-  });
+  }, 150));
 
   document.getElementById("expensePagePrev")?.addEventListener("click", () => {
     activeExpensePage = Math.max(0, activeExpensePage - 1);
@@ -696,9 +714,9 @@ function bindFinanceTabs() {
       const id = deleteBtn.dataset.id;
       if (id && confirm("Are you sure you want to delete this salary entry?")) {
         state.income = state.income.filter(item => item.id !== id);
-        renderIncomeTable();
+        renderExpensesOnly();
         toast("Salary entry deleted.");
-        saveData(true);
+        saveData(true, "income");
       }
     }
   });
@@ -714,9 +732,9 @@ function bindFinanceTabs() {
       const id = deleteBtn.dataset.id;
       if (id && confirm("Are you sure you want to delete this mutual fund transaction?")) {
         state.mutualFunds = state.mutualFunds.filter(item => item.id !== id);
-        renderMutualFundsPanel();
+        renderExpensesOnly();
         toast("Mutual fund transaction deleted.");
-        saveData(true);
+        saveData(true, "mutualFund");
       }
     }
   });
@@ -757,9 +775,25 @@ function bindFinanceTabs() {
         const stateKey = stateKeys[kind];
         if (stateKey && confirm(`Are you sure you want to delete this ${kind} entry?`)) {
           state[stateKey] = (state[stateKey] || []).filter(item => item.id !== id);
-          renderAll();
+          if (kind === "expense" || kind === "income" || kind === "asset" || kind === "liability" || kind === "mutualFund" || kind === "stock" || kind === "fd" || kind === "epf" || kind === "bonds" || kind === "ppf" || kind === "gold" || kind === "silver" || kind === "crypto" || kind === "usstocks" || kind === "banksaving" || kind === "others") {
+            renderExpensesOnly();
+          } else if (kind === "task") {
+            renderTodoOnly();
+          } else if (kind === "goal") {
+            renderGoalsOnly();
+          } else if (kind === "workout") {
+            renderExerciseOnly();
+            renderDashboardOnly();
+          } else if (kind === "habit") {
+            renderHabitsOnly();
+            renderDashboardOnly();
+          } else if (kind === "study") {
+            renderCareerOnly();
+          } else {
+            renderAll();
+          }
           toast(`${kind.charAt(0).toUpperCase() + kind.slice(1)} entry deleted.`);
-          saveData(true);
+          saveData(true, kind);
         }
       }
     }
@@ -1030,12 +1064,11 @@ async function deleteExpense(id) {
   if (!confirm("Are you sure you want to delete this expense entry?")) return;
 
   state.expenses = state.expenses.filter((exp) => exp.id !== id);
-  invalidateExpenseCache();
-  renderAll();
+  renderExpensesOnly();
   toast("Expense deleted.");
 
   try {
-    saveData(true);
+    saveData(true, "expense");
   } catch (error) {
     console.error("Failed to delete expense:", error);
   }
@@ -1308,11 +1341,26 @@ function buildQuickAddForm(kind, editId = null) {
       }
     }
 
-    invalidateExpenseCache();
-    renderAll();
+    if (kind === "expense" || kind === "income" || kind === "asset" || kind === "liability" || kind === "mutualFund" || kind === "stock" || kind === "fd" || kind === "epf" || kind === "bonds" || kind === "ppf" || kind === "gold" || kind === "silver" || kind === "crypto" || kind === "usstocks" || kind === "banksaving" || kind === "others") {
+      renderExpensesOnly();
+    } else if (kind === "task") {
+      renderTodoOnly();
+    } else if (kind === "goal") {
+      renderGoalsOnly();
+    } else if (kind === "workout") {
+      renderExerciseOnly();
+      renderDashboardOnly();
+    } else if (kind === "habit") {
+      renderHabitsOnly();
+      renderDashboardOnly();
+    } else if (kind === "study") {
+      renderCareerOnly();
+    } else {
+      renderAll();
+    }
     closeModal(form.closest(".modal"));
     toast(existingEntry ? "Entry updated." : "Entry saved.");
-    saveData(true);
+    saveData(true, kind);
   };
 }
 
@@ -1388,9 +1436,8 @@ async function syncExpensesFromDrive() {
       toast("No expense files matching 'Transactions*.csv/xlsx' found on Google Drive.");
     } else {
       state.expenses = allNewExpenses;
-      invalidateExpenseCache();
-      renderAll();
-      await saveData(true);
+      renderExpensesOnly();
+      await saveData(true, "expense");
       toast(`✓ Synced successfully! Loaded ${allNewExpenses.length} total expenses from ${filesFound} files.`);
     }
   } catch (error) {
@@ -1413,7 +1460,14 @@ async function parseImportFile(file, selectedKind) {
 
   if (extension === "csv") {
     const rows = parseCSV(await file.text());
-    return rowsToData(rows, selectedKind);
+    const output = emptyImportBuckets();
+    for (let i = 0; i < rows.length; i += 1) {
+      ingestImportRow(output, rows[i], selectedKind);
+      if (i > 0 && i % IMPORT_YIELD_EVERY === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    return output;
   }
 
   if (["xlsx", "xls"].includes(extension)) {
@@ -1768,22 +1822,33 @@ function mapRowToKind(row, kind) {
 function mergeImportedData(imported) {
   const normalized = normalizeData(imported);
   appendArray(state.income, normalized.income);
-  // Deduplicated merge for expenses
+  
+  // Create a pool of existing expenses map for O(1) matching.
+  // Each key can map to an array of existing expenses to handle duplicate entries in the existing data.
+  // When a match is found and consumed, we remove it from the array.
   const existingExpenses = state.expenses || [];
-  const pool = [...existingExpenses];
+  const poolMap = new Map();
+  
+  existingExpenses.forEach(existing => {
+    const key = `${existing.date}|${Math.round(toNumber(existing.amount) * 100)}|${(existing.note || "").trim().toLowerCase()}|${normalizeOwner(existing.paidBy)}`;
+    if (!poolMap.has(key)) {
+      poolMap.set(key, []);
+    }
+    poolMap.get(key).push(existing);
+  });
+
   normalized.expenses.forEach(incoming => {
-    const matchIndex = pool.findIndex(existing => 
-      existing.date === incoming.date &&
-      Math.abs(toNumber(existing.amount) - toNumber(incoming.amount)) < 0.01 &&
-      (existing.note || "").trim().toLowerCase() === (incoming.note || "").trim().toLowerCase() &&
-      normalizeOwner(existing.paidBy) === normalizeOwner(incoming.paidBy)
-    );
-    if (matchIndex >= 0) {
-      pool.splice(matchIndex, 1);
+    const key = `${incoming.date}|${Math.round(toNumber(incoming.amount) * 100)}|${(incoming.note || "").trim().toLowerCase()}|${normalizeOwner(incoming.paidBy)}`;
+    const matchArray = poolMap.get(key);
+    if (matchArray && matchArray.length > 0) {
+      // Consume one matched existing item
+      matchArray.shift();
     } else {
+      // No match left in the pool, this is a new transaction (even if it's identical to another)
       existingExpenses.push(incoming);
     }
   });
+
   appendArray(state.assets, normalized.assets);
   appendArray(state.liabilities, normalized.liabilities);
   appendArray(state.mutualFunds, normalized.mutualFunds);
@@ -1862,6 +1927,49 @@ function importSummary(imported) {
     ["workouts", imported.workouts?.length || 0],
   ].filter(([, count]) => count > 0);
   return parts.length ? `Imported ${parts.map(([name, count]) => `${count} ${name}`).join(", ")}.` : "No rows matched the expected columns.";
+}
+
+function debounce(func, wait) {
+  let timeout;
+  return function(...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
+
+function renderExpensesOnly() {
+  renderMetrics();
+  renderFinance();
+  renderDashboardAnalysis();
+  renderCashflowChart();
+  renderExpenseMix();
+  renderNetWorth();
+}
+
+function renderTodoOnly() {
+  renderTodoView();
+  renderTodayFocus();
+}
+
+function renderGoalsOnly() {
+  renderGoals();
+}
+
+function renderCareerOnly() {
+  renderCareer();
+}
+
+function renderExerciseOnly() {
+  renderExerciseView();
+}
+
+function renderHabitsOnly() {
+  renderHabitsView();
+}
+
+function renderDashboardOnly() {
+  renderTodayFocus();
+  renderDashboardAnalysis();
 }
 
 function renderAll() {
@@ -2285,9 +2393,10 @@ function renderDashboardAnalysis() {
         `;
         row.querySelector(".log-habit-btn").addEventListener("click", async () => {
           habit.streak = (toNumber(habit.streak) || 0) + 1;
-          renderAll();
+          renderHabitsOnly();
+          renderDashboardOnly();
           toast(`Streaked! ${habit.name} streak is now ${habit.streak}. 🔥`);
-          saveData(true);
+          saveData(true, "habit");
         });
         habitContainer.append(row);
       });
@@ -3465,9 +3574,9 @@ function renderGoals() {
       const amount = toNumber(input.value);
       if (amount > 0) {
         goal.saved = (goal.saved || 0) + amount;
-        renderAll();
+        renderGoalsOnly();
         toast(`Added ${formatINR(amount)} to "${goal.name}". Progress updated! 🎯`);
-        saveData(true);
+        saveData(true, "goal");
       }
     });
 
@@ -3611,16 +3720,17 @@ function bindTodoAndKeepEvents() {
     }
 
     resetKeepAddForm();
-    renderAll();
+    renderTodoOnly();
     toast(editTaskId ? "Note updated." : "Note added.");
-    await saveData(true);
+    await saveData(true, "todo");
   });
 
   // Search filter
-  document.getElementById("todoSearch")?.addEventListener("input", (e) => {
-    todoSearchQuery = e.target.value.toLowerCase().trim();
+  document.getElementById("todoSearch")?.addEventListener("input", debounce(() => {
+    const el = document.getElementById("todoSearch");
+    todoSearchQuery = el ? el.value.toLowerCase().trim() : "";
     renderTodoView();
-  });
+  }, 150));
 
   // Filter chips click
   document.querySelectorAll(".todo-filters .filter-chip").forEach((chip) => {
@@ -3808,9 +3918,10 @@ function bindExerciseEvents() {
     }
     
     closeModal(document.getElementById("workoutLoggerModal"));
-    renderAll();
+    renderExerciseOnly();
+    renderDashboardOnly();
     toast(editWorkoutId ? "Workout updated." : "Workout logged successfully.");
-    await saveData(true);
+    await saveData(true, "workout");
   });
 }
 
@@ -3975,21 +4086,21 @@ function renderTodoView() {
       box.addEventListener("change", async (e) => {
         const idx = parseInt(box.dataset.idx);
         task.checklist[idx].done = e.target.checked;
-        renderAll();
-        await saveData();
+        renderTodoOnly();
+        await saveData(false, "todo");
       });
     });
 
     card.querySelector(".btn-complete-card").addEventListener("change", async (e) => {
       task.done = e.target.checked;
-      renderAll();
-      await saveData();
+      renderTodoOnly();
+      await saveData(false, "todo");
     });
 
     card.querySelector(".btn-pin-card").addEventListener("click", async () => {
       task.pinned = !task.pinned;
-      renderAll();
-      await saveData();
+      renderTodoOnly();
+      await saveData(false, "todo");
     });
 
     card.querySelector(".btn-cycle-color").addEventListener("click", async () => {
@@ -3997,8 +4108,8 @@ function renderTodoView() {
       const currentIdx = colors.indexOf(task.color || "default");
       const nextIdx = (currentIdx + 1) % colors.length;
       task.color = colors[nextIdx];
-      renderAll();
-      await saveData();
+      renderTodoOnly();
+      await saveData(false, "todo");
     });
 
     card.querySelector(".btn-edit-card").addEventListener("click", () => {
@@ -4044,9 +4155,9 @@ function renderTodoView() {
     card.querySelector(".btn-delete-card").addEventListener("click", async () => {
       if (confirm("Delete this card?")) {
         state.tasks = state.tasks.filter((t) => t.id !== task.id);
-        renderAll();
+        renderTodoOnly();
         toast("Card deleted.");
-        await saveData(true);
+        await saveData(true, "todo");
       }
     });
 
@@ -4155,9 +4266,10 @@ function renderExerciseView() {
       card.querySelector(".btn-delete-workout").addEventListener("click", async () => {
         if (confirm("Delete this workout entry?")) {
           state.workouts = state.workouts.filter((w) => w.id !== workout.id);
-          renderAll();
+          renderExerciseOnly();
+          renderDashboardOnly();
           toast("Workout deleted.");
-          await saveData(true);
+          await saveData(true, "workout");
         }
       });
 
@@ -4554,8 +4666,9 @@ function renderHabitsView() {
           } else {
             habit.history.push(clickedDate);
           }
-          renderAll();
-          await saveData(true);
+          renderHabitsOnly();
+          renderDashboardOnly();
+          await saveData(true, "habit");
         });
       });
 
@@ -4566,8 +4679,9 @@ function renderHabitsView() {
         } else {
           habit.history.push(todayStr);
         }
-        renderAll();
-        await saveData(true);
+        renderHabitsOnly();
+        renderDashboardOnly();
+        await saveData(true, "habit");
       });
 
       card.querySelector(".btn-edit-habit").addEventListener("click", () => {
@@ -4578,9 +4692,10 @@ function renderHabitsView() {
       card.querySelector(".btn-delete-habit").addEventListener("click", async () => {
         if (confirm(`Delete habit "${habit.name}"?`)) {
           state.habits = state.habits.filter((h) => h.id !== habit.id);
-          renderAll();
+          renderHabitsOnly();
+          renderDashboardOnly();
           toast("Habit deleted.");
-          await saveData(true);
+          await saveData(true, "habit");
         }
       });
 
@@ -6067,8 +6182,9 @@ function bindGoals() {
   const sortSelector = document.getElementById("goalSortSelector");
 
   const listener = () => renderGoals();
+  const goalSearchListener = debounce(() => renderGoals(), 150);
 
-  searchInput?.addEventListener("input", listener);
+  searchInput?.addEventListener("input", goalSearchListener);
   categoryFilter?.addEventListener("change", listener);
   ownerFilter?.addEventListener("change", listener);
   statusFilter?.addEventListener("change", listener);
@@ -6076,12 +6192,7 @@ function bindGoals() {
 
   // Click handler to redirect dashboard link to goals panel
   document.getElementById("dashboardGoalPanel")?.addEventListener("click", () => {
-    activeView = "goals";
-    document.querySelectorAll(".nav-item").forEach((item) => {
-      item.classList.toggle("active", item.dataset.view === "goals");
-    });
-    renderAll();
-    // Scroll to top
+    document.querySelector('.nav-item[data-view="goals"]')?.click();
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 }

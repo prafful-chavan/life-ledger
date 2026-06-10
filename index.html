@@ -9,8 +9,8 @@
     />
     <title>Prafful's & Archana Life Ledger</title>
     <link rel="stylesheet" href="styles.css?v=1.0.8" />
-    <script src="config.example.js"></script>
-    <script src="config.js"></script>
+    <script defer src="config.example.js"></script>
+    <script defer src="config.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script defer src="vault-store.js?v=1.0.8"></script>
@@ -19,6 +19,12 @@
     <script defer src="auth.js?v=1.0.8"></script>
   </head>
   <body class="auth-locked">
+    <div id="appLoading" class="app-loading hidden">
+      <div class="app-loading-content">
+        <div class="app-loading-spinner" aria-hidden="true"></div>
+        <p>Initializing App...</p>
+      </div>
+    </div>
     <div class="auth-gate" id="authGate">
       <div class="auth-card">
         <div class="auth-brand">

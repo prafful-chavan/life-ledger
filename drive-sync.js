@@ -398,7 +398,7 @@
       // Search for any files containing 'Transactions' in the name
       const query = encodeURIComponent("name contains 'Transactions' and trashed=false");
       const response = await driveFetch(
-        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=100`,
+        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=10`,
         { ...options, silent: true }
       );
       if (!response.ok) return null;

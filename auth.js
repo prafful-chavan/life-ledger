@@ -10,6 +10,7 @@
 
   let vaultMeta = null;
   let unlockedPayload = null;
+  let lastDriveFetchTime = 0;
 
   function enc() {
     return new TextEncoder();
@@ -207,6 +208,9 @@
 
     const remote = await loadVaultFromDrive();
 
+    // Record when we last fetched from Drive so unlockApp can skip redundant sync
+    if (remote) lastDriveFetchTime = Date.now();
+
     if (!local && !remote) return null;
     if (!local) {
       // Fresh device — save Drive vault locally
@@ -321,7 +325,7 @@
     if (!window.LifeLedgerVaultStore) {
       throw new Error("Vault storage is not available.");
     }
-    console.log("[auth.js] Saving vault file locally, size:", JSON.stringify(vault).length, "chars");
+    console.log("[auth] Vault saved locally.");
     await window.LifeLedgerVaultStore.save(vault);
     vaultMeta = vault;
 
@@ -436,31 +440,56 @@
       _sessionKey: key
     };
     saveRememberedPassword(password);
+
+    const loader = document.getElementById("appLoading");
+    if (loader) {
+      loader.classList.remove("hidden");
+    }
+
     showGate("app");
-    window.LifeLedgerApp?.bootstrap(inner.data);
 
-    updateSyncStatusUI(window.LifeLedgerDrive?.hasLinkedDrive?.() ? "synced" : "offline");
+    // Defer bootstrapping slightly to let the browser paint the loading spinner first
+    setTimeout(() => {
+      try {
+        window.LifeLedgerApp?.bootstrap(inner.data);
+      } finally {
+        if (loader) {
+          loader.classList.add("hidden");
+        }
+      }
 
-    if (window.LifeLedgerDrive?.isConnected?.()) {
-      const runSync = async () => {
-        try {
-          const msg = await syncWithDrive(true); // silent first run
+      updateSyncStatusUI(window.LifeLedgerDrive?.hasLinkedDrive?.() ? "synced" : "offline");
+
+      if (window.LifeLedgerDrive?.isConnected?.()) {
+        // Skip redundant sync if Drive was already fetched recently during init/loadVaultFile
+        const skipInitialSync = (Date.now() - lastDriveFetchTime) < 10000;
+
+        if (!skipInitialSync) {
+          const runSync = async () => {
+            try {
+              const msg = await syncWithDrive(true); // silent first run
+              updateDriveBadge();
+              markLastSynced();
+              if (msg && (msg.includes("Merged") || msg.includes("pulled") || msg.includes("restored"))) {
+                toastAuth("✓ " + msg);
+              }
+            } catch (error) {
+              console.warn("Auto-sync on unlock failed:", error.message);
+            }
+          };
+
+          // Slight delay so the UI can render first
+          setTimeout(runSync, 300);
+        } else {
+          console.log("[auth.js] Skipping post-unlock sync — Drive was fetched", ((Date.now() - lastDriveFetchTime) / 1000).toFixed(1), "s ago.");
           updateDriveBadge();
           markLastSynced();
-          if (msg && (msg.includes("Merged") || msg.includes("pulled") || msg.includes("restored"))) {
-            toastAuth("✓ " + msg);
-          }
-        } catch (error) {
-          console.warn("Auto-sync on unlock failed:", error.message);
         }
-      };
 
-      // Slight delay so the UI can render first
-      setTimeout(runSync, 300);
-
-      // Start polling for changes every 60 seconds
-      setTimeout(startSyncPoller, 5000);
-    }
+        // Start polling for changes every 60 seconds
+        setTimeout(startSyncPoller, 5000);
+      }
+    }, 50);
   }
 
   async function tryAutoUnlock() {
@@ -492,8 +521,10 @@
       setAuthMessage(msgId, "Connecting to Google Drive…", false);
       const remote = await window.LifeLedgerDrive.loadVault();
       if (remote) {
+        setAuthMessage(msgId, "Decrypting and loading data…", false);
         await window.LifeLedgerVaultStore.save(remote);
         vaultMeta = remote;
+        setAuthMessage(msgId, "Almost ready…", false);
         showAuthPanel("login");
         setAuthMessage("loginMessage", "Vault restored from Drive. Enter your password.", false);
         if (await tryAutoUnlock()) {
