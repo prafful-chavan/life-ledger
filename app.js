@@ -588,6 +588,7 @@ function normalizeData(data) {
     habits: ensureIds(data.habits || [], "habit"),
     chat: data.chat || [],
     mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
+    interviewPrep: data.interviewPrep || { mastered: [], flagged: [], customProjects: [] },
   };
 }
 
@@ -909,9 +910,19 @@ function bindCareerTabs() {
       button.classList.add("active");
       document.querySelectorAll(".career-tab").forEach((tab) => tab.classList.remove("active"));
       document.getElementById(`career-${activeCareerTab}`)?.classList.add("active");
+      
+      const addBtn = document.getElementById("careerAddBtn");
+      if (addBtn) {
+        addBtn.style.display = activeCareerTab === "interview" ? "none" : "";
+      }
+      
       renderCareer();
     });
   });
+
+  // Initialize prep controls and simulator once
+  initInterviewControls();
+  initSimulator();
 
   const careerAddBtn = document.getElementById("careerAddBtn");
   careerAddBtn?.addEventListener("click", () => {
@@ -3289,10 +3300,18 @@ function renderLiabilities() {
 }
 
 let activeCareerTab = "devops";
+let activeInterviewDifficulty = "all";
+let interviewSearchQuery = "";
+let activeInterviewCategory = "all";
+let activeInterviewPage = 0;
+const INTERVIEW_PAGE_SIZE = 12;
+let showAllAnswers = false;
+let activeSimulatorSession = null;
 
 function renderCareer() {
   const addBtn = document.getElementById("careerAddBtn");
   if (addBtn) {
+    addBtn.style.display = activeCareerTab === "interview" ? "none" : "";
     if (activeCareerTab === "habits") {
       addBtn.textContent = "Add habit";
       addBtn.dataset.kind = "habit";
@@ -3353,6 +3372,508 @@ function renderCareer() {
     renderRoadmap("devopsStudyBoard", "readinessList", "Me");
   } else if (activeCareerTab === "dataeng") {
     renderRoadmap("dataengStudyBoard", "wifeReadinessList", "Wife");
+  } else if (activeCareerTab === "interview") {
+    renderInterviewProgress();
+    renderInterviewQuestions();
+  }
+}
+
+function getFilteredQuestions() {
+  if (!window.LifeLedgerInterviewQuestions) return [];
+  return window.LifeLedgerInterviewQuestions.filter((q) => {
+    const matchesSearch = !interviewSearchQuery || 
+      q.question.toLowerCase().includes(interviewSearchQuery) || 
+      q.answer.toLowerCase().includes(interviewSearchQuery) ||
+      (q.tags || []).some(t => t.toLowerCase().includes(interviewSearchQuery));
+
+    const matchesCategory = activeInterviewCategory === "all" || q.category === activeInterviewCategory;
+    const matchesDifficulty = activeInterviewDifficulty === "all" || q.difficulty === activeInterviewDifficulty;
+
+    return matchesSearch && matchesCategory && matchesDifficulty;
+  });
+}
+
+function renderInterviewProgress() {
+  const prep = state.interviewPrep || { mastered: [], flagged: [], customProjects: [] };
+  const masteredSet = new Set(prep.mastered || []);
+  const total = window.LifeLedgerInterviewQuestions?.length || 1000;
+  const masteredCount = masteredSet.size;
+
+  const overallPercent = Math.round((masteredCount / total) * 100) || 0;
+
+  const overallValEl = document.getElementById("interviewOverallProgressVal");
+  const countEl = document.getElementById("interviewMasteredCount");
+  const barEl = document.getElementById("interviewOverallProgressBar");
+
+  if (overallValEl) overallValEl.textContent = `${overallPercent}%`;
+  if (countEl) countEl.textContent = masteredCount;
+  if (barEl) barEl.style.width = `${overallPercent}%`;
+
+  // Render category progress lists
+  const categoriesList = document.getElementById("interviewCategoryProgressList");
+  if (categoriesList && window.LifeLedgerInterviewQuestions) {
+    categoriesList.innerHTML = "";
+    const cats = ["Kubernetes", "Docker", "AWS", "GCP", "Terraform", "GitLab", "MLOps", "Observability", "Security", "Linux", "Networking", "Troubleshooting", "System Design", "Scripting"];
+    cats.forEach(cat => {
+      const catQuestions = window.LifeLedgerInterviewQuestions.filter(q => q.category === cat);
+      if (catQuestions.length === 0) return;
+      const catMastered = catQuestions.filter(q => masteredSet.has(q.id)).length;
+      const percent = Math.round((catMastered / catQuestions.length) * 100) || 0;
+      
+      const row = document.createElement("div");
+      row.innerHTML = `
+        <div class="progress-row">
+          <span>${cat}</span>
+          <strong>${catMastered}/${catQuestions.length} (${percent}%)</strong>
+        </div>
+        <div class="progress-row-bar-wrapper">
+          <div class="progress-row-bar" style="width: ${percent}%;"></div>
+        </div>
+      `;
+      categoriesList.appendChild(row);
+    });
+  }
+}
+
+function renderInterviewQuestions() {
+  const grid = document.getElementById("interviewQuestionsGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  const filtered = getFilteredQuestions();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / INTERVIEW_PAGE_SIZE));
+  if (activeInterviewPage >= totalPages) activeInterviewPage = totalPages - 1;
+  if (activeInterviewPage < 0) activeInterviewPage = 0;
+
+  const pageNumEl = document.getElementById("interviewPageNumber");
+  if (pageNumEl) pageNumEl.textContent = `Page ${activeInterviewPage + 1} of ${totalPages}`;
+
+  const prevBtn = document.getElementById("interviewPagePrev");
+  const nextBtn = document.getElementById("interviewPageNext");
+  if (prevBtn) prevBtn.disabled = activeInterviewPage === 0;
+  if (nextBtn) nextBtn.disabled = activeInterviewPage === totalPages - 1;
+
+  const startIndex = activeInterviewPage * INTERVIEW_PAGE_SIZE;
+  const pageItems = filtered.slice(startIndex, startIndex + INTERVIEW_PAGE_SIZE);
+
+  if (pageItems.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">No questions matched your search criteria.</div>`;
+    return;
+  }
+
+  const prep = state.interviewPrep || { mastered: [], flagged: [], customProjects: [] };
+  const masteredSet = new Set(prep.mastered || []);
+  const flaggedSet = new Set(prep.flagged || []);
+
+  pageItems.forEach((q) => {
+    const card = document.createElement("article");
+    card.className = "interview-card";
+    card.dataset.id = q.id;
+
+    const diffClass = q.difficulty.toLowerCase();
+    const isMastered = masteredSet.has(q.id);
+    const isFlagged = flaggedSet.has(q.id);
+
+    card.innerHTML = `
+      <div class="interview-card-header">
+        <span class="badge-difficulty ${diffClass}">${q.difficulty}</span>
+        <span class="stack-meta" style="font-weight:700;">${escapeHTML(q.category)}</span>
+      </div>
+      <div class="interview-card-question">${escapeHTML(q.question)}</div>
+      
+      <div class="answer-box ${showAllAnswers ? "" : "hidden"}" id="ans-${q.id}">
+        ${q.answer.replace(/\n/g, "<br>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/### (.+)/g, "<strong>$1</strong>")}
+      </div>
+
+      <div class="interview-card-actions">
+        <button class="secondary-button toggle-ans-btn" type="button" style="padding: 4px 8px; font-size: 0.8rem;">
+          ${showAllAnswers ? "🙈 Hide Answer" : "👁 Show Answer"}
+        </button>
+        
+        <div class="interview-card-checkboxes" style="margin-left: auto;">
+          <label>
+            <input type="checkbox" class="cb-mastered" ${isMastered ? "checked" : ""} />
+            <span style="color:${isMastered ? "var(--good)" : "inherit"}">Mastered</span>
+          </label>
+          <label>
+            <input type="checkbox" class="cb-flagged" ${isFlagged ? "checked" : ""} />
+            <span style="color:${isFlagged ? "var(--chart-expense)" : "inherit"}">Review</span>
+          </label>
+        </div>
+      </div>
+    `;
+
+    // Bind Answer Toggle
+    card.querySelector(".toggle-ans-btn").addEventListener("click", (e) => {
+      const box = card.querySelector(".answer-box");
+      const isHidden = box.classList.toggle("hidden");
+      e.target.textContent = isHidden ? "👁 Show Answer" : "🙈 Hide Answer";
+    });
+
+    // Bind Mastered Toggle
+    card.querySelector(".cb-mastered").addEventListener("change", async (e) => {
+      const isChecked = e.target.checked;
+      const prepState = state.interviewPrep || { mastered: [], flagged: [], customProjects: [] };
+      if (!prepState.mastered) prepState.mastered = [];
+      
+      if (isChecked) {
+        if (!prepState.mastered.includes(q.id)) prepState.mastered.push(q.id);
+      } else {
+        prepState.mastered = prepState.mastered.filter(id => id !== q.id);
+      }
+      state.interviewPrep = prepState;
+      renderInterviewProgress();
+      
+      // Highlight label
+      const labelText = e.target.nextElementSibling;
+      labelText.style.color = isChecked ? "var(--good)" : "inherit";
+      
+      await saveData(true, "study");
+    });
+
+    // Bind Flagged Toggle
+    card.querySelector(".cb-flagged").addEventListener("change", async (e) => {
+      const isChecked = e.target.checked;
+      const prepState = state.interviewPrep || { mastered: [], flagged: [], customProjects: [] };
+      if (!prepState.flagged) prepState.flagged = [];
+
+      if (isChecked) {
+        if (!prepState.flagged.includes(q.id)) prepState.flagged.push(q.id);
+      } else {
+        prepState.flagged = prepState.flagged.filter(id => id !== q.id);
+      }
+      state.interviewPrep = prepState;
+      
+      // Highlight label
+      const labelText = e.target.nextElementSibling;
+      labelText.style.color = isChecked ? "var(--chart-expense)" : "inherit";
+
+      await saveData(true, "study");
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+let isInterviewControlsInitialized = false;
+function initInterviewControls() {
+  if (isInterviewControlsInitialized) return;
+  isInterviewControlsInitialized = true;
+
+  const search = document.getElementById("interviewSearch");
+  const catFilter = document.getElementById("interviewCategoryFilter");
+  const diffBtns = document.querySelectorAll("[data-diff-btn]");
+  const toggleAllBtn = document.getElementById("interviewToggleAllAnswersBtn");
+
+  if (search) {
+    search.addEventListener("input", debounce(() => {
+      interviewSearchQuery = search.value.toLowerCase().trim();
+      activeInterviewPage = 0;
+      renderInterviewQuestions();
+    }, 150));
+  }
+
+  if (catFilter) {
+    catFilter.addEventListener("change", (e) => {
+      activeInterviewCategory = e.target.value;
+      activeInterviewPage = 0;
+      renderInterviewQuestions();
+    });
+  }
+
+  diffBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      diffBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeInterviewDifficulty = btn.dataset.diffBtn;
+      activeInterviewPage = 0;
+      renderInterviewQuestions();
+    });
+  });
+
+  if (toggleAllBtn) {
+    toggleAllBtn.addEventListener("click", () => {
+      showAllAnswers = !showAllAnswers;
+      toggleAllBtn.textContent = showAllAnswers ? "🙈 Hide all answers" : "👁 Show all answers";
+      renderInterviewQuestions();
+    });
+  }
+
+  document.getElementById("interviewPagePrev")?.addEventListener("click", () => {
+    activeInterviewPage = Math.max(0, activeInterviewPage - 1);
+    renderInterviewQuestions();
+  });
+
+  document.getElementById("interviewPageNext")?.addEventListener("click", () => {
+    activeInterviewPage += 1;
+    renderInterviewQuestions();
+  });
+}
+
+function initSimulator() {
+  const profileSelect = document.getElementById("simulatorProfileSelect");
+  const customForm = document.getElementById("customProjectForm");
+  const startBtn = document.getElementById("startSimulatorBtn");
+
+  if (profileSelect) {
+    profileSelect.addEventListener("change", (e) => {
+      if (customForm) {
+        customForm.style.display = e.target.value === "custom" ? "block" : "none";
+      }
+    });
+  }
+
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      const profileVal = profileSelect.value;
+      let title = "";
+      let techStack = "";
+      let challenges = "";
+      let rounds = [];
+
+      if (profileVal === "custom") {
+        title = document.getElementById("customProjectTitle").value.trim() || "Custom Personal Project";
+        techStack = document.getElementById("customProjectStack").value.trim() || "DevOps & Cloud Stack";
+        challenges = document.getElementById("customProjectChallenges").value.trim() || "Scalability and reliability";
+
+        if (!title || !techStack) {
+          toast("Please enter a project title and tech stack.");
+          return;
+        }
+
+        // Dynamically build 3 mock rounds based on their custom project input
+        rounds = [
+          {
+            question: `Interviewer: Let's discuss your project: "${title}". Looking at your tech stack: "${techStack}", how do you design the Infrastructure as Code (IaC) to ensure it can be deployed consistently across dev, staging, and production environments?`,
+            keywords: ["terraform", "workspace", "module", "variables", "state", "backend", "git", "ci/cd", "env"],
+            modelAnswer: `For IaC in "${title}", we use Terraform modules to define reusable infrastructure components. Environment differences are handled via separate tfvars files (e.g. dev.tfvars, prod.tfvars) or Terraform workspaces. The state files are stored in a secure remote backend (like S3/GCS) with state locking enabled.`
+          },
+          {
+            question: `Interviewer: You mentioned challenges: "${challenges}". In your architecture, if you experience sudden scaling bottlenecks or outages related to these challenges, what is your SRE incident response plan to mitigate them in real time?`,
+            keywords: ["restart", "logs", "metrics", "prometheus", "grafana", "autoscaling", "rollback", "cpu", "memory", "replica"],
+            modelAnswer: `First, I inspect Prometheus/Grafana dashboards for metric anomalies (CPU/Memory spikes, network drop) and view stdout logs. Immediate mitigations include scaling the deployment replicas horizontally, temporary cache introduction, or rollback to the last stable deployment if caused by a recent release.`
+          },
+          {
+            question: `Interviewer: For SRE observability, what Service Level Indicators (SLIs) and Service Level Objectives (SLOs) would you define for this application to monitor user happiness?`,
+            keywords: ["sli", "slo", "latency", "error rate", "availability", "prometheus", "99%", "p99", "p95", "uptime"],
+            modelAnswer: `I would define two core SLIs: 1) Availability: % of HTTP requests returning 2xx/3xx over 30 days (SLO target: 99.9%). 2) Latency: % of successful requests completed in < 200ms (p95) over 30 days (SLO target: 99%). We track the error budget spend in Prometheus to track reliability.`
+          }
+        ];
+      } else {
+        const config = window.LifeLedgerSimulatorConfigs[profileVal];
+        if (!config) return;
+        title = config.title;
+        techStack = config.techStack;
+        challenges = config.challenges;
+        rounds = config.rounds;
+      }
+
+      // Start session
+      activeSimulatorSession = {
+        title,
+        techStack,
+        challenges,
+        rounds,
+        currentRound: 0,
+        history: []
+      };
+
+      // Switch view to console
+      document.getElementById("interviewQAExplorer").style.display = "none";
+      document.getElementById("interviewConsolePanel").style.display = "block";
+      document.getElementById("interviewTabQA").classList.remove("active");
+      
+      const consoleTab = document.getElementById("interviewTabConsole");
+      if (consoleTab) {
+        consoleTab.disabled = false;
+        consoleTab.classList.add("active");
+      }
+      
+      const liveBadge = document.getElementById("simulatorLiveBadge");
+      if (liveBadge) liveBadge.style.display = "inline";
+
+      document.getElementById("simulatorCurrentTitle").textContent = title;
+      document.getElementById("simulatorCurrentStack").textContent = techStack;
+
+      // Reset terminal and start
+      const terminal = document.getElementById("simulatorTerminal");
+      terminal.innerHTML = "";
+
+      addTerminalMessage("system", `Starting SRE Mock Interview Simulator for "${title}"...`);
+      addTerminalMessage("interviewer", `Hello! Thanks for taking the time today. I see you've worked on "${title}". Let's start the technical evaluation. \n\n${rounds[0].question}`);
+      
+      updateSimulatorRoundIndicator();
+      
+      document.getElementById("simulatorUserAnswer").value = "";
+      document.getElementById("simulatorEvaluationCard").style.display = "none";
+    });
+  }
+
+  // Bind Console Tab buttons
+  document.getElementById("interviewTabQA")?.addEventListener("click", () => {
+    document.getElementById("interviewQAExplorer").style.display = "block";
+    document.getElementById("interviewConsolePanel").style.display = "none";
+    document.getElementById("interviewTabQA").classList.add("active");
+    document.getElementById("interviewTabConsole").classList.remove("active");
+  });
+
+  document.getElementById("interviewTabConsole")?.addEventListener("click", () => {
+    if (activeSimulatorSession) {
+      document.getElementById("interviewQAExplorer").style.display = "none";
+      document.getElementById("interviewConsolePanel").style.display = "block";
+      document.getElementById("interviewTabQA").classList.remove("active");
+      document.getElementById("interviewTabConsole").classList.add("active");
+    }
+  });
+
+  document.getElementById("endSimulatorBtn")?.addEventListener("click", () => {
+    if (confirm("Are you sure you want to end the mock interview? All progress in this session will be lost.")) {
+      endSimulatorSession();
+    }
+  });
+
+  document.getElementById("simulatorRevealModelBtn")?.addEventListener("click", () => {
+    if (!activeSimulatorSession) return;
+    const currentRound = activeSimulatorSession.rounds[activeSimulatorSession.currentRound];
+    
+    // Auto populate the answer field with the model answer or reveal it
+    const textarea = document.getElementById("simulatorUserAnswer");
+    textarea.value = `[Model Answer Draft]: ${currentRound.modelAnswer}`;
+    toast("Model answer suggestion copied to input!");
+  });
+
+  document.getElementById("simulatorSubmitAnswerBtn")?.addEventListener("click", () => {
+    submitSimulatorResponse();
+  });
+}
+
+function endSimulatorSession() {
+  activeSimulatorSession = null;
+  document.getElementById("interviewQAExplorer").style.display = "block";
+  document.getElementById("interviewConsolePanel").style.display = "none";
+  document.getElementById("interviewTabQA").classList.add("active");
+  
+  const consoleTab = document.getElementById("interviewTabConsole");
+  if (consoleTab) {
+    consoleTab.disabled = true;
+    consoleTab.classList.remove("active");
+  }
+  
+  const liveBadge = document.getElementById("simulatorLiveBadge");
+  if (liveBadge) liveBadge.style.display = "none";
+  document.getElementById("simulatorEvaluationCard").style.display = "none";
+}
+
+function addTerminalMessage(sender, text) {
+  const terminal = document.getElementById("simulatorTerminal");
+  if (!terminal) return;
+
+  const bubble = document.createElement("div");
+  bubble.className = `chat-bubble ${sender}`;
+  bubble.innerHTML = text.replace(/\n/g, "<br>");
+  terminal.appendChild(bubble);
+  
+  // Scroll to bottom
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function updateSimulatorRoundIndicator() {
+  const indicator = document.getElementById("simulatorRoundIndicator");
+  if (!indicator || !activeSimulatorSession) return;
+  const current = activeSimulatorSession.currentRound + 1;
+  const total = activeSimulatorSession.rounds.length;
+  indicator.textContent = `Round ${current} of ${total}`;
+}
+
+function submitSimulatorResponse() {
+  if (!activeSimulatorSession) return;
+  const textarea = document.getElementById("simulatorUserAnswer");
+  const text = textarea.value.trim();
+  
+  if (!text) {
+    toast("Please enter your response before submitting.");
+    return;
+  }
+
+  // Add user message to terminal
+  addTerminalMessage("user", text);
+
+  // Evaluate answer
+  const roundIdx = activeSimulatorSession.currentRound;
+  const round = activeSimulatorSession.rounds[roundIdx];
+  
+  // Keyword evaluation algorithm
+  const textLower = text.toLowerCase();
+  const matchedKeywords = round.keywords.filter((kw) => textLower.includes(kw));
+  const totalKeywords = round.keywords.length;
+  const scoreRatio = matchedKeywords.length / Math.max(1, totalKeywords);
+  
+  let grade = "Needs Improvement";
+  let scorePercent = Math.round(scoreRatio * 100);
+  
+  if (scorePercent >= 80) grade = "Excellent SRE Knowledge!";
+  else if (scorePercent >= 45) grade = "Good Conceptual Understanding";
+
+  // Show Evaluation Card
+  const evalCard = document.getElementById("simulatorEvaluationCard");
+  const evalBody = document.getElementById("simulatorEvaluationBody");
+  
+  if (evalCard && evalBody) {
+    evalCard.style.display = "block";
+    evalBody.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-weight:700; font-size:1.1rem;">Score: <span style="color:var(--brand);">${scorePercent}%</span> (${grade})</span>
+      </div>
+      <div style="margin-bottom:12px;">
+        <strong>SRE Keywords Analyzed:</strong><br>
+        <div style="margin-top:6px;">
+          ${round.keywords.map(kw => {
+            const matched = matchedKeywords.includes(kw);
+            return `<span class="keyword-badge ${matched ? 'matched' : ''}">${matched ? '✓' : '✗'} ${kw}</span>`;
+          }).join("")}
+        </div>
+      </div>
+      <div style="border-top:1px dashed var(--line); padding-top:12px; margin-top:12px;">
+        <strong>Model Answer Suggestion:</strong>
+        <p style="margin-top:6px; background:var(--panel-soft); padding:10px; border-radius:var(--radius-small); font-size:0.88rem; line-height:1.55;">
+          ${round.modelAnswer}
+        </p>
+      </div>
+    `;
+    
+    // Scroll evaluation card into view
+    evalCard.scrollIntoView({ behavior: "smooth" });
+  }
+
+  // Advance session
+  activeSimulatorSession.currentRound++;
+  
+  // Clear input
+  textarea.value = "";
+
+  if (activeSimulatorSession.currentRound < activeSimulatorSession.rounds.length) {
+    // Post next question after a brief delay
+    setTimeout(() => {
+      addTerminalMessage("interviewer", `Moving on. \n\n${activeSimulatorSession.rounds[activeSimulatorSession.currentRound].question}`);
+      updateSimulatorRoundIndicator();
+    }, 1500);
+  } else {
+    // End of interview
+    setTimeout(() => {
+      addTerminalMessage("system", "Mock Interview Session Completed.");
+      addTerminalMessage("interviewer", "Excellent work. We have completed the rounds. I'll pass my feedback to the SRE review panel. You can check the evaluation feedback on the dashboard!");
+      
+      // Keep evaluation visible, change submit button to Finish
+      const submitBtn = document.getElementById("simulatorSubmitAnswerBtn");
+      if (submitBtn) {
+        submitBtn.textContent = "Finish & Return";
+        submitBtn.onclick = () => {
+          endSimulatorSession();
+          submitBtn.textContent = "Submit Response";
+          submitBtn.onclick = submitSimulatorResponse;
+        };
+      }
+    }, 1500);
   }
 }
 

@@ -15,6 +15,7 @@
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script defer src="vault-store.js?v=1.0.8"></script>
     <script defer src="drive-sync.js?v=1.0.8"></script>
+    <script defer src="interview-db.js?v=1.0.8"></script>
     <script defer src="app.js?v=1.0.8"></script>
     <script defer src="auth.js?v=1.0.8"></script>
   </head>
@@ -931,6 +932,7 @@
           <div class="tabs" role="tablist" aria-label="Career tabs">
             <button class="tab-button active" type="button" data-career-tab="devops">DevOps &amp; SRE</button>
             <button class="tab-button" type="button" data-career-tab="dataeng">Data Engineering</button>
+            <button class="tab-button" type="button" data-career-tab="interview">Interview Prep</button>
           </div>
 
           <div class="career-tab active" id="career-devops">
@@ -976,6 +978,163 @@
                 </div>
                 <div id="wifeReadinessList" class="stack-list"></div>
               </section>
+            </div>
+          </div>
+
+          <div class="career-tab" id="career-interview" hidden>
+            <div class="interview-layout">
+              <!-- Sidebar Stats and Selection -->
+              <div class="interview-sidebar">
+                <section class="panel">
+                  <div class="panel-header">
+                    <div>
+                      <h3>Preparation Progress</h3>
+                      <p>Track your target mastery</p>
+                    </div>
+                  </div>
+                  <div class="panel-body" style="padding: 16px;">
+                    <div class="progress-overall" style="margin-bottom: 20px; text-align: center;">
+                      <div style="font-size: 2.2rem; font-weight: 800; color: var(--brand);" id="interviewOverallProgressVal">0%</div>
+                      <div class="stack-meta" style="margin-top: 4px;">Mastered: <span id="interviewMasteredCount">0</span>/1000</div>
+                      <div class="bar-track" style="margin-top: 10px; height: 8px;"><div class="bar-fill" id="interviewOverallProgressBar" style="width: 0%;"></div></div>
+                    </div>
+                    <div class="progress-categories" id="interviewCategoryProgressList">
+                      <!-- Rendered by JS -->
+                    </div>
+                  </div>
+                </section>
+
+                <section class="panel" style="margin-top: 16px;">
+                  <div class="panel-header">
+                    <div>
+                      <h3>Project Simulator</h3>
+                      <p>Practice real-time scenarios</p>
+                    </div>
+                  </div>
+                  <div class="panel-body" style="padding: 16px;">
+                    <label class="toolbar-field" style="display: block; margin-bottom: 12px;">
+                      Select Project Profile:
+                      <select id="simulatorProfileSelect" style="width: 100%; margin-top: 6px; padding: 8px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--input-bg); color: var(--text);">
+                        <option value="ecommerce">SRE: E-Commerce on AWS EKS</option>
+                        <option value="mlops">MLOps: Triton & Vertex AI on GCP</option>
+                        <option value="serverless">DevOps: Serverless Analytics on AWS</option>
+                        <option value="custom">-- Custom Personal Project --</option>
+                      </select>
+                    </label>
+
+                    <div id="customProjectForm" style="display: none; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px;">
+                      <label class="toolbar-field" style="display: block; margin-bottom: 8px;">
+                        Project Title:
+                        <input id="customProjectTitle" type="text" placeholder="e.g. ChatApp SRE Migration" style="width: 100%; margin-top: 4px; padding: 6px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--input-bg); color: var(--text);" />
+                      </label>
+                      <label class="toolbar-field" style="display: block; margin-bottom: 8px;">
+                        Tech Stack:
+                        <input id="customProjectStack" type="text" placeholder="e.g. AWS ECS, RDS, Terraform" style="width: 100%; margin-top: 4px; padding: 6px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--input-bg); color: var(--text);" />
+                      </label>
+                      <label class="toolbar-field" style="display: block; margin-bottom: 8px;">
+                        Scale/SRE Challenges:
+                        <textarea id="customProjectChallenges" placeholder="e.g. High latency spikes, DB scaling issues" style="width: 100%; margin-top: 4px; padding: 6px; height: 60px; font-family: inherit; resize: none; border-radius: var(--radius); border: 1px solid var(--line); background: var(--input-bg); color: var(--text);"></textarea>
+                      </label>
+                    </div>
+
+                    <button class="primary-button" id="startSimulatorBtn" type="button" style="width: 100%; margin-top: 12px;">Start Mock Interview</button>
+                  </div>
+                </section>
+              </div>
+
+              <!-- Main Content: Q&A Explorer or Simulator Console -->
+              <div class="interview-main">
+                <div class="tabs" role="tablist" style="margin-bottom: 16px;">
+                  <button class="tab-button active" id="interviewTabQA" type="button">Q&amp;A Bank &amp; Scenarios</button>
+                  <button class="tab-button" id="interviewTabConsole" type="button" disabled>Interview Console <span class="badge" id="simulatorLiveBadge" style="display: none; background: var(--brand); color: white; margin-left: 6px; padding: 2px 6px; font-size: 10px; border-radius: 10px;">LIVE</span></button>
+                </div>
+
+                <!-- View A: Q&A Explorer -->
+                <div id="interviewQAExplorer" class="interview-view-panel active">
+                  <div class="expense-toolbar panel" style="padding: 12px; margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+                    <input type="text" id="interviewSearch" placeholder="Search questions, concepts..." style="flex: 1; min-width: 200px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--input-bg); color: var(--text);" />
+                    
+                    <select id="interviewCategoryFilter" style="padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--input-bg); color: var(--text);">
+                      <option value="all">All Categories</option>
+                      <option value="Kubernetes">Kubernetes</option>
+                      <option value="Docker">Docker</option>
+                      <option value="AWS">AWS</option>
+                      <option value="GCP">GCP</option>
+                      <option value="Terraform">Terraform</option>
+                      <option value="GitLab">GitLab</option>
+                      <option value="MLOps">MLOps</option>
+                      <option value="Observability">Observability</option>
+                      <option value="Security">Security</option>
+                      <option value="Linux">Linux</option>
+                      <option value="Networking">Networking</option>
+                      <option value="Troubleshooting">Troubleshooting</option>
+                      <option value="System Design">System Design</option>
+                      <option value="Scripting">Scripting</option>
+                    </select>
+
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                      <button class="secondary-button active" type="button" data-diff-btn="all" style="padding: 6px 12px;">All</button>
+                      <button class="secondary-button" type="button" data-diff-btn="Easy" style="padding: 6px 12px; color: var(--good);">Easy</button>
+                      <button class="secondary-button" type="button" data-diff-btn="Intermediate" style="padding: 6px 12px; color: var(--chart-expense);">Medium</button>
+                      <button class="secondary-button" type="button" data-diff-btn="Hard" style="padding: 6px 12px; color: var(--danger);">Hard</button>
+                    </div>
+
+                    <button class="secondary-button" id="interviewToggleAllAnswersBtn" type="button" style="padding: 8px 12px; margin-left: auto;">🙈 Show all answers</button>
+                  </div>
+
+                  <div class="interview-grid" id="interviewQuestionsGrid">
+                    <!-- Loaded dynamically -->
+                  </div>
+
+                  <!-- Pagination -->
+                  <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 24px;">
+                    <button class="secondary-button" id="interviewPagePrev" type="button">← Prev</button>
+                    <span id="interviewPageNumber" style="font-weight: 700;">Page 1 of 1</span>
+                    <button class="secondary-button" id="interviewPageNext" type="button">Next →</button>
+                  </div>
+                </div>
+
+                <!-- View B: Simulator Console -->
+                <div id="interviewConsolePanel" class="interview-view-panel" style="display: none;">
+                  <section class="panel" style="border: 1px solid var(--line); display: flex; flex-direction: column;">
+                    <div class="panel-header" style="background: var(--panel-soft); display: flex; justify-content: space-between; align-items: center;">
+                      <div>
+                        <h3 id="simulatorCurrentTitle">SRE Interview Console</h3>
+                        <p id="simulatorCurrentStack">AWS, EKS, Terraform, Redis</p>
+                      </div>
+                      <button class="secondary-button danger-text" id="endSimulatorBtn" type="button" style="padding: 6px 12px;">End Interview</button>
+                    </div>
+                    
+                    <div class="simulator-terminal" id="simulatorTerminal">
+                      <!-- Rendered dialogues -->
+                    </div>
+
+                    <div class="simulator-input-area" style="padding: 16px; border-top: 1px solid var(--line); background: var(--panel-soft);">
+                      <textarea id="simulatorUserAnswer" placeholder="Type your detailed engineering response here (press Shift+Enter for new line)..." style="width: 100%; height: 90px; padding: 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg); color: var(--text); font-family: inherit; resize: none;"></textarea>
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                        <span class="stack-meta" id="simulatorRoundIndicator">Round 1 of 5</span>
+                        <div style="display: flex; gap: 8px;">
+                          <button class="secondary-button" id="simulatorRevealModelBtn" type="button">Reveal Answer</button>
+                          <button class="primary-button" id="simulatorSubmitAnswerBtn" type="button">Submit Response</button>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- Real-time Evaluation Card -->
+                  <section class="panel" id="simulatorEvaluationCard" style="margin-top: 16px; display: none;">
+                    <div class="panel-header">
+                      <div>
+                        <h3>Evaluation Feedback</h3>
+                        <p>Real-time answer grading and SRE rubrics</p>
+                      </div>
+                    </div>
+                    <div class="panel-body" style="padding: 16px;" id="simulatorEvaluationBody">
+                      <!-- Filled by JS -->
+                    </div>
+                  </section>
+                </div>
+              </div>
             </div>
           </div>
         </section>
