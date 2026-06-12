@@ -54,18 +54,94 @@
     );
   }
 
-  async function encryptJson(key, payload) {
-    const iv = randomBytes(12);
-    const plaintext = enc().encode(JSON.stringify(payload));
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
-    return { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ciphertext) };
+  // ─── Compression helpers (native CompressionStream / DecompressionStream) ──
+  // These are available in all modern browsers: Chrome 80+, Safari 16.4+, Firefox 113+
+
+  function supportsCompression() {
+    return typeof CompressionStream !== "undefined" && typeof DecompressionStream !== "undefined";
   }
 
-  async function decryptJson(key, ivB64, ciphertextB64) {
+  async function compressBytes(inputBytes) {
+    if (!supportsCompression()) return inputBytes;
+    const cs = new CompressionStream("gzip");
+    const writer = cs.writable.getWriter();
+    writer.write(inputBytes);
+    writer.close();
+    const chunks = [];
+    const reader = cs.readable.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    let totalLen = 0;
+    for (const c of chunks) totalLen += c.length;
+    const result = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const c of chunks) { result.set(c, offset); offset += c.length; }
+    return result;
+  }
+
+  async function decompressBytes(compressedBytes) {
+    if (!supportsCompression()) throw new Error("Decompression not supported");
+    const ds = new DecompressionStream("gzip");
+    const writer = ds.writable.getWriter();
+    writer.write(compressedBytes);
+    writer.close();
+    const chunks = [];
+    const reader = ds.readable.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    let totalLen = 0;
+    for (const c of chunks) totalLen += c.length;
+    const result = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const c of chunks) { result.set(c, offset); offset += c.length; }
+    return result;
+  }
+
+  async function encryptJson(key, payload) {
+    const iv = randomBytes(12);
+    const jsonBytes = enc().encode(JSON.stringify(payload));
+    // Compress before encrypting to reduce payload size
+    let plaintext;
+    let compressed = false;
+    if (supportsCompression()) {
+      try {
+        plaintext = await compressBytes(jsonBytes);
+        compressed = true;
+        const ratio = ((1 - plaintext.length / jsonBytes.length) * 100).toFixed(0);
+        console.log(`[auth.js] Vault compressed: ${jsonBytes.length} → ${plaintext.length} bytes (${ratio}% reduction)`);
+      } catch (e) {
+        console.warn("[auth.js] Compression failed, falling back to uncompressed:", e);
+        plaintext = jsonBytes;
+      }
+    } else {
+      plaintext = jsonBytes;
+    }
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    return { iv: bytesToBase64(iv), ciphertext: bytesToBase64(ciphertext), compressed };
+  }
+
+  async function decryptJson(key, ivB64, ciphertextB64, isCompressed = false) {
     const iv = base64ToBytes(ivB64);
     const ciphertext = base64ToBytes(ciphertextB64);
     const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
-    return JSON.parse(dec().decode(plaintext));
+    let jsonBytes;
+    if (isCompressed && supportsCompression()) {
+      try {
+        jsonBytes = await decompressBytes(new Uint8Array(plaintext));
+      } catch (e) {
+        console.warn("[auth.js] Decompression failed, trying as raw JSON:", e);
+        jsonBytes = new Uint8Array(plaintext);
+      }
+    } else {
+      jsonBytes = new Uint8Array(plaintext);
+    }
+    return JSON.parse(dec().decode(jsonBytes));
   }
 
   function readSession() {
@@ -278,10 +354,13 @@
 
   let activeUploadPromise = null;
   let nextUploadVault = null;
+  let saveGeneration = 0;
+  const MAX_UPLOAD_RETRIES = 3;
 
   function triggerDriveUpload(vault) {
     if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) return;
 
+    saveGeneration++;
     nextUploadVault = vault;
 
     if (activeUploadPromise) {
@@ -290,23 +369,44 @@
 
     const runUpload = async () => {
       const currentVault = nextUploadVault;
+      const currentGen = saveGeneration;
       nextUploadVault = null;
       if (!currentVault) return;
 
       updateSyncStatusUI("syncing");
 
       activeUploadPromise = (async () => {
-        try {
-          console.log("[auth.js] Uploading vault backup to Google Drive in background...");
-          await window.LifeLedgerDrive.saveVault(currentVault);
-          console.log("[auth.js] Google Drive upload completed successfully.");
-          updateDriveBadge();
-          markLastSynced();
-          updateSyncStatusUI("synced");
-        } catch (error) {
-          console.warn("Drive sync failed:", error);
-          toastAuth("Google Drive sync failed. Will retry on next change.");
-          updateSyncStatusUI("failed");
+        let retries = 0;
+        while (retries <= MAX_UPLOAD_RETRIES) {
+          // If a newer save was queued while we were retrying, abort this one
+          if (saveGeneration > currentGen && nextUploadVault) {
+            console.log("[auth.js] Newer save queued, skipping current upload.");
+            break;
+          }
+          try {
+            console.log(`[auth.js] Uploading vault to Google Drive${retries > 0 ? ` (retry ${retries})` : ''}...`);
+            await window.LifeLedgerDrive.saveVault(currentVault);
+            // Update cached remote time so background poller knows we're current
+            if (currentVault.updatedAt) {
+              window.LifeLedgerDrive.updateCachedRemoteTime?.(currentVault.updatedAt);
+            }
+            console.log("[auth.js] Google Drive upload completed successfully.");
+            updateDriveBadge();
+            markLastSynced();
+            updateSyncStatusUI("synced");
+            return; // success
+          } catch (error) {
+            retries++;
+            if (retries > MAX_UPLOAD_RETRIES) {
+              console.warn("[auth.js] Drive upload failed after max retries:", error);
+              toastAuth("Google Drive sync failed. Will retry on next change.");
+              updateSyncStatusUI("failed");
+            } else {
+              const backoffMs = Math.min(1000 * Math.pow(2, retries - 1), 8000);
+              console.warn(`[auth.js] Upload retry ${retries}/${MAX_UPLOAD_RETRIES} in ${backoffMs}ms:`, error.message);
+              await new Promise(r => setTimeout(r, backoffMs));
+            }
+          }
         }
       })();
 
@@ -335,12 +435,13 @@
   async function buildVault(password, innerPayload, existingSalt = null, existingKey = null) {
     const salt = existingSalt || randomBytes(16);
     const key = existingKey || await deriveAesKey(password, salt);
-    const { iv, ciphertext } = await encryptJson(key, innerPayload);
+    const { iv, ciphertext, compressed } = await encryptJson(key, innerPayload);
     return {
       v: 1,
       salt: bytesToBase64(salt),
       iv,
       ciphertext,
+      compressed: compressed || false,
       updatedAt: new Date().toISOString(),
       entryCount: countEntries(innerPayload?.data),
     };
@@ -349,7 +450,7 @@
   async function openVault(password, vault) {
     const salt = base64ToBytes(vault.salt);
     const key = await deriveAesKey(password, salt);
-    return decryptJson(key, vault.iv, vault.ciphertext);
+    return decryptJson(key, vault.iv, vault.ciphertext, vault.compressed || false);
   }
 
   function migrateLegacyPlaintext() {
@@ -399,37 +500,88 @@
     console.log("[auth.js] App data persistence completed successfully.");
   }
 
-  // Background sync poller — runs every 60 seconds while the app is unlocked
+  // Background sync poller — metadata-only checks with exponential backoff
   let syncPollerTimer = null;
+  const POLL_BASE_MS = 45 * 1000;     // 45 seconds when tab is active
+  const POLL_MAX_MS = 3 * 60 * 1000;  // 3 minutes max when idle
+  let pollBackoffMultiplier = 1;
+
+  function getPollerInterval() {
+    // When tab is hidden, increase interval progressively
+    if (document.hidden) {
+      pollBackoffMultiplier = Math.min(pollBackoffMultiplier * 2, POLL_MAX_MS / POLL_BASE_MS);
+    } else {
+      pollBackoffMultiplier = 1;
+    }
+    return Math.min(POLL_BASE_MS * pollBackoffMultiplier, POLL_MAX_MS);
+  }
 
   function startSyncPoller() {
     stopSyncPoller();
     if (!window.LifeLedgerDrive?.isConnected?.()) return;
 
-    syncPollerTimer = setInterval(async () => {
+    // Reset backoff on tab focus
+    const resetBackoff = () => { pollBackoffMultiplier = 1; };
+    document.addEventListener("visibilitychange", resetBackoff);
+
+    const scheduleNext = () => {
+      const interval = getPollerInterval();
+      syncPollerTimer = setTimeout(runPoll, interval);
+    };
+
+    const runPoll = async () => {
       if (!unlockedPayload) { stopSyncPoller(); return; }
+
+      // Check if we're on a slow/metered connection — skip polling if so
       try {
-        const msg = await syncWithDrive(true); // silent — no popup
-        if (msg && (msg.includes("Merged") || msg.includes("pulled"))) {
-          updateDriveBadge();
+        const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (conn && (conn.saveData || conn.effectiveType === "slow-2g" || conn.effectiveType === "2g")) {
+          console.log("[auth.js] Skipping poll — slow/metered connection detected.");
+          scheduleNext();
+          return;
+        }
+      } catch(e) {}
+
+      try {
+        // Lightweight metadata-only check (~200 bytes)
+        const { changed, remoteMeta } = await window.LifeLedgerDrive.hasRemoteChanged();
+        
+        if (changed) {
+          console.log("[auth.js] Background poll: remote vault changed, pulling...");
+          const msg = await syncWithDrive(true); // full sync only when needed
+          if (msg && (msg.includes("Merged") || msg.includes("pulled"))) {
+            updateDriveBadge();
+            markLastSynced();
+            toastAuth("\u2713 " + msg);
+            console.log("[auth.js] Background sync:", msg);
+          } else if (msg && msg.includes("up to date")) {
+            markLastSynced();
+          }
+        } else {
+          // No change — just update the last-synced timestamp silently
           markLastSynced();
-          toastAuth("\u2713 " + msg);
-          console.log("[auth.js] Background sync:", msg);
-        } else if (msg && msg.includes("up to date")) {
-          markLastSynced(); // still update timestamp even if no changes
         }
       } catch (e) {
-        // Silent failure — don't bother the user unless they explicitly sync
-        console.warn("[auth.js] Background sync failed:", e.message);
+        console.warn("[auth.js] Background poll failed:", e.message);
       }
-    }, 60 * 1000); // every 60 seconds
+
+      scheduleNext();
+    };
+
+    // Store cleanup ref
+    syncPollerTimer = { _resetBackoff: resetBackoff };
+    scheduleNext();
   }
 
   function stopSyncPoller() {
     if (syncPollerTimer) {
-      clearInterval(syncPollerTimer);
+      if (syncPollerTimer._resetBackoff) {
+        document.removeEventListener("visibilitychange", syncPollerTimer._resetBackoff);
+      }
+      clearTimeout(syncPollerTimer);
       syncPollerTimer = null;
     }
+    pollBackoffMultiplier = 1;
   }
 
   function unlockApp(inner, password, salt = null, key = null) {
@@ -499,7 +651,7 @@
     try {
       const salt = base64ToBytes(vaultMeta.salt);
       const key = await deriveAesKey(remembered, salt);
-      const inner = await decryptJson(key, vaultMeta.iv, vaultMeta.ciphertext);
+      const inner = await decryptJson(key, vaultMeta.iv, vaultMeta.ciphertext, vaultMeta.compressed || false);
       if (!inner?.data) return false;
       unlockApp(inner, remembered, salt, key);
       return true;
@@ -524,6 +676,7 @@
         setAuthMessage(msgId, "Decrypting and loading data…", false);
         await window.LifeLedgerVaultStore.save(remote);
         vaultMeta = remote;
+        if (remote.updatedAt) window.LifeLedgerDrive.updateCachedRemoteTime?.(remote.updatedAt);
         setAuthMessage(msgId, "Almost ready…", false);
         showAuthPanel("login");
         setAuthMessage("loginMessage", "Vault restored from Drive. Enter your password.", false);
@@ -571,6 +724,7 @@
       if (!remoteVault) {
         if (vaultMeta) {
           await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
+          window.LifeLedgerDrive.updateCachedRemoteTime?.(vaultMeta.updatedAt);
           updateSyncStatusUI("synced");
           return "Synced: Local vault pushed to Google Drive.";
         }
@@ -610,7 +764,8 @@
                 _salt: unlockedPayload._salt, 
                 _sessionKey: unlockedPayload._sessionKey 
               };
-              window.LifeLedgerApp?.bootstrap(mergedData);
+              // Use rAF to avoid layout thrashing during sync re-render
+              requestAnimationFrame(() => window.LifeLedgerApp?.bootstrap(mergedData));
               console.log(`[auth.js] Sync merged: local=${localCount}, remote=${remoteCount}, merged=${mergedCount}`);
               updateSyncStatusUI("synced");
               return `Synced: Merged local (${localCount} entries) + Drive (${remoteCount} entries) → ${mergedCount} total.`;
@@ -636,6 +791,7 @@
         }
       } else if (localTime > remoteTime) {
         await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
+        window.LifeLedgerDrive.updateCachedRemoteTime?.(vaultMeta.updatedAt);
         updateSyncStatusUI("synced");
         return "Synced: Local changes pushed to Google Drive.";
       } else {
@@ -737,7 +893,7 @@
       try {
         salt = base64ToBytes(vaultMeta.salt);
         key = await deriveAesKey(password, salt);
-        inner = await decryptJson(key, vaultMeta.iv, vaultMeta.ciphertext);
+        inner = await decryptJson(key, vaultMeta.iv, vaultMeta.ciphertext, vaultMeta.compressed || false);
       } catch {
         throw new Error("Wrong password or corrupted vault.");
       }

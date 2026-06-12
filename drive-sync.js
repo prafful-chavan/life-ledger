@@ -14,6 +14,8 @@
   const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly";
   const FILE_ID_KEY = "lifeLedgerDriveFileId:v1";
   const TOKEN_CACHE_KEY = "lifeLedgerDriveToken:v1";
+  const REMOTE_MTIME_KEY = "lifeLedgerRemoteMTime:v1";
+  const ETAG_CACHE_KEY = "lifeLedgerVaultETag:v1";
 
   // Two-minute grace before considering a token expired (avoids mid-request expiry)
   const TOKEN_GRACE_MS = 2 * 60 * 1000;
@@ -21,6 +23,8 @@
   let accessToken = null;
   let tokenClient = null;
   let fileId = localStorage.getItem(FILE_ID_KEY) || null;
+  let cachedETag = null;
+  try { cachedETag = localStorage.getItem(ETAG_CACHE_KEY) || null; } catch(e) {}
 
   // ─── Token helpers ────────────────────────────────────────────────────────
 
@@ -133,15 +137,20 @@
       await requestAccessToken(options);
     }
 
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.headers || {}),
+    };
+
+    // Add ETag for conditional GET (skip if uploading)
+    if (options._useETag && cachedETag && !options.method) {
+      headers["If-None-Match"] = cachedETag;
+    }
+
     const response = await fetch(url, {
-      cache: "no-cache",
+      cache: "no-store",
       ...options,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-        ...(options.headers || {}),
-      },
+      headers,
     });
 
     if (response.status === 401) {
@@ -152,7 +161,13 @@
       }
       await requestAccessToken(options);
       // Retry the original request with the new token
-      return driveFetch(url, options);
+      return driveFetch(url, { ...options, _retried: true });
+    }
+
+    // Cache ETag from successful responses
+    if (response.ok && response.headers.has("etag")) {
+      cachedETag = response.headers.get("etag");
+      try { localStorage.setItem(ETAG_CACHE_KEY, cachedETag); } catch(e) {}
     }
 
     return response;
@@ -332,6 +347,11 @@
 
   // ─── Get remote vault metadata (timestamp only, no download) ─────────────
 
+  /**
+   * Lightweight metadata-only fetch — returns { id, modifiedTime, size }
+   * Costs ~200 bytes vs downloading the full vault.
+   * Returns null if offline or no file exists.
+   */
   async function getRemoteVaultMeta(options = {}) {
     if (!isConfigured()) return null;
     if (!accessToken) accessToken = getStoredToken();
@@ -353,10 +373,50 @@
         { silent: true }
       );
       if (!response.ok) return null;
-      return response.json();
+      const meta = await response.json();
+
+      // Cache the remote modifiedTime so we can skip full downloads
+      if (meta.modifiedTime) {
+        try { localStorage.setItem(REMOTE_MTIME_KEY, meta.modifiedTime); } catch(e) {}
+      }
+
+      return meta;
     } catch (e) {
       return null;
     }
+  }
+
+  /**
+   * Check if the remote vault has changed since our last known modifiedTime.
+   * Returns { changed: boolean, remoteMeta: object|null }
+   * This is the cheapest possible sync check — metadata only.
+   */
+  async function hasRemoteChanged() {
+    const meta = await getRemoteVaultMeta();
+    if (!meta) return { changed: false, remoteMeta: null };
+
+    let lastKnown = null;
+    try { lastKnown = localStorage.getItem(REMOTE_MTIME_KEY); } catch(e) {}
+
+    if (!lastKnown) {
+      // First time — consider it changed
+      return { changed: true, remoteMeta: meta };
+    }
+
+    const remoteMs = new Date(meta.modifiedTime).getTime();
+    const lastKnownMs = new Date(lastKnown).getTime();
+
+    return {
+      changed: remoteMs > lastKnownMs,
+      remoteMeta: meta
+    };
+  }
+
+  /**
+   * Update the cached remote modifiedTime after a successful upload.
+   */
+  function updateCachedRemoteTime(isoTime) {
+    try { localStorage.setItem(REMOTE_MTIME_KEY, isoTime); } catch(e) {}
   }
 
   async function downloadRemoteFileByName(filename, options = {}) {
@@ -458,6 +518,8 @@
 
     tryRestoreVault,
     getRemoteVaultMeta,
+    hasRemoteChanged,
+    updateCachedRemoteTime,
 
     hasLinkedDrive() {
       return Boolean(localStorage.getItem(FILE_ID_KEY));

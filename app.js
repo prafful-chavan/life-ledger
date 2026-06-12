@@ -473,6 +473,7 @@ window.LifeLedgerApp = {
 let saveDataTimer;
 let isSaving = false;
 let currentSavePromise = null;
+let failedSaveRetryPending = false;
 
 function saveData(immediate = false, kind = null) {
   if (!kind || kind === "expense" || kind === "expenses" || kind === "income") {
@@ -486,9 +487,12 @@ function saveData(immediate = false, kind = null) {
     isSaving = true;
     try {
       await window.LifeLedgerAuth.saveAppData(state);
+      failedSaveRetryPending = false;
     } catch (error) {
       console.warn(error);
       toast(error.message || "Could not save encrypted vault.");
+      // Mark for retry on next visibility change or user interaction
+      failedSaveRetryPending = true;
     } finally {
       isSaving = false;
       currentSavePromise = null;
@@ -503,11 +507,13 @@ function saveData(immediate = false, kind = null) {
       saveDataTimer = setTimeout(() => {
         currentSavePromise = saveAction();
         currentSavePromise.then(resolve);
-      }, 700);
+      }, 400); // 400ms debounce (was 700ms) — faster saves for mobile
     });
   }
 }
 
+// ─── Reliable save on page close / app switch ──────────────────────────────
+// beforeunload: works on desktop browsers
 window.addEventListener("beforeunload", (event) => {
   if (saveDataTimer || isSaving) {
     if (saveDataTimer) {
@@ -518,6 +524,47 @@ window.addEventListener("beforeunload", (event) => {
     event.preventDefault();
     event.returnValue = "Saving changes, please wait a moment...";
     return event.returnValue;
+  }
+});
+
+// visibilitychange: critical for iOS Safari — fires when user switches apps
+// or switches tabs. iOS does NOT fire beforeunload reliably.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    // Page is being hidden — flush any pending save immediately
+    if (saveDataTimer) {
+      console.log("[app.js] Page hidden — flushing pending save.");
+      clearTimeout(saveDataTimer);
+      saveDataTimer = null;
+      saveData(true);
+    }
+    // Retry failed saves when going to background (last chance before suspension)
+    if (failedSaveRetryPending && window.LifeLedgerAuth?.isUnlocked()) {
+      console.log("[app.js] Retrying failed save on visibility hide...");
+      failedSaveRetryPending = false;
+      saveData(true);
+    }
+  } else {
+    // Page became visible again — retry any failed saves
+    if (failedSaveRetryPending && window.LifeLedgerAuth?.isUnlocked()) {
+      console.log("[app.js] Tab re-focused — retrying failed save...");
+      failedSaveRetryPending = false;
+      saveData(true);
+    }
+  }
+});
+
+// pagehide: modern replacement for beforeunload on mobile, works as a safety net
+window.addEventListener("pagehide", (event) => {
+  if (saveDataTimer) {
+    clearTimeout(saveDataTimer);
+    saveDataTimer = null;
+    // Use sendBeacon pattern — fire and forget save for when the page is being unloaded
+    try {
+      window.LifeLedgerAuth?.saveAppData(state).catch(console.warn);
+    } catch(e) {
+      console.warn("[app.js] pagehide save failed:", e);
+    }
   }
 });
 
