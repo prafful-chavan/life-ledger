@@ -1280,7 +1280,10 @@ function buildQuickAddForm(kind, editId = null) {
       input = document.createElement("input");
       input.name = name;
       input.type = type === "checkbox" ? "checkbox" : type;
-      if (type === "number") input.inputMode = "decimal";
+      if (type === "number") {
+        input.inputMode = "decimal";
+        input.step = "any";
+      }
     }
 
     if (existingEntry) {
