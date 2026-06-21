@@ -633,7 +633,7 @@ function normalizeData(data) {
     }),
     workouts: ensureIds(data.workouts || [], "work"),
     habits: ensureIds(data.habits || [], "habit"),
-    chat: data.chat || [],
+    chat: ensureIds(data.chat || [], "chat"),
     mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
     interviewPrep: data.interviewPrep || { mastered: [], flagged: [], customProjects: [] },
   };
@@ -1174,7 +1174,7 @@ async function resetData(scope) {
 
 function ensureAssistantWelcome(shouldSave) {
   if (state.chat.length > 0) return;
-  state.chat.push({ role: "assistant", text: assistantWelcome, at: new Date().toISOString() });
+  state.chat.push({ id: `chat-${generateUUID()}`, role: "assistant", text: assistantWelcome, at: new Date().toISOString() });
   if (shouldSave) saveData();
 }
 
@@ -5301,7 +5301,7 @@ function renderChat() {
 }
 
 function addChat(role, text) {
-  state.chat.push({ role, text, at: new Date().toISOString() });
+  state.chat.push({ id: `chat-${generateUUID()}`, role, text, at: new Date().toISOString() });
   saveData();
   renderChat();
 }

@@ -216,6 +216,41 @@
     };
   }
 
+  /**
+   * Create a content fingerprint for an item without an id.
+   * Uses a fast string hash of key properties to detect duplicates.
+   */
+  function itemContentKey(item) {
+    // For chat messages: role + text + timestamp is unique enough
+    if (item.role !== undefined && item.text !== undefined) {
+      return `chat:${item.role}:${item.text}:${item.at || ''}`;
+    }
+    // Fallback: JSON-stringify the whole item (slow but safe)
+    return JSON.stringify(item);
+  }
+
+  /**
+   * Compute a fast hash of vault data content for comparison.
+   * Returns a string fingerprint that changes when data changes.
+   */
+  function vaultDataFingerprint(data) {
+    if (!data) return 'null';
+    const arrayKeys = [
+      'income', 'expenses', 'assets', 'liabilities',
+      'mutualFunds', 'stocks', 'fd', 'epf', 'bonds', 'ppf',
+      'gold', 'silver', 'crypto', 'usstocks', 'banksaving', 'others',
+      'goals', 'tasks', 'studies', 'workouts', 'habits', 'chat'
+    ];
+    // Count entries and collect all IDs/content keys for a deterministic fingerprint
+    const parts = [];
+    for (const key of arrayKeys) {
+      const arr = Array.isArray(data[key]) ? data[key] : [];
+      const ids = arr.map(item => item.id || itemContentKey(item)).sort();
+      parts.push(`${key}:${ids.length}:[${ids.join(',')}]`);
+    }
+    return parts.join('|');
+  }
+
   function mergeVaultData(localData, remoteData) {
     if (!localData) return remoteData;
     if (!remoteData) return localData;
@@ -235,12 +270,20 @@
 
       const mergedList = [];
       const seenIds = new Set();
+      // Track content fingerprints for items without IDs (e.g. chat messages)
+      const seenContentKeys = new Set();
 
       const addItem = (item) => {
         if (!item) return;
         if (item.id) {
+          // ID-based dedup (standard path)
           if (seenIds.has(item.id)) return;
           seenIds.add(item.id);
+        } else {
+          // Content-based dedup for items without IDs (chat, etc.)
+          const contentKey = itemContentKey(item);
+          if (seenContentKeys.has(contentKey)) return;
+          seenContentKeys.add(contentKey);
         }
         mergedList.push(item);
       };
@@ -751,10 +794,29 @@
               const remoteData = inner.data;
               const localCount = countEntries(localData);
               const remoteCount = countEntries(remoteData);
-              // Safety: if local has significantly more data, don't overwrite — merge instead
+
+              // Compute fingerprints BEFORE merging to detect if merge changes anything
+              const localFingerprint = vaultDataFingerprint(localData);
+              const remoteFingerprint = vaultDataFingerprint(remoteData);
+
               const mergedData = mergeVaultData(localData, remoteData);
               const mergedCount = countEntries(mergedData);
-              // Rebuild vault with merged data
+              const mergedFingerprint = vaultDataFingerprint(mergedData);
+
+              // If merged data is identical to local data, no actual new content
+              // → just accept the remote timestamp, don't re-save or re-upload
+              if (mergedFingerprint === localFingerprint) {
+                // Content is identical — update local vault timestamp to match remote
+                // so we don't keep re-checking, but do NOT upload back to Drive
+                vaultMeta = remoteVault;
+                await window.LifeLedgerVaultStore.save(remoteVault);
+                window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
+                console.log(`[auth.js] Sync: remote newer but content identical (${localCount} entries). Accepted remote timestamp, no re-upload.`);
+                updateSyncStatusUI("synced");
+                return `Synced: Already up to date (${localCount} entries).`;
+              }
+
+              // Actual new content from remote — rebuild and save+upload
               const mergedInner = vaultInnerPayload(mergedData, inner.totpSecret || unlockedPayload.totpSecret);
               const mergedVault = await buildVault(password, mergedInner, unlockedPayload._salt, unlockedPayload._sessionKey);
               await saveVaultFile(mergedVault);
