@@ -1636,6 +1636,27 @@ body.auth-locked .app-shell {
   margin-bottom: 6px;
 }
 
+/* Push to Drive — visually distinct manual push action */
+.push-drive-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.push-drive-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+.push-drive-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+body[data-theme="dark"] .push-drive-btn {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+}
+
 .expense-toolbar {
   display: flex;
   flex-wrap: wrap;

@@ -866,6 +866,63 @@
     }
   }
 
+  /**
+   * Force-push current local vault data to Google Drive.
+   * This OVERWRITES whatever is on Drive with the current local state.
+   * Use when you want to ensure Drive has exactly what you see locally.
+   */
+  async function forcePushToDrive() {
+    if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) {
+      throw new Error("Google Drive not connected. Link Drive first.");
+    }
+    if (!unlockedPayload) {
+      throw new Error("Vault is locked. Unlock first to push data.");
+    }
+
+    // Flush any pending local saves first
+    if (window.LifeLedgerApp?.flushSave) {
+      await window.LifeLedgerApp.flushSave();
+    }
+
+    // Wait for any in-flight background uploads to finish
+    while (activeUploadPromise || nextUploadVault) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    updateSyncStatusUI("syncing");
+
+    try {
+      if (!window.LifeLedgerDrive?.isConnected()) {
+        await window.LifeLedgerDrive.connect();
+      }
+
+      // Rebuild the vault with a FRESH timestamp so it's always "newer"
+      const password = unlockedPayload._sessionPassword;
+      const salt = unlockedPayload._salt;
+      const sessionKey = unlockedPayload._sessionKey;
+      const inner = vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret);
+      const vault = await buildVault(password, inner, salt, sessionKey);
+
+      // Save locally (updates vaultMeta timestamp)
+      await window.LifeLedgerVaultStore.save(vault);
+      vaultMeta = vault;
+
+      // Force upload to Drive — no merge, no comparison
+      await window.LifeLedgerDrive.saveVault(vault, { silent: false });
+      window.LifeLedgerDrive.updateCachedRemoteTime?.(vault.updatedAt);
+
+      const entryCount = countEntries(unlockedPayload.data);
+      console.log(`[auth.js] Force-pushed ${entryCount} entries to Google Drive.`);
+      updateDriveBadge();
+      markLastSynced();
+      updateSyncStatusUI("synced");
+      return `Pushed to Drive: ${entryCount} entries uploaded successfully.`;
+    } catch (err) {
+      updateSyncStatusUI("failed");
+      throw err;
+    }
+  }
+
   const LifeLedgerAuth = {
     isConfigured() {
       return Boolean(vaultMeta);
@@ -983,6 +1040,10 @@
       return window.LifeLedgerDrive.isConnected();
     },
 
+    async pushToDrive() {
+      return forcePushToDrive();
+    },
+
     driveStatus() {
       return window.LifeLedgerDrive?.status?.() || { connected: false };
     },
@@ -1064,6 +1125,31 @@
           btns.forEach(b => {
             b.disabled = false;
             b.textContent = "⟳ Sync now";
+          });
+        }
+      });
+    });
+
+    // Push to Drive buttons — force-upload local data
+    document.querySelectorAll("#pushToDriveButton, #settingsPushToDriveButton").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const btns = document.querySelectorAll("#pushToDriveButton, #settingsPushToDriveButton");
+        btns.forEach(b => {
+          b.disabled = true;
+          b.textContent = "Pushing…";
+        });
+        try {
+          const msg = await forcePushToDrive();
+          updateDriveBadge();
+          markLastSynced();
+          toastAuth(msg);
+        } catch (error) {
+          console.warn(error);
+          toastAuth(error.message);
+        } finally {
+          btns.forEach(b => {
+            b.disabled = false;
+            b.textContent = "☁↑ Push to Drive";
           });
         }
       });
