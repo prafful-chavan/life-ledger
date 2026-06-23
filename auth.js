@@ -400,8 +400,20 @@
   let saveGeneration = 0;
   const MAX_UPLOAD_RETRIES = 3;
 
+  // Session gate: auto-uploads are blocked until the first successful sync (pull)
+  // completes. This prevents stale local data from overwriting fresh Drive data
+  // when opening the app on a device that hasn't been used recently.
+  let hasSyncedThisSession = false;
+
   function triggerDriveUpload(vault) {
     if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) return;
+
+    // CRITICAL: Do NOT auto-push to Drive until we've confirmed our local data
+    // is current by doing at least one pull from Drive this session.
+    if (!hasSyncedThisSession) {
+      console.log("[auth.js] Auto-upload skipped — session not yet synced with Drive. Use 'Push to Drive' for manual upload.");
+      return;
+    }
 
     saveGeneration++;
     nextUploadVault = vault;
@@ -734,23 +746,21 @@
     }
   }
 
+  /**
+   * Sync with Drive = PULL from Drive.
+   * Drive is the single source of truth.
+   * - If remote vault exists → REPLACE local data entirely with remote data.
+   * - If no remote vault → push local to Drive (first-time setup).
+   * - NO merging. No combining. Clean replace.
+   */
   async function syncWithDrive(silent = true) {
     if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) {
       return "Not synced: Google Drive not connected.";
     }
 
-    // Flush any pending local saves first
-    if (window.LifeLedgerApp?.flushSave) {
-      await window.LifeLedgerApp.flushSave();
-    }
-
-    // Wait for any active or queued background uploads to complete first
-    if (activeUploadPromise || nextUploadVault) {
-      console.log("[auth.js] Waiting for active/queued background upload to complete before syncing...");
-      while (activeUploadPromise || nextUploadVault) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
+    // Do NOT flush pending saves — we're about to replace local with Drive data anyway.
+    // Also do NOT wait for background uploads — cancel them, Drive data wins.
+    nextUploadVault = null; // Cancel any queued upload
 
     updateSyncStatusUI("syncing");
 
@@ -764,101 +774,89 @@
       }
 
       const remoteVault = await window.LifeLedgerDrive.loadVault({ silent });
+
+      // --- Case 1: No remote vault on Drive ---
       if (!remoteVault) {
         if (vaultMeta) {
+          // First time: push local vault to Drive
           await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
           window.LifeLedgerDrive.updateCachedRemoteTime?.(vaultMeta.updatedAt);
+          hasSyncedThisSession = true;
           updateSyncStatusUI("synced");
-          return "Synced: Local vault pushed to Google Drive.";
+          return "Synced: Local vault pushed to Google Drive (first time setup).";
         }
         throw new Error("No vault found to sync.");
       }
 
+      // --- Case 2: Vault is locked (not unlocked yet) ---
       if (!vaultMeta) {
         await window.LifeLedgerVaultStore.save(remoteVault);
         vaultMeta = remoteVault;
+        hasSyncedThisSession = true;
         updateSyncStatusUI("synced");
         return "Synced: Vault restored from Google Drive.";
       }
 
-      const localTime = new Date(vaultMeta.updatedAt || 0).getTime();
-      const remoteTime = new Date(remoteVault.updatedAt || 0).getTime();
+      // --- Case 3: Vault is unlocked — PULL remote data as truth ---
+      if (unlockedPayload) {
+        const password = unlockedPayload._sessionPassword;
+        try {
+          const inner = await openVault(password, remoteVault);
+          if (inner && inner.data) {
+            const remoteData = inner.data;
+            const localCount = countEntries(unlockedPayload.data);
+            const remoteCount = countEntries(remoteData);
 
-      if (remoteTime > localTime) {
-        if (unlockedPayload) {
-          const password = unlockedPayload._sessionPassword;
-          try {
-            const inner = await openVault(password, remoteVault);
-            if (inner && inner.data) {
-              const localData = unlockedPayload.data;
-              const remoteData = inner.data;
-              const localCount = countEntries(localData);
-              const remoteCount = countEntries(remoteData);
+            // Check if content is actually different
+            const localFingerprint = vaultDataFingerprint(unlockedPayload.data);
+            const remoteFingerprint = vaultDataFingerprint(remoteData);
 
-              // Compute fingerprints BEFORE merging to detect if merge changes anything
-              const localFingerprint = vaultDataFingerprint(localData);
-              const remoteFingerprint = vaultDataFingerprint(remoteData);
-
-              const mergedData = mergeVaultData(localData, remoteData);
-              const mergedCount = countEntries(mergedData);
-              const mergedFingerprint = vaultDataFingerprint(mergedData);
-
-              // If merged data is identical to local data, no actual new content
-              // → just accept the remote timestamp, don't re-save or re-upload
-              if (mergedFingerprint === localFingerprint) {
-                // Content is identical — update local vault timestamp to match remote
-                // so we don't keep re-checking, but do NOT upload back to Drive
-                vaultMeta = remoteVault;
-                await window.LifeLedgerVaultStore.save(remoteVault);
-                window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
-                console.log(`[auth.js] Sync: remote newer but content identical (${localCount} entries). Accepted remote timestamp, no re-upload.`);
-                updateSyncStatusUI("synced");
-                return `Synced: Already up to date (${localCount} entries).`;
-              }
-
-              // Actual new content from remote — rebuild and save+upload
-              const mergedInner = vaultInnerPayload(mergedData, inner.totpSecret || unlockedPayload.totpSecret);
-              const mergedVault = await buildVault(password, mergedInner, unlockedPayload._salt, unlockedPayload._sessionKey);
-              await saveVaultFile(mergedVault);
-              unlockedPayload = { 
-                ...mergedInner, 
-                _sessionPassword: password, 
-                _salt: unlockedPayload._salt, 
-                _sessionKey: unlockedPayload._sessionKey 
-              };
-              // Use rAF to avoid layout thrashing during sync re-render
-              requestAnimationFrame(() => window.LifeLedgerApp?.bootstrap(mergedData));
-              console.log(`[auth.js] Sync merged: local=${localCount}, remote=${remoteCount}, merged=${mergedCount}`);
+            if (remoteFingerprint === localFingerprint) {
+              // Data is identical — just accept remote timestamp
+              vaultMeta = remoteVault;
+              await window.LifeLedgerVaultStore.save(remoteVault);
+              window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
+              hasSyncedThisSession = true;
+              console.log(`[auth.js] Sync: content identical (${localCount} entries). Accepted remote timestamp.`);
               updateSyncStatusUI("synced");
-              return `Synced: Merged local (${localCount} entries) + Drive (${remoteCount} entries) → ${mergedCount} total.`;
-            } else {
-              throw new Error("Invalid remote vault structure.");
+              return `Synced: Already up to date (${localCount} entries).`;
             }
-          } catch (e) {
-            updateSyncStatusUI("failed");
-            if (e.message?.includes("Invalid remote vault")) throw e;
-            throw new Error("Google Drive has newer changes, but they couldn't be decrypted with your current password. Please sign out and log back in.");
+
+            // REPLACE local with remote data — Drive is master
+            // Save the remote vault as-is (keeps remote timestamp)
+            await window.LifeLedgerVaultStore.save(remoteVault);
+            vaultMeta = remoteVault;
+            window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
+
+            // Update in-memory payload with remote data
+            unlockedPayload = {
+              ...inner,
+              _sessionPassword: password,
+              _salt: unlockedPayload._salt,
+              _sessionKey: unlockedPayload._sessionKey
+            };
+
+            // Re-render with fresh remote data
+            requestAnimationFrame(() => window.LifeLedgerApp?.bootstrap(remoteData));
+            hasSyncedThisSession = true;
+            console.log(`[auth.js] Sync PULL: replaced local (${localCount} entries) with Drive (${remoteCount} entries).`);
+            updateSyncStatusUI("synced");
+            return `Synced: Pulled ${remoteCount} entries from Google Drive.`;
+          } else {
+            throw new Error("Invalid remote vault structure.");
           }
-        } else {
-          // Safety check: if local has more entries, don't replace while locked!
-          if (vaultMeta && (vaultMeta.entryCount || 0) > (remoteVault.entryCount || 0)) {
-            console.warn(`[auth.js] Remote vault has newer timestamp but fewer entries (${remoteVault.entryCount || 0} vs local ${vaultMeta.entryCount || 0}). Postponing sync until unlocked to perform a merge.`);
-            updateSyncStatusUI("failed");
-            return "Not synced: Remote has fewer entries. Unlock to merge.";
-          }
-          vaultMeta = remoteVault;
-          await window.LifeLedgerVaultStore.save(remoteVault);
-          updateSyncStatusUI("synced");
-          return "Synced: Updated local vault from Google Drive. Unlock to view.";
+        } catch (e) {
+          updateSyncStatusUI("failed");
+          if (e.message?.includes("Invalid remote vault")) throw e;
+          throw new Error("Google Drive vault couldn't be decrypted with your current password. Please sign out and log back in.");
         }
-      } else if (localTime > remoteTime) {
-        await window.LifeLedgerDrive.saveVault(vaultMeta, { silent });
-        window.LifeLedgerDrive.updateCachedRemoteTime?.(vaultMeta.updatedAt);
-        updateSyncStatusUI("synced");
-        return "Synced: Local changes pushed to Google Drive.";
       } else {
+        // Locked — just accept remote vault metadata
+        vaultMeta = remoteVault;
+        await window.LifeLedgerVaultStore.save(remoteVault);
+        hasSyncedThisSession = true;
         updateSyncStatusUI("synced");
-        return "Synced: Already up to date.";
+        return "Synced: Updated local vault from Google Drive. Unlock to view.";
       }
     } catch (err) {
       updateSyncStatusUI("failed");
@@ -913,6 +911,7 @@
 
       const entryCount = countEntries(unlockedPayload.data);
       console.log(`[auth.js] Force-pushed ${entryCount} entries to Google Drive.`);
+      hasSyncedThisSession = true; // Enable auto-uploads for subsequent saves this session
       updateDriveBadge();
       markLastSynced();
       updateSyncStatusUI("synced");
@@ -1111,7 +1110,7 @@
         const btns = document.querySelectorAll("#syncDriveButton, #settingsSyncDriveButton");
         btns.forEach(b => {
           b.disabled = true;
-          b.textContent = "Syncing…";
+          b.textContent = "Pulling…";
         });
         try {
           const msg = await syncWithDrive(false);
@@ -1124,7 +1123,7 @@
         } finally {
           btns.forEach(b => {
             b.disabled = false;
-            b.textContent = "⟳ Sync now";
+            b.textContent = "⟳ Pull from Drive";
           });
         }
       });
