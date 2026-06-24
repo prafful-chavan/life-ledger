@@ -16,7 +16,8 @@
     <script defer src="vault-store.js?v=1.0.8"></script>
     <script defer src="drive-sync.js?v=1.0.8"></script>
     <script defer src="interview-db.js?v=1.0.8"></script>
-    <script defer src="app.js?v=1.0.8"></script>
+    <script defer src="ai-agent.js?v=1.0.1"></script>
+    <script defer src="app.js?v=1.0.9"></script>
     <script defer src="auth.js?v=1.0.8"></script>
   </head>
   <body class="auth-locked">
@@ -179,6 +180,16 @@
             <select class="period-pill-select" id="dashboardMonthSelect" aria-label="Select dashboard month">
               <option value="">Loading...</option>
             </select>
+          </div>
+
+          <!-- AI Insights Banner -->
+          <div class="ai-insights-banner" id="aiInsightsBanner" style="display: none;">
+            <div class="ai-insights-header">
+              <span class="ai-insights-icon">🧠</span>
+              <span class="ai-insights-title">AI Insights</span>
+              <button class="ai-insights-close" id="aiInsightsClose" title="Dismiss">&times;</button>
+            </div>
+            <div class="ai-insights-content" id="aiInsightsContent">Loading insights...</div>
           </div>
 
           <div class="metric-grid" id="metricGrid"></div>
@@ -1413,10 +1424,13 @@
                 <div class="chat-header-avatar">🤖</div>
                 <div class="chat-header-info">
                   <strong id="assistantTitle">Hey Prafful</strong>
-                  <span class="chat-status-badge"><span class="chat-online-dot"></span> Online</span>
+                  <span class="chat-status-badge" id="aiModeBadge"><span class="chat-online-dot"></span> <span id="aiModeLabel">Offline</span></span>
                 </div>
               </div>
-              <button class="chat-clear-btn" onclick="if(confirm('Clear chat history?')){state.chat=[];saveData();renderChat();}" title="Clear chat">🗑️</button>
+              <div class="chat-header-actions">
+                <button class="ai-briefing-btn" id="dailyBriefingBtn" title="Daily Briefing">📋</button>
+                <button class="chat-clear-btn" onclick="if(confirm('Clear chat history?')){state.chat=[];saveData();renderChat();}" title="Clear chat">🗑️</button>
+              </div>
             </div>
 
             <!-- Chat Messages Area -->
@@ -1430,24 +1444,24 @@
                 <p>I know your finances, investments, career, habits &amp; goals</p>
               </div>
               <div class="chip-grid">
-                <button type="button" class="chip" data-prompt="Give me this month's finance summary">📊 Monthly summary</button>
+                <!-- AI-Powered Prompts -->
+                <button type="button" class="chip chip-ai" data-prompt="Give me my daily briefing — tasks, habits, finances, exercise, everything">📋 Daily Briefing</button>
+                <button type="button" class="chip chip-ai" data-prompt="Predict when I will complete each of my goals based on my current savings pace">🔮 Goal Predictions</button>
+                <button type="button" class="chip chip-ai" data-prompt="Analyze my spending trends — compare this month vs last month and identify patterns">📊 Spending Trends</button>
+                <button type="button" class="chip chip-ai" data-prompt="Give me honest, tough-love feedback on how I'm doing across finances, habits, career, and fitness">💪 Roast Me</button>
+                <button type="button" class="chip chip-ai" data-prompt="What should I focus on this week to make the biggest impact on my goals?">🎯 Weekly Focus</button>
+                <button type="button" class="chip chip-ai" data-prompt="How is my investment strategy? Am I diversified enough? Any suggestions?">📈 Investment Review</button>
+                <!-- Data Prompts -->
+                <button type="button" class="chip" data-prompt="Give me this month's finance summary">💰 Monthly summary</button>
                 <button type="button" class="chip" data-prompt="What is my net worth?">💼 Net worth</button>
                 <button type="button" class="chip" data-prompt="Show my full portfolio breakdown">💹 Portfolio</button>
                 <button type="button" class="chip" data-prompt="How are my mutual funds doing?">📈 Mutual funds</button>
-                <button type="button" class="chip" data-prompt="How is my gold and silver doing?">🥇 Gold &amp; Silver</button>
-                <button type="button" class="chip" data-prompt="How is my crypto portfolio?">🔐 Crypto</button>
-                <button type="button" class="chip" data-prompt="Show my EPF and PPF balance">🏢 EPF &amp; PPF</button>
-                <button type="button" class="chip" data-prompt="Show my salary income">💰 Salary</button>
-                <button type="button" class="chip" data-prompt="How are my liabilities and loans?">⚠️ Loans</button>
-                <button type="button" class="chip" data-prompt="How is my DevOps SRE roadmap going?">🚀 DevOps roadmap</button>
-                <button type="button" class="chip" data-prompt="How is wife's ETL data engineering roadmap?">📊 Wife's ETL</button>
-                <button type="button" class="chip" data-prompt="What should I do today?">📅 Today's plan</button>
                 <button type="button" class="chip" data-prompt="Show my habits and streaks">🔥 Habits</button>
                 <button type="button" class="chip" data-prompt="What are my pending tasks?">✅ Tasks</button>
                 <button type="button" class="chip" data-prompt="How are our goals looking?">🎯 Goals</button>
-                <button type="button" class="chip" data-prompt="Compare me and my wife">👫 Me vs Wife</button>
-                <button type="button" class="chip" data-prompt="How am I doing overall?">🌟 Overview</button>
+                <button type="button" class="chip" data-prompt="How is my DevOps SRE roadmap going?">🚀 DevOps roadmap</button>
                 <button type="button" class="chip" data-prompt="Show my exercise log">🏃 Exercise</button>
+                <button type="button" class="chip" data-prompt="How am I doing overall?">🌟 Overview</button>
               </div>
             </div>
 
@@ -1588,6 +1602,26 @@
             <button class="secondary-button push-drive-btn" type="button" id="settingsPushToDriveButton" style="flex: 1;">☁↑ Push to Drive</button>
           </div>
           <button class="secondary-button" type="button" id="settingsExportDataButton" style="width: 100%; margin-top: 8px;">📤 Export backup JSON</button>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section">
+          <h4>🧠 AI Agent</h4>
+          <p class="muted-small" style="margin-bottom: 12px;">Power up the "Hey Prafful" assistant with Google Gemini AI for intelligent, data-aware conversations.</p>
+          <div class="settings-row" style="margin-top: 8px;">
+            <span>Gemini API Key:</span>
+            <input type="password" id="settingsGeminiApiKey" placeholder="Paste your API key" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button class="secondary-button" type="button" id="settingsSaveApiKey" style="flex: 1;">💾 Save Key</button>
+            <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1;">🗑️ Clear Key</button>
+          </div>
+          <p class="muted-small" style="margin-top: 8px;">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--brand);">aistudio.google.com/apikey</a> · Free tier: 15 req/min, 1500 req/day</p>
+          <div class="settings-row" style="margin-top: 12px;">
+            <span>AI Status:</span>
+            <span id="settingsAiStatus" class="status-badge">Checking...</span>
+          </div>
         </div>
 
         <div class="settings-divider"></div>

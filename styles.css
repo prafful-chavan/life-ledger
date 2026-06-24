@@ -3379,4 +3379,145 @@ body[data-theme="dark"] .goal-time-left {
   transition: width 0.3s ease;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   AI AGENT STYLES
+   ══════════════════════════════════════════════════════════════════════════════ */
 
+/* ─── AI Insights Banner ─────────────────────────────────────────────────── */
+.ai-insights-banner {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.ai-insights-banner::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #10b981, #3b82f6, #8b5cf6);
+  border-radius: 16px 16px 0 0;
+}
+.ai-insights-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ai-insights-icon {
+  font-size: 1.3rem;
+}
+.ai-insights-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink);
+  flex: 1;
+}
+.ai-insights-close {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 4px;
+  line-height: 1;
+}
+.ai-insights-close:hover {
+  color: var(--ink);
+}
+.ai-insights-content {
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.ai-insights-loading {
+  color: var(--muted);
+  font-style: italic;
+}
+body[data-theme="dark"] .ai-insights-banner {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.06) 0%, rgba(59, 130, 246, 0.06) 100%);
+  border-color: rgba(16, 185, 129, 0.15);
+}
+
+/* ─── Typing Indicator ───────────────────────────────────────────────────── */
+.ai-typing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0.8;
+}
+.typing-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.typing-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: typingBounce 1.2s infinite ease-in-out;
+}
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+.typing-text {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ─── AI Mode Badge ──────────────────────────────────────────────────────── */
+#aiModeBadge {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* ─── Chat Header Actions ────────────────────────────────────────────────── */
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-briefing-btn {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  border: none;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, opacity 0.2s;
+}
+.ai-briefing-btn:hover {
+  transform: scale(1.08);
+  opacity: 0.9;
+}
+
+/* ─── AI Suggestion Chips ────────────────────────────────────────────────── */
+.chip-ai {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(99, 102, 241, 0.12) 100%) !important;
+  border-color: rgba(139, 92, 246, 0.3) !important;
+  font-weight: 600;
+}
+.chip-ai:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%) !important;
+  border-color: rgba(139, 92, 246, 0.5) !important;
+}
+body[data-theme="dark"] .chip-ai {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%) !important;
+  border-color: rgba(139, 92, 246, 0.25) !important;
+}

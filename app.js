@@ -447,6 +447,7 @@ function bootstrapApp(initialState) {
     bindReset();
     bindChat();
     bindExport();
+    bindAiSettings();
     bindDashboard();
     bindGoals();
     bindTodoAndKeepEvents();
@@ -456,6 +457,9 @@ function bootstrapApp(initialState) {
   }
   renderAll();
   refreshMutualFundNAVs(false);
+
+  // Load AI insights in background (non-blocking)
+  setTimeout(() => loadAiInsights(), 1500);
 }
 
 window.LifeLedgerApp = {
@@ -1074,25 +1078,114 @@ function bindReset() {
 
 function bindChat() {
   const form = document.getElementById("chatForm");
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = document.getElementById("chatInput");
     const question = input.value.trim();
     if (!question) return;
     addChat("user", question);
-    addChat("assistant", answerQuestion(question));
     input.value = "";
+    input.disabled = true;
+
+    // Try AI agent first, fallback to regex
+    if (window.LifeLedgerAI?.isAiAvailable()) {
+      showTypingIndicator();
+      try {
+        // Pass recent chat history for conversation context
+        const recentHistory = state.chat.filter(m => m.role === "user" || m.role === "assistant").slice(-10);
+        const aiResponse = await window.LifeLedgerAI.askAgent(question, state, recentHistory);
+        hideTypingIndicator();
+        addChat("assistant", aiResponse);
+      } catch (error) {
+        hideTypingIndicator();
+        console.warn("[AI Agent] Error:", error.message);
+        // Fallback to regex
+        const fallback = answerQuestion(question);
+        addChat("assistant", fallback + "\n\n_⚠️ AI unavailable: " + error.message + "_");
+      }
+    } else {
+      addChat("assistant", answerQuestion(question));
+    }
+    input.disabled = false;
+    input.focus();
   });
 
   document.querySelectorAll("[data-prompt]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const question = button.dataset.prompt;
       addChat("user", question);
-      addChat("assistant", answerQuestion(question));
+
+      if (window.LifeLedgerAI?.isAiAvailable()) {
+        showTypingIndicator();
+        try {
+          const recentHistory = state.chat.filter(m => m.role === "user" || m.role === "assistant").slice(-10);
+          const aiResponse = await window.LifeLedgerAI.askAgent(question, state, recentHistory);
+          hideTypingIndicator();
+          addChat("assistant", aiResponse);
+        } catch (error) {
+          hideTypingIndicator();
+          addChat("assistant", answerQuestion(question));
+        }
+      } else {
+        addChat("assistant", answerQuestion(question));
+      }
     });
   });
 
+  // Daily Briefing button
+  document.getElementById("dailyBriefingBtn")?.addEventListener("click", async () => {
+    if (!window.LifeLedgerAI?.isAiAvailable()) {
+      toast("Set up your Gemini API key in Settings to use AI features.");
+      return;
+    }
+    addChat("user", "📋 Generate my daily briefing");
+    showTypingIndicator();
+    try {
+      const briefing = await window.LifeLedgerAI.generateDailyBriefing(state);
+      hideTypingIndicator();
+      addChat("assistant", briefing);
+    } catch (error) {
+      hideTypingIndicator();
+      addChat("assistant", "Could not generate briefing: " + error.message);
+    }
+  });
+
   ensureAssistantWelcome(true);
+  updateAiModeBadge();
+}
+
+function showTypingIndicator() {
+  const log = document.getElementById("chatLog");
+  let indicator = document.getElementById("aiTypingIndicator");
+  if (!indicator) {
+    indicator = document.createElement("div");
+    indicator.id = "aiTypingIndicator";
+    indicator.className = "chat-message assistant ai-typing";
+    indicator.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div> <span class="typing-text">AI is thinking...</span>';
+  }
+  log.append(indicator);
+  log.scrollTop = log.scrollHeight;
+}
+
+function hideTypingIndicator() {
+  document.getElementById("aiTypingIndicator")?.remove();
+}
+
+function updateAiModeBadge() {
+  const label = document.getElementById("aiModeLabel");
+  const badge = document.getElementById("aiModeBadge");
+  const dot = badge?.querySelector(".chat-online-dot");
+  const settingsStatus = document.getElementById("settingsAiStatus");
+
+  if (window.LifeLedgerAI?.isAiAvailable()) {
+    if (label) label.textContent = "🧠 AI Powered";
+    if (dot) dot.style.background = "#10b981";
+    if (settingsStatus) { settingsStatus.textContent = "✅ Connected"; settingsStatus.style.color = "#10b981"; }
+  } else {
+    if (label) label.textContent = "Offline Mode";
+    if (dot) dot.style.background = "#f59e0b";
+    if (settingsStatus) { settingsStatus.textContent = "❌ No API key"; settingsStatus.style.color = "#ef4444"; }
+  }
 }
 
 function bindExport() {
@@ -1107,6 +1200,64 @@ function bindExport() {
       toast("Backup exported.");
     });
   });
+}
+
+function bindAiSettings() {
+  // Load existing key into input
+  const keyInput = document.getElementById("settingsGeminiApiKey");
+  if (keyInput && window.LifeLedgerAI?.getApiKey()) {
+    keyInput.value = window.LifeLedgerAI.getApiKey();
+  }
+
+  // Save key
+  document.getElementById("settingsSaveApiKey")?.addEventListener("click", () => {
+    const key = document.getElementById("settingsGeminiApiKey")?.value?.trim();
+    if (!key) { toast("Please enter an API key."); return; }
+    window.LifeLedgerAI?.setApiKey(key);
+    updateAiModeBadge();
+    toast("✅ Gemini API key saved! AI agent is now active.");
+  });
+
+  // Clear key
+  document.getElementById("settingsClearApiKey")?.addEventListener("click", () => {
+    window.LifeLedgerAI?.setApiKey("");
+    const keyInput = document.getElementById("settingsGeminiApiKey");
+    if (keyInput) keyInput.value = "";
+    updateAiModeBadge();
+    toast("API key cleared. AI agent disabled.");
+  });
+
+  // Dismiss insights banner
+  document.getElementById("aiInsightsClose")?.addEventListener("click", () => {
+    const banner = document.getElementById("aiInsightsBanner");
+    if (banner) banner.style.display = "none";
+  });
+
+  updateAiModeBadge();
+}
+
+// Load AI insights on dashboard (called after bootstrap)
+async function loadAiInsights() {
+  if (!window.LifeLedgerAI?.isAiAvailable()) return;
+  const banner = document.getElementById("aiInsightsBanner");
+  const content = document.getElementById("aiInsightsContent");
+  if (!banner || !content) return;
+
+  banner.style.display = "";
+  content.innerHTML = '<span class="ai-insights-loading">Analyzing your data...</span>';
+
+  try {
+    const insights = await window.LifeLedgerAI.generateInsights(state);
+    // Convert markdown-like formatting to HTML
+    content.innerHTML = insights
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/_(.+?)_/g, "<em>$1</em>")
+      .replace(/\n/g, "<br>");
+  } catch (error) {
+    console.warn("[AI Insights] Failed:", error.message);
+    banner.style.display = "none";
+  }
 }
 
 function openModal(id) {
