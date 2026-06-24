@@ -327,7 +327,16 @@ CAPABILITIES:
 
       if (!response.ok) {
         const errorBody = await response.text();
-        if (response.status === 429) throw new Error("Rate limit reached. Please wait a moment and try again.");
+        if (response.status === 429) {
+          let extraMsg = "";
+          try {
+            const errObj = JSON.parse(errorBody);
+            if (errObj?.error?.message) {
+              extraMsg = " Details: " + errObj.error.message;
+            }
+          } catch (e) {}
+          throw new Error("Rate limit reached. Please wait a moment and try again." + extraMsg);
+        }
         if (response.status === 400 && errorBody.includes("API_KEY")) throw new Error("Invalid Gemini API key. Check Settings → AI Agent.");
         throw new Error(`Gemini API error (${response.status}): ${errorBody.slice(0, 200)}`);
       }
