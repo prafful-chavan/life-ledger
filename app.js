@@ -1237,7 +1237,7 @@ function bindAiSettings() {
     if (keyInput) keyInput.value = "";
 
     const modelSelect = document.getElementById("settingsGeminiModel");
-    if (modelSelect) modelSelect.value = "gemini-1.5-flash";
+    if (modelSelect) modelSelect.value = "gemini-3.5-flash";
 
     updateAiModeBadge();
     toast("API key and model preferences cleared. AI agent disabled.");

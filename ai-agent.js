@@ -28,7 +28,7 @@
   }
 
   function getModel() {
-    return localStorage.getItem("lifeLedger_geminiModel") || "gemini-1.5-flash";
+    return localStorage.getItem("lifeLedger_geminiModel") || "gemini-3.5-flash";
   }
 
   function setModel(model) {
@@ -386,16 +386,16 @@ User Question: ${userMessage}`;
           throw new Error(`Model ${model} not found on this API key. Your key supports: [${availableList}]`);
         }
 
-        // Check if model should fallback to gemini-1.5-flash (e.g. limit: 0, model not enabled, quota issues)
-        if (model !== "gemini-1.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400) && 
+        // Check if model should fallback to gemini-3.5-flash (e.g. limit: 0, model not enabled, quota issues)
+        if (model !== "gemini-3.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400) && 
             (errorBody.includes("limit: 0") || errorBody.includes("generatecontentfreetierrequests") || errorBody.includes("generatecontentrequests") || errorBody.includes("generativelanguage.googleapis.com") || errorBody.includes("not found") || errorBody.includes("not supported"))) {
-          console.warn(`[AI Agent] Model ${model} failed (quota/not found). Falling back to gemini-1.5-flash...`);
+          console.warn(`[AI Agent] Model ${model} failed (quota/not found). Falling back to gemini-3.5-flash...`);
           // Automatically save the working model to settings/localStorage
-          localStorage.setItem("lifeLedger_geminiModel", "gemini-1.5-flash");
+          localStorage.setItem("lifeLedger_geminiModel", "gemini-3.5-flash");
           const dropdown = document.getElementById("settingsGeminiModel");
-          if (dropdown) dropdown.value = "gemini-1.5-flash";
+          if (dropdown) dropdown.value = "gemini-3.5-flash";
           requestInFlight = false;
-          return callGemini(userMessage, dataContext, chatHistory, "gemini-1.5-flash");
+          return callGemini(userMessage, dataContext, chatHistory, "gemini-3.5-flash");
         }
 
         if (response.status === 429) {
