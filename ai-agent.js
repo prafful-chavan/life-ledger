@@ -316,35 +316,52 @@ CAPABILITIES:
         }
       ];
 
-      const response = await fetch(`${endpoint}?key=${apiKey}`, {
+      const requestBody = JSON.stringify({
+        system_instruction: {
+          parts: [{ text: SYSTEM_PROMPT + "\n\n" + dataContext }]
+        },
+        contents,
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.9,
+          maxOutputTokens: 1500,
+        },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+        ]
+      });
+
+      let response = await fetch(`${endpoint}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: SYSTEM_PROMPT + "\n\n" + dataContext }]
-          },
-          contents,
-          generationConfig: {
-            temperature: 0.7,
-            topP: 0.9,
-            maxOutputTokens: 1500,
-          },
-          safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-          ]
-        })
+        body: requestBody
       });
+
+      // Fallback from v1beta to stable v1 if 404 is received
+      if (response.status === 404 && endpoint.includes("/v1beta/")) {
+        console.warn(`[AI Agent] Model ${model} not found on v1beta. Retrying with stable v1 API...`);
+        const stableEndpoint = endpoint.replace("/v1beta/", "/v1/");
+        try {
+          response = await fetch(`${stableEndpoint}?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: requestBody
+          });
+        } catch (err) {
+          console.error("[AI Agent] Stable API retry failed:", err);
+        }
+      }
 
       if (!response.ok) {
         const errorBody = await response.text();
 
         // Check if model should fallback to gemini-1.5-flash (e.g. limit: 0, model not enabled, quota issues)
-        if (model !== "gemini-1.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400) && 
-            (errorBody.includes("limit: 0") || errorBody.includes("generatecontentfreetierrequests") || errorBody.includes("generatecontentrequests") || errorBody.includes("generativelanguage.googleapis.com"))) {
-          console.warn(`[AI Agent] Model ${model} failed (quota/limit 0). Falling back to gemini-1.5-flash...`);
+        if (model !== "gemini-1.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400 || response.status === 404) && 
+            (errorBody.includes("limit: 0") || errorBody.includes("generatecontentfreetierrequests") || errorBody.includes("generatecontentrequests") || errorBody.includes("generativelanguage.googleapis.com") || errorBody.includes("not found") || errorBody.includes("not supported"))) {
+          console.warn(`[AI Agent] Model ${model} failed (quota/not found). Falling back to gemini-1.5-flash...`);
           // Automatically save the working model to settings/localStorage
           localStorage.setItem("lifeLedger_geminiModel", "gemini-1.5-flash");
           const dropdown = document.getElementById("settingsGeminiModel");
