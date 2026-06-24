@@ -368,7 +368,23 @@ User Question: ${userMessage}`;
       if (!response.ok) {
         const errorBody = await response.text();
 
-        // 404 diagnostics: Fetch which models are actually authorized for this key
+        // 1. Evaluate fallback first on quota, load, or availability errors
+        if (response.status === 429 || response.status === 503 || response.status === 404 || response.status === 403 || response.status === 400) {
+          let nextModel = "";
+          if (model === "gemini-3.5-flash") nextModel = "gemini-2.5-flash";
+          else if (model === "gemini-2.5-flash") nextModel = "gemini-2.0-flash";
+
+          if (nextModel) {
+            console.warn(`[AI Agent] Model ${model} failed with status ${response.status}. Falling back to ${nextModel}...`);
+            localStorage.setItem("lifeLedger_geminiModel", nextModel);
+            const dropdown = document.getElementById("settingsGeminiModel");
+            if (dropdown) dropdown.value = nextModel;
+            requestInFlight = false;
+            return callGemini(userMessage, dataContext, chatHistory, nextModel);
+          }
+        }
+
+        // 2. If no fallback is available and it is a 404, show diagnostics
         if (response.status === 404) {
           let availableList = "Fetching...";
           try {
@@ -386,18 +402,7 @@ User Question: ${userMessage}`;
           throw new Error(`Model ${model} not found on this API key. Your key supports: [${availableList}]`);
         }
 
-        // Check if model should fallback to gemini-3.5-flash (e.g. limit: 0, model not enabled, quota issues)
-        if (model !== "gemini-3.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400) && 
-            (errorBody.includes("limit: 0") || errorBody.includes("generatecontentfreetierrequests") || errorBody.includes("generatecontentrequests") || errorBody.includes("generativelanguage.googleapis.com") || errorBody.includes("not found") || errorBody.includes("not supported"))) {
-          console.warn(`[AI Agent] Model ${model} failed (quota/not found). Falling back to gemini-3.5-flash...`);
-          // Automatically save the working model to settings/localStorage
-          localStorage.setItem("lifeLedger_geminiModel", "gemini-3.5-flash");
-          const dropdown = document.getElementById("settingsGeminiModel");
-          if (dropdown) dropdown.value = "gemini-3.5-flash";
-          requestInFlight = false;
-          return callGemini(userMessage, dataContext, chatHistory, "gemini-3.5-flash");
-        }
-
+        // 3. Otherwise show standard error formatting
         if (response.status === 429) {
           let extraMsg = "";
           try {
@@ -407,6 +412,9 @@ User Question: ${userMessage}`;
             }
           } catch (e) {}
           throw new Error("Rate limit reached. Please wait a moment and try again." + extraMsg);
+        }
+        if (response.status === 503) {
+          throw new Error("Gemini services are temporarily overloaded. Please try again in a moment.");
         }
         if (response.status === 400 && errorBody.includes("API_KEY")) throw new Error("Invalid Gemini API key. Check Settings → AI Agent.");
         throw new Error(`Gemini API error (${response.status}): ${errorBody.slice(0, 200)}`);
