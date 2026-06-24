@@ -308,18 +308,28 @@ CAPABILITIES:
         parts: [{ text: msg.text }]
       }));
 
+      // Inject system prompt and data context directly into the user message body for 100% compatibility across v1 and v1beta API endpoints
+      const formattedUserMessage = `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
+
+[SYSTEM INSTRUCTION & PERSONALITY RULES]
+${SYSTEM_PROMPT}
+
+[CURRENT LIFE DATA CONTEXT]
+=========================================
+${dataContext}
+=========================================
+
+User Question: ${userMessage}`;
+
       const contents = [
         ...historyContents,
         {
           role: "user",
-          parts: [{ text: userMessage }]
+          parts: [{ text: formattedUserMessage }]
         }
       ];
 
       const requestBody = JSON.stringify({
-        system_instruction: {
-          parts: [{ text: SYSTEM_PROMPT + "\n\n" + dataContext }]
-        },
         contents,
         generationConfig: {
           temperature: 0.7,
