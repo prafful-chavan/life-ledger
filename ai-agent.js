@@ -11,11 +11,9 @@
 (function () {
   "use strict";
 
-  const GEMINI_MODEL = "gemini-2.0-flash";
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
   const MAX_HISTORY_MESSAGES = 10; // last N chat messages sent as conversation context
 
-  // ─── API Key Management ──────────────────────────────────────────────────────
+  // ─── API Key and Model Management ───────────────────────────────────────────
   function getApiKey() {
     // Priority: localStorage > config.js
     return localStorage.getItem("lifeLedger_geminiApiKey") || window.LIFE_LEDGER_CONFIG?.GEMINI_API_KEY || "";
@@ -26,6 +24,18 @@
       localStorage.setItem("lifeLedger_geminiApiKey", key.trim());
     } else {
       localStorage.removeItem("lifeLedger_geminiApiKey");
+    }
+  }
+
+  function getModel() {
+    return localStorage.getItem("lifeLedger_geminiModel") || "gemini-1.5-flash";
+  }
+
+  function setModel(model) {
+    if (model) {
+      localStorage.setItem("lifeLedger_geminiModel", model.trim());
+    } else {
+      localStorage.removeItem("lifeLedger_geminiModel");
     }
   }
 
@@ -281,12 +291,15 @@ CAPABILITIES:
   // ─── Gemini API Call ─────────────────────────────────────────────────────────
   let requestInFlight = false;
 
-  async function callGemini(userMessage, dataContext, chatHistory = []) {
+  async function callGemini(userMessage, dataContext, chatHistory = [], modelOverride = null) {
     const apiKey = getApiKey();
     if (!apiKey) throw new Error("No Gemini API key configured.");
 
-    if (requestInFlight) throw new Error("Please wait for the current response.");
-    requestInFlight = true;
+    const model = modelOverride || getModel();
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+    if (requestInFlight && !modelOverride) throw new Error("Please wait for the current response.");
+    if (!modelOverride) requestInFlight = true;
 
     try {
       // Build conversation history for context
@@ -303,7 +316,7 @@ CAPABILITIES:
         }
       ];
 
-      const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
+      const response = await fetch(`${endpoint}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -327,6 +340,19 @@ CAPABILITIES:
 
       if (!response.ok) {
         const errorBody = await response.text();
+
+        // Check if model should fallback to gemini-1.5-flash (e.g. limit: 0, model not enabled, quota issues)
+        if (model !== "gemini-1.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400) && 
+            (errorBody.includes("limit: 0") || errorBody.includes("generatecontentfreetierrequests") || errorBody.includes("generatecontentrequests") || errorBody.includes("generativelanguage.googleapis.com"))) {
+          console.warn(`[AI Agent] Model ${model} failed (quota/limit 0). Falling back to gemini-1.5-flash...`);
+          // Automatically save the working model to settings/localStorage
+          localStorage.setItem("lifeLedger_geminiModel", "gemini-1.5-flash");
+          const dropdown = document.getElementById("settingsGeminiModel");
+          if (dropdown) dropdown.value = "gemini-1.5-flash";
+          requestInFlight = false;
+          return callGemini(userMessage, dataContext, chatHistory, "gemini-1.5-flash");
+        }
+
         if (response.status === 429) {
           let extraMsg = "";
           try {
@@ -346,7 +372,9 @@ CAPABILITIES:
       if (!text) throw new Error("Empty response from Gemini.");
       return text.trim();
     } finally {
-      requestInFlight = false;
+      if (!modelOverride) {
+        requestInFlight = false;
+      }
     }
   }
 
@@ -410,6 +438,8 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     isAiAvailable,
     getApiKey,
     setApiKey,
+    getModel,
+    setModel,
     buildDataContext, // exposed for debugging
   };
 })();

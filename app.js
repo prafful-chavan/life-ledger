@@ -1203,28 +1203,50 @@ function bindExport() {
 }
 
 function bindAiSettings() {
-  // Load existing key into input
+  // Load existing key and model into inputs
   const keyInput = document.getElementById("settingsGeminiApiKey");
   if (keyInput && window.LifeLedgerAI?.getApiKey()) {
     keyInput.value = window.LifeLedgerAI.getApiKey();
   }
 
-  // Save key
+  const modelSelect = document.getElementById("settingsGeminiModel");
+  if (modelSelect && window.LifeLedgerAI?.getModel()) {
+    modelSelect.value = window.LifeLedgerAI.getModel();
+  }
+
+  // Save settings (key and model)
   document.getElementById("settingsSaveApiKey")?.addEventListener("click", () => {
     const key = document.getElementById("settingsGeminiApiKey")?.value?.trim();
+    const model = document.getElementById("settingsGeminiModel")?.value;
+
     if (!key) { toast("Please enter an API key."); return; }
+
     window.LifeLedgerAI?.setApiKey(key);
+    if (model) window.LifeLedgerAI?.setModel(model);
+
     updateAiModeBadge();
-    toast("✅ Gemini API key saved! AI agent is now active.");
+    toast("✅ Gemini AI settings saved!");
   });
 
-  // Clear key
+  // Clear settings
   document.getElementById("settingsClearApiKey")?.addEventListener("click", () => {
     window.LifeLedgerAI?.setApiKey("");
+    window.LifeLedgerAI?.setModel("");
+
     const keyInput = document.getElementById("settingsGeminiApiKey");
     if (keyInput) keyInput.value = "";
+
+    const modelSelect = document.getElementById("settingsGeminiModel");
+    if (modelSelect) modelSelect.value = "gemini-1.5-flash";
+
     updateAiModeBadge();
-    toast("API key cleared. AI agent disabled.");
+    toast("API key and model preferences cleared. AI agent disabled.");
+  });
+
+  // Save model directly on dropdown change
+  modelSelect?.addEventListener("change", () => {
+    const model = modelSelect.value;
+    window.LifeLedgerAI?.setModel(model);
   });
 
   // Dismiss insights banner

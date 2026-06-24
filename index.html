@@ -1613,6 +1613,14 @@
             <span>Gemini API Key:</span>
             <input type="password" id="settingsGeminiApiKey" placeholder="Paste your API key" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
           </div>
+          <div class="settings-row" style="margin-top: 8px;">
+            <span>AI Model:</span>
+            <select id="settingsGeminiModel" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem; font-weight: 500;">
+              <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recommended - Free Tier)</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Requires Active Billing)</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro (Heavy Reasoning)</option>
+            </select>
+          </div>
           <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="secondary-button" type="button" id="settingsSaveApiKey" style="flex: 1;">💾 Save Key</button>
             <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1;">🗑️ Clear Key</button>
