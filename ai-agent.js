@@ -371,8 +371,8 @@ User Question: ${userMessage}`;
         // 1. Evaluate fallback first on quota, load, or availability errors
         if (response.status === 429 || response.status === 503 || response.status === 404 || response.status === 403 || response.status === 400) {
           let nextModel = "";
-          if (model === "gemini-3.5-flash") nextModel = "gemini-2.5-flash";
-          else if (model === "gemini-2.5-flash") nextModel = "gemini-2.0-flash";
+          if (model === "gemini-2.0-flash") nextModel = "gemini-3.5-flash";
+          else if (model === "gemini-3.5-flash") nextModel = "gemini-2.5-flash";
 
           if (nextModel) {
             console.warn(`[AI Agent] Model ${model} failed with status ${response.status}. Falling back to ${nextModel}...`);
