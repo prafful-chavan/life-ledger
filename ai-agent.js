@@ -368,8 +368,26 @@ User Question: ${userMessage}`;
       if (!response.ok) {
         const errorBody = await response.text();
 
+        // 404 diagnostics: Fetch which models are actually authorized for this key
+        if (response.status === 404) {
+          let availableList = "Fetching...";
+          try {
+            const diagResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+            if (diagResponse.ok) {
+              const diagData = await diagResponse.json();
+              const names = (diagData?.models || []).map(m => m.name.replace("models/", ""));
+              availableList = names.length > 0 ? names.join(", ") : "No models found";
+            } else {
+              availableList = `ListModels HTTP error ${diagResponse.status}`;
+            }
+          } catch (diagErr) {
+            availableList = `ListModels error: ${diagErr.message}`;
+          }
+          throw new Error(`Model ${model} not found on this API key. Your key supports: [${availableList}]`);
+        }
+
         // Check if model should fallback to gemini-1.5-flash (e.g. limit: 0, model not enabled, quota issues)
-        if (model !== "gemini-1.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400 || response.status === 404) && 
+        if (model !== "gemini-1.5-flash" && (response.status === 429 || response.status === 403 || response.status === 400) && 
             (errorBody.includes("limit: 0") || errorBody.includes("generatecontentfreetierrequests") || errorBody.includes("generatecontentrequests") || errorBody.includes("generativelanguage.googleapis.com") || errorBody.includes("not found") || errorBody.includes("not supported"))) {
           console.warn(`[AI Agent] Model ${model} failed (quota/not found). Falling back to gemini-1.5-flash...`);
           // Automatically save the working model to settings/localStorage
