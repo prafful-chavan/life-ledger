@@ -218,6 +218,7 @@ let activeView = "dashboard";
 let activeFinanceTab = "overview";
 let activeHoldingsOwner = "Me";
 let activeMfView = "holdings";
+let activeStockView = "holdings";
 let activeExpenseMonth = "";
 let activeExpensePage = 0;
 let expenseMonthIndexCache = null;
@@ -307,10 +308,17 @@ const fieldsByKind = {
     ["notes", "Notes", "textarea"],
   ],
   stock: [
-    ["date", "Date", "date"],
-    ["owner", "Paid by", "select"],
-    ["value", "Current value", "number"],
-    ["note", "Note", "textarea"],
+    ["owner", "Owner (Me / Wife)", "select"],
+    ["symbol", "Symbol / Ticker (e.g. RELIANCE)", "text"],
+    ["company", "Company Name", "text"],
+    ["exchange", "Exchange", "select"],
+    ["category", "Category", "select"],
+    ["quantity", "Quantity", "number"],
+    ["avgPrice", "Avg Buy Price (₹)", "number"],
+    ["invested", "Total Invested (₹)", "number"],
+    ["purchaseDate", "Purchase Date", "date"],
+    ["demat", "Broker / Demat", "text"],
+    ["notes", "Notes", "textarea"],
   ],
   fd: [
     ["date", "Date", "date"],
@@ -442,6 +450,7 @@ function bootstrapApp(initialState) {
     bindNavigation();
     bindModals();
     bindFinanceTabs();
+    initStockCSVImport();
     bindCareerTabs();
     bindImports();
     bindReset();
@@ -851,9 +860,43 @@ function bindFinanceTabs() {
     }
   });
 
+  document.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.edit-stock-btn');
+    if (editBtn) {
+      const id = editBtn.dataset.id;
+      buildQuickAddForm('stock', id);
+      const modal = document.getElementById('quickAddModal');
+      if (modal) modal.hidden = false;
+    }
+    const deleteBtn = e.target.closest('.delete-stock-btn');
+    if (deleteBtn) {
+      const id = deleteBtn.dataset.id;
+      if (confirm('Delete this stock entry?')) {
+        state.stocks = state.stocks.filter(s => s.id !== id);
+        saveData(true, 'stock');
+        renderStockHoldingsPanel();
+        toast('Stock entry deleted.');
+      }
+    }
+  });
+
   document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", async () => {
     await refreshMutualFundNAVs(true);
   });
+
+  document.getElementById('toggleStockViewHoldings')?.addEventListener('click', () => {
+    activeStockView = 'holdings';
+    document.getElementById('toggleStockViewHoldings')?.classList.add('active');
+    document.getElementById('toggleStockViewTxns')?.classList.remove('active');
+    renderStockHoldingsPanel();
+  });
+  document.getElementById('toggleStockViewTxns')?.addEventListener('click', () => {
+    activeStockView = 'txns';
+    document.getElementById('toggleStockViewTxns')?.classList.add('active');
+    document.getElementById('toggleStockViewHoldings')?.classList.remove('active');
+    renderStockHoldingsPanel();
+  });
+  document.getElementById('refreshStockPricesBtn')?.addEventListener('click', () => refreshStockPrices(true));
 
   document.getElementById("syncExpensesFromDriveBtn")?.addEventListener("click", () => {
     syncExpensesFromDrive();
@@ -1214,6 +1257,20 @@ function bindAiSettings() {
     modelSelect.value = window.LifeLedgerAI.getModel();
   }
 
+  const stockProxyInput = document.getElementById('settingsStockProxyUrl');
+  const stockProxySaveBtn = document.getElementById('settingsSaveStockProxy');
+  if (stockProxyInput) stockProxyInput.value = localStorage.getItem(STOCK_PROXY_URL_KEY) || '';
+  stockProxySaveBtn?.addEventListener('click', () => {
+    const url = stockProxyInput?.value?.trim();
+    if (url) {
+      localStorage.setItem(STOCK_PROXY_URL_KEY, url);
+      toast('✅ Stock price proxy URL saved.');
+    } else {
+      localStorage.removeItem(STOCK_PROXY_URL_KEY);
+      toast('Stock proxy URL cleared.');
+    }
+  });
+
   // Save settings (key and model)
   document.getElementById("settingsSaveApiKey")?.addEventListener("click", () => {
     const key = document.getElementById("settingsGeminiApiKey")?.value?.trim();
@@ -1437,6 +1494,10 @@ function buildQuickAddForm(kind, editId = null) {
         options = ["Planned", "In progress", "Completed"];
       } else if (name === "frequency") {
         options = ["Daily", "Weekly"];
+      } else if (name === "exchange") {
+        options = ["NSE", "BSE"];
+      } else if (name === "category") {
+        options = ["Stock", "ETF"];
       } else {
         options = ["Me", "Wife", "Both"];
       }
@@ -1494,12 +1555,18 @@ function buildQuickAddForm(kind, editId = null) {
       }
     });
 
-    const isSimpleAsset = ["stock", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"].includes(kind);
+    const isSimpleAsset = ["fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"].includes(kind);
 
     if (kind === "mutualFund") {
       entry.owner = normalizeOwner(entry.owner);
       entry.amc = inferAmc(entry.fundName);
       if (!entry.latestNav) entry.latestNav = entry.nav;
+      if (!entry.currentValue) entry.currentValue = entry.invested;
+    }
+    if (kind === "stock") {
+      entry.owner = normalizeOwner(entry.owner);
+      if (!entry.currentPrice) entry.currentPrice = entry.avgPrice;
+      if (!entry.invested && entry.quantity && entry.avgPrice) entry.invested = entry.quantity * entry.avgPrice;
       if (!entry.currentValue) entry.currentValue = entry.invested;
     }
     if (isSimpleAsset) {
@@ -2208,6 +2275,7 @@ function renderDashboardOnly() {
 
 function renderAll() {
   updateMutualFundsFromCache();
+  updateStocksFromCache();
   renderDashboardPeriodSelector();
   renderMetrics();
   renderCashflowChart();
@@ -3066,6 +3134,7 @@ function formatMonthKeyLabel(key) {
 
 function renderHoldingsTabs() {
   renderMutualFundsPanel();
+  renderStockHoldingsPanel();
   renderSimpleAssets();
   if (activeMfView === "insights") {
     renderMfInsightsPanel();
@@ -3400,8 +3469,517 @@ function renderMutualFundsPanel() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  STOCK HOLDINGS — CSV Parser, Price Refresh, Render Panel
+// ═══════════════════════════════════════════════════════════════
+
+const STOCK_PRICE_CACHE_KEY = 'lifeLedgerStockPriceCache:v1';
+const STOCK_PROXY_URL_KEY = 'lifeLedgerStockProxyUrl';
+
+function detectBrokerFromHeaders(headers) {
+  const h = headers.map(s => s.toLowerCase().trim());
+  if (h.some(x => x.includes('net qty')) || h.some(x => x.includes('avg. price') && !x.includes('buy'))) return 'Upstox';
+  if (h.some(x => x === 'instrument') && h.some(x => x.includes('avg. cost'))) return 'Zerodha';
+  if (h.some(x => x === 'isin') && h.some(x => x.includes('average buy price'))) return 'Groww';
+  if (h.some(x => x.includes('market price')) && h.some(x => x.includes('stock name'))) return 'INDmoney';
+  return 'Generic';
+}
+
+function parseBrokerStockCSV(csvText, ownerOverride) {
+  const parsed = parseCSV(csvText);
+  if (!parsed || parsed.length === 0) return { broker: 'Unknown', entries: [] };
+  
+  const headers = Object.keys(parsed[0]);
+  const broker = detectBrokerFromHeaders(headers);
+  
+  const entries = [];
+  for (const row of parsed) {
+    let entry = null;
+    const pick = (keys) => {
+      for (const k of keys) {
+        for (const h of headers) {
+          if (h.toLowerCase().trim().replace(/[^a-z0-9]/g, '') === k.toLowerCase().replace(/[^a-z0-9]/g, '')) {
+            const v = row[h];
+            if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+          }
+        }
+      }
+      return '';
+    };
+    const pickNum = (keys) => toNumber(pick(keys));
+    
+    if (broker === 'Upstox') {
+      const symbol = pick(['Symbol', 'symbol']);
+      const qty = pickNum(['Net Qty', 'netqty', 'Qty']);
+      const avgPrice = pickNum(['Avg. Price', 'avgprice', 'Average Price']);
+      const ltp = pickNum(['LTP', 'ltp', 'Last Price']);
+      const currentValue = pickNum(['Current Value', 'currentvalue']);
+      if (!symbol && !qty) continue;
+      const catRaw = pick(['Category', 'category']) || '';
+      const category = catRaw.toUpperCase().includes('ETF') ? 'ETF' : 'Stock';
+      entry = {
+        id: `stk-${generateUUID()}`,
+        owner: ownerOverride || 'Me',
+        symbol: symbol.replace(/\s*-EQ$/i, '').replace(/-BE$/i, '').trim(),
+        company: symbol.replace(/\s*-EQ$/i, '').replace(/-BE$/i, '').trim(),
+        exchange: pick(['Exchange', 'exchange']) || 'NSE',
+        category,
+        quantity: qty,
+        avgPrice,
+        currentPrice: ltp || avgPrice,
+        invested: qty * avgPrice,
+        currentValue: currentValue || (qty * (ltp || avgPrice)),
+        demat: 'Upstox',
+        purchaseDate: todayISO(),
+        notes: '',
+      };
+    } else if (broker === 'Zerodha') {
+      const instrument = pick(['Instrument', 'instrument']);
+      const qty = pickNum(['Qty.', 'Qty', 'qty', 'Quantity']);
+      const avgCost = pickNum(['Avg. cost', 'avgcost', 'Average cost']);
+      const ltp = pickNum(['LTP', 'ltp']);
+      const curVal = pickNum(['Cur. val', 'curval', 'Current value']);
+      if (!instrument && !qty) continue;
+      entry = {
+        id: `stk-${generateUUID()}`,
+        owner: ownerOverride || 'Me',
+        symbol: instrument.replace(/\s*-EQ$/i, '').trim(),
+        company: instrument.replace(/\s*-EQ$/i, '').trim(),
+        exchange: 'NSE',
+        category: 'Stock',
+        quantity: qty,
+        avgPrice: avgCost,
+        currentPrice: ltp || avgCost,
+        invested: qty * avgCost,
+        currentValue: curVal || (qty * (ltp || avgCost)),
+        demat: 'Zerodha',
+        purchaseDate: todayISO(),
+        notes: '',
+      };
+    } else if (broker === 'Groww') {
+      const stockName = pick(['Stock Name', 'stockname', 'Name']);
+      const qty = pickNum(['Quantity', 'quantity', 'Qty']);
+      const avgBuyPrice = pickNum(['Average buy price', 'averagebuyprice', 'Avg Price']);
+      const closingPrice = pickNum(['Closing price', 'closingprice', 'CMP']);
+      const buyValue = pickNum(['Buy value', 'buyvalue', 'Invested']);
+      const closingValue = pickNum(['Closing value', 'closingvalue']);
+      if (!stockName && !qty) continue;
+      const isin = pick(['ISIN', 'isin']);
+      entry = {
+        id: `stk-${generateUUID()}`,
+        owner: ownerOverride || 'Wife',
+        symbol: stockName.split(' ')[0].toUpperCase(),
+        company: stockName,
+        exchange: 'NSE',
+        category: 'Stock',
+        quantity: qty,
+        avgPrice: avgBuyPrice,
+        currentPrice: closingPrice || avgBuyPrice,
+        invested: buyValue || (qty * avgBuyPrice),
+        currentValue: closingValue || (qty * (closingPrice || avgBuyPrice)),
+        demat: 'Groww',
+        purchaseDate: todayISO(),
+        notes: isin ? `ISIN: ${isin}` : '',
+      };
+    } else if (broker === 'INDmoney') {
+      const stockName = pick(['Stock Name', 'stockname', 'Name']);
+      const symbol = pick(['Symbol', 'symbol', 'Ticker']);
+      const marketPrice = pickNum(['Market Price', 'marketprice', 'CMP']);
+      const currentValue = pickNum(['Current value', 'currentvalue', 'Value']);
+      const investedRaw = pick(['Invested', 'invested']);
+      let qty = 0, avgPrice = 0;
+      if (investedRaw && investedRaw.includes('×')) {
+        const parts = investedRaw.split('×').map(s => toNumber(s.trim()));
+        qty = parts[0] || 0;
+        avgPrice = parts[1] || 0;
+      } else {
+        qty = pickNum(['Quantity', 'Qty', 'qty']);
+        avgPrice = pickNum(['Avg Price', 'avgprice', 'Buy Price']);
+      }
+      if (!stockName && !symbol && !qty) continue;
+      entry = {
+        id: `stk-${generateUUID()}`,
+        owner: ownerOverride || 'Wife',
+        symbol: (symbol || stockName.split(' ')[0]).toUpperCase(),
+        company: stockName || symbol,
+        exchange: 'NSE',
+        category: 'Stock',
+        quantity: qty,
+        avgPrice,
+        currentPrice: marketPrice || avgPrice,
+        invested: qty * avgPrice,
+        currentValue: currentValue || (qty * (marketPrice || avgPrice)),
+        demat: 'INDmoney',
+        purchaseDate: todayISO(),
+        notes: '',
+      };
+    } else {
+      const sym = pick(['symbol', 'ticker', 'code', 'scrip']);
+      const company = pick(['company', 'name', 'stock', 'security', 'instrument']);
+      const qty = pickNum(['quantity', 'qty', 'shares', 'units', 'netqty']);
+      const avgPrice = pickNum(['avgprice', 'averageprice', 'buyprice', 'price', 'avgcost']);
+      const currentPrice = pickNum(['currentprice', 'cmp', 'ltp', 'marketprice', 'closingprice']);
+      const invested = pickNum(['invested', 'investment', 'cost', 'buyvalue']) || qty * avgPrice;
+      if (!qty && !invested && !currentPrice) continue;
+      entry = {
+        id: `stk-${generateUUID()}`,
+        owner: ownerOverride || 'Me',
+        symbol: (sym || company || 'Unknown').toUpperCase().replace(/\s*-EQ$/i, '').trim(),
+        company: company || sym || 'Stock',
+        exchange: pick(['exchange', 'market']) || 'NSE',
+        category: 'Stock',
+        quantity: qty,
+        avgPrice,
+        currentPrice: currentPrice || avgPrice,
+        invested: invested || qty * (avgPrice || currentPrice),
+        currentValue: (currentPrice || avgPrice) * qty || invested,
+        demat: pick(['demat', 'broker', 'platform']) || 'Unknown',
+        purchaseDate: pick(['purchasedate', 'buydate', 'date']) || todayISO(),
+        notes: pick(['notes', 'note', 'remarks']) || '',
+      };
+    }
+    
+    if (entry) entries.push(entry);
+  }
+  
+  return { broker, entries };
+}
+
+function initStockCSVImport() {
+  const importBtn = document.getElementById('importStockCSVBtn');
+  const modal = document.getElementById('stockImportModal');
+  const fileInput = document.getElementById('stockCSVFileInput');
+  const ownerSelect = document.getElementById('stockCSVOwner');
+  const brokerBadge = document.getElementById('stockCSVBrokerBadge');
+  const preview = document.getElementById('stockCSVPreview');
+  const importAllBtn = document.getElementById('stockCSVImportBtn');
+  
+  if (!importBtn || !modal) return;
+  
+  let pendingEntries = [];
+  
+  importBtn.addEventListener('click', () => {
+    modal.hidden = false;
+    fileInput.value = '';
+    preview.innerHTML = '';
+    brokerBadge.innerHTML = '';
+    pendingEntries = [];
+  });
+  
+  modal.querySelector('[data-close-modal]')?.addEventListener('click', () => {
+    modal.hidden = true;
+  });
+  
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    const owner = ownerSelect.value;
+    const result = parseBrokerStockCSV(text, owner);
+    pendingEntries = result.entries;
+    
+    const brokerColors = { Upstox: '#6b21a8', Zerodha: '#2563eb', Groww: '#16a34a', INDmoney: '#0d9488', Generic: '#6b7280' };
+    brokerBadge.innerHTML = `<span style="display:inline-block;padding:4px 12px;border-radius:20px;background:${brokerColors[result.broker] || '#6b7280'};color:white;font-size:0.8rem;font-weight:600;">📊 Detected: ${result.broker}</span> <span style="opacity:0.6;font-size:0.8rem;margin-left:8px;">${result.entries.length} entries found</span>`;
+    
+    if (result.entries.length > 0) {
+      let html = '<table style="width:100%;font-size:0.78rem;"><thead><tr><th>Symbol</th><th>Company</th><th>Qty</th><th>Avg Price</th><th>Invested</th><th>CMP</th><th>Current Value</th><th>P&L</th></tr></thead><tbody>';
+      result.entries.forEach(e => {
+        const pl = (e.currentValue || 0) - (e.invested || 0);
+        const plColor = pl >= 0 ? '#22c55e' : '#ef4444';
+        html += `<tr><td style="font-weight:600">${escapeHTML(e.symbol)}</td><td>${escapeHTML(e.company)}</td><td>${e.quantity}</td><td>${formatINR(e.avgPrice)}</td><td>${formatINR(e.invested)}</td><td>${formatINR(e.currentPrice)}</td><td>${formatINR(e.currentValue)}</td><td style="color:${plColor};font-weight:600">${formatINR(pl)}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      preview.innerHTML = html;
+    } else {
+      preview.innerHTML = '<p style="opacity:0.5;text-align:center;padding:20px;">No stock entries parsed. Check the file format.</p>';
+    }
+  });
+  
+  ownerSelect.addEventListener('change', () => {
+    pendingEntries.forEach(e => e.owner = ownerSelect.value);
+  });
+  
+  importAllBtn.addEventListener('click', async () => {
+    if (pendingEntries.length === 0) { toast('No entries to import.'); return; }
+    let addedCount = 0, updatedCount = 0;
+    pendingEntries.forEach(newEntry => {
+      const existingIdx = state.stocks.findIndex(s => 
+        s.symbol && newEntry.symbol && 
+        s.symbol.toUpperCase() === newEntry.symbol.toUpperCase() && 
+        s.owner === newEntry.owner && s.demat === newEntry.demat
+      );
+      if (existingIdx !== -1) {
+        const existing = state.stocks[existingIdx];
+        existing.quantity = newEntry.quantity;
+        existing.avgPrice = newEntry.avgPrice;
+        existing.currentPrice = newEntry.currentPrice;
+        existing.invested = newEntry.invested;
+        existing.currentValue = newEntry.currentValue;
+        existing.company = newEntry.company || existing.company;
+        existing.category = newEntry.category || existing.category;
+        updatedCount++;
+      } else {
+        state.stocks.push(newEntry);
+        addedCount++;
+      }
+    });
+    await saveData(true, 'stock');
+    renderStockHoldingsPanel();
+    renderAll();
+    modal.hidden = true;
+    toast(`✅ Stock import: ${addedCount} added, ${updatedCount} updated`);
+  });
+}
+
+function getStockPriceCache() {
+  try { return JSON.parse(localStorage.getItem(STOCK_PRICE_CACHE_KEY)) || {}; } catch { return {}; }
+}
+function saveStockPriceCache(cache) {
+  localStorage.setItem(STOCK_PRICE_CACHE_KEY, JSON.stringify(cache));
+}
+function isStockPriceStale(cached) {
+  if (!cached || !cached.timestamp) return true;
+  const age = Date.now() - cached.timestamp;
+  if (age > 4 * 60 * 60 * 1000) return true;
+  const now = new Date();
+  const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  if (ist.getHours() >= 16 && ist.getHours() < 23) {
+    const cacheDate = new Date(cached.timestamp);
+    const cacheIST = new Date(cacheDate.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    if (cacheIST.getHours() < 16) return true;
+  }
+  return false;
+}
+
+async function refreshStockPrices(force = false) {
+  const proxyUrl = localStorage.getItem(STOCK_PROXY_URL_KEY);
+  if (!proxyUrl) {
+    toast('⚠️ Stock price proxy not configured. Go to Settings → 📈 Stock Prices.');
+    return;
+  }
+  const uniqueSymbols = [...new Set(state.stocks.filter(s => s.symbol).map(s => s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim()))];
+  if (uniqueSymbols.length === 0) { toast('No stock symbols to refresh.'); return; }
+  const cache = getStockPriceCache();
+  const needsFetch = force || uniqueSymbols.some(s => isStockPriceStale(cache[s]));
+  if (!needsFetch) { toast('Stock prices are up to date.'); return; }
+  toast('🔄 Refreshing stock prices…');
+  try {
+    const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
+    const data = await response.json();
+    const now = Date.now();
+    let updatedCount = 0;
+    for (const [symbol, priceData] of Object.entries(data)) {
+      if (priceData.error) continue;
+      cache[symbol.toUpperCase()] = {
+        price: toNumber(priceData.price),
+        prevClose: toNumber(priceData.prevClose),
+        change: toNumber(priceData.change),
+        changePct: toNumber(priceData.changePct),
+        timestamp: now,
+        date: priceData.date || new Date().toLocaleDateString('en-IN'),
+      };
+      updatedCount++;
+    }
+    if (updatedCount > 0) {
+      saveStockPriceCache(cache);
+      state.stocks.forEach(s => {
+        if (!s.symbol) return;
+        const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+        const cached = cache[sym];
+        if (cached && cached.price) {
+          s.currentPrice = cached.price;
+          s.prevClose = cached.prevClose;
+          s.priceDate = cached.date;
+          s.currentValue = toNumber(s.quantity) * cached.price;
+        }
+      });
+      await saveData(true);
+      renderStockHoldingsPanel();
+      toast(`✅ Updated prices for ${updatedCount} stocks`);
+    } else {
+      toast('⚠️ No prices returned. Check proxy URL and symbols.');
+    }
+  } catch (err) {
+    console.error('Stock price refresh failed:', err);
+    toast(`❌ Price refresh failed: ${err.message}`);
+  }
+}
+
+function updateStocksFromCache() {
+  const cache = getStockPriceCache();
+  if (Object.keys(cache).length === 0) return;
+  state.stocks.forEach(s => {
+    if (!s.symbol) return;
+    const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    const cached = cache[sym];
+    if (cached && cached.price) {
+      s.currentPrice = cached.price;
+      s.prevClose = cached.prevClose;
+      s.priceDate = cached.date;
+      s.currentValue = toNumber(s.quantity) * cached.price;
+    }
+  });
+}
+
+function renderStockHoldingsPanel() {
+  const summary = document.getElementById("stocksOwnerSummary");
+  const table = document.getElementById("stocksTable");
+  if (!table) return;
+  const tableEl = table.closest("table");
+  const targetThead = tableEl ? tableEl.querySelector("thead") : null;
+
+  const priceDateEl = document.getElementById("stockPriceDateLabel");
+  if (priceDateEl) {
+    const sampleWithDate = state.stocks.find(s => s.priceDate);
+    priceDateEl.textContent = sampleWithDate?.priceDate ? `Prices: ${sampleWithDate.priceDate}` : '';
+  }
+
+  const allStocks = [...(state.stocks || [])];
+  const rows = allStocks
+    .filter(item => matchHoldingsOwner(item.owner || 'Me', activeHoldingsOwner))
+    .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
+
+  const hasRichData = rows.some(s => s.symbol || s.company);
+
+  const totalInvested = rows.reduce((s, item) => s + (toNumber(item.invested) || 0), 0);
+  const totalCurrentValue = rows.reduce((s, item) => {
+    const cv = toNumber(item.currentValue) || (toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice));
+    return s + (cv || toNumber(item.value) || 0);
+  }, 0);
+  const totalGain = totalCurrentValue - totalInvested;
+  const totalGainPct = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
+
+  let oneDayChange = 0, hasOneDayData = false;
+  rows.forEach(s => {
+    if (s.prevClose && s.currentPrice && s.quantity) {
+      oneDayChange += toNumber(s.quantity) * (toNumber(s.currentPrice) - toNumber(s.prevClose));
+      hasOneDayData = true;
+    }
+  });
+  const oneDayPct = hasOneDayData && (totalCurrentValue - oneDayChange) > 0
+    ? (oneDayChange / (totalCurrentValue - oneDayChange)) * 100 : 0;
+  const uniqueSymbols = new Set(rows.filter(s => s.symbol).map(s => s.symbol)).size;
+
+  if (summary) {
+    const dayChangeColor = oneDayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const dayChangeArrow = oneDayChange >= 0 ? '▲' : '▼';
+    const gainColor = totalGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    summary.innerHTML = `
+      <article class="metric-card compact-metric">
+        <div class="label">💰 Invested (${activeHoldingsOwner})</div>
+        <div class="value">${formatINR(totalInvested)}</div>
+        <div class="hint">${rows.length} entries · ${uniqueSymbols} symbols</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">📈 Current Value</div>
+        <div class="value">${formatINR(totalCurrentValue)}</div>
+        <div class="hint">${hasRichData ? 'Live prices' : 'Manual values'}</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">📊 Total P&L</div>
+        <div class="value" style="color: ${gainColor}">${formatINR(totalGain)}</div>
+        <div class="hint" style="color: ${gainColor}">${totalGain >= 0 ? '+' : ''}${totalGainPct.toFixed(2)}% overall</div>
+      </article>
+      <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
+        <div class="label">📉 1-Day Change</div>
+        <div class="value" style="color: ${dayChangeColor}">${hasOneDayData ? `${dayChangeArrow} ${formatINR(Math.abs(oneDayChange))}` : '—'}</div>
+        <div class="hint">${hasOneDayData ? `${oneDayChange >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh prices to see'}</div>
+      </article>
+    `;
+  }
+
+  if (activeStockView === "holdings" && hasRichData) {
+    const groups = {};
+    rows.forEach(s => {
+      if (!s.symbol && !s.company) return;
+      const key = (s.symbol || s.company || 'Unknown').toUpperCase();
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(s);
+    });
+    const holdings = Object.entries(groups).map(([symbol, txns]) => {
+      const totalQty = txns.reduce((s, t) => s + toNumber(t.quantity), 0);
+      const totalInv = txns.reduce((s, t) => s + (toNumber(t.invested) || toNumber(t.quantity) * toNumber(t.avgPrice)), 0);
+      const avgPrice = totalQty > 0 ? totalInv / totalQty : 0;
+      const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
+      const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
+      const currentValue = totalQty * currentPrice;
+      const gain = currentValue - totalInv;
+      const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
+      const dayChange = prevClose ? totalQty * (currentPrice - prevClose) : null;
+      const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+      const company = txns[0].company || symbol;
+      const category = txns[0].category || 'Stock';
+      const demat = txns[0].demat || '-';
+      const exchange = txns[0].exchange || 'NSE';
+      const cashFlows = txns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
+      if (totalQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
+      const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
+      return { symbol, company, category, exchange, totalQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
+    }).sort((a, b) => b.currentValue - a.currentValue);
+
+    if (targetThead) {
+      targetThead.innerHTML = `<tr><th>Symbol</th><th>Company</th><th>Qty</th><th>Avg Price</th><th>Invested</th><th>CMP</th><th>Current Value</th><th>1-Day Chg</th><th>P&L</th><th>XIRR</th><th>Broker</th></tr>`;
+    }
+    renderRows(table, holdings, (item) => [
+      `<span style="font-weight:600">${escapeHTML(item.symbol)}</span> <small style="opacity:0.5">${escapeHTML(item.exchange)}</small>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
+      escapeHTML(item.company),
+      item.totalQty.toFixed(item.totalQty % 1 === 0 ? 0 : 2),
+      formatINR(item.avgPrice),
+      formatINR(item.totalInv),
+      formatINR(item.currentPrice),
+      formatINR(item.currentValue),
+      (() => {
+        if (item.dayChange === null) return '<span style="opacity:0.4">—</span>';
+        const color = item.dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+        const arrow = item.dayChange >= 0 ? '▲' : '▼';
+        return `<span style="color:${color};font-weight:600">${arrow} ${formatINR(Math.abs(item.dayChange))} <small>(${item.dayChange >= 0 ? '+' : ''}${item.dayChangePct.toFixed(2)}%)</small></span>`;
+      })(),
+      (() => {
+        const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+        return `<span style="color:${color};font-weight:600">${formatINR(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
+      })(),
+      (() => {
+        if (item.xirr === null) return '<span style="opacity:0.4">—</span>';
+        const color = item.xirr >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+        return `<span style="color:${color};font-weight:600">${item.xirr.toFixed(2)}%</span>`;
+      })(),
+      escapeHTML(item.demat)
+    ], `No stock holdings for ${activeHoldingsOwner}. Import a CSV or add entries manually.`, 11);
+  } else {
+    if (targetThead) {
+      targetThead.innerHTML = `<tr><th>Date</th><th>Symbol</th><th>Company</th><th>Qty</th><th>Avg Price</th><th>Invested</th><th>CMP</th><th>Current Value</th><th>P&L</th><th>Owner</th><th>Broker</th><th>Action</th></tr>`;
+    }
+    renderRows(table, rows, (item) => {
+      if (!item.symbol && !item.company && item.value) {
+        return [formatDate(item.date), '-', item.note || '-', '-', '-', '-', '-', formatINR(item.value), '-', item.owner || item.paidBy || 'Me', '-',
+          `<div class="actions-wrapper"><button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`];
+      }
+      const inv = toNumber(item.invested) || 0;
+      const cur = toNumber(item.currentValue) || (toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice)) || 0;
+      const g = cur - inv;
+      const pct = inv ? (g / inv) * 100 : 0;
+      const plColor = g >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+      return [
+        formatDate(item.purchaseDate || item.date),
+        `<span style="font-weight:600">${escapeHTML(item.symbol || '-')}</span>`,
+        escapeHTML(item.company || '-'),
+        item.quantity ? Number(item.quantity).toFixed(item.quantity % 1 === 0 ? 0 : 2) : '-',
+        item.avgPrice ? formatINR(item.avgPrice) : '-',
+        formatINR(inv),
+        item.currentPrice ? formatINR(item.currentPrice) : (item.avgPrice ? formatINR(item.avgPrice) : '-'),
+        formatINR(cur),
+        `<span style="color:${plColor};font-weight:600">${formatINR(g)} (${g >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>`,
+        item.owner || 'Me',
+        escapeHTML(item.demat || '-'),
+        `<div class="actions-wrapper"><button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`
+      ];
+    }, `No stock entries for ${activeHoldingsOwner}. Import a CSV or add entries manually.`, 12);
+  }
+}
+
 const SIMPLE_ASSET_TABS = [
-  { kind: "stock", stateKey: "stocks", summaryId: "stocksOwnerSummary", tableId: "stocksTable", label: "Stock" },
   { kind: "fd", stateKey: "fd", summaryId: "fdOwnerSummary", tableId: "fdTable", label: "FD" },
   { kind: "epf", stateKey: "epf", summaryId: "epfOwnerSummary", tableId: "epfTable", label: "EPF" },
   { kind: "bonds", stateKey: "bonds", summaryId: "bondsOwnerSummary", tableId: "bondsTable", label: "Bond" },
@@ -3477,10 +4055,15 @@ function investmentHoldingsTotal() {
     return total + fund.units * fund.latestNav;
   }, 0);
 
+  const stocksTotal = (state.stocks || []).reduce((total, s) => {
+    const cv = toNumber(s.currentValue) || (toNumber(s.quantity) * toNumber(s.currentPrice || s.avgPrice));
+    return total + (cv || toNumber(s.value) || 0);
+  }, 0);
+
   const simpleAssetsTotal = SIMPLE_ASSET_TABS.reduce((total, { stateKey }) => {
     return total + sum(state[stateKey] || [], "value");
   }, 0);
-  return mutualFunds + simpleAssetsTotal;
+  return mutualFunds + stocksTotal + simpleAssetsTotal;
 }
 
 function renderLiabilities() {

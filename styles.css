@@ -3521,3 +3521,24 @@ body[data-theme="dark"] .chip-ai {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%) !important;
   border-color: rgba(139, 92, 246, 0.25) !important;
 }
+
+/* ─── Stock Holdings Styles ───────────────────────────────────────────── */
+.stock-view-toggle {
+  display: flex;
+  gap: 8px;
+}
+.broker-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 16px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fff;
+}
+.broker-upstox { background: #6b21a8; }
+.broker-zerodha { background: #2563eb; }
+.broker-groww { background: #16a34a; }
+.broker-indmoney { background: #0d9488; }
+.stock-pl-positive { color: var(--positive, #22c55e); font-weight: 600; }
+.stock-pl-negative { color: var(--negative, #ef4444); font-weight: 600; }
+
