@@ -151,24 +151,41 @@ Wipro Ltd,WIPRO,480.00,4800.00,4800.00`;
 });
 
 // ----------------------------------------------------------------------
-// Test 6: Pre-loaded Real Portfolio Verification (Upstox + Zerodha)
+// Test 6: Pre-loaded Real Portfolio Verification (Upstox, Zerodha, Groww, INDmoney)
 // ----------------------------------------------------------------------
-runTest('Verify pre-loaded Upstox (8 ETFs) + Zerodha (11 Stocks) holdings', () => {
+runTest('Verify pre-loaded 36 holdings across Upstox, Zerodha, Groww, INDmoney', () => {
   const { defaultStockHoldings } = require('../app.js');
-  assert.strictEqual(defaultStockHoldings.length, 19, 'Should contain 19 pre-loaded holdings');
+  assert.strictEqual(defaultStockHoldings.length, 36, 'Should contain 36 pre-loaded holdings');
 
+  // Me - Upstox (8 ETFs)
   const upstoxItems = defaultStockHoldings.filter(s => s.demat === 'Upstox');
   assert.strictEqual(upstoxItems.length, 8, 'Upstox should have 8 ETF holdings');
-  const upstoxInvested = upstoxItems.reduce((sum, s) => sum + s.invested, 0);
   const upstoxCurrent = upstoxItems.reduce((sum, s) => sum + s.currentValue, 0);
   assert.strictEqual(Math.round(upstoxCurrent), 847881, 'Upstox Current Value should be ₹8,47,881');
 
+  // Me - Zerodha (11 Stocks & Bonds)
   const zerodhaItems = defaultStockHoldings.filter(s => s.demat === 'Zerodha');
   assert.strictEqual(zerodhaItems.length, 11, 'Zerodha should have 11 stock/bond holdings');
   const zerodhaInvested = zerodhaItems.reduce((sum, s) => sum + s.invested, 0);
   const zerodhaCurrent = zerodhaItems.reduce((sum, s) => sum + s.currentValue, 0);
   assert.strictEqual(zerodhaInvested.toFixed(2), '277195.60', 'Zerodha Invested should be ₹2,77,195.60');
   assert.strictEqual(zerodhaCurrent.toFixed(2), '319895.20', 'Zerodha Current Value should be ₹3,19,895.20');
+
+  // Wife - Groww (14 Stocks & ETFs)
+  const growwItems = defaultStockHoldings.filter(s => s.demat === 'Groww');
+  assert.strictEqual(growwItems.length, 14, 'Groww should have 14 holdings for Wife');
+  const growwInvested = growwItems.reduce((sum, s) => sum + s.invested, 0);
+  const growwCurrent = growwItems.reduce((sum, s) => sum + s.currentValue, 0);
+  assert.strictEqual(Math.round(growwInvested), 320487, 'Groww Invested should be ₹3,20,487');
+  assert.strictEqual(Math.round(growwCurrent), 351650, 'Groww Current Value should be ₹3,51,650');
+
+  // Wife - INDmoney (3 ETFs)
+  const indmoneyItems = defaultStockHoldings.filter(s => s.demat === 'INDmoney');
+  assert.strictEqual(indmoneyItems.length, 3, 'INDmoney should have 3 ETF holdings for Wife');
+  const indmoneyInvested = indmoneyItems.reduce((sum, s) => sum + s.invested, 0);
+  const indmoneyCurrent = indmoneyItems.reduce((sum, s) => sum + s.currentValue, 0);
+  assert.strictEqual(indmoneyInvested.toFixed(2), '119037.68', 'INDmoney Invested should be ₹1,19,037.68');
+  assert.strictEqual(indmoneyCurrent.toFixed(2), '140226.82', 'INDmoney Current Value should be ₹1,40,226.82');
 });
 
 // ----------------------------------------------------------------------
