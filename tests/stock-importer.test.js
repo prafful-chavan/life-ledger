@@ -189,6 +189,24 @@ runTest('Verify pre-loaded 36 holdings across Upstox, Zerodha, Groww, INDmoney',
 });
 
 // ----------------------------------------------------------------------
+// Test 7: US Stocks Portfolio Verification (AAPL, T, VOO, META)
+// ----------------------------------------------------------------------
+runTest('Verify pre-loaded US Stocks holdings (AAPL, T, VOO, META)', () => {
+  const { defaultUsStockHoldings, formatUSD } = require('../app.js');
+  assert.strictEqual(defaultUsStockHoldings.length, 4, 'Should contain 4 pre-loaded US stock holdings');
+
+  const symbols = defaultUsStockHoldings.map(s => s.symbol);
+  assert.deepStrictEqual(symbols, ['AAPL', 'T', 'VOO', 'META']);
+
+  const investedUSD = defaultUsStockHoldings.reduce((sum, s) => sum + s.invested, 0);
+  const currentUSD = defaultUsStockHoldings.reduce((sum, s) => sum + s.currentValue, 0);
+  
+  assert.strictEqual(investedUSD.toFixed(2), '1150.18', 'US Invested Value should be $1,150.18');
+  assert.strictEqual(currentUSD.toFixed(2), '1395.83', 'US Current Value should be $1,395.83');
+  assert.strictEqual(formatUSD(investedUSD), '$1,150.18', 'formatUSD should format $1,150.18');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");

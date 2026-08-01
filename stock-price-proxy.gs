@@ -32,15 +32,16 @@ function doGet(e) {
     // Populate formulas in column A & B
     for (var i = 0; i < symbols.length; i++) {
       var sym = symbols[i];
+      var directTicker = sym;
       var nseTicker = sym.indexOf(":") !== -1 ? sym : "NSE:" + sym;
       var bseTicker = sym.indexOf(":") !== -1 ? sym : "BOM:" + sym;
 
       var row = i + 1;
-      // Formula for price, prevclose, change, changepercent
-      sheet.getRange(row, 1).setFormula('=IFERROR(GOOGLEFINANCE("' + nseTicker + '", "price"), IFERROR(GOOGLEFINANCE("' + bseTicker + '", "price"), 0))');
-      sheet.getRange(row, 2).setFormula('=IFERROR(GOOGLEFINANCE("' + nseTicker + '", "closeyest"), IFERROR(GOOGLEFINANCE("' + bseTicker + '", "closeyest"), 0))');
-      sheet.getRange(row, 3).setFormula('=IFERROR(GOOGLEFINANCE("' + nseTicker + '", "change"), 0)');
-      sheet.getRange(row, 4).setFormula('=IFERROR(GOOGLEFINANCE("' + nseTicker + '", "changepct"), 0)');
+      // Formula for price, prevclose, change, changepercent (supports US stocks like AAPL, VOO, META, T & Indian stocks)
+      sheet.getRange(row, 1).setFormula('=IFERROR(GOOGLEFINANCE("' + directTicker + '", "price"), IFERROR(GOOGLEFINANCE("' + nseTicker + '", "price"), IFERROR(GOOGLEFINANCE("' + bseTicker + '", "price"), 0)))');
+      sheet.getRange(row, 2).setFormula('=IFERROR(GOOGLEFINANCE("' + directTicker + '", "closeyest"), IFERROR(GOOGLEFINANCE("' + nseTicker + '", "closeyest"), IFERROR(GOOGLEFINANCE("' + bseTicker + '", "closeyest"), 0)))');
+      sheet.getRange(row, 3).setFormula('=IFERROR(GOOGLEFINANCE("' + directTicker + '", "change"), IFERROR(GOOGLEFINANCE("' + nseTicker + '", "change"), 0))');
+      sheet.getRange(row, 4).setFormula('=IFERROR(GOOGLEFINANCE("' + directTicker + '", "changepct"), IFERROR(GOOGLEFINANCE("' + nseTicker + '", "changepct"), 0))');
     }
 
     SpreadsheetApp.flush(); // Force formula evaluation

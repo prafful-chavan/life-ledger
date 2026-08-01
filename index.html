@@ -832,25 +832,51 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h3>US Stocks</h3>
-                  <p>Track US stock investments — Me and Wife.</p>
+                  <h3>US Stocks & ETFs 🌐</h3>
+                  <p>Track US stock holdings across INDmoney, Vested, DriveWealth, Charles Schwab — with live prices in USD ($).</p>
                 </div>
-                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="usstocks">Add US stock</button>
+                <div class="panel-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <span id="usStockPriceDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
+                  <button class="secondary-button" type="button" id="refreshUsStockPricesBtn">🔄 Refresh Prices</button>
+                  <button class="secondary-button" type="button" id="restoreUsStockPortfolioBtn" title="Load real US portfolio (AAPL, T, VOO, META)">📋 Load Portfolio</button>
+                  <button class="secondary-button" type="button" id="importUsStockCSVBtn">📥 Import CSV</button>
+                  <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="usstocks">➕ Add US Stock</button>
+                </div>
               </div>
-              <div class="owner-toggle" role="tablist">
+              <div class="owner-toggle" role="tablist" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-size:0.75rem;font-weight:600;opacity:0.6;">Owner:</span>
                 <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+
+                <span style="font-size:0.75rem;font-weight:600;opacity:0.6;margin-left:12px;">Broker:</span>
+                <button class="owner-pill active" type="button" data-us-broker="All">All</button>
+                <button class="owner-pill" type="button" data-us-broker="INDmoney">INDmoney</button>
+                <button class="owner-pill" type="button" data-us-broker="Vested">Vested</button>
+                <button class="owner-pill" type="button" data-us-broker="DriveWealth">DriveWealth</button>
+                <button class="owner-pill" type="button" data-us-broker="Schwab">Schwab</button>
+
+                <div style="margin-left:auto;display:flex;gap:8px;" class="us-stock-view-toggle">
+                  <button class="owner-pill active" type="button" id="toggleUsStockViewHoldings">📊 Holdings</button>
+                  <button class="owner-pill" type="button" id="toggleUsStockViewTxns">📜 Transactions</button>
+                </div>
               </div>
               <div class="metric-grid compact" id="usstocksOwnerSummary"></div>
               <div class="table-wrap tall-table">
                 <table>
-                  <thead>
+                  <thead id="usStockTableHead">
                     <tr>
-                      <th>Date</th>
-                      <th>Paid by</th>
-                      <th>Current Value</th>
-                      <th>Note</th>
+                      <th>Symbol</th>
+                      <th>Company</th>
+                      <th>Qty</th>
+                      <th>Avg Price ($)</th>
+                      <th>Invested ($)</th>
+                      <th>CMP ($)</th>
+                      <th>Current Value ($)</th>
+                      <th>1-Day Chg</th>
+                      <th>P&L</th>
+                      <th>XIRR</th>
+                      <th>Broker</th>
                       <th>Action</th>
                     </tr>
                   </thead>
