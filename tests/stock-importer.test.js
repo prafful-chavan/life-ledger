@@ -151,6 +151,27 @@ Wipro Ltd,WIPRO,480.00,4800.00,4800.00`;
 });
 
 // ----------------------------------------------------------------------
+// Test 6: Pre-loaded Real Portfolio Verification (Upstox + Zerodha)
+// ----------------------------------------------------------------------
+runTest('Verify pre-loaded Upstox (8 ETFs) + Zerodha (11 Stocks) holdings', () => {
+  const { defaultStockHoldings } = require('../app.js');
+  assert.strictEqual(defaultStockHoldings.length, 19, 'Should contain 19 pre-loaded holdings');
+
+  const upstoxItems = defaultStockHoldings.filter(s => s.demat === 'Upstox');
+  assert.strictEqual(upstoxItems.length, 8, 'Upstox should have 8 ETF holdings');
+  const upstoxInvested = upstoxItems.reduce((sum, s) => sum + s.invested, 0);
+  const upstoxCurrent = upstoxItems.reduce((sum, s) => sum + s.currentValue, 0);
+  assert.strictEqual(Math.round(upstoxCurrent), 847881, 'Upstox Current Value should be ₹8,47,881');
+
+  const zerodhaItems = defaultStockHoldings.filter(s => s.demat === 'Zerodha');
+  assert.strictEqual(zerodhaItems.length, 11, 'Zerodha should have 11 stock/bond holdings');
+  const zerodhaInvested = zerodhaItems.reduce((sum, s) => sum + s.invested, 0);
+  const zerodhaCurrent = zerodhaItems.reduce((sum, s) => sum + s.currentValue, 0);
+  assert.strictEqual(zerodhaInvested.toFixed(2), '277195.60', 'Zerodha Invested should be ₹2,77,195.60');
+  assert.strictEqual(zerodhaCurrent.toFixed(2), '319895.20', 'Zerodha Current Value should be ₹3,19,895.20');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");

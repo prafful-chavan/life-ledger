@@ -557,14 +557,24 @@
                 <div class="panel-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                   <span id="stockPriceDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
                   <button class="secondary-button" type="button" id="refreshStockPricesBtn">🔄 Refresh Prices</button>
+                  <button class="secondary-button" type="button" id="restoreStockPortfolioBtn" title="Load real Upstox + Zerodha portfolio">📋 Load Portfolio</button>
                   <button class="secondary-button" type="button" id="importStockCSVBtn">📥 Import CSV</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="stock">➕ Add Stock</button>
                 </div>
               </div>
-              <div class="owner-toggle" role="tablist" style="display:flex;align-items:center;gap:8px;">
+              <div class="owner-toggle" role="tablist" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-size:0.75rem;font-weight:600;opacity:0.6;">Owner:</span>
                 <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
                 <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+
+                <span style="font-size:0.75rem;font-weight:600;opacity:0.6;margin-left:12px;">Broker:</span>
+                <button class="owner-pill active" type="button" data-stock-broker="All">All</button>
+                <button class="owner-pill" type="button" data-stock-broker="Upstox">Upstox</button>
+                <button class="owner-pill" type="button" data-stock-broker="Zerodha">Zerodha</button>
+                <button class="owner-pill" type="button" data-stock-broker="Groww">Groww</button>
+                <button class="owner-pill" type="button" data-stock-broker="INDmoney">INDmoney</button>
+
                 <div style="margin-left:auto;display:flex;gap:8px;" class="stock-view-toggle">
                   <button class="owner-pill active" type="button" id="toggleStockViewHoldings">📊 Holdings</button>
                   <button class="owner-pill" type="button" id="toggleStockViewTxns">📜 Transactions</button>

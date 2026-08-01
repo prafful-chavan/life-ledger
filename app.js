@@ -625,7 +625,12 @@ function normalizeData(data) {
     assets: ensureIds(data.assets || [], "asset"),
     liabilities: ensureIds(data.liabilities || [], "liab"),
     mutualFunds: ensureIds(data.mutualFunds || [], "mf"),
-    stocks: ensureIds(data.stocks || [], "stk"),
+    stocks: (() => {
+      const rawStocks = data.stocks || [];
+      const hasRichStocks = Array.isArray(rawStocks) && rawStocks.some(s => s.symbol || s.company);
+      const list = hasRichStocks ? rawStocks : defaultStockHoldings;
+      return ensureIds(list, "stk");
+    })(),
     fd: ensureIds(data.fd || [], "fd"),
     epf: ensureIds(data.epf || [], "epf"),
     bonds: ensureIds(data.bonds || [], "bond"),
@@ -898,6 +903,25 @@ function bindFinanceTabs() {
     renderStockHoldingsPanel();
   });
   document.getElementById('refreshStockPricesBtn')?.addEventListener('click', () => refreshStockPrices(true));
+
+  document.querySelectorAll('[data-stock-broker]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-stock-broker]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeStockBroker = btn.dataset.stockBroker;
+      renderStockHoldingsPanel();
+    });
+  });
+
+  document.getElementById('restoreStockPortfolioBtn')?.addEventListener('click', async () => {
+    if (confirm('Load your real Upstox (8 ETFs) + Zerodha (11 Stocks) holdings into Life Ledger?')) {
+      state.stocks = clone(defaultStockHoldings);
+      await saveData(true, 'stock');
+      renderStockHoldingsPanel();
+      renderAll();
+      toast('✅ Real Upstox (8 ETFs) + Zerodha (11 Stocks) holdings loaded!');
+    }
+  });
 
   document.getElementById("syncExpensesFromDriveBtn")?.addEventListener("click", () => {
     syncExpensesFromDrive();
@@ -3476,6 +3500,32 @@ function renderMutualFundsPanel() {
 
 const STOCK_PRICE_CACHE_KEY = 'lifeLedgerStockPriceCache:v1';
 const STOCK_PROXY_URL_KEY = 'lifeLedgerStockProxyUrl';
+let activeStockBroker = "All";
+
+const defaultStockHoldings = [
+  // ── Upstox Holdings (8 ETFs) ──
+  { id: "stk-up-1", owner: "Me", symbol: "HDFCMID150", company: "HDFC Nifty Midcap 150 ETF", exchange: "NSE", category: "ETF", quantity: 1678, avgPrice: 21.12, currentPrice: 23.36, invested: 35439.36, currentValue: 39198.08, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox ETF" },
+  { id: "stk-up-2", owner: "Me", symbol: "GOLD1", company: "Nippon India ETF Gold BeES", exchange: "NSE", category: "ETF", quantity: 1523, avgPrice: 80.21, currentPrice: 118.16, invested: 122159.83, currentValue: 179957.68, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Gold ETF" },
+  { id: "stk-up-3", owner: "Me", symbol: "HDFCSML250", company: "HDFC Nifty Smallcap 250 ETF", exchange: "NSE", category: "ETF", quantity: 464, avgPrice: 170.49, currentPrice: 180.67, invested: 79107.36, currentValue: 83830.88, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Smallcap ETF" },
+  { id: "stk-up-4", owner: "Me", symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", exchange: "NSE", category: "ETF", quantity: 569, avgPrice: 264.94, currentPrice: 277.42, invested: 150750.86, currentValue: 157851.98, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Nifty 50 ETF" },
+  { id: "stk-up-5", owner: "Me", symbol: "MID150BEES", company: "Nippon India ETF Nifty Midcap 150 BeES", exchange: "NSE", category: "ETF", quantity: 221, avgPrice: 217.54, currentPrice: 239.42, invested: 48076.34, currentValue: 52911.82, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Midcap ETF" },
+  { id: "stk-up-6", owner: "Me", symbol: "MON100", company: "Motilal Oswal Nasdaq 100 ETF", exchange: "NSE", category: "ETF", quantity: 441, avgPrice: 193.28, currentPrice: 305.18, invested: 85236.48, currentValue: 134584.38, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Nasdaq 100 ETF" },
+  { id: "stk-up-7", owner: "Me", symbol: "BANKBEES", company: "Nippon India ETF Bank BeES", exchange: "NSE", category: "ETF", quantity: 149, avgPrice: 543.48, currentPrice: 592.26, invested: 80978.52, currentValue: 88246.74, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Bank ETF" },
+  { id: "stk-up-8", owner: "Me", symbol: "ITBEES", company: "Nippon India ETF IT BeES", exchange: "NSE", category: "ETF", quantity: 3262, avgPrice: 39.45, currentPrice: 34.12, invested: 128685.90, currentValue: 111299.44, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox IT ETF" },
+
+  // ── Zerodha Holdings (11 Stocks & Bonds) ──
+  { id: "stk-ze-1", owner: "Me", symbol: "BLUESTARCO", company: "Blue Star Ltd", exchange: "NSE", category: "Stock", quantity: 19, avgPrice: 1534.29, currentPrice: 1681.00, invested: 29151.45, currentValue: 31939.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-2", owner: "Me", symbol: "FACT", company: "Fertilisers & Chemicals Travancore Ltd", exchange: "NSE", category: "Stock", quantity: 37, avgPrice: 855.23, currentPrice: 827.50, invested: 31643.55, currentValue: 30617.50, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-3", owner: "Me", symbol: "HAVELLS", company: "Havells India Ltd", exchange: "NSE", category: "Stock", quantity: 13, avgPrice: 1533.61, currentPrice: 1259.60, invested: 19936.95, currentValue: 16374.80, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-4", owner: "Me", symbol: "JINDALSTEL", company: "Jindal Steel & Power Ltd", exchange: "NSE", category: "Stock", quantity: 19, avgPrice: 753.02, currentPrice: 1102.40, invested: 14307.35, currentValue: 20945.60, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-5", owner: "Me", symbol: "M&M", company: "Mahindra & Mahindra Ltd", exchange: "NSE", category: "Stock", quantity: 11, avgPrice: 2441.30, currentPrice: 3398.50, invested: 26854.30, currentValue: 37383.50, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-6", owner: "Me", symbol: "PFC", company: "Power Finance Corporation Ltd", exchange: "NSE", category: "Stock", quantity: 60, avgPrice: 401.31, currentPrice: 424.45, invested: 24078.55, currentValue: 25467.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-7", owner: "Me", symbol: "PRESTIGE", company: "Prestige Estates Projects Ltd", exchange: "NSE", category: "Stock", quantity: 10, avgPrice: 1667.95, currentPrice: 1618.50, invested: 16679.50, currentValue: 16185.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-8", owner: "Me", symbol: "RECLTD", company: "REC Ltd", exchange: "NSE", category: "Stock", quantity: 70, avgPrice: 438.62, currentPrice: 373.10, invested: 30703.70, currentValue: 26117.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-9", owner: "Me", symbol: "SGBFEB32IV-GB", company: "Sovereign Gold Bond 2032 Series IV", exchange: "NSE", category: "Bond", quantity: 5, avgPrice: 6213.00, currentPrice: 14601.83, invested: 31065.00, currentValue: 73009.15, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Sovereign Gold Bond" },
+  { id: "stk-ze-10", owner: "Me", symbol: "VBL", company: "Varun Beverages Ltd", exchange: "NSE", category: "Stock", quantity: 56, avgPrice: 506.77, currentPrice: 442.45, invested: 28379.25, currentValue: 24777.20, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+  { id: "stk-ze-11", owner: "Me", symbol: "WIPRO", company: "Wipro Ltd", exchange: "NSE", category: "Stock", quantity: 93, avgPrice: 262.32, currentPrice: 183.65, invested: 24396.00, currentValue: 17079.45, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
+];
 
 function normalizeHeaderKey(str) {
   if (!str) return '';
@@ -3974,6 +4024,7 @@ function renderStockHoldingsPanel() {
   const allStocks = [...(state.stocks || [])];
   const rows = allStocks
     .filter(item => matchHoldingsOwner(item.owner || 'Me', activeHoldingsOwner))
+    .filter(item => activeStockBroker === 'All' || (item.demat || '').toLowerCase() === activeStockBroker.toLowerCase())
     .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
 
   const hasRichData = rows.some(s => s.symbol || s.company);
@@ -8128,6 +8179,7 @@ if (typeof module !== 'undefined' && module.exports) {
     detectBrokerFromHeaders,
     parseBrokerStockCSV,
     parseCSVDate,
+    defaultStockHoldings,
   };
 }
 
