@@ -439,7 +439,9 @@ const deductionFields = [
   ["grossDeductions", "Gross deductions", ["grossdeductions", "deduction", "deductions"]],
 ];
 
-applyTheme(loadTheme());
+if (typeof document !== "undefined") {
+  applyTheme(loadTheme());
+}
 
 let isAppInitialized = false;
 
@@ -471,17 +473,23 @@ function bootstrapApp(initialState) {
   setTimeout(() => loadAiInsights(), 1500);
 }
 
-window.LifeLedgerApp = {
-  defaultData: () => clone(defaultData),
-  bootstrap: bootstrapApp,
-  saveData: saveData,
-  flushSave: () => {
-    if (saveDataTimer) {
-      return saveData(true);
-    }
-    return currentSavePromise || Promise.resolve();
-  }
-};
+if (typeof window !== "undefined") {
+  window.LifeLedgerApp = {
+    defaultData: () => clone(defaultData),
+    bootstrap: bootstrapApp,
+    saveData: saveData,
+    flushSave: () => {
+      if (saveDataTimer) {
+        clearTimeout(saveDataTimer);
+        saveDataTimer = null;
+        return saveData(true);
+      }
+      return Promise.resolve();
+    },
+    getState: () => state,
+    renderAll: renderAll,
+  };
+}
 
 let saveDataTimer;
 let isSaving = false;
@@ -526,60 +534,52 @@ function saveData(immediate = false, kind = null) {
 }
 
 // ─── Reliable save on page close / app switch ──────────────────────────────
-// beforeunload: works on desktop browsers
-window.addEventListener("beforeunload", (event) => {
-  if (saveDataTimer || isSaving) {
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", (event) => {
+    if (saveDataTimer || isSaving) {
+      if (saveDataTimer) {
+        clearTimeout(saveDataTimer);
+        saveDataTimer = null;
+        currentSavePromise = window.LifeLedgerAuth?.saveAppData(state).catch(console.warn);
+      }
+      event.preventDefault();
+      event.returnValue = "Saving changes, please wait a moment...";
+      return event.returnValue;
+    }
+  });
+
+  window.addEventListener("pagehide", (event) => {
     if (saveDataTimer) {
       clearTimeout(saveDataTimer);
       saveDataTimer = null;
-      currentSavePromise = window.LifeLedgerAuth?.saveAppData(state).catch(console.warn);
+      saveData(true);
     }
-    event.preventDefault();
-    event.returnValue = "Saving changes, please wait a moment...";
-    return event.returnValue;
-  }
-});
+  });
+}
 
-// visibilitychange: critical for iOS Safari — fires when user switches apps
-// or switches tabs. iOS does NOT fire beforeunload reliably.
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    // Page is being hidden — flush any pending save immediately
-    if (saveDataTimer) {
-      console.log("[app.js] Page hidden — flushing pending save.");
-      clearTimeout(saveDataTimer);
-      saveDataTimer = null;
-      saveData(true);
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (saveDataTimer) {
+        console.log("[app.js] Page hidden — flushing pending save.");
+        clearTimeout(saveDataTimer);
+        saveDataTimer = null;
+        saveData(true);
+      }
+      if (failedSaveRetryPending && window.LifeLedgerAuth?.isUnlocked()) {
+        console.log("[app.js] Retrying failed save on visibility hide...");
+        failedSaveRetryPending = false;
+        saveData(true);
+      }
+    } else {
+      if (failedSaveRetryPending && window.LifeLedgerAuth?.isUnlocked()) {
+        console.log("[app.js] Tab re-focused — retrying failed save...");
+        failedSaveRetryPending = false;
+        saveData(true);
+      }
     }
-    // Retry failed saves when going to background (last chance before suspension)
-    if (failedSaveRetryPending && window.LifeLedgerAuth?.isUnlocked()) {
-      console.log("[app.js] Retrying failed save on visibility hide...");
-      failedSaveRetryPending = false;
-      saveData(true);
-    }
-  } else {
-    // Page became visible again — retry any failed saves
-    if (failedSaveRetryPending && window.LifeLedgerAuth?.isUnlocked()) {
-      console.log("[app.js] Tab re-focused — retrying failed save...");
-      failedSaveRetryPending = false;
-      saveData(true);
-    }
-  }
-});
-
-// pagehide: modern replacement for beforeunload on mobile, works as a safety net
-window.addEventListener("pagehide", (event) => {
-  if (saveDataTimer) {
-    clearTimeout(saveDataTimer);
-    saveDataTimer = null;
-    // Use sendBeacon pattern — fire and forget save for when the page is being unloaded
-    try {
-      window.LifeLedgerAuth?.saveAppData(state).catch(console.warn);
-    } catch(e) {
-      console.warn("[app.js] pagehide save failed:", e);
-    }
-  }
-});
+  });
+}
 
 function invalidateExpenseCache() {
   expenseMonthIndexCache = null;
@@ -602,6 +602,7 @@ function saveTheme(theme) {
 }
 
 function applyTheme(theme) {
+  if (typeof document === "undefined" || !document.body) return;
   const normalizedTheme = theme === "dark" ? "dark" : "light";
   document.body.dataset.theme = normalizedTheme;
   const buttons = document.querySelectorAll("#themeToggle, #settingsThemeToggle");
@@ -3476,173 +3477,307 @@ function renderMutualFundsPanel() {
 const STOCK_PRICE_CACHE_KEY = 'lifeLedgerStockPriceCache:v1';
 const STOCK_PROXY_URL_KEY = 'lifeLedgerStockProxyUrl';
 
+function normalizeHeaderKey(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/^\uFEFF/, '') // Strip UTF-8 BOM
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ' ') // Convert all punctuation, slashes, currency symbols to space
+    .replace(/\s+/g, ' ') // Collapse multiple spaces
+    .trim();
+}
+
+const STOCK_HEADER_ALIASES = {
+  symbol: [
+    "symbol ticker",
+    "symbol/ticker",
+    "trading symbol ticker",
+    "trading symbol",
+    "stock symbol",
+    "symbol",
+    "ticker",
+    "instrument",
+    "code",
+    "scrip",
+    "security"
+  ],
+  company: [
+    "company name",
+    "company",
+    "security name",
+    "stock name",
+    "name",
+    "description"
+  ],
+  quantity: [
+    "quantity",
+    "qty.",
+    "qty",
+    "net qty",
+    "shares",
+    "units",
+    "no of shares",
+    "number of shares"
+  ],
+  avgPrice: [
+    "avg buy price",
+    "average buy price",
+    "avg price",
+    "average price",
+    "avg cost",
+    "avg. cost",
+    "average cost",
+    "buy price",
+    "purchase price",
+    "cost price"
+  ],
+  currentPrice: [
+    "current price",
+    "cmp",
+    "ltp",
+    "last price",
+    "market price",
+    "closing price",
+    "nav",
+    "rate"
+  ],
+  invested: [
+    "total invested",
+    "investment amount",
+    "buy value",
+    "total cost",
+    "purchase value",
+    "invested"
+  ],
+  currentValue: [
+    "current value",
+    "cur val",
+    "cur. val",
+    "closing value",
+    "market value"
+  ],
+  purchaseDate: [
+    "purchase date",
+    "buy date",
+    "date",
+    "trade date",
+    "transaction date"
+  ],
+  exchange: [
+    "exchange name",
+    "exchange",
+    "market name",
+    "market type"
+  ],
+  category: [
+    "category",
+    "asset type",
+    "type"
+  ],
+  demat: [
+    "broker demat",
+    "broker/demat",
+    "broker",
+    "demat",
+    "platform",
+    "source"
+  ],
+  owner: [
+    "owner",
+    "person",
+    "paid by",
+    "portfolio",
+    "holder"
+  ],
+  notes: [
+    "notes",
+    "note",
+    "remarks",
+    "isin"
+  ]
+};
+
+function pickFieldValue(row, headers, aliasList) {
+  if (!row || !headers || !aliasList) return '';
+  
+  // 1. Exact match on normalized header
+  for (const alias of aliasList) {
+    const normAlias = normalizeHeaderKey(alias);
+    for (const h of headers) {
+      if (normalizeHeaderKey(h) === normAlias) {
+        const val = row[h];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+  
+  // 2. Word boundary / Substring match for multi-word aliases
+  for (const alias of aliasList) {
+    const normAlias = normalizeHeaderKey(alias);
+    if (!normAlias || normAlias.length <= 4 || !normAlias.includes(' ')) continue;
+    for (const h of headers) {
+      const normH = normalizeHeaderKey(h);
+      if (normH.includes(normAlias)) {
+        const val = row[h];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+  
+  return '';
+}
+
+function pickFieldNum(row, headers, aliasList) {
+  const valStr = pickFieldValue(row, headers, aliasList);
+  if (!valStr) return 0;
+  return toNumber(valStr);
+}
+
+function parseCSVDate(dateStr) {
+  if (!dateStr) return todayISO();
+  const str = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  
+  const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (match) {
+    let [, p1, p2, year] = match;
+    p1 = p1.padStart(2, '0');
+    p2 = p2.padStart(2, '0');
+    if (year.length === 2) {
+      year = (Number(year) > 50 ? '19' : '20') + year;
+    }
+    const day = Number(p1) > 12 || (Number(p1) <= 31 && Number(p2) <= 12) ? p1 : p2;
+    const month = day === p1 ? p2 : p1;
+    return `${year}-${month}-${day}`;
+  }
+  
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split('T')[0];
+  }
+  return todayISO();
+}
+
 function detectBrokerFromHeaders(headers) {
-  const h = headers.map(s => s.toLowerCase().trim());
-  if (h.some(x => x.includes('net qty')) || h.some(x => x.includes('avg. price') && !x.includes('buy'))) return 'Upstox';
-  if (h.some(x => x === 'instrument') && h.some(x => x.includes('avg. cost'))) return 'Zerodha';
-  if (h.some(x => x === 'isin') && h.some(x => x.includes('average buy price'))) return 'Groww';
-  if (h.some(x => x.includes('market price')) && h.some(x => x.includes('stock name'))) return 'INDmoney';
+  const norm = headers.map(normalizeHeaderKey);
+  
+  if (norm.some(x => x.includes('net qty')) || (norm.some(x => x.includes('avg price')) && norm.some(x => x.includes('ltp')))) return 'Upstox';
+  if (norm.some(x => x === 'instrument') && norm.some(x => x.includes('avg cost'))) return 'Zerodha';
+  if (norm.some(x => x === 'isin') && norm.some(x => x.includes('average buy price'))) return 'Groww';
+  if (norm.some(x => x.includes('market price')) && norm.some(x => x.includes('stock name'))) return 'INDmoney';
+  if (norm.some(x => x.includes('symbol ticker')) || (norm.some(x => x.includes('company name')) && norm.some(x => x.includes('broker demat')))) return 'LifeLedger';
   return 'Generic';
 }
 
 function parseBrokerStockCSV(csvText, ownerOverride) {
   const parsed = parseCSV(csvText);
-  if (!parsed || parsed.length === 0) return { broker: 'Unknown', entries: [] };
+  if (!parsed || parsed.length === 0) return { broker: 'Unknown', entries: [], warnings: ['CSV file is empty or could not be parsed.'] };
   
   const headers = Object.keys(parsed[0]);
   const broker = detectBrokerFromHeaders(headers);
   
+  console.log("[Stock Importer] Detected Broker Format:", broker);
+  console.log("[Stock Importer] CSV Headers:", headers);
+  
   const entries = [];
-  for (const row of parsed) {
-    let entry = null;
-    const pick = (keys) => {
-      for (const k of keys) {
-        for (const h of headers) {
-          if (h.toLowerCase().trim().replace(/[^a-z0-9]/g, '') === k.toLowerCase().replace(/[^a-z0-9]/g, '')) {
-            const v = row[h];
-            if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
-          }
-        }
-      }
-      return '';
-    };
-    const pickNum = (keys) => toNumber(pick(keys));
+  const warnings = [];
+  
+  for (let i = 0; i < parsed.length; i++) {
+    const row = parsed[i];
+    console.log("[Stock Importer] CSV Row:", row);
     
-    if (broker === 'Upstox') {
-      const symbol = pick(['Symbol', 'symbol']);
-      const qty = pickNum(['Net Qty', 'netqty', 'Qty']);
-      const avgPrice = pickNum(['Avg. Price', 'avgprice', 'Average Price']);
-      const ltp = pickNum(['LTP', 'ltp', 'Last Price']);
-      const currentValue = pickNum(['Current Value', 'currentvalue']);
-      if (!symbol && !qty) continue;
-      const catRaw = pick(['Category', 'category']) || '';
-      const category = catRaw.toUpperCase().includes('ETF') ? 'ETF' : 'Stock';
-      entry = {
-        id: `stk-${generateUUID()}`,
-        owner: ownerOverride || 'Me',
-        symbol: symbol.replace(/\s*-EQ$/i, '').replace(/-BE$/i, '').trim(),
-        company: symbol.replace(/\s*-EQ$/i, '').replace(/-BE$/i, '').trim(),
-        exchange: pick(['Exchange', 'exchange']) || 'NSE',
-        category,
-        quantity: qty,
-        avgPrice,
-        currentPrice: ltp || avgPrice,
-        invested: qty * avgPrice,
-        currentValue: currentValue || (qty * (ltp || avgPrice)),
-        demat: 'Upstox',
-        purchaseDate: todayISO(),
-        notes: '',
-      };
-    } else if (broker === 'Zerodha') {
-      const instrument = pick(['Instrument', 'instrument']);
-      const qty = pickNum(['Qty.', 'Qty', 'qty', 'Quantity']);
-      const avgCost = pickNum(['Avg. cost', 'avgcost', 'Average cost']);
-      const ltp = pickNum(['LTP', 'ltp']);
-      const curVal = pickNum(['Cur. val', 'curval', 'Current value']);
-      if (!instrument && !qty) continue;
-      entry = {
-        id: `stk-${generateUUID()}`,
-        owner: ownerOverride || 'Me',
-        symbol: instrument.replace(/\s*-EQ$/i, '').trim(),
-        company: instrument.replace(/\s*-EQ$/i, '').trim(),
-        exchange: 'NSE',
-        category: 'Stock',
-        quantity: qty,
-        avgPrice: avgCost,
-        currentPrice: ltp || avgCost,
-        invested: qty * avgCost,
-        currentValue: curVal || (qty * (ltp || avgCost)),
-        demat: 'Zerodha',
-        purchaseDate: todayISO(),
-        notes: '',
-      };
-    } else if (broker === 'Groww') {
-      const stockName = pick(['Stock Name', 'stockname', 'Name']);
-      const qty = pickNum(['Quantity', 'quantity', 'Qty']);
-      const avgBuyPrice = pickNum(['Average buy price', 'averagebuyprice', 'Avg Price']);
-      const closingPrice = pickNum(['Closing price', 'closingprice', 'CMP']);
-      const buyValue = pickNum(['Buy value', 'buyvalue', 'Invested']);
-      const closingValue = pickNum(['Closing value', 'closingvalue']);
-      if (!stockName && !qty) continue;
-      const isin = pick(['ISIN', 'isin']);
-      entry = {
-        id: `stk-${generateUUID()}`,
-        owner: ownerOverride || 'Wife',
-        symbol: stockName.split(' ')[0].toUpperCase(),
-        company: stockName,
-        exchange: 'NSE',
-        category: 'Stock',
-        quantity: qty,
-        avgPrice: avgBuyPrice,
-        currentPrice: closingPrice || avgBuyPrice,
-        invested: buyValue || (qty * avgBuyPrice),
-        currentValue: closingValue || (qty * (closingPrice || avgBuyPrice)),
-        demat: 'Groww',
-        purchaseDate: todayISO(),
-        notes: isin ? `ISIN: ${isin}` : '',
-      };
-    } else if (broker === 'INDmoney') {
-      const stockName = pick(['Stock Name', 'stockname', 'Name']);
-      const symbol = pick(['Symbol', 'symbol', 'Ticker']);
-      const marketPrice = pickNum(['Market Price', 'marketprice', 'CMP']);
-      const currentValue = pickNum(['Current value', 'currentvalue', 'Value']);
-      const investedRaw = pick(['Invested', 'invested']);
-      let qty = 0, avgPrice = 0;
-      if (investedRaw && investedRaw.includes('×')) {
-        const parts = investedRaw.split('×').map(s => toNumber(s.trim()));
-        qty = parts[0] || 0;
-        avgPrice = parts[1] || 0;
-      } else {
-        qty = pickNum(['Quantity', 'Qty', 'qty']);
-        avgPrice = pickNum(['Avg Price', 'avgprice', 'Buy Price']);
+    let rawOwner = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.owner);
+    let symbol = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.symbol);
+    let company = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.company);
+    let qty = pickFieldNum(row, headers, STOCK_HEADER_ALIASES.quantity);
+    let avgPrice = pickFieldNum(row, headers, STOCK_HEADER_ALIASES.avgPrice);
+    let currentPrice = pickFieldNum(row, headers, STOCK_HEADER_ALIASES.currentPrice);
+    let currentValue = pickFieldNum(row, headers, STOCK_HEADER_ALIASES.currentValue);
+    let purchaseDateRaw = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.purchaseDate);
+    let exchange = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.exchange) || 'NSE';
+    let catRaw = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.category) || 'Stock';
+    let demat = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.demat) || (broker !== 'Generic' && broker !== 'LifeLedger' ? broker : '');
+    let notes = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.notes);
+    let invested = 0;
+
+    // Special check for INDmoney / formatted invested string like "10 × 170"
+    const investedRaw = pickFieldValue(row, headers, STOCK_HEADER_ALIASES.invested);
+    if (investedRaw && /[×x\*]/.test(investedRaw)) {
+      const parts = investedRaw.split(/[×x\*]/).map(s => toNumber(s.trim()));
+      if (parts[0] && parts[1]) {
+        if (!qty) qty = parts[0];
+        if (!avgPrice) avgPrice = parts[1];
+        invested = parts[0] * parts[1];
       }
-      if (!stockName && !symbol && !qty) continue;
-      entry = {
-        id: `stk-${generateUUID()}`,
-        owner: ownerOverride || 'Wife',
-        symbol: (symbol || stockName.split(' ')[0]).toUpperCase(),
-        company: stockName || symbol,
-        exchange: 'NSE',
-        category: 'Stock',
-        quantity: qty,
-        avgPrice,
-        currentPrice: marketPrice || avgPrice,
-        invested: qty * avgPrice,
-        currentValue: currentValue || (qty * (marketPrice || avgPrice)),
-        demat: 'INDmoney',
-        purchaseDate: todayISO(),
-        notes: '',
-      };
-    } else {
-      const sym = pick(['symbol', 'ticker', 'code', 'scrip']);
-      const company = pick(['company', 'name', 'stock', 'security', 'instrument']);
-      const qty = pickNum(['quantity', 'qty', 'shares', 'units', 'netqty']);
-      const avgPrice = pickNum(['avgprice', 'averageprice', 'buyprice', 'price', 'avgcost']);
-      const currentPrice = pickNum(['currentprice', 'cmp', 'ltp', 'marketprice', 'closingprice']);
-      const invested = pickNum(['invested', 'investment', 'cost', 'buyvalue']) || qty * avgPrice;
-      if (!qty && !invested && !currentPrice) continue;
-      entry = {
-        id: `stk-${generateUUID()}`,
-        owner: ownerOverride || 'Me',
-        symbol: (sym || company || 'Unknown').toUpperCase().replace(/\s*-EQ$/i, '').trim(),
-        company: company || sym || 'Stock',
-        exchange: pick(['exchange', 'market']) || 'NSE',
-        category: 'Stock',
-        quantity: qty,
-        avgPrice,
-        currentPrice: currentPrice || avgPrice,
-        invested: invested || qty * (avgPrice || currentPrice),
-        currentValue: (currentPrice || avgPrice) * qty || invested,
-        demat: pick(['demat', 'broker', 'platform']) || 'Unknown',
-        purchaseDate: pick(['purchasedate', 'buydate', 'date']) || todayISO(),
-        notes: pick(['notes', 'note', 'remarks']) || '',
-      };
+    } else if (investedRaw) {
+      invested = toNumber(investedRaw);
     }
     
-    if (entry) entries.push(entry);
+    // Fallbacks and derived values
+    if (!symbol && company) {
+      symbol = company.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+    if (!company && symbol) {
+      company = symbol;
+    }
+    
+    // Clean symbol suffix like -EQ, -BE
+    if (symbol) {
+      symbol = symbol.toUpperCase().replace(/\s*-EQ$/i, '').replace(/\s*-BE$/i, '').replace(/[^A-Z0-9\&\.\-]/gi, '').trim();
+    }
+    
+    // Validate minimum data requirement
+    if (!symbol && !company && !qty && !invested) {
+      console.warn(`[Stock Importer] Row ${i + 1} skipped: missing symbol, company, and quantity`, row);
+      warnings.push(`Row ${i + 1}: Skipped due to missing stock name or quantity.`);
+      continue;
+    }
+
+    if (!invested && qty && avgPrice) {
+      invested = qty * avgPrice;
+    }
+    if (!avgPrice && qty && invested) {
+      avgPrice = invested / qty;
+    }
+    if (!currentPrice) {
+      currentPrice = avgPrice;
+    }
+    if (!currentValue) {
+      currentValue = qty ? (qty * currentPrice) : invested;
+    }
+
+    const category = catRaw.toUpperCase().includes('ETF') ? 'ETF' : 'Stock';
+    const owner = (rawOwner && ['Me', 'Wife', 'Both'].includes(normalizeOwner(rawOwner))) 
+      ? normalizeOwner(rawOwner) 
+      : (ownerOverride || 'Me');
+    const purchaseDate = parseCSVDate(purchaseDateRaw);
+
+    const entry = {
+      id: `stk-${generateUUID()}`,
+      owner,
+      symbol: symbol || 'UNKNOWN',
+      company: company || 'Stock',
+      exchange: exchange.toUpperCase(),
+      category,
+      quantity: qty,
+      avgPrice,
+      currentPrice,
+      invested,
+      currentValue,
+      demat: demat || (broker !== 'Generic' && broker !== 'LifeLedger' ? broker : 'Demat'),
+      purchaseDate,
+      notes,
+    };
+
+    console.log("[Stock Importer] Mapped Holding:", entry);
+    entries.push(entry);
   }
-  
-  return { broker, entries };
+
+  return { broker, entries, warnings };
 }
 
 function initStockCSVImport() {
@@ -7979,5 +8114,22 @@ async function renderMfInsightsPanel() {
     }
   });
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    parseCSV,
+    toNumber,
+    generateUUID,
+    todayISO,
+    escapeHTML,
+    normalizeOwner,
+    normalizeHeaderKey,
+    STOCK_HEADER_ALIASES,
+    detectBrokerFromHeaders,
+    parseBrokerStockCSV,
+    parseCSVDate,
+  };
+}
+
 
 
