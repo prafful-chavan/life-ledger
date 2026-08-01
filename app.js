@@ -626,10 +626,18 @@ function normalizeData(data) {
     liabilities: ensureIds(data.liabilities || [], "liab"),
     mutualFunds: ensureIds(data.mutualFunds || [], "mf"),
     stocks: (() => {
-      const rawStocks = data.stocks || [];
-      const hasRichStocks = Array.isArray(rawStocks) && rawStocks.some(s => s.symbol || s.company);
-      const list = hasRichStocks ? rawStocks : defaultStockHoldings;
-      return ensureIds(list, "stk");
+      const rawStocks = Array.isArray(data.stocks) ? data.stocks : [];
+      const hasMe = rawStocks.some(s => (s.owner === 'Me' || !s.owner) && (s.symbol || s.company));
+      const hasWife = rawStocks.some(s => s.owner === 'Wife' && (s.symbol || s.company));
+
+      const defaultMe = defaultStockHoldings.filter(s => s.owner === 'Me');
+      const defaultWife = defaultStockHoldings.filter(s => s.owner === 'Wife');
+
+      const meList = hasMe ? rawStocks.filter(s => s.owner === 'Me' || !s.owner) : defaultMe;
+      const wifeList = hasWife ? rawStocks.filter(s => s.owner === 'Wife') : defaultWife;
+      const bothList = rawStocks.filter(s => s.owner === 'Both');
+
+      return ensureIds([...meList, ...wifeList, ...bothList], "stk");
     })(),
     fd: ensureIds(data.fd || [], "fd"),
     epf: ensureIds(data.epf || [], "epf"),
