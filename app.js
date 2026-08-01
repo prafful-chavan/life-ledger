@@ -673,6 +673,12 @@ function normalizeData(data) {
       return { ...s, owner: "Me" };
     }),
     workouts: ensureIds(data.workouts || [], "work"),
+    bodyMetrics: (() => {
+      const raw = Array.isArray(data.bodyMetrics) ? data.bodyMetrics : [];
+      const hasRich = raw.some(b => b.weight || b.bmi);
+      const list = hasRich ? raw : defaultBodyMetrics;
+      return ensureIds(list, "bm");
+    })(),
     habits: ensureIds(data.habits || [], "habit"),
     chat: ensureIds(data.chat || [], "chat"),
     mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
@@ -3632,6 +3638,43 @@ const defaultUsStockHoldings = [
   { id: "us-4", owner: "Me", symbol: "META", company: "Meta Platforms Inc. Class A", exchange: "NASDAQ", category: "Stock", quantity: 0.1548297, avgPrice: 683.40, currentPrice: 553.51, invested: 105.81, currentValue: 85.70, demat: "INDmoney", purchaseDate: "2024-01-15", notes: "Meta US Stock" },
 ];
 
+let activeExerciseYear = new Date().getFullYear();
+let activeExerciseMonth = new Date().getMonth();
+
+const defaultBodyMetrics = [
+  { id: "bm-1",  date: "2026-08-01", time: "09:37", weight: 84.50, bmi: 29.2, bodyFat: 24.60, subcutaneousFat: 21.20, visceralFat: 11.8, bodyWater: 54.40, skeletalMuscle: 48.70, muscleMass: 60.50, boneMass: 3.20, protein: 17.20, bmr: 1745, bodyAge: 34 },
+  { id: "bm-2",  date: "2026-07-31", time: "09:37", weight: 84.10, bmi: 29.1, bodyFat: 24.50, subcutaneousFat: 21.00, visceralFat: 11.7, bodyWater: 54.50, skeletalMuscle: 48.80, muscleMass: 60.30, boneMass: 3.20, protein: 17.20, bmr: 1741, bodyAge: 34 },
+  { id: "bm-3",  date: "2026-07-31", time: "06:59", weight: 84.10, bmi: 29.2, bodyFat: 24.60, subcutaneousFat: 21.20, visceralFat: 11.8, bodyWater: 54.40, skeletalMuscle: 48.70, muscleMass: 60.40, boneMass: 3.20, protein: 17.20, bmr: 1742, bodyAge: 34 },
+  { id: "bm-4",  date: "2026-07-20", time: "09:36", weight: 84.85, bmi: 29.4, bodyFat: 24.90, subcutaneousFat: 21.40, visceralFat: 12.0, bodyWater: 54.20, skeletalMuscle: 48.50, muscleMass: 60.50, boneMass: 3.20, protein: 17.10, bmr: 1745, bodyAge: 34 },
+  { id: "bm-5",  date: "2026-07-16", time: "09:45", weight: 84.80, bmi: 29.3, bodyFat: 24.80, subcutaneousFat: 21.30, visceralFat: 11.9, bodyWater: 54.30, skeletalMuscle: 48.60, muscleMass: 60.60, boneMass: 3.20, protein: 17.10, bmr: 1747, bodyAge: 34 },
+  { id: "bm-6",  date: "2026-07-15", time: "12:41", weight: 85.05, bmi: 29.4, bodyFat: 24.90, subcutaneousFat: 21.40, visceralFat: 12.0, bodyWater: 54.20, skeletalMuscle: 48.50, muscleMass: 60.60, boneMass: 3.20, protein: 17.10, bmr: 1748, bodyAge: 34 },
+  { id: "bm-7",  date: "2026-07-15", time: "08:53", weight: 85.05, bmi: 29.4, bodyFat: 24.90, subcutaneousFat: 21.40, visceralFat: 12.0, bodyWater: 54.20, skeletalMuscle: 48.50, muscleMass: 60.70, boneMass: 3.20, protein: 17.10, bmr: 1749, bodyAge: 34 },
+  { id: "bm-8",  date: "2026-07-14", time: "08:53", weight: 86.10, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1754, bodyAge: 34 },
+  { id: "bm-9",  date: "2026-07-14", time: "08:57", weight: 86.10, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1754, bodyAge: 34 },
+  { id: "bm-10", date: "2026-07-10", time: "19:14", weight: 86.25, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1757, bodyAge: 34 },
+  { id: "bm-11", date: "2026-07-08", time: "09:40", weight: 86.45, bmi: 29.9, bodyFat: 25.70, subcutaneousFat: 22.10, visceralFat: 12.4, bodyWater: 53.60, skeletalMuscle: 48.00, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1757, bodyAge: 34 },
+  { id: "bm-12", date: "2026-07-08", time: "09:39", weight: 86.45, bmi: 29.9, bodyFat: 25.70, subcutaneousFat: 22.10, visceralFat: 12.4, bodyWater: 53.60, skeletalMuscle: 48.00, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1757, bodyAge: 35 },
+  { id: "bm-13", date: "2026-07-07", time: "10:12", weight: 87.05, bmi: 30.1, bodyFat: 26.00, subcutaneousFat: 22.30, visceralFat: 12.6, bodyWater: 53.40, skeletalMuscle: 47.80, muscleMass: 61.20, boneMass: 3.20, protein: 16.90, bmr: 1761, bodyAge: 35 },
+  { id: "bm-14", date: "2026-07-06", time: "10:09", weight: 86.95, bmi: 30.1, bodyFat: 26.00, subcutaneousFat: 22.30, visceralFat: 12.6, bodyWater: 53.40, skeletalMuscle: 47.80, muscleMass: 61.10, boneMass: 3.20, protein: 16.90, bmr: 1759, bodyAge: 35 },
+  { id: "bm-15", date: "2026-07-06", time: "10:08", weight: 86.95, bmi: 30.1, bodyFat: 26.00, subcutaneousFat: 22.30, visceralFat: 12.6, bodyWater: 53.40, skeletalMuscle: 47.80, muscleMass: 61.10, boneMass: 3.20, protein: 16.90, bmr: 1759, bodyAge: 35 },
+  { id: "bm-16", date: "2026-07-05", time: "21:42", weight: 86.60, bmi: 30.0, bodyFat: 25.80, subcutaneousFat: 22.20, visceralFat: 12.5, bodyWater: 53.50, skeletalMuscle: 47.90, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1757, bodyAge: 35 },
+  { id: "bm-17", date: "2026-07-01", time: "08:32", weight: 87.40, bmi: 30.2, bodyFat: 26.20, subcutaneousFat: 22.40, visceralFat: 12.7, bodyWater: 53.30, skeletalMuscle: 47.70, muscleMass: 61.30, boneMass: 3.20, protein: 16.80, bmr: 1764, bodyAge: 35 },
+  { id: "bm-18", date: "2026-05-17", time: "11:00", weight: 86.05, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1753, bodyAge: 34 },
+  { id: "bm-19", date: "2026-03-31", time: "11:06", weight: 85.95, bmi: 29.7, bodyFat: 25.40, subcutaneousFat: 21.80, visceralFat: 12.2, bodyWater: 53.90, skeletalMuscle: 48.20, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1755, bodyAge: 34 },
+  { id: "bm-20", date: "2026-03-28", time: "10:38", weight: 86.25, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1757, bodyAge: 34 },
+  { id: "bm-21", date: "2026-03-24", time: "17:42", weight: 86.20, bmi: 29.8, bodyFat: 25.60, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1756, bodyAge: 34 },
+  { id: "bm-22", date: "2026-02-21", time: "12:40", weight: 86.25, bmi: 30.3, bodyFat: null,  subcutaneousFat: null, visceralFat: null, bodyWater: null, skeletalMuscle: null, muscleMass: null, boneMass: null, protein: null, bmr: null, bodyAge: null },
+  { id: "bm-23", date: "2025-11-24", time: "11:37", weight: 86.05, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1754, bodyAge: 34 },
+  { id: "bm-24", date: "2025-11-13", time: "10:33", weight: 86.40, bmi: 29.9, bodyFat: 25.70, subcutaneousFat: 22.10, visceralFat: 12.4, bodyWater: 53.60, skeletalMuscle: 48.00, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1756, bodyAge: 34 },
+  { id: "bm-25", date: "2025-10-12", time: "10:39", weight: 85.55, bmi: 29.6, bodyFat: 25.10, subcutaneousFat: 21.60, visceralFat: 12.1, bodyWater: 54.00, skeletalMuscle: 48.40, muscleMass: 60.80, boneMass: 3.20, protein: 17.10, bmr: 1753, bodyAge: 33 },
+  { id: "bm-26", date: "2025-10-06", time: "13:10", weight: 85.95, bmi: 29.7, bodyFat: 25.30, subcutaneousFat: 21.70, visceralFat: 12.2, bodyWater: 53.90, skeletalMuscle: 48.30, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1756, bodyAge: 33 },
+  { id: "bm-27", date: "2025-10-05", time: "13:05", weight: 85.95, bmi: 29.7, bodyFat: 25.30, subcutaneousFat: 21.70, visceralFat: 12.2, bodyWater: 53.90, skeletalMuscle: 48.30, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1756, bodyAge: 33 },
+  { id: "bm-28", date: "2025-10-05", time: "10:05", weight: 85.50, bmi: 29.6, bodyFat: 25.10, subcutaneousFat: 21.60, visceralFat: 12.1, bodyWater: 54.00, skeletalMuscle: 48.40, muscleMass: 60.80, boneMass: 3.20, protein: 17.10, bmr: 1752, bodyAge: 33 },
+  { id: "bm-29", date: "2025-09-28", time: "12:38", weight: 86.50, bmi: 29.9, bodyFat: 25.60, subcutaneousFat: 22.00, visceralFat: 12.4, bodyWater: 53.70, skeletalMuscle: 48.10, muscleMass: 61.10, boneMass: 3.20, protein: 16.90, bmr: 1760, bodyAge: 33 },
+  { id: "bm-30", date: "2025-09-28", time: "12:38", weight: 86.25, bmi: 29.8, bodyFat: 25.40, subcutaneousFat: 21.80, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.20, muscleMass: 61.10, boneMass: 3.20, protein: 17.00, bmr: 1759, bodyAge: 33 },
+  { id: "bm-31", date: "2025-09-28", time: "12:38", weight: 86.25, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.20, muscleMass: 61.10, boneMass: 3.20, protein: 17.00, bmr: 1758, bodyAge: 33 },
+];
+
 function normalizeHeaderKey(str) {
   if (!str) return '';
   return String(str)
@@ -5781,6 +5824,103 @@ function bindExerciseEvents() {
     toast(editWorkoutId ? "Workout updated." : "Workout logged successfully.");
     await saveData(true, "workout");
   });
+
+  // Month navigation
+  document.getElementById("prevExerciseMonthBtn")?.addEventListener("click", () => {
+    activeExerciseMonth--;
+    if (activeExerciseMonth < 0) { activeExerciseMonth = 11; activeExerciseYear--; }
+    renderExerciseOnly();
+  });
+  document.getElementById("nextExerciseMonthBtn")?.addEventListener("click", () => {
+    const now = new Date();
+    if (activeExerciseYear > now.getFullYear() || (activeExerciseYear === now.getFullYear() && activeExerciseMonth >= now.getMonth())) return;
+    activeExerciseMonth++;
+    if (activeExerciseMonth > 11) { activeExerciseMonth = 0; activeExerciseYear++; }
+    renderExerciseOnly();
+  });
+
+  // Log Body Metrics button → open modal
+  document.getElementById("btnLogBodyMetrics")?.addEventListener("click", () => {
+    const modal = document.getElementById("bodyMetricsModal");
+    if (!modal) return;
+    const dateField = document.getElementById("bmDate");
+    const timeField = document.getElementById("bmTime");
+    if (dateField) dateField.value = todayISO();
+    if (timeField) timeField.value = new Date().toTimeString().slice(0, 5);
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+  });
+
+  // Close body metrics modal
+  document.getElementById("bodyMetricsModalClose")?.addEventListener("click", () => {
+    const modal = document.getElementById("bodyMetricsModal");
+    if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
+  });
+
+  // Body Metrics form submit
+  document.getElementById("bodyMetricsForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const getVal = (id) => { const el = f.elements[id]; return el ? (toNumber(el.value) || null) : null; };
+    const entry = {
+      id: `bm-${generateUUID()}`,
+      date: f.elements.bmDate?.value || todayISO(),
+      time: f.elements.bmTime?.value || "",
+      weight: getVal("bmWeight"),
+      bmi: getVal("bmBmi"),
+      bodyFat: getVal("bmBodyFat"),
+      subcutaneousFat: getVal("bmSubcutFat"),
+      visceralFat: getVal("bmVisceralFat"),
+      bodyWater: getVal("bmBodyWater"),
+      skeletalMuscle: getVal("bmSkeletalMuscle"),
+      muscleMass: getVal("bmMuscleMass"),
+      boneMass: getVal("bmBoneMass"),
+      protein: getVal("bmProtein"),
+      bmr: getVal("bmBmr"),
+      bodyAge: getVal("bmBodyAge"),
+    };
+    state.bodyMetrics = state.bodyMetrics || [];
+    state.bodyMetrics.push(entry);
+    await saveData(true);
+    renderBodyCompositionPanel();
+    const modal = document.getElementById("bodyMetricsModal");
+    if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
+    f.reset();
+    toast("✅ Body metrics logged!");
+  });
+
+  // Import Body Metrics CSV
+  document.getElementById("btnImportBodyMetricsCSV")?.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const imported = parseBodyMetricsCSV(text);
+        if (!imported.length) { toast("⚠️ No body metrics found in CSV. Check the format."); return; }
+        state.bodyMetrics = state.bodyMetrics || [];
+        const existingKeys = new Set(state.bodyMetrics.map(b => `${b.date}|${b.time}`));
+        let added = 0;
+        imported.forEach(entry => {
+          const key = `${entry.date}|${entry.time}`;
+          if (!existingKeys.has(key)) {
+            state.bodyMetrics.push({ ...entry, id: `bm-${generateUUID()}` });
+            existingKeys.add(key);
+            added++;
+          }
+        });
+        await saveData(true);
+        renderBodyCompositionPanel();
+        toast(`✅ Imported ${added} body metric entries (${imported.length - added} duplicates skipped).`);
+      } catch (err) {
+        toast("❌ Failed to import CSV: " + err.message);
+      }
+    };
+    input.click();
+  });
 }
 
 function addExerciseLogBlock(name = "", sets = []) {
@@ -6028,46 +6168,52 @@ function renderExerciseView() {
   const sessionsEl = document.getElementById("workoutTotalSessions");
   const minutesEl = document.getElementById("workoutTotalMinutes");
   const avgEl = document.getElementById("workoutAvgDuration");
-  
+
   if (!historyFeed) return;
-  
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  
+
+  // Update month nav label
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const navLabel = document.getElementById("exerciseMonthNavLabel");
+  if (navLabel) navLabel.textContent = `${MONTH_NAMES[activeExerciseMonth]} ${activeExerciseYear}`;
+
   const thisMonthWorkouts = state.workouts.filter((w) => {
     const wDate = parseCalendarDate(w.date);
-    return wDate && wDate.getFullYear() === currentYear && wDate.getMonth() === currentMonth;
+    return wDate && wDate.getFullYear() === activeExerciseYear && wDate.getMonth() === activeExerciseMonth;
   });
 
   const totalSessions = thisMonthWorkouts.length;
   let totalMinutes = 0;
-  
-  thisMonthWorkouts.forEach((w) => {
-    totalMinutes += w.minutes || 0;
-  });
-  
-  sessionsEl.textContent = totalSessions;
-  minutesEl.textContent = `${totalMinutes} min`;
-  avgEl.textContent = totalSessions > 0 ? `${Math.round(totalMinutes / totalSessions)} min` : "0 min";
-  
-  renderStreakCalendar(currentYear, currentMonth);
+  thisMonthWorkouts.forEach((w) => { totalMinutes += w.minutes || 0; });
+
+  if (sessionsEl) sessionsEl.textContent = totalSessions;
+  if (minutesEl) minutesEl.textContent = `${totalMinutes} min`;
+  if (avgEl) avgEl.textContent = totalSessions > 0 ? `${Math.round(totalMinutes / totalSessions)} min` : "0 min";
+
+  renderStreakCalendar(activeExerciseYear, activeExerciseMonth);
   renderPersonalRecords();
   renderWorkoutConsistencyChart();
+  renderBodyCompositionPanel();
+  renderWorkoutYearHeatmap();
 
   historyFeed.innerHTML = "";
-  const sortedWorkouts = [...state.workouts].sort(sortByDateDesc).slice(0, 30);
-  
-  if (sortedWorkouts.length === 0) {
-    historyFeed.innerHTML = `<div class="empty-state" style="padding: 40px; text-align: center; color: var(--muted);">No workouts logged yet. Start by logging a session or using a template!</div>`;
+  // Show all workouts for the selected month
+  const filteredWorkouts = [...state.workouts]
+    .filter(w => {
+      const wDate = parseCalendarDate(w.date);
+      return wDate && wDate.getFullYear() === activeExerciseYear && wDate.getMonth() === activeExerciseMonth;
+    })
+    .sort(sortByDateDesc);
+
+  if (filteredWorkouts.length === 0) {
+    historyFeed.innerHTML = `<div class="empty-state" style="padding: 40px; text-align: center; color: var(--muted);">No workouts logged for ${MONTH_NAMES[activeExerciseMonth]} ${activeExerciseYear}. Log a session or navigate to another month!</div>`;
   } else {
-    sortedWorkouts.forEach((workout) => {
+    filteredWorkouts.forEach((workout) => {
       const card = document.createElement("div");
       card.className = "stack-row";
       card.style.flexDirection = "column";
       card.style.alignItems = "stretch";
       card.style.gap = "8px";
-      
+
       let exercisesHtml = "";
       if (workout.exercises && workout.exercises.length > 0) {
         exercisesHtml = `<div class="workout-history-details">`;
@@ -6108,16 +6254,13 @@ function renderExerciseView() {
         document.getElementById("workoutLogMinutes").value = workout.minutes || 30;
         document.getElementById("workoutLogIntensity").value = workout.intensity || "Medium";
         document.getElementById("workoutLogNotes").value = workout.notes || "";
-        
         const container = document.getElementById("workoutLogExercisesContainer");
         container.innerHTML = "";
-        
         if (workout.exercises && workout.exercises.length > 0) {
           workout.exercises.forEach((ex) => addExerciseLogBlock(ex.name, ex.sets));
         } else {
           addExerciseLogBlock();
         }
-        
         openModal("workoutLoggerModal");
       });
 
@@ -6340,6 +6483,468 @@ function renderWorkoutConsistencyChart() {
     label.textContent = i === 7 ? "Now" : `Wk -${7 - i}`;
     
   });
+}
+
+function renderBodyCompositionPanel() {
+  const panel = document.getElementById("bodyCompositionPanel");
+  if (!panel) return;
+
+  const metrics = [...(state.bodyMetrics || [])].sort((a, b) => new Date(b.date + "T" + (b.time || "00:00")) - new Date(a.date + "T" + (a.time || "00:00")));
+  if (metrics.length === 0) {
+    panel.innerHTML = `<div class="empty-state" style="text-align:center;padding:24px;color:var(--muted);">No body metrics logged yet. Click "Log Body Metrics" to start!</div>`;
+    return;
+  }
+
+  const latest = metrics[0];
+  const prev = metrics.length > 1 ? metrics[1] : null;
+  const earliest = metrics[metrics.length - 1];
+
+  const wChange = prev && prev.weight ? (latest.weight - prev.weight).toFixed(1) : null;
+  const wChangeColor = wChange !== null ? (parseFloat(wChange) <= 0 ? 'var(--positive,#22c55e)' : 'var(--negative,#ef4444)') : 'var(--muted)';
+  const wChangeSign = wChange !== null ? (parseFloat(wChange) <= 0 ? '▼' : '▲') : '';
+  const totalWChange = (latest.weight - earliest.weight).toFixed(1);
+  const totalWSign = parseFloat(totalWChange) <= 0 ? '▼' : '▲';
+  const totalWColor = parseFloat(totalWChange) <= 0 ? 'var(--positive,#22c55e)' : 'var(--negative,#ef4444)';
+
+  const fmt = (v, unit = '') => v != null ? `${v}${unit}` : '—';
+  const fmtChg = (cur, prevVal, unit = '', lowerIsBetter = true) => {
+    if (cur == null || prevVal == null) return '';
+    const diff = cur - prevVal;
+    const good = lowerIsBetter ? diff <= 0 : diff >= 0;
+    const color = good ? 'var(--positive,#22c55e)' : 'var(--negative,#ef4444)';
+    const sign = diff > 0 ? '+' : '';
+    return `<span style="font-size:10px;color:${color};font-weight:600;display:block;"> ${sign}${diff.toFixed(1)}${unit} vs prev</span>`;
+  };
+
+  const bmiStatus = (bmi) => {
+    if (!bmi) return '';
+    if (bmi < 18.5) return '🟡 Underweight';
+    if (bmi < 25) return '🟢 Normal';
+    if (bmi < 30) return '🟡 Overweight';
+    return '🔴 Obese';
+  };
+
+  panel.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;">
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">⚖️ Weight</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.weight, 'kg')}</div>
+        <div style="color:${wChangeColor};font-size:10px;font-weight:600;">${wChange !== null ? `${wChangeSign} ${Math.abs(wChange)}kg vs prev` : 'First entry'}</div>
+        <div style="color:${totalWColor};font-size:9px;">${totalWSign} ${Math.abs(totalWChange)}kg total</div>
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">📊 BMI</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.bmi)}</div>
+        <div style="font-size:9px;color:var(--muted);">${bmiStatus(latest.bmi)}</div>
+        ${fmtChg(latest.bmi, prev?.bmi, '', true)}
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">🔥 Body Fat</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.bodyFat, '%')}</div>
+        ${fmtChg(latest.bodyFat, prev?.bodyFat, '%', true)}
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">💧 Body Water</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.bodyWater, '%')}</div>
+        ${fmtChg(latest.bodyWater, prev?.bodyWater, '%', false)}
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">🩺 Visceral Fat</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.visceralFat)}</div>
+        ${fmtChg(latest.visceralFat, prev?.visceralFat, '', true)}
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">💪 Skeletal Muscle</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.skeletalMuscle, '%')}</div>
+        ${fmtChg(latest.skeletalMuscle, prev?.skeletalMuscle, '%', false)}
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">🦴 Bone Mass</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.boneMass, 'kg')}</div>
+        <div style="font-size:9px;color:var(--muted);">Stable</div>
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">🔋 BMR</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.bmr)}</div>
+        <div style="font-size:9px;color:var(--muted);">kcal/day</div>
+      </div>
+      <div class="metric-card" style="text-align:center;padding:12px 8px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:4px;">🧬 Body Age</div>
+        <div style="font-size:1.5rem;font-weight:800;color:var(--text);">${fmt(latest.bodyAge)}</div>
+        ${fmtChg(latest.bodyAge, prev?.bodyAge, '', true)}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="panel" style="padding:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">⚖️ Weight Journey (kg)</div>
+        <svg id="weightTrendChart" style="width:100%;height:110px;overflow:visible;"></svg>
+      </div>
+      <div class="panel" style="padding:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">🔥 Body Fat % &amp; 💪 Skeletal Muscle %</div>
+        <svg id="bodyCompChart" style="width:100%;height:110px;overflow:visible;"></svg>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">📅 Recent Body Metrics Log</div>
+      <div id="bodyMetricsFeed" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto;"></div>
+    </div>
+  `;
+
+  // Render charts after DOM update
+  setTimeout(() => {
+    renderWeightTrendChart(metrics);
+    renderBodyCompChart(metrics);
+  }, 0);
+
+  // Render body metrics feed
+  const feed = document.getElementById("bodyMetricsFeed");
+  if (feed) {
+    const recent = metrics.slice(0, 25);
+    if (recent.length === 0) {
+      feed.innerHTML = `<div style="color:var(--muted);font-size:12px;font-style:italic;">No entries yet.</div>`;
+    } else {
+      recent.forEach(entry => {
+        const row = document.createElement("div");
+        row.className = "stack-row";
+        row.style.cssText = "flex-direction:row;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 12px;";
+        row.innerHTML = `
+          <div style="min-width:90px;">
+            <div style="font-weight:700;font-size:12px;">${formatDate(entry.date)}</div>
+            <div style="font-size:10px;color:var(--muted);">${entry.time || ''}</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;flex:1;">
+            <span style="font-size:12px;font-weight:700;color:var(--primary);">⚖️ ${entry.weight}kg</span>
+            ${entry.bmi != null ? `<span style="font-size:11px;color:var(--muted);">BMI ${entry.bmi}</span>` : ''}
+            ${entry.bodyFat != null ? `<span style="font-size:11px;color:var(--negative,#ef4444);">🔥 ${entry.bodyFat}%</span>` : ''}
+            ${entry.bodyWater != null ? `<span style="font-size:11px;color:var(--info,#3b82f6);">💧 ${entry.bodyWater}%</span>` : ''}
+            ${entry.skeletalMuscle != null ? `<span style="font-size:11px;color:var(--positive,#22c55e);">💪 ${entry.skeletalMuscle}%</span>` : ''}
+            ${entry.bmr != null ? `<span style="font-size:11px;color:var(--muted);">🔋 ${entry.bmr}kcal</span>` : ''}
+          </div>
+          <div class="actions-wrapper">
+            <button class="action-btn delete-btn btn-delete-bodymetric" data-bmid="${entry.id}" title="Delete">🗑️</button>
+          </div>
+        `;
+        row.querySelector(".btn-delete-bodymetric").addEventListener("click", async (e) => {
+          const id = e.currentTarget.dataset.bmid;
+          if (confirm("Delete this body metrics entry?")) {
+            state.bodyMetrics = state.bodyMetrics.filter(b => b.id !== id);
+            renderBodyCompositionPanel();
+            toast("Body metric entry deleted.");
+            await saveData(true);
+          }
+        });
+        feed.append(row);
+      });
+    }
+  }
+}
+
+function renderWeightTrendChart(metrics) {
+  const svg = document.getElementById("weightTrendChart");
+  if (!svg) return;
+  svg.innerHTML = "";
+
+  const data = metrics.filter(m => m.weight).slice().reverse(); // oldest first
+  if (data.length < 2) {
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", "50%"); text.setAttribute("y", "50%");
+    text.setAttribute("text-anchor", "middle"); text.setAttribute("fill", "var(--muted)");
+    text.setAttribute("font-size", "11px"); text.textContent = "Need 2+ readings for chart";
+    svg.append(text);
+    return;
+  }
+
+  const W = svg.clientWidth || 280;
+  const H = svg.clientHeight || 110;
+  const pl = 34, pr = 8, pt = 12, pb = 22;
+  const cW = W - pl - pr;
+  const cH = H - pt - pb;
+
+  const weights = data.map(m => m.weight);
+  const minW = Math.min(...weights) - 0.5;
+  const maxW = Math.max(...weights) + 0.5;
+
+  const xScale = (i) => pl + (i / (data.length - 1)) * cW;
+  const yScale = (v) => pt + cH - ((v - minW) / (maxW - minW)) * cH;
+
+  // Grid lines + Y labels
+  const gridVals = [minW, (minW + maxW) / 2, maxW];
+  gridVals.forEach(v => {
+    const y = yScale(v);
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", pl); line.setAttribute("x2", pl + cW);
+    line.setAttribute("y1", y); line.setAttribute("y2", y);
+    line.setAttribute("stroke", "var(--line)"); line.setAttribute("stroke-width", "0.5");
+    svg.append(line);
+    const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    lbl.setAttribute("x", pl - 3); lbl.setAttribute("y", y + 3);
+    lbl.setAttribute("text-anchor", "end"); lbl.setAttribute("font-size", "8px");
+    lbl.setAttribute("fill", "var(--muted)"); lbl.textContent = v.toFixed(0);
+    svg.append(lbl);
+  });
+
+  // Gradient fill area
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const grad = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+  grad.setAttribute("id", "weightGrad"); grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
+  grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
+  const s1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+  s1.setAttribute("offset", "0%"); s1.setAttribute("stop-color", "var(--primary,#6366f1)"); s1.setAttribute("stop-opacity", "0.25");
+  const s2 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+  s2.setAttribute("offset", "100%"); s2.setAttribute("stop-color", "var(--primary,#6366f1)"); s2.setAttribute("stop-opacity", "0.02");
+  grad.append(s1, s2); defs.append(grad); svg.append(defs);
+
+  const areaPoints = data.map((m, i) => `${xScale(i)},${yScale(m.weight)}`).join(" L ");
+  const area = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+  area.setAttribute("points", `${pl},${yScale(minW)} L ${areaPoints} L ${xScale(data.length - 1)},${yScale(minW)}`);
+  area.setAttribute("fill", "url(#weightGrad)");
+  svg.append(area);
+
+  // Line
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  path.setAttribute("points", data.map((m, i) => `${xScale(i)},${yScale(m.weight)}`).join(" L "));
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "var(--primary,#6366f1)");
+  path.setAttribute("stroke-width", "2");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.append(path);
+
+  // Dots (only for first and last, and extremes)
+  [0, data.length - 1].forEach(i => {
+    const cx = xScale(i), cy = yScale(data[i].weight);
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", cx); circle.setAttribute("cy", cy);
+    circle.setAttribute("r", "3.5");
+    circle.setAttribute("fill", "var(--primary,#6366f1)");
+    circle.setAttribute("stroke", "var(--bg,white)"); circle.setAttribute("stroke-width", "1.5");
+    svg.append(circle);
+    // Label weight value
+    const wLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    wLabel.setAttribute("x", cx); wLabel.setAttribute("y", cy - 6);
+    wLabel.setAttribute("text-anchor", i === 0 ? "start" : "end"); wLabel.setAttribute("font-size", "9px");
+    wLabel.setAttribute("font-weight", "700"); wLabel.setAttribute("fill", "var(--primary,#6366f1)");
+    wLabel.textContent = `${data[i].weight}kg`;
+    svg.append(wLabel);
+  });
+
+  // Date labels
+  const startLbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  startLbl.setAttribute("x", pl); startLbl.setAttribute("y", H - 4);
+  startLbl.setAttribute("text-anchor", "start"); startLbl.setAttribute("font-size", "8px");
+  startLbl.setAttribute("fill", "var(--muted)"); startLbl.textContent = data[0].date.slice(0, 7);
+  svg.append(startLbl);
+  const endLbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  endLbl.setAttribute("x", pl + cW); endLbl.setAttribute("y", H - 4);
+  endLbl.setAttribute("text-anchor", "end"); endLbl.setAttribute("font-size", "8px");
+  endLbl.setAttribute("fill", "var(--muted)"); endLbl.textContent = data[data.length - 1].date.slice(0, 7);
+  svg.append(endLbl);
+}
+
+function renderBodyCompChart(metrics) {
+  const svg = document.getElementById("bodyCompChart");
+  if (!svg) return;
+  svg.innerHTML = "";
+
+  const data = metrics.filter(m => m.bodyFat != null && m.skeletalMuscle != null).slice().reverse();
+  if (data.length < 2) {
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", "50%"); text.setAttribute("y", "50%");
+    text.setAttribute("text-anchor", "middle"); text.setAttribute("fill", "var(--muted)");
+    text.setAttribute("font-size", "11px"); text.textContent = "Need 2+ readings for chart";
+    svg.append(text);
+    return;
+  }
+
+  const W = svg.clientWidth || 280;
+  const H = svg.clientHeight || 110;
+  const pl = 28, pr = 8, pt = 12, pb = 22;
+  const cW = W - pl - pr;
+  const cH = H - pt - pb;
+
+  const fatVals = data.map(m => m.bodyFat);
+  const muscleVals = data.map(m => m.skeletalMuscle);
+  const allVals = [...fatVals, ...muscleVals];
+  const minV = Math.min(...allVals) - 1;
+  const maxV = Math.max(...allVals) + 1;
+
+  const xScale = (i) => pl + (i / (data.length - 1)) * cW;
+  const yScale = (v) => pt + cH - ((v - minV) / (maxV - minV)) * cH;
+
+  // Grid
+  [minV, (minV + maxV) / 2, maxV].forEach(v => {
+    const y = yScale(v);
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", pl); line.setAttribute("x2", pl + cW);
+    line.setAttribute("y1", y); line.setAttribute("y2", y);
+    line.setAttribute("stroke", "var(--line)"); line.setAttribute("stroke-width", "0.5");
+    svg.append(line);
+    const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    lbl.setAttribute("x", pl - 3); lbl.setAttribute("y", y + 3);
+    lbl.setAttribute("text-anchor", "end"); lbl.setAttribute("font-size", "8px");
+    lbl.setAttribute("fill", "var(--muted)"); lbl.textContent = v.toFixed(0);
+    svg.append(lbl);
+  });
+
+  const drawLine = (vals, color) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    path.setAttribute("points", vals.map((v, i) => `${xScale(i)},${yScale(v)}`).join(" L "));
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.append(path);
+    vals.forEach((v, i) => {
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", xScale(i)); circle.setAttribute("cy", yScale(v));
+      circle.setAttribute("r", "2.5");
+      circle.setAttribute("fill", color);
+      circle.setAttribute("stroke", "var(--bg,white)"); circle.setAttribute("stroke-width", "1");
+      svg.append(circle);
+    });
+  };
+
+  drawLine(fatVals, "#ef4444");
+  drawLine(muscleVals, "#22c55e");
+
+  // Legend
+  const legend = [{ label: "Fat %", color: "#ef4444" }, { label: "Muscle %", color: "#22c55e" }];
+  legend.forEach((l, i) => {
+    const x = pl + i * 70;
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", x); rect.setAttribute("y", H - 14);
+    rect.setAttribute("width", 8); rect.setAttribute("height", 8);
+    rect.setAttribute("fill", l.color); rect.setAttribute("rx", "2");
+    svg.append(rect);
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", x + 11); text.setAttribute("y", H - 7);
+    text.setAttribute("font-size", "9px"); text.setAttribute("fill", "var(--muted)");
+    text.textContent = l.label;
+    svg.append(text);
+  });
+}
+
+function renderWorkoutYearHeatmap() {
+  const container = document.getElementById("workoutYearHeatmap");
+  if (!container) return;
+
+  const now = new Date();
+  const weeks = 52;
+  const days = weeks * 7;
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() - days + 1);
+
+  // Build workout day map
+  const workoutDayMap = {};
+  state.workouts.forEach(w => {
+    const d = parseCalendarDate(w.date);
+    if (!d) return;
+    const key = dateToISODate(d);
+    workoutDayMap[key] = (workoutDayMap[key] || 0) + 1;
+  });
+
+  let html = `<div class="heatmap-grid" style="display:flex;gap:3px;overflow-x:auto;padding-bottom:4px;">`;
+  for (let w = 0; w < weeks; w++) {
+    html += `<div style="display:flex;flex-direction:column;gap:3px;">`;
+    for (let d = 0; d < 7; d++) {
+      const dayOffset = w * 7 + d;
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + dayOffset);
+      if (date > now) {
+        html += `<div style="width:11px;height:11px;border-radius:2px;background:transparent;"></div>`;
+        continue;
+      }
+      const key = dateToISODate(date);
+      const count = workoutDayMap[key] || 0;
+      const opacity = count === 0 ? '0.12' : count === 1 ? '0.45' : count === 2 ? '0.72' : '1';
+      const dateStr = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const title = `${dateStr}: ${count > 0 ? count + ' workout' + (count > 1 ? 's' : '') : 'Rest day'}`;
+      html += `<div title="${title}" style="width:11px;height:11px;border-radius:2px;background:var(--primary,#6366f1);opacity:${opacity};cursor:default;"></div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const totalWorkouts = state.workouts.length;
+  const activeDays = Object.values(workoutDayMap).filter(v => v > 0).length;
+  html += `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:6px;">
+    <span>${MONTH_NAMES[startDate.getMonth()]} ${startDate.getFullYear()}</span>
+    <span style="font-weight:600;">${totalWorkouts} workouts · ${activeDays} active days</span>
+    <span>${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}</span>
+  </div>`;
+
+  container.innerHTML = html;
+}
+
+function parseBodyMetricsCSV(csvText) {
+  const lines = csvText.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+
+  const header = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+  const results = [];
+
+  const findCol = (...keys) => {
+    for (const key of keys) {
+      const idx = header.findIndex(h => h.includes(key.toLowerCase()));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+
+  const dateIdx = findCol("date");
+  const weightIdx = findCol("weight");
+  const bmiIdx = findCol("bmi");
+  const bodyFatIdx = findCol("body fat");
+  const subcutIdx = findCol("subcutaneous");
+  const visceralIdx = findCol("visceral");
+  const bodyWaterIdx = findCol("body water");
+  const skeletalIdx = findCol("skeletal muscle");
+  const muscleMassIdx = findCol("muscle mass");
+  const boneIdx = findCol("bone");
+  const proteinIdx = findCol("protein");
+  const bmrIdx = findCol("bmr");
+  const bodyAgeIdx = findCol("body age");
+
+  const parseVal = (str) => {
+    if (!str || str.trim() === '--' || str.trim() === '') return null;
+    const n = parseFloat(str.replace(/[^0-9.-]/g, ''));
+    return isNaN(n) ? null : n;
+  };
+
+  const MONTH_MAP = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+    if (!cols[dateIdx]) continue;
+
+    let dateStr = cols[dateIdx] || '';
+    let timeStr = '';
+    // Format: "09:37 Aug.01 2026"
+    const dtMatch = dateStr.match(/(\d{1,2}:\d{2})\s+([A-Za-z]+)\.(\d{2})\s+(\d{4})/);
+    if (dtMatch) {
+      timeStr = dtMatch[1];
+      const month = MONTH_MAP[dtMatch[2].slice(0,3).toLowerCase()] || 1;
+      dateStr = `${dtMatch[4]}-${String(month).padStart(2,'0')}-${dtMatch[3]}`;
+    }
+
+    results.push({
+      date: dateStr,
+      time: timeStr,
+      weight: parseVal(cols[weightIdx]),
+      bmi: parseVal(cols[bmiIdx]),
+      bodyFat: parseVal(cols[bodyFatIdx]),
+      subcutaneousFat: parseVal(cols[subcutIdx]),
+      visceralFat: parseVal(cols[visceralIdx]),
+      bodyWater: parseVal(cols[bodyWaterIdx]),
+      skeletalMuscle: parseVal(cols[skeletalIdx]),
+      muscleMass: parseVal(cols[muscleMassIdx]),
+      boneMass: parseVal(cols[boneIdx]),
+      protein: parseVal(cols[proteinIdx]),
+      bmr: parseVal(cols[bmrIdx]),
+      bodyAge: parseVal(cols[bodyAgeIdx]),
+    });
+  }
+  return results;
 }
 
 function bindHabitsEvents() {
