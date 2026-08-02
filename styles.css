@@ -3542,3 +3542,92 @@ body[data-theme="dark"] .chip-ai {
 .stock-pl-positive { color: var(--positive, #22c55e); font-weight: 600; }
 .stock-pl-negative { color: var(--negative, #ef4444); font-weight: 600; }
 
+/* ─── Streaming Chat Cursor ──────────────────────────────────────────────── */
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--primary, #6366f1);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink-cursor 0.75s step-end infinite;
+  border-radius: 1px;
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Streaming bubble — same as assistant but no animation so it feels live */
+.chat-message.streaming {
+  animation: none;
+}
+
+/* Wider assistant bubbles for analysis responses */
+.chat-message.assistant {
+  max-width: min(780px, 90%);
+}
+
+/* Proper heading colors in chat bubbles */
+.chat-message.assistant h4,
+.chat-message.assistant h5,
+.chat-message.assistant h6 {
+  color: var(--primary, #6366f1);
+  margin: 12px 0 4px;
+}
+
+/* Pre / code blocks inside chat */
+.chat-message.assistant pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ─── Mobile Chat: Keyboard-Aware Layout ─────────────────────────────────── */
+@supports (height: 100dvh) {
+  .chat-shell {
+    height: calc(100dvh - 100px);
+  }
+
+  @media (max-width: 900px) {
+    .chat-shell {
+      height: calc(100dvh - 140px);
+    }
+  }
+
+  @media (max-width: 680px) {
+    .chat-shell {
+      height: calc(100dvh - 120px);
+      max-height: none;
+      border-radius: 12px;
+    }
+
+    /* Keep input bar always visible above keyboard */
+    .chat-input-bar {
+      position: sticky;
+      bottom: 0;
+      background: var(--panel);
+      border-top: 1px solid var(--line);
+      padding: 10px 12px;
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+      z-index: 10;
+    }
+
+    /* Prevent zoom on iOS when tapping input */
+    .chat-input-bar input {
+      font-size: 16px !important;
+    }
+
+    /* Better chat bubble line height on small screens */
+    .chat-message {
+      font-size: 13.5px;
+      line-height: 1.7;
+    }
+  }
+}
+
+/* ─── Chat message content richness ─────────────────────────────────────── */
+.chat-message.assistant > div {
+  margin: 2px 0;
+}
+

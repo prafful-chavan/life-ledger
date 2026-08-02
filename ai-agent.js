@@ -28,7 +28,7 @@
   }
 
   function getModel() {
-    return localStorage.getItem("lifeLedger_geminiModel") || "gemini-3.5-flash";
+    return localStorage.getItem("lifeLedger_geminiModel") || "gemini-2.5-flash";
   }
 
   function setModel(model) {
@@ -273,7 +273,10 @@ PERSONALITY & RULES:
 • Push Prafful to complete pending tasks
 • Prafful is an 8-year experienced SRE/DevOps/MLOps engineer — understand this context
 • His wife is learning ETL/Data Engineering
-• Keep responses concise but insightful — use bullet points and bold for key numbers
+• Match response depth to the question — short for simple queries, VERY detailed and thorough for analysis/strategy questions
+• For analysis questions (portfolio review, 5-year projections, what's missing, etc.) provide COMPLETE, structured deep-dives — do NOT cut short
+• For simple questions (what's my balance, today's habits) keep it brief and punchy
+• Use proper markdown: **bold** for numbers, ## for section headers, - for bullets, > for callouts
 • Use emojis sparingly but effectively
 • If you don't have enough data to answer, say so honestly
 • NEVER make up data — only use what's provided
@@ -288,9 +291,66 @@ CAPABILITIES:
 • Compare Prafful vs wife's progress
 • Identify financial anomalies or concerning patterns`;
 
-  // ─── Gemini API Call ─────────────────────────────────────────────────────────
+  // ─── Gemini API Helpers ───────────────────────────────────────────────────────
   let requestInFlight = false;
 
+  function buildRequestBody(formattedUserMessage, historyContents) {
+    return {
+      contents: [
+        ...historyContents,
+        { role: "user", parts: [{ text: formattedUserMessage }] }
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.9,
+        maxOutputTokens: 8192,  // ← was 1500, now 8192 for full analysis
+      },
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT",        threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+      ]
+    };
+  }
+
+  function buildFormattedMessage(userMessage, dataContext) {
+    return `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
+
+[SYSTEM INSTRUCTION & PERSONALITY RULES]
+${SYSTEM_PROMPT}
+
+[CURRENT LIFE DATA CONTEXT]
+=========================================
+${dataContext}
+=========================================
+
+User Question: ${userMessage}`;
+  }
+
+  function buildHistory(chatHistory) {
+    return chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.text }]
+    }));
+  }
+
+  async function handleFallback(model, status, userMessage, dataContext, chatHistory) {
+    const FALLBACK_CHAIN = {
+      "gemini-2.0-flash":  "gemini-2.5-flash",
+      "gemini-1.5-flash":  "gemini-2.5-flash",
+      "gemini-3.5-flash":  "gemini-2.5-flash",
+    };
+    const nextModel = FALLBACK_CHAIN[model];
+    if (!nextModel) return null;
+    console.warn(`[AI Agent] ${model} failed (${status}). Falling back to ${nextModel}`);
+    localStorage.setItem("lifeLedger_geminiModel", nextModel);
+    const dropdown = document.getElementById("settingsGeminiModel");
+    if (dropdown) dropdown.value = nextModel;
+    return nextModel;
+  }
+
+  // ─── Non-streaming call (for insights/briefing) ───────────────────────────────
   async function callGemini(userMessage, dataContext, chatHistory = [], modelOverride = null) {
     const apiKey = getApiKey();
     if (!apiKey) throw new Error("No Gemini API key configured.");
@@ -302,121 +362,29 @@ CAPABILITIES:
     if (!modelOverride) requestInFlight = true;
 
     try {
-      // Build conversation history for context
-      const historyContents = chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.text }]
-      }));
-
-      // Inject system prompt and data context directly into the user message body for 100% compatibility across v1 and v1beta API endpoints
-      const formattedUserMessage = `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
-
-[SYSTEM INSTRUCTION & PERSONALITY RULES]
-${SYSTEM_PROMPT}
-
-[CURRENT LIFE DATA CONTEXT]
-=========================================
-${dataContext}
-=========================================
-
-User Question: ${userMessage}`;
-
-      const contents = [
-        ...historyContents,
-        {
-          role: "user",
-          parts: [{ text: formattedUserMessage }]
-        }
-      ];
-
-      const requestBody = JSON.stringify({
-        contents,
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 1500,
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-        ]
-      });
+      const body = JSON.stringify(buildRequestBody(
+        buildFormattedMessage(userMessage, dataContext),
+        buildHistory(chatHistory)
+      ));
 
       let response = await fetch(`${endpoint}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: requestBody
+        body
       });
-
-      // Fallback from v1beta to stable v1 if 404 is received
-      if (response.status === 404 && endpoint.includes("/v1beta/")) {
-        console.warn(`[AI Agent] Model ${model} not found on v1beta. Retrying with stable v1 API...`);
-        const stableEndpoint = endpoint.replace("/v1beta/", "/v1/");
-        try {
-          response = await fetch(`${stableEndpoint}?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: requestBody
-          });
-        } catch (err) {
-          console.error("[AI Agent] Stable API retry failed:", err);
-        }
-      }
 
       if (!response.ok) {
         const errorBody = await response.text();
-
-        // 1. Evaluate fallback first on quota, load, or availability errors
-        if (response.status === 429 || response.status === 503 || response.status === 404 || response.status === 403 || response.status === 400) {
-          let nextModel = "";
-          if (model === "gemini-2.0-flash") nextModel = "gemini-3.5-flash";
-          else if (model === "gemini-3.5-flash") nextModel = "gemini-2.5-flash";
-
+        if ([400, 403, 404, 429, 503].includes(response.status)) {
+          const nextModel = await handleFallback(model, response.status, userMessage, dataContext, chatHistory);
           if (nextModel) {
-            console.warn(`[AI Agent] Model ${model} failed with status ${response.status}. Falling back to ${nextModel}...`);
-            localStorage.setItem("lifeLedger_geminiModel", nextModel);
-            const dropdown = document.getElementById("settingsGeminiModel");
-            if (dropdown) dropdown.value = nextModel;
             requestInFlight = false;
             return callGemini(userMessage, dataContext, chatHistory, nextModel);
           }
         }
-
-        // 2. If no fallback is available and it is a 404, show diagnostics
-        if (response.status === 404) {
-          let availableList = "Fetching...";
-          try {
-            const diagResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-            if (diagResponse.ok) {
-              const diagData = await diagResponse.json();
-              const names = (diagData?.models || []).map(m => m.name.replace("models/", ""));
-              availableList = names.length > 0 ? names.join(", ") : "No models found";
-            } else {
-              availableList = `ListModels HTTP error ${diagResponse.status}`;
-            }
-          } catch (diagErr) {
-            availableList = `ListModels error: ${diagErr.message}`;
-          }
-          throw new Error(`Model ${model} not found on this API key. Your key supports: [${availableList}]`);
-        }
-
-        // 3. Otherwise show standard error formatting
-        if (response.status === 429) {
-          let extraMsg = "";
-          try {
-            const errObj = JSON.parse(errorBody);
-            if (errObj?.error?.message) {
-              extraMsg = " Details: " + errObj.error.message;
-            }
-          } catch (e) {}
-          throw new Error("Rate limit reached. Please wait a moment and try again." + extraMsg);
-        }
-        if (response.status === 503) {
-          throw new Error("Gemini services are temporarily overloaded. Please try again in a moment.");
-        }
-        if (response.status === 400 && errorBody.includes("API_KEY")) throw new Error("Invalid Gemini API key. Check Settings → AI Agent.");
+        if (response.status === 429) throw new Error("Rate limit reached. Please wait a moment.");
+        if (response.status === 503) throw new Error("Gemini overloaded. Try again in a moment.");
+        if (response.status === 400 && errorBody.includes("API_KEY")) throw new Error("Invalid Gemini API key.");
         throw new Error(`Gemini API error (${response.status}): ${errorBody.slice(0, 200)}`);
       }
 
@@ -425,9 +393,90 @@ User Question: ${userMessage}`;
       if (!text) throw new Error("Empty response from Gemini.");
       return text.trim();
     } finally {
-      if (!modelOverride) {
+      if (!modelOverride) requestInFlight = false;
+    }
+  }
+
+  // ─── Streaming call (for chat — renders tokens as they arrive) ────────────────
+  async function streamGemini(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    const apiKey = getApiKey();
+    if (!apiKey) { onError(new Error("No Gemini API key configured.")); return; }
+
+    const model = getModel();
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    if (requestInFlight) { onError(new Error("Please wait for the current response.")); return; }
+    requestInFlight = true;
+
+    try {
+      const body = JSON.stringify(buildRequestBody(
+        buildFormattedMessage(userMessage, dataContext),
+        buildHistory(chatHistory)
+      ));
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
         requestInFlight = false;
+        if (response.status === 429) { onError(new Error("Rate limit reached. Please wait a moment.")); return; }
+        if (response.status === 503) { onError(new Error("Gemini overloaded. Try again in a moment.")); return; }
+        if (response.status === 400 && errorBody.includes("API_KEY")) { onError(new Error("Invalid Gemini API key.")); return; }
+        // Fallback to non-streaming if streaming endpoint fails
+        console.warn("[AI Agent] Streaming failed, falling back to non-streaming...");
+        try {
+          const fallbackText = await callGemini(userMessage, dataContext, chatHistory);
+          onChunk(fallbackText);
+          onDone(fallbackText);
+        } catch (fallbackErr) {
+          onError(fallbackErr);
+        }
+        return;
       }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const chunk = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (chunk) {
+              fullText += chunk;
+              onChunk(fullText); // pass accumulated text so far
+            }
+          } catch (e) {
+            // skip malformed SSE lines
+          }
+        }
+      }
+
+      requestInFlight = false;
+      if (fullText) {
+        onDone(fullText);
+      } else {
+        onError(new Error("Empty response from Gemini."));
+      }
+    } catch (err) {
+      requestInFlight = false;
+      onError(err);
     }
   }
 
@@ -486,6 +535,7 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
   // ─── Expose module ───────────────────────────────────────────────────────────
   window.LifeLedgerAI = {
     askAgent,
+    streamAgent: streamGemini,  // streaming for chat
     generateInsights,
     generateDailyBriefing,
     isAiAvailable,

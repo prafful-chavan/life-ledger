@@ -1228,57 +1228,102 @@ function bindReset() {
 
 function bindChat() {
   const form = document.getElementById("chatForm");
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = document.getElementById("chatInput");
-    const question = input.value.trim();
+  const input = document.getElementById("chatInput");
+
+  // Helper: create a live streaming bubble
+  function createStreamBubble() {
+    const log = document.getElementById("chatLog");
+    const bubble = document.createElement("div");
+    bubble.className = "chat-message assistant streaming";
+    bubble.innerHTML = `<span class="stream-cursor">▋</span>`;
+    log.append(bubble);
+    log.scrollTop = log.scrollHeight;
+    return bubble;
+  }
+
+  function updateStreamBubble(bubble, text) {
+    bubble.innerHTML = formatChatMarkdown(text) + `<span class="stream-cursor">▋</span>`;
+    const log = document.getElementById("chatLog");
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function finalizeStreamBubble(bubble, text) {
+    bubble.classList.remove("streaming");
+    bubble.innerHTML = formatChatMarkdown(text);
+    const log = document.getElementById("chatLog");
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function sendMessage(question) {
     if (!question) return;
     addChat("user", question);
     input.value = "";
     input.disabled = true;
 
-    // Try AI agent first, fallback to regex
-    if (window.LifeLedgerAI?.isAiAvailable()) {
+    if (window.LifeLedgerAI?.isAiAvailable() && window.LifeLedgerAI?.streamAgent) {
+      // ── Streaming path ──
+      hideTypingIndicator();
+      const streamBubble = createStreamBubble();
+      const recentHistory = state.chat.filter(m => m.role === "user" || m.role === "assistant").slice(-10);
+      const dataContext = window.LifeLedgerAI.buildDataContext(state);
+
+      window.LifeLedgerAI.streamAgent(
+        question,
+        dataContext,
+        recentHistory,
+        // onChunk — called on every token batch
+        (accumulatedText) => { updateStreamBubble(streamBubble, accumulatedText); },
+        // onDone — called when stream finishes
+        (fullText) => {
+          finalizeStreamBubble(streamBubble, fullText);
+          state.chat.push({ id: `chat-${generateUUID()}`, role: "assistant", text: fullText, at: new Date().toISOString() });
+          saveData();
+          input.disabled = false;
+          input.focus();
+        },
+        // onError — fallback to regex answer
+        (err) => {
+          console.warn("[AI Agent] Stream error:", err.message);
+          streamBubble.remove();
+          const fallback = answerQuestion(question);
+          addChat("assistant", fallback + "\n\n_⚠️ AI error: " + err.message + "_");
+          input.disabled = false;
+          input.focus();
+        }
+      );
+    } else if (window.LifeLedgerAI?.isAiAvailable()) {
+      // ── Non-streaming fallback ──
       showTypingIndicator();
       try {
-        // Pass recent chat history for conversation context
         const recentHistory = state.chat.filter(m => m.role === "user" || m.role === "assistant").slice(-10);
         const aiResponse = await window.LifeLedgerAI.askAgent(question, state, recentHistory);
         hideTypingIndicator();
         addChat("assistant", aiResponse);
       } catch (error) {
         hideTypingIndicator();
-        console.warn("[AI Agent] Error:", error.message);
-        // Fallback to regex
-        const fallback = answerQuestion(question);
-        addChat("assistant", fallback + "\n\n_⚠️ AI unavailable: " + error.message + "_");
+        addChat("assistant", answerQuestion(question) + "\n\n_⚠️ AI unavailable: " + error.message + "_");
       }
+      input.disabled = false;
+      input.focus();
     } else {
+      // ── Offline regex fallback ──
       addChat("assistant", answerQuestion(question));
+      input.disabled = false;
+      input.focus();
     }
-    input.disabled = false;
-    input.focus();
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const question = input.value.trim();
+    if (!question) return;
+    await sendMessage(question);
   });
 
   document.querySelectorAll("[data-prompt]").forEach((button) => {
     button.addEventListener("click", async () => {
       const question = button.dataset.prompt;
-      addChat("user", question);
-
-      if (window.LifeLedgerAI?.isAiAvailable()) {
-        showTypingIndicator();
-        try {
-          const recentHistory = state.chat.filter(m => m.role === "user" || m.role === "assistant").slice(-10);
-          const aiResponse = await window.LifeLedgerAI.askAgent(question, state, recentHistory);
-          hideTypingIndicator();
-          addChat("assistant", aiResponse);
-        } catch (error) {
-          hideTypingIndicator();
-          addChat("assistant", answerQuestion(question));
-        }
-      } else {
-        addChat("assistant", answerQuestion(question));
-      }
+      await sendMessage(question);
     });
   });
 
@@ -7167,21 +7212,46 @@ function renderHabitsView() {
   }
 }
 
+function formatChatMarkdown(text) {
+  return text
+    // Escape HTML
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    // Code blocks ```...``` (multi-line)
+    .replace(/```([\s\S]*?)```/g, (_, code) => `<pre style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;overflow-x:auto;font-size:11.5px;line-height:1.6;">${code.trim()}</pre>`)
+    // Inline code `...`
+    .replace(/`([^`]+)`/g, `<code style="background:var(--card);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11px;font-family:monospace;">$1</code>`)
+    // ## headers
+    .replace(/^## (.+)$/gm, `<h4 style="margin:14px 0 6px;font-size:13.5px;font-weight:700;color:var(--primary);">$1</h4>`)
+    // ### subheaders
+    .replace(/^### (.+)$/gm, `<h5 style="margin:10px 0 4px;font-size:12.5px;font-weight:700;color:var(--text);">$1</h5>`)
+    // #### sub-subheaders
+    .replace(/^#### (.+)$/gm, `<h6 style="margin:8px 0 3px;font-size:12px;font-weight:700;color:var(--text);">$1</h6>`)
+    // Blockquote > ...
+    .replace(/^&gt; (.+)$/gm, `<div style="border-left:3px solid var(--primary);padding:6px 12px;margin:6px 0;opacity:0.85;font-style:italic;">$1</div>`)
+    // Horizontal rule ---
+    .replace(/^---$/gm, `<hr style="border:none;border-top:1px solid var(--line);margin:12px 0;">`)
+    // Bold **text**
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    // Italic *text* (but not bullets)
+    .replace(/(?<![\-\*])\*(?!\*)(.+?)\*(?!\*)/g, "<em>$1</em>")
+    // Italic _text_
+    .replace(/\_(.+?)\_/g, "<em>$1</em>")
+    // Unordered bullets - or * at line start
+    .replace(/^[\-\*] (.+)$/gm, `<div style="display:flex;gap:6px;padding:2px 0;">● <span>$1</span></div>`)
+    // Numbered list 1. ...
+    .replace(/^(\d+)\. (.+)$/gm, `<div style="display:flex;gap:6px;padding:2px 0;"><span style="font-weight:700;min-width:16px;color:var(--primary);">$1.</span><span>$2</span></div>`)
+    // Remaining newlines to <br>
+    .replace(/\n{2,}/g, "<br><br>")
+    .replace(/\n/g, "<br>");
+}
+
 function renderChat() {
   const log = document.getElementById("chatLog");
   log.innerHTML = "";
   state.chat.slice(-80).forEach((message) => {
     const bubble = document.createElement("div");
     bubble.className = `chat-message ${message.role}`;
-    // Convert markdown-like formatting to HTML for readable chat messages
-    const formatted = message.text
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/_(.+?)_/g, "<em>$1</em>")
-      .replace(/\n(\d+)\. /g, "<br>$1. ")
-      .replace(/\n•/g, "<br>•")
-      .replace(/\n/g, "<br>");
-    bubble.innerHTML = formatted;
+    bubble.innerHTML = formatChatMarkdown(message.text);
     log.append(bubble);
   });
   log.scrollTop = log.scrollHeight;
