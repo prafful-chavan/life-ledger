@@ -929,7 +929,7 @@ function bindFinanceTabs() {
       txnTypeSelect.value = "REDEMPTION";
       txnTypeSelect.dispatchEvent(new Event("change"));
     }
-    openModal(document.getElementById("quickAddModal"));
+    openModal("quickAddModal");
   });
 
   document.getElementById('toggleStockViewHoldings')?.addEventListener('click', () => {
@@ -1505,8 +1505,9 @@ async function loadAiInsights() {
   }
 }
 
-function openModal(id) {
-  document.getElementById(id).hidden = false;
+function openModal(target) {
+  const el = typeof target === "string" ? document.getElementById(target) : target;
+  if (el) el.hidden = false;
 }
 
 function closeModal(modal) {
