@@ -86,14 +86,26 @@
     const topExpenses = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
     // ── Investment totals ──
-    const mfInvested = sumField(state.mutualFunds, "invested");
+    let mfInvested = 0;
     const mfByFund = {};
     (state.mutualFunds || []).forEach(t => {
+      const isRed = (t.transactionType || '').toUpperCase().includes('REDEEM') || (t.transactionType || '').toUpperCase() === 'REDEMPTION' || (t.transactionType || '').toUpperCase().includes('SELL');
+      if (isRed) {
+        mfInvested -= toNum(t.invested);
+      } else {
+        mfInvested += toNum(t.invested);
+      }
       const key = t.fundName || "Unknown";
       if (!mfByFund[key]) mfByFund[key] = { units: 0, latestNav: toNum(t.latestNav || t.nav) };
-      mfByFund[key].units += toNum(t.units);
+      if (isRed) {
+        mfByFund[key].units -= toNum(t.units);
+      } else {
+        mfByFund[key].units += toNum(t.units);
+      }
       if (t.latestNav) mfByFund[key].latestNav = toNum(t.latestNav);
     });
+    mfInvested = Math.max(0, mfInvested);
+    Object.values(mfByFund).forEach(f => { f.units = Math.max(0, f.units); });
     const mfCurrent = Object.values(mfByFund).reduce((s, f) => s + f.units * f.latestNav, 0);
 
     const investments = {

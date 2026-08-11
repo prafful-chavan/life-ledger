@@ -637,7 +637,10 @@ function normalizeData(data) {
     }),
     assets: ensureIds(data.assets || [], "asset"),
     liabilities: ensureIds(data.liabilities || [], "liab"),
-    mutualFunds: ensureIds(data.mutualFunds || [], "mf"),
+    mutualFunds: ensureIds(data.mutualFunds || [], "mf").map(t => ({
+      ...t,
+      transactionType: normalizeTransactionType(t.transactionType)
+    })),
     stocks: (() => {
       const rawStocks = Array.isArray(data.stocks) ? data.stocks : [];
       const hasMe = rawStocks.some(s => (s.owner === 'Me' || !s.owner) && (s.symbol || s.company));
@@ -2239,7 +2242,8 @@ function mapRowToKind(row, kind) {
 
   if (kind === "mutualFund") {
     const fundName = pick(row, ["schemename", "fundname", "name", "scheme", "fund"]) || "Mutual fund";
-    const transactionType = pick(row, ["transactiontype", "type"]) || "PURCHASE";
+    const rawTxnType = pick(row, ["transactiontype", "transaction_type", "type", "txntype", "action", "ordertype", "order_type"]) || "PURCHASE";
+    const transactionType = normalizeTransactionType(rawTxnType);
     const units = pickNumber(row, ["units", "unit"]);
     const nav = pickNumber(row, ["nav", "purchasenav", "latestnav"]);
     const invested = pickNumber(row, ["amount", "invested", "investment", "cost", "principal"]);
@@ -3419,10 +3423,10 @@ function renderMutualFundsPanel() {
   let invested = 0;
   const currentByFund = {};
   rows.forEach((t) => {
-    const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+    const isRed = isRedemption(t);
     const key = t.fundName || "Unknown";
     if (!currentByFund[key]) currentByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-    if (isRedemption) {
+    if (isRed) {
       invested -= toNumber(t.invested);
       currentByFund[key].units -= toNumber(t.units);
     } else {
@@ -3439,10 +3443,10 @@ function renderMutualFundsPanel() {
 
   // Calculate overall portfolio XIRR (redemptions are positive inflows)
   const portfolioFlows = rows.map(t => {
-    const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+    const isRed = isRedemption(t);
     return {
       date: new Date(t.purchaseDate || t.date || Date.now()),
-      amount: isRedemption ? +toNumber(t.invested) : -toNumber(t.invested)
+      amount: isRed ? +toNumber(t.invested) : -toNumber(t.invested)
     };
   });
   if (current > 0) {
@@ -3460,10 +3464,10 @@ function renderMutualFundsPanel() {
   {
     const byFundPrev = {};
     rows.forEach(t => {
-      const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+      const isRed = isRedemption(t);
       const key = t.fundName || 'Unknown';
       if (!byFundPrev[key]) byFundPrev[key] = { units: 0, latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || null };
-      byFundPrev[key].units += isRedemption ? -toNumber(t.units) : toNumber(t.units);
+      byFundPrev[key].units += isRed ? -toNumber(t.units) : toNumber(t.units);
       if (t.latestNav) byFundPrev[key].latestNav = toNumber(t.latestNav);
       if (t.prevNav)  { byFundPrev[key].prevNav = toNumber(t.prevNav); oneDayHasPrev = true; }
     });
@@ -3483,7 +3487,7 @@ function renderMutualFundsPanel() {
   
   // Calculate this month's investments by owner
   const thisMonthInvestments = state.mutualFunds.filter(t => {
-    if (t.transactionType && t.transactionType.toUpperCase() === 'REDEMPTION') return false;
+    if (isRedemption(t)) return false;
     const d = new Date(t.purchaseDate || t.date);
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
@@ -3571,8 +3575,8 @@ function renderMutualFundsPanel() {
       // Redemption-aware aggregation
       let totalUnits = 0, totalInvested = 0;
       txns.forEach(t => {
-        const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
-        if (isRedemption) {
+        const isRed = isRedemption(t);
+        if (isRed) {
           totalUnits -= toNumber(t.units);
           totalInvested -= toNumber(t.invested);
         } else {
@@ -3596,10 +3600,10 @@ function renderMutualFundsPanel() {
 
       // XIRR: purchases are outflows (negative), redemptions are inflows (positive)
       const cashFlows = txns.map(t => {
-        const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+        const isRed = isRedemption(t);
         return {
           date: new Date(t.purchaseDate || t.date || Date.now()),
-          amount: isRedemption ? +toNumber(t.invested) : -toNumber(t.invested)
+          amount: isRed ? +toNumber(t.invested) : -toNumber(t.invested)
         };
       });
       if (totalUnits > 0) {
@@ -3728,7 +3732,7 @@ function renderMutualFundsPanel() {
       table,
       rows,
       (item) => {
-        const isRedeem = (item.transactionType || "").toUpperCase() === "REDEMPTION";
+        const isRedeem = isRedemption(item);
         const badgeCls = isRedeem ? "txn-type-badge txn-type-redemption" : "txn-type-badge txn-type-purchase";
         return [
           formatDate(item.purchaseDate || item.date),
@@ -4928,12 +4932,18 @@ function investmentHoldingsTotal() {
   // This avoids using the stale `currentValue` field that was initialized to `invested` on import.
   const mfByFund = {};
   state.mutualFunds.forEach((t) => {
+    const isRed = isRedemption(t);
     const key = t.fundName || "Unknown";
     if (!mfByFund[key]) mfByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-    mfByFund[key].units += toNumber(t.units);
+    if (isRed) {
+      mfByFund[key].units -= toNumber(t.units);
+    } else {
+      mfByFund[key].units += toNumber(t.units);
+    }
     // Always take the latest NAV from any transaction in this fund
     if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
   });
+  Object.values(mfByFund).forEach(f => { f.units = Math.max(0, f.units); });
   const mutualFunds = Object.values(mfByFund).reduce((total, fund) => {
     return total + fund.units * fund.latestNav;
   }, 0);
@@ -7560,16 +7570,27 @@ function answerQuestion(question) {
   const weakestWifeTopic = [...wifeStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
 
   // Investment totals (pulled fresh every time)
-  const mfInvested = sum(state.mutualFunds, "invested");
-  // Calculate MF current value from units × latestNav (same as fund summary & net worth)
+  let mfInvested = 0;
   const mfCurrentCalc = (() => {
     const byFund = {};
     state.mutualFunds.forEach((t) => {
+      const isRed = isRedemption(t);
       const key = t.fundName || "Unknown";
+      if (isRed) {
+        mfInvested -= toNumber(t.invested);
+      } else {
+        mfInvested += toNumber(t.invested);
+      }
       if (!byFund[key]) byFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-      byFund[key].units += toNumber(t.units);
+      if (isRed) {
+        byFund[key].units -= toNumber(t.units);
+      } else {
+        byFund[key].units += toNumber(t.units);
+      }
       if (t.latestNav) byFund[key].latestNav = toNumber(t.latestNav);
     });
+    mfInvested = Math.max(0, mfInvested);
+    Object.values(byFund).forEach(f => { f.units = Math.max(0, f.units); });
     return Object.values(byFund).reduce((total, f) => total + f.units * f.latestNav, 0);
   })();
   const mfCurrent = mfCurrentCalc;
@@ -8262,6 +8283,21 @@ function toNumber(value) {
   const cleaned = String(value || "").replace(/[^0-9.-]/g, "");
   const number = Number(cleaned);
   return Number.isFinite(number) ? number : 0;
+}
+
+function normalizeTransactionType(raw) {
+  if (!raw) return "PURCHASE";
+  const s = String(raw).toUpperCase().trim();
+  if (s === "REDEMPTION" || s.includes("REDEEM") || s.includes("SELL") || s.includes("WITHDRAW") || s.includes("SWITCH OUT") || s.includes("PAYOUT")) {
+    return "REDEMPTION";
+  }
+  return "PURCHASE";
+}
+
+function isRedemption(t) {
+  if (!t) return false;
+  const s = String(t.transactionType || t.type || '').toUpperCase().trim();
+  return s === "REDEMPTION" || s.includes("REDEEM") || s.includes("SELL") || s.includes("WITHDRAW") || s.includes("SWITCH OUT") || s.includes("PAYOUT");
 }
 
 function clamp(value, min, max) {
