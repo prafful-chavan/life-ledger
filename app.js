@@ -219,6 +219,10 @@ let activeFinanceTab = "overview";
 let activeHoldingsOwner = "Me";
 let activeMfView = "holdings";
 let activeStockView = "holdings";
+// ── Sortable Holdings State ──
+let mfSortCol = 'currentValue', mfSortDir = 'desc';
+let stockSortCol = 'currentValue', stockSortDir = 'desc';
+let usStockSortCol = 'currentValue', usStockSortDir = 'desc';
 let activeExpenseMonth = "";
 let activeExpensePage = 0;
 let expenseMonthIndexCache = null;
@@ -916,6 +920,16 @@ function bindFinanceTabs() {
 
   document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", async () => {
     await refreshMutualFundNAVs(true);
+  });
+
+  document.getElementById("redeemFundBtn")?.addEventListener("click", () => {
+    buildQuickAddForm("mutualFund");
+    const txnTypeSelect = document.querySelector('#quickAddForm [name="transactionType"]');
+    if (txnTypeSelect) {
+      txnTypeSelect.value = "REDEMPTION";
+      txnTypeSelect.dispatchEvent(new Event("change"));
+    }
+    openModal(document.getElementById("quickAddModal"));
   });
 
   document.getElementById('toggleStockViewHoldings')?.addEventListener('click', () => {
@@ -1681,6 +1695,97 @@ function buildQuickAddForm(kind, editId = null) {
     wrapper.append(input);
     form.append(wrapper);
   });
+
+  if (kind === "mutualFund") {
+    const txnTypeSelect = form.querySelector('[name="transactionType"]');
+    const navInput = form.querySelector('[name="nav"]');
+    const investedInput = form.querySelector('[name="invested"]');
+    const unitsInput = form.querySelector('[name="units"]');
+    const dateInput = form.querySelector('[name="purchaseDate"]');
+    const fundNameInput = form.querySelector('[name="fundName"]');
+    const ownerSelect = form.querySelector('[name="owner"]');
+
+    const infoBanner = document.createElement("div");
+    infoBanner.className = "full-span";
+    infoBanner.style.cssText = "padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); margin-top: 4px; display: none;";
+    form.append(infoBanner);
+
+    const updateMfFormUI = () => {
+      const isRedeem = txnTypeSelect?.value === "REDEMPTION";
+
+      // Dynamic field labels
+      if (navInput?.parentElement) {
+        navInput.parentElement.childNodes[0].textContent = isRedeem ? "Redemption NAV (₹)" : "Purchase NAV (₹)";
+      }
+      if (investedInput?.parentElement) {
+        investedInput.parentElement.childNodes[0].textContent = isRedeem ? "Redemption Amount (₹)" : "Amount invested (₹)";
+      }
+      if (dateInput?.parentElement) {
+        dateInput.parentElement.childNodes[0].textContent = isRedeem ? "Redemption Date" : "Purchase Date";
+      }
+
+      // Check current holding balance for selected owner & fund
+      const fundName = (fundNameInput?.value || "").trim();
+      const owner = (ownerSelect?.value || "Me").trim();
+
+      if (fundName) {
+        const matchingTxns = state.mutualFunds.filter(t =>
+          (t.fundName || "").toLowerCase() === fundName.toLowerCase() &&
+          matchHoldingsOwner(t.owner, owner)
+        );
+        let heldUnits = 0;
+        let latestNav = 0;
+        matchingTxns.forEach(t => {
+          const isRed = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+          heldUnits += isRed ? -toNumber(t.units) : toNumber(t.units);
+          if (t.latestNav || t.nav) latestNav = toNumber(t.latestNav || t.nav);
+        });
+        heldUnits = Math.max(0, heldUnits);
+
+        if (heldUnits > 0 || isRedeem) {
+          const estValue = heldUnits * latestNav;
+          infoBanner.style.display = "block";
+          const valText = estValue > 0 ? ` (₹${estValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })})` : '';
+          const navText = latestNav > 0 ? ` · Latest NAV: ₹${latestNav}` : '';
+          infoBanner.innerHTML = `<strong>📊 Holding Info (${owner}):</strong> ${heldUnits.toFixed(3)} units held${valText}${navText}`;
+
+          if (isRedeem && navInput && !navInput.value && latestNav > 0) {
+            navInput.value = latestNav;
+          }
+        } else {
+          infoBanner.style.display = "none";
+        }
+      } else {
+        infoBanner.style.display = "none";
+      }
+    };
+
+    const autoCalc = (e) => {
+      const u = toNumber(unitsInput?.value);
+      const n = toNumber(navInput?.value);
+      const inv = toNumber(investedInput?.value);
+
+      if (e.target === unitsInput || e.target === navInput) {
+        if (u > 0 && n > 0) {
+          investedInput.value = (u * n).toFixed(2);
+        }
+      } else if (e.target === investedInput) {
+        if (inv > 0 && n > 0) {
+          unitsInput.value = (inv / n).toFixed(3);
+        }
+      }
+      updateMfFormUI();
+    };
+
+    txnTypeSelect?.addEventListener("change", updateMfFormUI);
+    fundNameInput?.addEventListener("input", updateMfFormUI);
+    ownerSelect?.addEventListener("change", updateMfFormUI);
+    unitsInput?.addEventListener("input", autoCalc);
+    navInput?.addEventListener("input", autoCalc);
+    investedInput?.addEventListener("input", autoCalc);
+
+    updateMfFormUI();
+  }
 
   const actions = document.createElement("div");
   actions.className = "modal-actions full-span";
@@ -3309,24 +3414,36 @@ function renderMutualFundsPanel() {
     .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
     .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
 
-  const invested = sum(rows, "invested");
-  // Calculate current value from units × latestNav (same as fund summary table)
+  // Calculate invested/units with redemption-awareness
+  let invested = 0;
   const currentByFund = {};
   rows.forEach((t) => {
+    const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
     const key = t.fundName || "Unknown";
     if (!currentByFund[key]) currentByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-    currentByFund[key].units += toNumber(t.units);
+    if (isRedemption) {
+      invested -= toNumber(t.invested);
+      currentByFund[key].units -= toNumber(t.units);
+    } else {
+      invested += toNumber(t.invested);
+      currentByFund[key].units += toNumber(t.units);
+    }
     if (t.latestNav) currentByFund[key].latestNav = toNumber(t.latestNav);
   });
+  invested = Math.max(0, invested);
+  Object.values(currentByFund).forEach(f => { f.units = Math.max(0, f.units); });
   const current = Object.values(currentByFund).reduce((total, f) => total + f.units * f.latestNav, 0);
   const gain = current - invested;
   const roi = invested ? (gain / invested) * 100 : 0;
 
-  // Calculate overall portfolio XIRR
-  const portfolioFlows = rows.map(t => ({
-    date: new Date(t.purchaseDate || t.date || Date.now()),
-    amount: -toNumber(t.invested)
-  }));
+  // Calculate overall portfolio XIRR (redemptions are positive inflows)
+  const portfolioFlows = rows.map(t => {
+    const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+    return {
+      date: new Date(t.purchaseDate || t.date || Date.now()),
+      amount: isRedemption ? +toNumber(t.invested) : -toNumber(t.invested)
+    };
+  });
   if (current > 0) {
     portfolioFlows.push({
       date: new Date(),
@@ -3342,9 +3459,10 @@ function renderMutualFundsPanel() {
   {
     const byFundPrev = {};
     rows.forEach(t => {
+      const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
       const key = t.fundName || 'Unknown';
       if (!byFundPrev[key]) byFundPrev[key] = { units: 0, latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || null };
-      byFundPrev[key].units += toNumber(t.units);
+      byFundPrev[key].units += isRedemption ? -toNumber(t.units) : toNumber(t.units);
       if (t.latestNav) byFundPrev[key].latestNav = toNumber(t.latestNav);
       if (t.prevNav)  { byFundPrev[key].prevNav = toNumber(t.prevNav); oneDayHasPrev = true; }
     });
@@ -3449,8 +3567,21 @@ function renderMutualFundsPanel() {
   if (activeMfView === "holdings") {
     const groups = groupBy(rows, item => item.fundName);
     const holdings = Object.entries(groups).map(([fundName, txns]) => {
-      const totalInvested = sum(txns, 'invested');
-      const totalUnits = sum(txns, 'units');
+      // Redemption-aware aggregation
+      let totalUnits = 0, totalInvested = 0;
+      txns.forEach(t => {
+        const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+        if (isRedemption) {
+          totalUnits -= toNumber(t.units);
+          totalInvested -= toNumber(t.invested);
+        } else {
+          totalUnits += toNumber(t.units);
+          totalInvested += toNumber(t.invested);
+        }
+      });
+      totalUnits = Math.max(0, totalUnits);
+      totalInvested = Math.max(0, totalInvested);
+
       const latestNav = txns[0].latestNav || txns[0].nav;
       const prevNav = txns[0].prevNav || null;
       const currentValue = totalUnits * latestNav;
@@ -3462,10 +3593,14 @@ function renderMutualFundsPanel() {
       const dayChange = prevNav ? totalUnits * (latestNav - prevNav) : null;
       const dayChangePct = prevNav && latestNav ? ((latestNav - prevNav) / prevNav) * 100 : null;
 
-      const cashFlows = txns.map(t => ({
-        date: new Date(t.purchaseDate || t.date || Date.now()),
-        amount: -toNumber(t.invested)
-      }));
+      // XIRR: purchases are outflows (negative), redemptions are inflows (positive)
+      const cashFlows = txns.map(t => {
+        const isRedemption = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
+        return {
+          date: new Date(t.purchaseDate || t.date || Date.now()),
+          amount: isRedemption ? +toNumber(t.invested) : -toNumber(t.invested)
+        };
+      });
       if (totalUnits > 0) {
         cashFlows.push({
           date: new Date(),
@@ -3506,29 +3641,30 @@ function renderMutualFundsPanel() {
         navVs30d,
         lowestNav30d,
       };
-    }).sort((a, b) => b.currentValue - a.currentValue);
+    });
+
+    // Apply user-selected sort (default: currentValue desc)
+    const sortedHoldings = sortHoldings(holdings, mfSortCol, mfSortDir);
+
+    const mfColumns = [
+      ['fundName', 'Fund'], ['totalUnits', 'Units'], ['avgNav', 'Avg. NAV'],
+      ['totalInvested', 'Invested'], ['latestNav', 'Latest NAV'], ['lowestNav30d', '30D Lowest'],
+      ['', 'Invest Signal'], ['currentValue', 'Current Value'], ['dayChange', '1-Day Change'],
+      ['gain', 'Gain / Loss'], ['xirr', 'XIRR']
+    ];
 
     if (targetThead) {
-      targetThead.innerHTML = `
-        <tr>
-          <th>Fund</th>
-          <th>Units</th>
-          <th>Avg. NAV</th>
-          <th>Invested</th>
-          <th>Latest NAV</th>
-          <th>30D Lowest</th>
-          <th>Invest Signal</th>
-          <th>Current Value</th>
-          <th>1-Day Change</th>
-          <th>Gain / Loss</th>
-          <th>XIRR</th>
-        </tr>
-      `;
+      targetThead.innerHTML = buildSortableThead(mfColumns, mfSortCol, mfSortDir);
+      bindSortableHeaders(targetThead, (col) => {
+        if (mfSortCol === col) { mfSortDir = mfSortDir === 'asc' ? 'desc' : 'asc'; }
+        else { mfSortCol = col; mfSortDir = 'desc'; }
+        renderMutualFundsPanel();
+      });
     }
 
     renderRows(
       table,
-      holdings,
+      sortedHoldings,
       (item) => [
         `<span>${escapeHTML(item.fundName)}${getNavTimingBadgeHtml(item.navVs30d)}</span>`,
         item.totalUnits.toFixed(3),
@@ -3590,29 +3726,33 @@ function renderMutualFundsPanel() {
     renderRows(
       table,
       rows,
-      (item) => [
-        formatDate(item.purchaseDate || item.date),
-        item.fundName,
-        item.transactionType || "PURCHASE",
-        item.units ? Number(item.units).toFixed(3) : "-",
-        item.nav ? formatINR(item.nav) : "-",
-        formatINR(item.invested),
-        item.latestNav ? formatINR(item.latestNav) : (item.nav ? formatINR(item.nav) : "-"),
-        formatINR(item.currentValue || item.invested),
-        (() => {
-          const inv = toNumber(item.invested);
-          const cur = toNumber(item.currentValue || item.invested);
-          const g = cur - inv;
-          const pct = inv ? (g / inv) * 100 : 0;
-          const color = g >= 0 ? "var(--good)" : "var(--danger)";
-          return `<span style="color: ${color}; font-weight: 600;">${formatINR(g)} (${formatPercent(pct)})</span>`;
-        })(),
-        item.owner || "Me",
-        `<div class="actions-wrapper">
-          <button class="action-btn edit-btn edit-mutualFund-btn" data-id="${item.id}" title="Edit entry">✏️</button>
-          <button class="action-btn delete-btn delete-mutualFund-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
-        </div>`
-      ],
+      (item) => {
+        const isRedeem = (item.transactionType || "").toUpperCase() === "REDEMPTION";
+        const badgeCls = isRedeem ? "txn-type-badge txn-type-redemption" : "txn-type-badge txn-type-purchase";
+        return [
+          formatDate(item.purchaseDate || item.date),
+          item.fundName,
+          `<span class="${badgeCls}">${isRedeem ? "REDEMPTION" : "PURCHASE"}</span>`,
+          item.units ? (isRedeem ? `<span style="color:var(--negative,#ef4444);font-weight:600">-${Number(item.units).toFixed(3)}</span>` : Number(item.units).toFixed(3)) : "-",
+          item.nav ? formatINR(item.nav) : "-",
+          isRedeem ? `<span style="color:var(--negative,#ef4444);font-weight:600">-${formatINR(item.invested)}</span>` : formatINR(item.invested),
+          item.latestNav ? formatINR(item.latestNav) : (item.nav ? formatINR(item.nav) : "-"),
+          formatINR(item.currentValue || item.invested),
+          (() => {
+            const inv = toNumber(item.invested);
+            const cur = toNumber(item.currentValue || item.invested);
+            const g = isRedeem ? -inv : cur - inv;
+            const pct = inv ? (g / inv) * 100 : 0;
+            const color = g >= 0 ? "var(--good)" : "var(--danger)";
+            return `<span style="color: ${color}; font-weight: 600;">${formatINR(g)} (${formatPercent(pct)})</span>`;
+          })(),
+          item.owner || "Me",
+          `<div class="actions-wrapper">
+            <button class="action-btn edit-btn edit-mutualFund-btn" data-id="${item.id}" title="Edit entry">✏️</button>
+            <button class="action-btn delete-btn delete-mutualFund-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
+          </div>`
+        ];
+      },
       `No mutual funds for ${activeHoldingsOwner}. Add a transaction or import a sheet.`,
       11
     );
@@ -4296,12 +4436,26 @@ function renderStockHoldingsPanel() {
       if (totalQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
       const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
       return { symbol, company, category, exchange, totalQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-    }).sort((a, b) => b.currentValue - a.currentValue);
+    });
+
+    const sortedStockHoldings = sortHoldings(holdings, stockSortCol, stockSortDir);
+
+    const stockColumns = [
+      ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
+      ['avgPrice', 'Avg Price'], ['totalInv', 'Invested'], ['currentPrice', 'CMP'],
+      ['currentValue', 'Current Value'], ['dayChange', '1-Day Chg'],
+      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker']
+    ];
 
     if (targetThead) {
-      targetThead.innerHTML = `<tr><th>Symbol</th><th>Company</th><th>Qty</th><th>Avg Price</th><th>Invested</th><th>CMP</th><th>Current Value</th><th>1-Day Chg</th><th>P&L</th><th>XIRR</th><th>Broker</th></tr>`;
+      targetThead.innerHTML = buildSortableThead(stockColumns, stockSortCol, stockSortDir);
+      bindSortableHeaders(targetThead, (col) => {
+        if (stockSortCol === col) { stockSortDir = stockSortDir === 'asc' ? 'desc' : 'asc'; }
+        else { stockSortCol = col; stockSortDir = 'desc'; }
+        renderStockHoldingsPanel();
+      });
     }
-    renderRows(table, holdings, (item) => [
+    renderRows(table, sortedStockHoldings, (item) => [
       `<span style="font-weight:600">${escapeHTML(item.symbol)}</span> <small style="opacity:0.5">${escapeHTML(item.exchange)}</small>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
       escapeHTML(item.company),
       item.totalQty.toFixed(item.totalQty % 1 === 0 ? 0 : 2),
@@ -4632,12 +4786,26 @@ function renderUsStockHoldingsPanel() {
       if (totalQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
       const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
       return { symbol, company, category, exchange, totalQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-    }).sort((a, b) => b.currentValue - a.currentValue);
+    });
+
+    const sortedUsHoldings = sortHoldings(holdings, usStockSortCol, usStockSortDir);
+
+    const usStockColumns = [
+      ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
+      ['avgPrice', 'Avg Price ($)'], ['totalInv', 'Invested ($)'], ['currentPrice', 'CMP ($)'],
+      ['currentValue', 'Current Value ($)'], ['dayChange', '1-Day Chg'],
+      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker']
+    ];
 
     if (targetThead) {
-      targetThead.innerHTML = `<tr><th>Symbol</th><th>Company</th><th>Qty</th><th>Avg Price ($)</th><th>Invested ($)</th><th>CMP ($)</th><th>Current Value ($)</th><th>1-Day Chg</th><th>P&L</th><th>XIRR</th><th>Broker</th></tr>`;
+      targetThead.innerHTML = buildSortableThead(usStockColumns, usStockSortCol, usStockSortDir);
+      bindSortableHeaders(targetThead, (col) => {
+        if (usStockSortCol === col) { usStockSortDir = usStockSortDir === 'asc' ? 'desc' : 'asc'; }
+        else { usStockSortCol = col; usStockSortDir = 'desc'; }
+        renderUsStockHoldingsPanel();
+      });
     }
-    renderRows(table, holdings, (item) => [
+    renderRows(table, sortedUsHoldings, (item) => [
       `<span style="font-weight:600">${escapeHTML(item.symbol)}</span> <small style="opacity:0.5">${escapeHTML(item.exchange)}</small>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
       escapeHTML(item.company),
       item.totalQty > 0 ? (item.totalQty < 1 ? item.totalQty.toFixed(6) : item.totalQty.toFixed(2)) : '-',
@@ -7794,6 +7962,67 @@ function calculateReadiness(owner = "Me") {
       value: `${projectTopic?.confidence || 0}%`,
     },
   ];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SORTABLE HOLDINGS TABLE UTILITIES
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Sort an array of holding objects by a given column key.
+ * Handles strings (localeCompare) and numbers.
+ */
+function sortHoldings(data, col, dir) {
+  return [...data].sort((a, b) => {
+    let va = a[col], vb = b[col];
+    // Null-safe: push nulls to the end
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === 'string' && typeof vb === 'string') {
+      return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    }
+    va = Number(va) || 0;
+    vb = Number(vb) || 0;
+    return dir === 'asc' ? va - vb : vb - va;
+  });
+}
+
+/**
+ * Build a sortable <thead> row with clickable headers.
+ * @param {Array} columns - Array of [dataKey, displayLabel] pairs
+ * @param {string} currentSort - Currently active sort column key
+ * @param {string} currentDir - 'asc' or 'desc'
+ * @param {Function} onSort - Callback(columnKey) when header is clicked
+ * @returns {string} HTML for <tr> inside <thead>
+ */
+function buildSortableThead(columns, currentSort, currentDir, onSort) {
+  const ths = columns.map(([key, label]) => {
+    if (!key) {
+      // Non-sortable column (e.g. "Action", "Invest Signal")
+      return `<th>${label}</th>`;
+    }
+    const isActive = currentSort === key;
+    const arrow = isActive ? (currentDir === 'asc' ? '▲' : '▼') : '⇅';
+    const cls = isActive ? 'sortable-th sort-active' : 'sortable-th';
+    return `<th class="${cls}" data-sort-key="${key}">${label} <span class="sort-arrow">${arrow}</span></th>`;
+  }).join('');
+  return `<tr>${ths}</tr>`;
+}
+
+/**
+ * Attach click listeners to sortable <th> elements inside a thead.
+ * @param {HTMLElement} thead - The <thead> element
+ * @param {Function} onSort - Callback(columnKey) when a header is clicked
+ */
+function bindSortableHeaders(thead, onSort) {
+  if (!thead) return;
+  thead.querySelectorAll('.sortable-th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.getAttribute('data-sort-key');
+      if (key) onSort(key);
+    });
+  });
 }
 
 function renderRows(table, rows, mapper, emptyText = "No data yet. Upload a sheet or add an entry.", colSpan = 5) {
