@@ -85,34 +85,50 @@
     });
     const topExpenses = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // ── Investment totals (Average Cost Method) ──
-    // The 'invested' field on REDEMPTION entries = redemption proceeds (market value),
-    // NOT the cost basis. Use avgCostPerUnit × redeemedUnits to get cost of redeemed units.
-    let mfTotalPurchaseCost = 0, mfTotalPurchasedUnits = 0, mfTotalRedeemedUnits = 0;
-    const mfByFund = {};
+    // ── Investment totals (FIFO Method - SEBI/Groww compliant) ──
+    let mfInvested = 0;
+    let mfCurrent = 0;
+    const mfByFundGroup = {};
     (state.mutualFunds || []).forEach(t => {
-      const isRed = (t.transactionType || '').toUpperCase().includes('REDEEM') || (t.transactionType || '').toUpperCase() === 'REDEMPTION' || (t.transactionType || '').toUpperCase().includes('SELL');
-      if (isRed) {
-        mfTotalRedeemedUnits += toNum(t.units);
-      } else {
-        mfTotalPurchaseCost += toNum(t.invested);
-        mfTotalPurchasedUnits += toNum(t.units);
-      }
       const key = t.fundName || "Unknown";
-      if (!mfByFund[key]) mfByFund[key] = { purchasedUnits: 0, redeemedUnits: 0, latestNav: toNum(t.latestNav || t.nav) };
-      if (isRed) {
-        mfByFund[key].redeemedUnits += toNum(t.units);
-      } else {
-        mfByFund[key].purchasedUnits += toNum(t.units);
-      }
-      if (t.latestNav) mfByFund[key].latestNav = toNum(t.latestNav);
+      if (!mfByFundGroup[key]) mfByFundGroup[key] = [];
+      mfByFundGroup[key].push(t);
     });
-    const mfAvgCost = mfTotalPurchasedUnits > 0 ? mfTotalPurchaseCost / mfTotalPurchasedUnits : 0;
-    const mfInvested = Math.max(0, mfTotalPurchaseCost - mfTotalRedeemedUnits * mfAvgCost);
-    const mfCurrent = Object.values(mfByFund).reduce((s, f) => {
-      const netUnits = Math.max(0, f.purchasedUnits - f.redeemedUnits);
-      return s + netUnits * f.latestNav;
-    }, 0);
+
+    Object.entries(mfByFundGroup).forEach(([, txns]) => {
+      const sorted = [...txns].sort((a, b) => new Date(a.purchaseDate || a.date || '1970-01-01') - new Date(b.purchaseDate || b.date || '1970-01-01'));
+      const lots = [];
+      let redeemed = 0;
+      let latestNav = 0;
+
+      sorted.forEach(t => {
+        const u = toNum(t.units);
+        const inv = toNum(t.invested);
+        const isRed = (t.transactionType || '').toUpperCase().includes('REDEEM') || (t.transactionType || '').toUpperCase() === 'REDEMPTION' || (t.transactionType || '').toUpperCase().includes('SELL');
+        if (t.latestNav || t.nav) latestNav = toNum(t.latestNav || t.nav);
+
+        if (isRed) {
+          redeemed += u;
+        } else if (u > 0) {
+          lots.push({ units: u, remUnits: u, invested: inv });
+        }
+      });
+
+      let remToRedeem = redeemed;
+      for (let l of lots) {
+        if (remToRedeem <= 0) break;
+        const take = Math.min(remToRedeem, l.remUnits);
+        l.remUnits -= take;
+        remToRedeem -= take;
+      }
+
+      lots.forEach(l => {
+        if (l.remUnits > 0) {
+          mfInvested += (l.remUnits / l.units) * l.invested;
+          mfCurrent += l.remUnits * latestNav;
+        }
+      });
+    });
 
     const investments = {
       "Mutual Funds": { invested: mfInvested, current: mfCurrent, count: state.mutualFunds?.length || 0 },

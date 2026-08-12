@@ -8276,39 +8276,89 @@ function isRedemption(t) {
 }
 
 /**
- * Calculate invested cost basis for a list of MF transactions using Average Cost Method (like Groww).
+ * Calculate invested cost basis for a list of MF transactions using FIFO (First-In, First-Out)
+ * method as mandated by SEBI and used by Groww in India.
  *
- * The 'invested' field on REDEMPTION entries stores REDEMPTION PROCEEDS (market value received),
- * NOT the cost basis of those units. So we cannot simply subtract it.
- *
- * Correct formula:
- *   avgCostPerUnit = totalPurchaseCost / totalPurchasedUnits
- *   costBasisRedeemed = totalRedeemedUnits × avgCostPerUnit
- *   remainingCostBasis = totalPurchaseCost − costBasisRedeemed
+ * How FIFO works:
+ *   1. Purchase transactions create lots ordered by purchase date ascending.
+ *   2. Redemption transactions consume units from the oldest available purchase lots first.
+ *   3. The remaining invested cost basis is the exact sum of unconsumed cost basis of active lots.
  *
  * @param {Array} txns - Array of MF transaction objects
  * @returns {{ invested: number, netUnits: number, purchasedUnits: number, redeemedUnits: number, avgCost: number }}
  */
 function calcMfCostBasis(txns) {
-  let totalPurchaseCost = 0;
+  if (!txns || !txns.length) {
+    return { invested: 0, netUnits: 0, purchasedUnits: 0, redeemedUnits: 0, avgCost: 0 };
+  }
+
+  // 1. Sort transactions by purchase date ASCENDING so oldest buys come first
+  const sortedTxns = [...txns].sort((a, b) => {
+    const da = new Date(a.purchaseDate || a.date || '1970-01-01').getTime();
+    const db = new Date(b.purchaseDate || b.date || '1970-01-01').getTime();
+    return da - db;
+  });
+
+  // 2. Build purchase lots and accumulate totals
+  const purchaseLots = [];
   let totalPurchasedUnits = 0;
+  let totalPurchaseCost = 0;
   let totalRedeemedUnits = 0;
 
-  (txns || []).forEach(t => {
+  sortedTxns.forEach(t => {
+    const u = toNumber(t.units);
+    const inv = toNumber(t.invested);
     if (isRedemption(t)) {
-      totalRedeemedUnits += toNumber(t.units);
+      totalRedeemedUnits += u;
     } else {
-      totalPurchaseCost += toNumber(t.invested);
-      totalPurchasedUnits += toNumber(t.units);
+      if (u > 0) {
+        const purchaseNav = t.nav ? toNumber(t.nav) : (inv / u);
+        purchaseLots.push({
+          units: u,
+          remainingUnits: u,
+          invested: inv,
+          nav: purchaseNav
+        });
+        totalPurchasedUnits += u;
+        totalPurchaseCost += inv;
+      }
     }
   });
 
-  const avgCostPerUnit = totalPurchasedUnits > 0 ? totalPurchaseCost / totalPurchasedUnits : 0;
-  const netUnits = Math.max(0, totalPurchasedUnits - totalRedeemedUnits);
-  const costBasisRedeemed = totalRedeemedUnits * avgCostPerUnit;
-  const invested = Math.max(0, totalPurchaseCost - costBasisRedeemed);
+  // 3. Process redemptions in FIFO order (consuming oldest lots first)
+  let unitsToRedeem = totalRedeemedUnits;
+  for (let lot of purchaseLots) {
+    if (unitsToRedeem <= 0) break;
+    if (lot.remainingUnits > 0) {
+      const take = Math.min(unitsToRedeem, lot.remainingUnits);
+      lot.remainingUnits -= take;
+      unitsToRedeem -= take;
+    }
+  }
 
-  return { invested, netUnits, purchasedUnits: totalPurchasedUnits, redeemedUnits: totalRedeemedUnits, avgCost: avgCostPerUnit };
+  // 4. Calculate remaining cost basis and net units from remaining lots
+  let remainingInvested = 0;
+  let netUnits = 0;
+
+  purchaseLots.forEach(lot => {
+    if (lot.remainingUnits > 0) {
+      netUnits += lot.remainingUnits;
+      const lotCostBasis = (lot.remainingUnits / lot.units) * lot.invested;
+      remainingInvested += lotCostBasis;
+    }
+  });
+
+  remainingInvested = Math.max(0, remainingInvested);
+  netUnits = Math.max(0, netUnits);
+  const avgCost = netUnits > 0 ? (remainingInvested / netUnits) : (totalPurchasedUnits > 0 ? totalPurchaseCost / totalPurchasedUnits : 0);
+
+  return {
+    invested: remainingInvested,
+    netUnits,
+    purchasedUnits: totalPurchasedUnits,
+    redeemedUnits: totalRedeemedUnits,
+    avgCost
+  };
 }
 
 function clamp(value, min, max) {
