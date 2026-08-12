@@ -1737,21 +1737,20 @@ function buildQuickAddForm(kind, editId = null) {
           (t.fundName || "").toLowerCase() === fundName.toLowerCase() &&
           matchHoldingsOwner(t.owner, owner)
         );
-        let heldUnits = 0;
+        const basis = calcMfCostBasis(matchingTxns);
+        const heldUnits = basis.netUnits;
         let latestNav = 0;
         matchingTxns.forEach(t => {
-          const isRed = (t.transactionType || '').toUpperCase() === 'REDEMPTION';
-          heldUnits += isRed ? -toNumber(t.units) : toNumber(t.units);
           if (t.latestNav || t.nav) latestNav = toNumber(t.latestNav || t.nav);
         });
-        heldUnits = Math.max(0, heldUnits);
 
         if (heldUnits > 0 || isRedeem) {
           const estValue = heldUnits * latestNav;
           infoBanner.style.display = "block";
           const valText = estValue > 0 ? ` (₹${estValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })})` : '';
           const navText = latestNav > 0 ? ` · Latest NAV: ₹${latestNav}` : '';
-          infoBanner.innerHTML = `<strong>📊 Holding Info (${owner}):</strong> ${heldUnits.toFixed(3)} units held${valText}${navText}`;
+          const costText = basis.invested > 0 ? ` · Cost basis: ₹${basis.invested.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '';
+          infoBanner.innerHTML = `<strong>📊 Holding Info (${owner}):</strong> ${heldUnits.toFixed(3)} units held${valText}${navText}${costText}`;
 
           if (isRedeem && navInput && !navInput.value && latestNav > 0) {
             navInput.value = latestNav;
@@ -3419,24 +3418,24 @@ function renderMutualFundsPanel() {
     .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
     .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
 
-  // Calculate invested/units with redemption-awareness
+  // Calculate invested/units with Average Cost Method (like Groww)
+  // The 'invested' field on REDEMPTION = redemption proceeds, NOT cost basis.
+  // So we compute avgCostPerUnit from purchases, then subtract cost of redeemed units.
   let invested = 0;
   const currentByFund = {};
-  rows.forEach((t) => {
-    const isRed = isRedemption(t);
+  const fundGroups = {};
+  rows.forEach(t => {
     const key = t.fundName || "Unknown";
+    if (!fundGroups[key]) fundGroups[key] = [];
+    fundGroups[key].push(t);
     if (!currentByFund[key]) currentByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-    if (isRed) {
-      invested -= toNumber(t.invested);
-      currentByFund[key].units -= toNumber(t.units);
-    } else {
-      invested += toNumber(t.invested);
-      currentByFund[key].units += toNumber(t.units);
-    }
     if (t.latestNav) currentByFund[key].latestNav = toNumber(t.latestNav);
   });
-  invested = Math.max(0, invested);
-  Object.values(currentByFund).forEach(f => { f.units = Math.max(0, f.units); });
+  Object.entries(fundGroups).forEach(([key, txns]) => {
+    const basis = calcMfCostBasis(txns);
+    invested += basis.invested;
+    currentByFund[key].units = basis.netUnits;
+  });
   const current = Object.values(currentByFund).reduce((total, f) => total + f.units * f.latestNav, 0);
   const gain = current - invested;
   const roi = invested ? (gain / invested) * 100 : 0;
@@ -3464,15 +3463,15 @@ function renderMutualFundsPanel() {
   {
     const byFundPrev = {};
     rows.forEach(t => {
-      const isRed = isRedemption(t);
       const key = t.fundName || 'Unknown';
-      if (!byFundPrev[key]) byFundPrev[key] = { units: 0, latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || null };
-      byFundPrev[key].units += isRed ? -toNumber(t.units) : toNumber(t.units);
+      if (!byFundPrev[key]) byFundPrev[key] = { txns: [], latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || null };
+      byFundPrev[key].txns.push(t);
       if (t.latestNav) byFundPrev[key].latestNav = toNumber(t.latestNav);
       if (t.prevNav)  { byFundPrev[key].prevNav = toNumber(t.prevNav); oneDayHasPrev = true; }
     });
     Object.values(byFundPrev).forEach(f => {
-      if (f.prevNav) oneDayChange += f.units * (f.latestNav - f.prevNav);
+      const netUnits = calcMfCostBasis(f.txns).netUnits;
+      if (f.prevNav) oneDayChange += netUnits * (f.latestNav - f.prevNav);
     });
   }
   const oneDayPct = oneDayHasPrev && current > 0 ? (oneDayChange / (current - oneDayChange)) * 100 : 0;
@@ -3572,27 +3571,17 @@ function renderMutualFundsPanel() {
   if (activeMfView === "holdings") {
     const groups = groupBy(rows, item => item.fundName);
     const holdings = Object.entries(groups).map(([fundName, txns]) => {
-      // Redemption-aware aggregation
-      let totalUnits = 0, totalInvested = 0;
-      txns.forEach(t => {
-        const isRed = isRedemption(t);
-        if (isRed) {
-          totalUnits -= toNumber(t.units);
-          totalInvested -= toNumber(t.invested);
-        } else {
-          totalUnits += toNumber(t.units);
-          totalInvested += toNumber(t.invested);
-        }
-      });
-      totalUnits = Math.max(0, totalUnits);
-      totalInvested = Math.max(0, totalInvested);
+      // Average Cost Method (like Groww) — per-fund aggregation
+      const basis = calcMfCostBasis(txns);
+      const totalUnits = basis.netUnits;
+      const totalInvested = basis.invested;
 
       const latestNav = txns[0].latestNav || txns[0].nav;
       const prevNav = txns[0].prevNav || null;
       const currentValue = totalUnits * latestNav;
       const gain = currentValue - totalInvested;
       const roi = totalInvested ? (gain / totalInvested) * 100 : 0;
-      const avgNav = totalUnits ? (totalInvested / totalUnits) : 0;
+      const avgNav = basis.avgCost; // Average cost per unit from purchases
 
       // 1-Day change for this holding
       const dayChange = prevNav ? totalUnits * (latestNav - prevNav) : null;
@@ -4932,20 +4921,14 @@ function investmentHoldingsTotal() {
   // This avoids using the stale `currentValue` field that was initialized to `invested` on import.
   const mfByFund = {};
   state.mutualFunds.forEach((t) => {
-    const isRed = isRedemption(t);
     const key = t.fundName || "Unknown";
-    if (!mfByFund[key]) mfByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-    if (isRed) {
-      mfByFund[key].units -= toNumber(t.units);
-    } else {
-      mfByFund[key].units += toNumber(t.units);
-    }
-    // Always take the latest NAV from any transaction in this fund
+    if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0 };
+    mfByFund[key].txns.push(t);
     if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
   });
-  Object.values(mfByFund).forEach(f => { f.units = Math.max(0, f.units); });
-  const mutualFunds = Object.values(mfByFund).reduce((total, fund) => {
-    return total + fund.units * fund.latestNav;
+  const mutualFunds = Object.entries(mfByFund).reduce((total, [, fund]) => {
+    const netUnits = calcMfCostBasis(fund.txns).netUnits;
+    return total + netUnits * fund.latestNav;
   }, 0);
 
   const stocksTotal = (state.stocks || []).reduce((total, s) => {
@@ -7569,29 +7552,21 @@ function answerQuestion(question) {
   const weakestMyTopic = [...myStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
   const weakestWifeTopic = [...wifeStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
 
-  // Investment totals (pulled fresh every time)
-  let mfInvested = 0;
+  // Investment totals (pulled fresh every time) — Average Cost Method
+  const mfPortfolioBasis = calcMfCostBasis(state.mutualFunds);
+  const mfInvested = mfPortfolioBasis.invested;
   const mfCurrentCalc = (() => {
     const byFund = {};
     state.mutualFunds.forEach((t) => {
-      const isRed = isRedemption(t);
       const key = t.fundName || "Unknown";
-      if (isRed) {
-        mfInvested -= toNumber(t.invested);
-      } else {
-        mfInvested += toNumber(t.invested);
-      }
-      if (!byFund[key]) byFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-      if (isRed) {
-        byFund[key].units -= toNumber(t.units);
-      } else {
-        byFund[key].units += toNumber(t.units);
-      }
+      if (!byFund[key]) byFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0 };
+      byFund[key].txns.push(t);
       if (t.latestNav) byFund[key].latestNav = toNumber(t.latestNav);
     });
-    mfInvested = Math.max(0, mfInvested);
-    Object.values(byFund).forEach(f => { f.units = Math.max(0, f.units); });
-    return Object.values(byFund).reduce((total, f) => total + f.units * f.latestNav, 0);
+    return Object.entries(byFund).reduce((total, [, f]) => {
+      const netUnits = calcMfCostBasis(f.txns).netUnits;
+      return total + netUnits * f.latestNav;
+    }, 0);
   })();
   const mfCurrent = mfCurrentCalc;
   const stocksVal = sum(state.stocks, "value");
@@ -8298,6 +8273,42 @@ function isRedemption(t) {
   if (!t) return false;
   const s = String(t.transactionType || t.type || '').toUpperCase().trim();
   return s === "REDEMPTION" || s.includes("REDEEM") || s.includes("SELL") || s.includes("WITHDRAW") || s.includes("SWITCH OUT") || s.includes("PAYOUT");
+}
+
+/**
+ * Calculate invested cost basis for a list of MF transactions using Average Cost Method (like Groww).
+ *
+ * The 'invested' field on REDEMPTION entries stores REDEMPTION PROCEEDS (market value received),
+ * NOT the cost basis of those units. So we cannot simply subtract it.
+ *
+ * Correct formula:
+ *   avgCostPerUnit = totalPurchaseCost / totalPurchasedUnits
+ *   costBasisRedeemed = totalRedeemedUnits × avgCostPerUnit
+ *   remainingCostBasis = totalPurchaseCost − costBasisRedeemed
+ *
+ * @param {Array} txns - Array of MF transaction objects
+ * @returns {{ invested: number, netUnits: number, purchasedUnits: number, redeemedUnits: number, avgCost: number }}
+ */
+function calcMfCostBasis(txns) {
+  let totalPurchaseCost = 0;
+  let totalPurchasedUnits = 0;
+  let totalRedeemedUnits = 0;
+
+  (txns || []).forEach(t => {
+    if (isRedemption(t)) {
+      totalRedeemedUnits += toNumber(t.units);
+    } else {
+      totalPurchaseCost += toNumber(t.invested);
+      totalPurchasedUnits += toNumber(t.units);
+    }
+  });
+
+  const avgCostPerUnit = totalPurchasedUnits > 0 ? totalPurchaseCost / totalPurchasedUnits : 0;
+  const netUnits = Math.max(0, totalPurchasedUnits - totalRedeemedUnits);
+  const costBasisRedeemed = totalRedeemedUnits * avgCostPerUnit;
+  const invested = Math.max(0, totalPurchaseCost - costBasisRedeemed);
+
+  return { invested, netUnits, purchasedUnits: totalPurchasedUnits, redeemedUnits: totalRedeemedUnits, avgCost: avgCostPerUnit };
 }
 
 function clamp(value, min, max) {

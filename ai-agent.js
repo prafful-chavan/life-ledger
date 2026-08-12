@@ -85,28 +85,34 @@
     });
     const topExpenses = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // ── Investment totals ──
-    let mfInvested = 0;
+    // ── Investment totals (Average Cost Method) ──
+    // The 'invested' field on REDEMPTION entries = redemption proceeds (market value),
+    // NOT the cost basis. Use avgCostPerUnit × redeemedUnits to get cost of redeemed units.
+    let mfTotalPurchaseCost = 0, mfTotalPurchasedUnits = 0, mfTotalRedeemedUnits = 0;
     const mfByFund = {};
     (state.mutualFunds || []).forEach(t => {
       const isRed = (t.transactionType || '').toUpperCase().includes('REDEEM') || (t.transactionType || '').toUpperCase() === 'REDEMPTION' || (t.transactionType || '').toUpperCase().includes('SELL');
       if (isRed) {
-        mfInvested -= toNum(t.invested);
+        mfTotalRedeemedUnits += toNum(t.units);
       } else {
-        mfInvested += toNum(t.invested);
+        mfTotalPurchaseCost += toNum(t.invested);
+        mfTotalPurchasedUnits += toNum(t.units);
       }
       const key = t.fundName || "Unknown";
-      if (!mfByFund[key]) mfByFund[key] = { units: 0, latestNav: toNum(t.latestNav || t.nav) };
+      if (!mfByFund[key]) mfByFund[key] = { purchasedUnits: 0, redeemedUnits: 0, latestNav: toNum(t.latestNav || t.nav) };
       if (isRed) {
-        mfByFund[key].units -= toNum(t.units);
+        mfByFund[key].redeemedUnits += toNum(t.units);
       } else {
-        mfByFund[key].units += toNum(t.units);
+        mfByFund[key].purchasedUnits += toNum(t.units);
       }
       if (t.latestNav) mfByFund[key].latestNav = toNum(t.latestNav);
     });
-    mfInvested = Math.max(0, mfInvested);
-    Object.values(mfByFund).forEach(f => { f.units = Math.max(0, f.units); });
-    const mfCurrent = Object.values(mfByFund).reduce((s, f) => s + f.units * f.latestNav, 0);
+    const mfAvgCost = mfTotalPurchasedUnits > 0 ? mfTotalPurchaseCost / mfTotalPurchasedUnits : 0;
+    const mfInvested = Math.max(0, mfTotalPurchaseCost - mfTotalRedeemedUnits * mfAvgCost);
+    const mfCurrent = Object.values(mfByFund).reduce((s, f) => {
+      const netUnits = Math.max(0, f.purchasedUnits - f.redeemedUnits);
+      return s + netUnits * f.latestNav;
+    }, 0);
 
     const investments = {
       "Mutual Funds": { invested: mfInvested, current: mfCurrent, count: state.mutualFunds?.length || 0 },
