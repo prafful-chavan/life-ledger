@@ -1537,16 +1537,18 @@ async function resetData(scope) {
     all: { label: "all data", keys: [] },
     income: { label: "income", keys: ["income"] },
     expenses: { label: "expenses", keys: ["expenses"] },
-    investments: { label: "investments", keys: ["mutualFunds", "stocks"] },
+    investments: { label: "investments", keys: ["mutualFunds", "stocks", "usstocks"] },
     goals: { label: "goals", keys: ["goals"] },
     tasks: { label: "tasks", keys: ["tasks"] },
     studies: { label: "studies", keys: ["studies"] },
     workouts: { label: "workouts", keys: ["workouts"] },
     networth: { label: "assets and liabilities", keys: ["assets", "liabilities"] },
-    holdings: { label: "mutual funds and stocks", keys: ["mutualFunds", "stocks"] },
+    holdings: { label: "mutual funds, stocks and US stocks", keys: ["mutualFunds", "stocks", "usstocks"] },
     mutualfunds: { label: "mutual funds", keys: ["mutualFunds"] },
-    stocks: { label: "stocks", keys: ["stocks"] },
-    finance: { label: "all finance data", keys: ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks"] },
+    stocks: { label: "Indian stocks", keys: ["stocks"] },
+    usstocks: { label: "USA stocks", keys: ["usstocks"] },
+    simpleassets: { label: "FD, EPF, Gold, Bonds, etc.", keys: ["fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "banksaving", "others"] },
+    finance: { label: "all finance data", keys: ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks", "usstocks", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "banksaving", "others"] },
     chat: { label: "assistant chat", keys: ["chat"] },
   }[scope];
 
@@ -1900,6 +1902,9 @@ function buildQuickAddForm(kind, editId = null) {
 
     if (kind === "expense" || kind === "income" || kind === "asset" || kind === "liability" || kind === "mutualFund" || kind === "stock" || kind === "fd" || kind === "epf" || kind === "bonds" || kind === "ppf" || kind === "gold" || kind === "silver" || kind === "crypto" || kind === "usstocks" || kind === "banksaving" || kind === "others") {
       renderExpensesOnly();
+      if (kind === "stock") renderStockHoldingsPanel();
+      if (kind === "usstocks") renderUsStockHoldingsPanel();
+      if (kind === "mutualFund") renderMutualFundsPanel();
     } else if (kind === "task") {
       renderTodoOnly();
     } else if (kind === "goal") {
@@ -3785,21 +3790,21 @@ const defaultStockHoldings = [
   { id: "stk-ze-10", owner: "Me", symbol: "VBL", company: "Varun Beverages Ltd", exchange: "NSE", category: "Stock", quantity: 56, avgPrice: 506.77, currentPrice: 442.45, invested: 28379.25, currentValue: 24777.20, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
   { id: "stk-ze-11", owner: "Me", symbol: "WIPRO", company: "Wipro Ltd", exchange: "NSE", category: "Stock", quantity: 93, avgPrice: 262.32, currentPrice: 183.65, invested: 24396.00, currentValue: 17079.45, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
 
-  // ── Wife - Groww Holdings (14 Stocks & ETFs) ──
-  { id: "stk-gw-1", owner: "Wife", symbol: "GEVERNOVA", company: "GE Vernova T&D India", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 3250.73, currentPrice: 4323.30, invested: 9752.19, currentValue: 12969.90, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-2", owner: "Wife", symbol: "MCX", company: "Multi Commodity Exchange of India", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 3005.00, currentPrice: 2692.20, invested: 9015.00, currentValue: 8076.60, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-3", owner: "Wife", symbol: "RRKABEL", company: "RR Kabel Ltd", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 2392.00, currentPrice: 2602.80, invested: 7176.00, currentValue: 7808.40, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-4", owner: "Wife", symbol: "LAURUSLABS", company: "Laurus Labs Ltd", exchange: "NSE", category: "Stock", quantity: 5, avgPrice: 1400.90, currentPrice: 1816.20, invested: 7004.50, currentValue: 9081.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-5", owner: "Wife", symbol: "HAPPYFORGE", company: "Happy Forgings Ltd", exchange: "NSE", category: "Stock", quantity: 5, avgPrice: 1412.12, currentPrice: 1652.70, invested: 7060.60, currentValue: 8263.50, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-6", owner: "Wife", symbol: "GRANULES", company: "Granules India Ltd", exchange: "NSE", category: "Stock", quantity: 17, avgPrice: 885.57, currentPrice: 824.65, invested: 15054.69, currentValue: 14019.05, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-7", owner: "Wife", symbol: "ARVIND", company: "Arvind Ltd", exchange: "NSE", category: "Stock", quantity: 22, avgPrice: 505.45, currentPrice: 513.20, invested: 11119.90, currentValue: 11290.40, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-8", owner: "Wife", symbol: "HONASA", company: "Honasa Consumer Ltd", exchange: "NSE", category: "Stock", quantity: 31, avgPrice: 346.79, currentPrice: 449.55, invested: 10750.49, currentValue: 13936.05, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-9", owner: "Wife", symbol: "ANGELONE", company: "Angel One Ltd", exchange: "NSE", category: "Stock", quantity: 44, avgPrice: 344.15, currentPrice: 297.95, invested: 15142.60, currentValue: 13109.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-10", owner: "Wife", symbol: "TRIL", company: "Transformers & Rectifiers India Ltd", exchange: "NSE", category: "Stock", quantity: 14, avgPrice: 534.42, currentPrice: 296.50, invested: 7481.88, currentValue: 4151.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-11", owner: "Wife", symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", exchange: "NSE", category: "ETF", quantity: 490, avgPrice: 263.68, currentPrice: 277.42, invested: 129203.20, currentValue: 135935.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
-  { id: "stk-gw-12", owner: "Wife", symbol: "MID150BEES", company: "Nippon India ETF Midcap 150 BeES", exchange: "NSE", category: "ETF", quantity: 18, avgPrice: 206.60, currentPrice: 239.48, invested: 3718.80, currentValue: 4310.64, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
-  { id: "stk-gw-13", owner: "Wife", symbol: "SILVERBEES", company: "Nippon India ETF Silver BeES", exchange: "NSE", category: "ETF", quantity: 50, avgPrice: 240.24, currentPrice: 206.51, invested: 12012.00, currentValue: 10325.50, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Silver ETF" },
-  { id: "stk-gw-14", owner: "Wife", symbol: "GOLDBEES", company: "Nippon India ETF Gold BeES", exchange: "NSE", category: "ETF", quantity: 840, avgPrice: 90.47, currentPrice: 117.11, invested: 75994.80, currentValue: 98372.40, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Gold ETF" },
+  // ── Wife - Groww Holdings (14 Real Stocks & ETFs from Groww App) ──
+  { id: "stk-gw-1", owner: "Wife", symbol: "GEVERNOVA", company: "GE Vernova T&D India", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 3250.73, currentPrice: 4406.50, invested: 9752.19, currentValue: 13219.50, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-2", owner: "Wife", symbol: "MCX", company: "Multi Commodity Exchange of India", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 3005.00, currentPrice: 2970.10, invested: 9015.00, currentValue: 8910.30, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-3", owner: "Wife", symbol: "RRKABEL", company: "RR Kabel Ltd", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 2392.00, currentPrice: 2789.60, invested: 7176.00, currentValue: 8368.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-4", owner: "Wife", symbol: "LAURUSLABS", company: "Laurus Labs Ltd", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 1400.90, currentPrice: 1850.00, invested: 4202.70, currentValue: 5550.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-5", owner: "Wife", symbol: "RATEGAIN", company: "RateGain Travel Technologies", exchange: "NSE", category: "Stock", quantity: 12, avgPrice: 969.95, currentPrice: 932.65, invested: 11639.40, currentValue: 11191.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-6", owner: "Wife", symbol: "GRANULES", company: "Granules India Ltd", exchange: "NSE", category: "Stock", quantity: 15, avgPrice: 885.57, currentPrice: 864.80, invested: 13283.55, currentValue: 12972.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-7", owner: "Wife", symbol: "ARVIND", company: "Arvind Ltd", exchange: "NSE", category: "Stock", quantity: 26, avgPrice: 510.37, currentPrice: 566.85, invested: 13269.62, currentValue: 14738.10, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-8", owner: "Wife", symbol: "BAJAJCORP", company: "Bajaj Consumer Care Ltd", exchange: "NSE", category: "Stock", quantity: 20, avgPrice: 546.95, currentPrice: 538.25, invested: 10939.00, currentValue: 10765.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-9", owner: "Wife", symbol: "HONASA", company: "Honasa Consumer Ltd (Mamaearth)", exchange: "NSE", category: "Stock", quantity: 36, avgPrice: 362.69, currentPrice: 467.40, invested: 13056.84, currentValue: 16826.40, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-10", owner: "Wife", symbol: "TRIL", company: "Transformers & Rectifiers India Ltd", exchange: "NSE", category: "Stock", quantity: 14, avgPrice: 534.42, currentPrice: 292.45, invested: 7481.88, currentValue: 4094.30, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-11", owner: "Wife", symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", exchange: "NSE", category: "ETF", quantity: 490, avgPrice: 263.68, currentPrice: 278.32, invested: 129203.20, currentValue: 136376.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
+  { id: "stk-gw-12", owner: "Wife", symbol: "MID150BEES", company: "Nippon India ETF Midcap 150 BeES", exchange: "NSE", category: "ETF", quantity: 18, avgPrice: 206.60, currentPrice: 242.77, invested: 3718.80, currentValue: 4369.86, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
+  { id: "stk-gw-13", owner: "Wife", symbol: "SILVERBEES", company: "Nippon India ETF Silver BeES", exchange: "NSE", category: "ETF", quantity: 50, avgPrice: 240.24, currentPrice: 225.76, invested: 12012.00, currentValue: 11288.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Silver ETF" },
+  { id: "stk-gw-14", owner: "Wife", symbol: "GOLDBEES", company: "Nippon India ETF Gold BeES", exchange: "NSE", category: "ETF", quantity: 840, avgPrice: 90.47, currentPrice: 126.45, invested: 75994.80, currentValue: 106218.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Gold ETF" },
 
   // ── Wife - INDmoney Holdings (3 ETFs) ──
   { id: "stk-ind-1", owner: "Wife", symbol: "MON100", company: "Motilal Oswal Nasdaq 100 ETF", exchange: "NSE", category: "ETF", quantity: 200, avgPrice: 221.80, currentPrice: 305.18, invested: 44360.00, currentValue: 61036.00, demat: "INDmoney", purchaseDate: "2024-03-15", notes: "INDmoney Nasdaq 100 ETF" },
