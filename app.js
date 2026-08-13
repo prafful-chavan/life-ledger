@@ -4518,10 +4518,6 @@ function formatUSD(num) {
 
 async function refreshUsStockPrices(force = false) {
   const proxyUrl = localStorage.getItem(STOCK_PROXY_URL_KEY);
-  if (!proxyUrl) {
-    toast('⚠️ Stock price proxy is not configured. Go to Settings → Stock Prices.');
-    return;
-  }
   const allStocks = state.usstocks || [];
   const uniqueSymbols = [...new Set(allStocks.filter(s => s.symbol).map(s => s.symbol.toUpperCase().trim()))];
   if (uniqueSymbols.length === 0) {
@@ -4548,57 +4544,48 @@ async function refreshUsStockPrices(force = false) {
 
   toast('🔄 Refreshing US stock prices…');
   let updatedCount = 0;
-  let failedSymbols = [];
+  let failedSymbols = [...uniqueSymbols];
 
-  try {
-    // ─── Primary: Google Apps Script proxy ────────────────────────────────
-    const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}`;
-    console.log('[US Stocks] Fetching from proxy:', url);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
-    const data = await response.json();
+  // ─── Strategy 1: Google Apps Script proxy with market=US hint ───────────
+  if (proxyUrl) {
+    try {
+      const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}&market=US`;
+      console.log('[US Stocks] Fetching from proxy:', url);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
+      const data = await response.json();
+      console.log('[US Stocks] Proxy response:', JSON.stringify(data).slice(0, 1000));
 
-    console.log('[US Stocks] Proxy response:', JSON.stringify(data).slice(0, 1000));
-
-    for (const sym of uniqueSymbols) {
-      const priceData = data[sym] || data[sym.toUpperCase()];
-
-      if (!priceData || priceData.error || !priceData.price || toNumber(priceData.price) <= 0) {
-        console.warn(`[US Stocks] No valid price for ${sym} from proxy:`, priceData);
-        failedSymbols.push(sym);
-        continue;
+      failedSymbols = [];
+      for (const sym of uniqueSymbols) {
+        const priceData = data[sym] || data[sym.toUpperCase()];
+        if (!priceData || priceData.error || !priceData.price || toNumber(priceData.price) <= 0) {
+          failedSymbols.push(sym);
+          continue;
+        }
+        cache[sym] = {
+          price: toNumber(priceData.price),
+          prevClose: toNumber(priceData.prevClose) || toNumber(priceData.price),
+          change: toNumber(priceData.change),
+          changePct: toNumber(priceData.changePct),
+          timestamp: now,
+          date: priceData.date || new Date().toLocaleDateString('en-US'),
+          source: priceData.source || 'proxy',
+        };
+        updatedCount++;
       }
-
-      const newPrice = toNumber(priceData.price);
-      const oldPrice = cache[sym]?.price || 0;
-
-      // Detect stale prices — if the "new" price is exactly the same as cached, log warning
-      if (oldPrice > 0 && Math.abs(newPrice - oldPrice) < 0.001) {
-        console.warn(`[US Stocks] ⚠️ ${sym}: proxy returned SAME price as cache ($${newPrice}). May be stale.`);
-      }
-
-      cache[sym] = {
-        price: newPrice,
-        prevClose: toNumber(priceData.prevClose) || newPrice,
-        change: toNumber(priceData.change),
-        changePct: toNumber(priceData.changePct),
-        timestamp: now,
-        date: priceData.date || new Date().toLocaleDateString('en-US'),
-        source: priceData.source || 'proxy',
-      };
-      updatedCount++;
+    } catch (err) {
+      console.warn('[US Stocks] Proxy failed:', err.message);
+      // All symbols remain in failedSymbols for fallback
     }
-  } catch (err) {
-    console.error('[US Stocks] Primary proxy failed:', err);
-    failedSymbols = [...uniqueSymbols];
   }
 
-  // ─── Fallback: Yahoo Finance via free API for any failed symbols ───────
+  // ─── Strategy 2: CORS proxy + Yahoo Finance for failed symbols ─────────
   if (failedSymbols.length > 0) {
-    console.log(`[US Stocks] Trying Yahoo Finance fallback for: ${failedSymbols.join(', ')}`);
-    for (const sym of failedSymbols) {
+    console.log(`[US Stocks] Trying CORS-proxy fallbacks for: ${failedSymbols.join(', ')}`);
+    for (const sym of [...failedSymbols]) {
       try {
-        const price = await fetchUsStockPriceYahoo(sym);
+        const price = await fetchUsStockPriceFallback(sym);
         if (price && price.currentPrice > 0) {
           cache[sym] = {
             price: price.currentPrice,
@@ -4607,13 +4594,14 @@ async function refreshUsStockPrices(force = false) {
             changePct: price.prevClose ? ((price.currentPrice - price.prevClose) / price.prevClose * 100) : 0,
             timestamp: now,
             date: new Date().toLocaleDateString('en-US'),
-            source: 'yahoo-fallback',
+            source: price.source || 'fallback',
           };
           updatedCount++;
-          console.log(`[US Stocks] ✅ Yahoo fallback got ${sym}: $${price.currentPrice}`);
+          failedSymbols = failedSymbols.filter(s => s !== sym);
+          console.log(`[US Stocks] ✅ Fallback got ${sym}: $${price.currentPrice}`);
         }
       } catch (fallbackErr) {
-        console.warn(`[US Stocks] Yahoo fallback also failed for ${sym}:`, fallbackErr.message);
+        console.warn(`[US Stocks] All fallbacks failed for ${sym}:`, fallbackErr.message);
       }
     }
   }
@@ -4636,26 +4624,64 @@ async function refreshUsStockPrices(force = false) {
     renderUsStockHoldingsPanel();
     const priceDate = cache[uniqueSymbols[0]]?.date || 'now';
     const source = cache[uniqueSymbols[0]]?.source || 'proxy';
-    toast(`✅ Updated ${updatedCount}/${uniqueSymbols.length} US stocks (${priceDate}, via ${source})`);
+    const failMsg = failedSymbols.length > 0 ? ` (${failedSymbols.join(', ')} failed)` : '';
+    toast(`✅ Updated ${updatedCount}/${uniqueSymbols.length} US stocks (${priceDate}, via ${source})${failMsg}`);
   } else {
-    toast('⚠️ No US prices returned. Check proxy URL and try again.');
+    toast('⚠️ Could not fetch US stock prices. Check proxy URL in Settings or try again later.');
   }
 }
 
 /**
- * Yahoo Finance free quote endpoint fallback.
- * Uses query2.finance.yahoo.com which doesn't need API key.
+ * Multi-strategy fallback for fetching US stock prices from the browser.
+ * Tries: (1) Yahoo via CORS proxies, (2) Yahoo direct, (3) Finnhub free tier.
  */
-async function fetchUsStockPriceYahoo(symbol) {
-  const endpoints = [
+async function fetchUsStockPriceFallback(symbol) {
+  const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+
+  // ─── Strategy A: Yahoo Finance via CORS proxy services ─────────────────
+  const corsProxies = [
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  ];
+
+  for (const proxyFn of corsProxies) {
+    try {
+      const proxyUrl = proxyFn(yahooUrl);
+      const resp = await fetch(proxyUrl, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      // Some proxies wrap in HTML; try to find JSON
+      const jsonStart = text.indexOf('{');
+      if (jsonStart < 0) continue;
+      const data = JSON.parse(text.slice(jsonStart));
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta && meta.regularMarketPrice > 0) {
+        return {
+          currentPrice: meta.regularMarketPrice,
+          prevClose: meta.previousClose || meta.chartPreviousClose || 0,
+          source: 'yahoo-cors-proxy',
+        };
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+
+  // ─── Strategy B: Yahoo Finance direct (might work if CORS is relaxed) ──
+  const directEndpoints = [
     `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
   ];
 
-  for (const url of endpoints) {
+  for (const url of directEndpoints) {
     try {
       const resp = await fetch(url, {
         headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000),
       });
       if (!resp.ok) continue;
       const data = await resp.json();
@@ -4664,6 +4690,7 @@ async function fetchUsStockPriceYahoo(symbol) {
         return {
           currentPrice: meta.regularMarketPrice,
           prevClose: meta.previousClose || meta.chartPreviousClose || 0,
+          source: 'yahoo-direct',
         };
       }
     } catch (e) {
