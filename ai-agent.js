@@ -135,13 +135,14 @@
     let mfInvested = 0;
     let mfCurrent = 0;
     const mfByFundGroup = {};
+    const mfByFund = {};
     (state.mutualFunds || []).forEach(t => {
       const key = t.fundName || "Unknown";
       if (!mfByFundGroup[key]) mfByFundGroup[key] = [];
       mfByFundGroup[key].push(t);
     });
 
-    Object.entries(mfByFundGroup).forEach(([, txns]) => {
+    Object.entries(mfByFundGroup).forEach(([key, txns]) => {
       const sorted = [...txns].sort((a, b) => new Date(a.purchaseDate || a.date || '1970-01-01') - new Date(b.purchaseDate || b.date || '1970-01-01'));
       const lots = [];
       let redeemed = 0;
@@ -168,12 +169,21 @@
         remToRedeem -= take;
       }
 
+      let groupNetUnits = 0;
+      let groupNetInvested = 0;
       lots.forEach(l => {
         if (l.remUnits > 0) {
-          mfInvested += (l.remUnits / l.units) * l.invested;
+          const invPart = (l.remUnits / l.units) * l.invested;
+          mfInvested += invPart;
           mfCurrent += l.remUnits * latestNav;
+          groupNetUnits += l.remUnits;
+          groupNetInvested += invPart;
         }
       });
+
+      if (groupNetUnits > 0) {
+        mfByFund[key] = { units: groupNetUnits, latestNav, invested: groupNetInvested };
+      }
     });
 
     const investments = {
