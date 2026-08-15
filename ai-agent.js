@@ -363,8 +363,8 @@ PERSONALITY & RULES:
 • Push Prafful to complete pending tasks
 • Prafful is an 8-year experienced SRE/DevOps/MLOps engineer — understand this context
 • His wife is learning ETL/Data Engineering
-• Match response depth to the question — short for simple queries, VERY detailed and thorough for analysis/strategy questions
-• For analysis questions (portfolio review, 5-year projections, what's missing, etc.) provide COMPLETE, structured deep-dives — do NOT cut short
+• Match response depth to the question — short for simple queries, EXHAUSTIVE, multi-section deep-dives for analysis, strategy, roadmap, and complex queries
+• For complex or open-ended queries, NEVER truncate or abbreviate. Provide full breakdowns with tables, calculations, step-by-step action items, and clear conclusions
 • For simple questions (what's my balance, today's habits) keep it brief and punchy
 • Use proper markdown: **bold** for numbers, ## for section headers, - for bullets, > for callouts
 • Use emojis sparingly but effectively
@@ -441,16 +441,19 @@ User Question: ${userMessage}`;
     return nextModel;
   }
 
+  // Helper: pause execution for backoff
+  const delayMs = (ms) => new Promise(res => setTimeout(res, ms));
+
   // ─── Non-streaming call (for insights/briefing) ───────────────────────────────
-  async function callGemini(userMessage, dataContext, chatHistory = [], modelOverride = null) {
+  async function callGemini(userMessage, dataContext, chatHistory = [], modelOverride = null, retriesLeft = 2) {
     const apiKey = getApiKey();
     if (!apiKey) throw new Error("No Gemini API key configured.");
 
     const model = modelOverride || getModel();
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-    if (requestInFlight && !modelOverride) throw new Error("Please wait for the current response.");
-    if (!modelOverride) requestInFlight = true;
+    if (requestInFlight && !modelOverride && retriesLeft === 2) throw new Error("Please wait for the current response.");
+    if (!modelOverride && retriesLeft === 2) requestInFlight = true;
 
     try {
       const body = JSON.stringify(buildRequestBody(
@@ -462,11 +465,19 @@ User Question: ${userMessage}`;
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
-        signal: AbortSignal.timeout(20000)
+        signal: AbortSignal.timeout(25000)
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
+
+        // 429 / 503 Auto-Retry with Backoff
+        if ((response.status === 429 || response.status === 503) && retriesLeft > 0) {
+          console.warn(`[AI Agent] ${model} status ${response.status}. Retrying in 2s (${retriesLeft} left)...`);
+          await delayMs(2000);
+          return callGemini(userMessage, dataContext, chatHistory, model, retriesLeft - 1);
+        }
+
         if ([400, 403, 404, 429, 503].includes(response.status)) {
           const nextModel = await handleFallback(model, response.status, userMessage, dataContext, chatHistory);
           if (nextModel) {
@@ -474,7 +485,7 @@ User Question: ${userMessage}`;
             return callGemini(userMessage, dataContext, chatHistory, nextModel);
           }
         }
-        if (response.status === 429) throw new Error("Rate limit reached. Please wait a moment.");
+        if (response.status === 429) throw new Error("Gemini rate limit reached (15 req/min on free tier). Please wait 20 seconds or switch model.");
         if (response.status === 503) throw new Error("Gemini overloaded. Try again in a moment.");
         if (response.status === 400 && errorBody.includes("API_KEY")) throw new Error("Invalid Gemini API key.");
         throw new Error(`Gemini API error (${response.status}): ${errorBody.slice(0, 200)}`);
@@ -485,20 +496,20 @@ User Question: ${userMessage}`;
       if (!text) throw new Error("Empty response from Gemini.");
       return text.trim();
     } finally {
-      if (!modelOverride) requestInFlight = false;
+      if (!modelOverride && retriesLeft === 0) requestInFlight = false;
     }
   }
 
   // ─── Streaming call (for chat — renders tokens as they arrive) ────────────────
-  async function streamGemini(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+  async function streamGemini(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError, modelOverride = null, retriesLeft = 1) {
     const apiKey = getApiKey();
     if (!apiKey) { onError(new Error("No Gemini API key configured.")); return; }
 
-    const model = getModel();
+    const model = modelOverride || getModel();
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-    if (requestInFlight) { onError(new Error("Please wait for the current response.")); return; }
-    requestInFlight = true;
+    if (requestInFlight && !modelOverride && retriesLeft === 1) { onError(new Error("Please wait for the current response.")); return; }
+    if (!modelOverride && retriesLeft === 1) requestInFlight = true;
 
     try {
       const body = JSON.stringify(buildRequestBody(
@@ -510,15 +521,40 @@ User Question: ${userMessage}`;
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
-        signal: AbortSignal.timeout(20000)
+        signal: AbortSignal.timeout(25000)
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
         requestInFlight = false;
-        if (response.status === 429) { onError(new Error("Rate limit reached. Please wait a moment.")); return; }
+
+        // Auto-retry 429 or 503 after short pause
+        if ((response.status === 429 || response.status === 503) && retriesLeft > 0) {
+          console.warn(`[AI Agent] Gemini stream status ${response.status}. Retrying in 2s...`);
+          await delayMs(2000);
+          return streamGemini(userMessage, dataContext, chatHistory, onChunk, onDone, onError, model, retriesLeft - 1);
+        }
+
+        if ([429, 503, 404].includes(response.status)) {
+          const nextModel = await handleFallback(model, response.status, userMessage, dataContext, chatHistory);
+          if (nextModel) {
+            console.warn(`[AI Agent] Rate limit/error. Auto-switching to ${nextModel}...`);
+            try {
+              const fallbackText = await callGemini(userMessage, dataContext, chatHistory, nextModel);
+              onChunk(fallbackText);
+              onDone(fallbackText);
+              return;
+            } catch (fbErr) {
+              onError(fbErr);
+              return;
+            }
+          }
+        }
+
+        if (response.status === 429) { onError(new Error("Rate limit reached (15 req/min). Wait 20s or switch model.")); return; }
         if (response.status === 503) { onError(new Error("Gemini overloaded. Try again in a moment.")); return; }
         if (response.status === 400 && errorBody.includes("API_KEY")) { onError(new Error("Invalid Gemini API key.")); return; }
+
         // Fallback to non-streaming if streaming endpoint fails
         console.warn("[AI Agent] Streaming failed, falling back to non-streaming...");
         try {
