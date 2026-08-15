@@ -555,7 +555,14 @@ User Question: ${userMessage}`;
       if (fullText) {
         onDone(fullText);
       } else {
-        onError(new Error("Empty response from Gemini."));
+        console.warn("[AI Agent] Gemini stream empty, falling back to non-streaming...");
+        try {
+          const fallbackText = await callGemini(userMessage, dataContext, chatHistory);
+          onChunk(fallbackText);
+          onDone(fallbackText);
+        } catch (fallbackErr) {
+          onError(fallbackErr);
+        }
       }
     } catch (err) {
       requestInFlight = false;
@@ -707,7 +714,7 @@ ${dataContext}
           if (jsonStr === "[DONE]") continue;
           try {
             const parsed = JSON.parse(jsonStr);
-            const chunk = parsed?.choices?.[0]?.delta?.content || "";
+            const chunk = parsed?.choices?.[0]?.delta?.content || parsed?.choices?.[0]?.text || "";
             if (chunk) {
               fullText += chunk;
               onChunk(fullText);
@@ -722,7 +729,14 @@ ${dataContext}
       if (fullText) {
         onDone(fullText);
       } else {
-        onError(new Error("Empty response from OpenAI."));
+        console.warn("[AI Agent] OpenAI stream empty, falling back to non-streaming...");
+        try {
+          const fallbackText = await callOpenAI(userMessage, dataContext, chatHistory);
+          onChunk(fallbackText);
+          onDone(fallbackText);
+        } catch (fallbackErr) {
+          onError(fallbackErr);
+        }
       }
     } catch (err) {
       requestInFlight = false;

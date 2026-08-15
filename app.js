@@ -1510,6 +1510,34 @@ function bindAiSettings() {
     updateAiModeBadge();
   });
 
+  // Test AI Connection button
+  document.getElementById("settingsTestAiBtn")?.addEventListener("click", async () => {
+    const statusEl = document.getElementById("settingsAiStatus");
+    const provider = window.LifeLedgerAI?.getProvider() || "gemini";
+    const providerName = provider === "openai" ? "OpenAI" : "Gemini";
+
+    if (statusEl) {
+      statusEl.textContent = `⏳ Testing ${providerName}...`;
+      statusEl.style.color = "var(--brand, #3b82f6)";
+    }
+    toast(`⏳ Testing ${providerName} connection...`);
+
+    try {
+      const response = await window.LifeLedgerAI.askAgent("Connection test.", state, []);
+      if (statusEl) {
+        statusEl.textContent = `✅ Connected & Verified (${providerName})!`;
+        statusEl.style.color = "#10b981";
+      }
+      toast(`✅ AI Verified! Response: "${response.slice(0, 60)}..."`);
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = `❌ Test Failed: ${err.message.slice(0, 45)}`;
+        statusEl.style.color = "#ef4444";
+      }
+      toast(`❌ Test Failed: ${err.message}`);
+    }
+  });
+
   // Save settings
   document.getElementById("settingsSaveApiKey")?.addEventListener("click", () => {
     const provider = providerSelect?.value || "gemini";
