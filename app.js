@@ -1284,14 +1284,33 @@ function bindChat() {
       const recentHistory = state.chat.filter(m => m.role === "user" || m.role === "assistant").slice(-10);
       const dataContext = window.LifeLedgerAI.buildDataContext(state);
 
+      let isFinished = false;
+      const watchdog = setTimeout(() => {
+        if (isFinished) return;
+        isFinished = true;
+        console.warn("[AI Agent] Stream timed out after 25s");
+        window.LifeLedgerAI?.resetRequestInFlight?.();
+        streamBubble.remove();
+        const fallback = answerQuestion(question);
+        addChat("assistant", fallback + "\n\n_⚠️ AI response timed out. Please check your API key or network connection._");
+        input.disabled = false;
+        input.focus();
+      }, 25000);
+
       window.LifeLedgerAI.streamAgent(
         question,
         dataContext,
         recentHistory,
         // onChunk — called on every token batch
-        (accumulatedText) => { updateStreamBubble(streamBubble, accumulatedText); },
+        (accumulatedText) => {
+          if (isFinished) return;
+          updateStreamBubble(streamBubble, accumulatedText);
+        },
         // onDone — called when stream finishes
         (fullText) => {
+          if (isFinished) return;
+          isFinished = true;
+          clearTimeout(watchdog);
           finalizeStreamBubble(streamBubble, fullText);
           state.chat.push({ id: `chat-${generateUUID()}`, role: "assistant", text: fullText, at: new Date().toISOString() });
           saveData();
@@ -1300,6 +1319,9 @@ function bindChat() {
         },
         // onError — fallback to regex answer
         (err) => {
+          if (isFinished) return;
+          isFinished = true;
+          clearTimeout(watchdog);
           console.warn("[AI Agent] Stream error:", err.message);
           streamBubble.remove();
           const fallback = answerQuestion(question);

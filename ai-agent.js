@@ -33,10 +33,6 @@
   }
 
   function getProvider() {
-    const model = getModel();
-    if (model.startsWith("gpt-") || model.startsWith("o3-") || model.startsWith("o1-")) {
-      return "openai";
-    }
     return localStorage.getItem("lifeLedger_aiProvider") || "gemini";
   }
 
@@ -46,7 +42,20 @@
   }
 
   function getModel() {
-    return localStorage.getItem("lifeLedger_geminiModel") || "gemini-2.5-flash";
+    const provider = getProvider();
+    const savedModel = localStorage.getItem("lifeLedger_geminiModel");
+
+    if (provider === "openai") {
+      if (savedModel && (savedModel.startsWith("gpt-") || savedModel.startsWith("o3-") || savedModel.startsWith("o1-"))) {
+        return savedModel;
+      }
+      return "gpt-4o-mini";
+    } else {
+      if (savedModel && savedModel.startsWith("gemini-")) {
+        return savedModel;
+      }
+      return "gemini-2.5-flash";
+    }
   }
 
   function setModel(model) {
@@ -442,7 +451,8 @@ User Question: ${userMessage}`;
       let response = await fetch(`${endpoint}?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body
+        body,
+        signal: AbortSignal.timeout(20000)
       });
 
       if (!response.ok) {
@@ -489,7 +499,8 @@ User Question: ${userMessage}`;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body
+        body,
+        signal: AbortSignal.timeout(20000)
       });
 
       if (!response.ok) {
@@ -594,7 +605,8 @@ ${dataContext}
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`
         },
-        body: JSON.stringify(bodyObj)
+        body: JSON.stringify(bodyObj),
+        signal: AbortSignal.timeout(20000)
       });
 
       if (!response.ok) {
@@ -655,7 +667,8 @@ ${dataContext}
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`
         },
-        body: JSON.stringify(bodyObj)
+        body: JSON.stringify(bodyObj),
+        signal: AbortSignal.timeout(20000)
       });
 
       if (!response.ok) {
@@ -717,6 +730,10 @@ ${dataContext}
     }
   }
 
+  function resetRequestInFlight() {
+    requestInFlight = false;
+  }
+
   // ─── Unified AI Router ───────────────────────────────────────────────────────
   async function callAi(userMessage, dataContext, chatHistory = [], modelOverride = null) {
     const provider = getProvider();
@@ -727,11 +744,16 @@ ${dataContext}
   }
 
   async function streamAi(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
-    const provider = getProvider();
-    if (provider === "openai") {
-      return streamOpenAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+    try {
+      const provider = getProvider();
+      if (provider === "openai") {
+        return await streamOpenAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+      }
+      return await streamGemini(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+    } catch (err) {
+      requestInFlight = false;
+      onError(err);
     }
-    return streamGemini(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
   }
 
   // ─── Public API ──────────────────────────────────────────────────────────────
@@ -803,6 +825,7 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     setProvider,
     getModel,
     setModel,
+    resetRequestInFlight,
     buildDataContext, // exposed for debugging
   };
 })();
