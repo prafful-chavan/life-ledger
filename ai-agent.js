@@ -371,12 +371,13 @@ User Question: ${userMessage}`;
 
   async function handleFallback(model, status, userMessage, dataContext, chatHistory) {
     const FALLBACK_CHAIN = {
-      "gemini-2.0-flash":  "gemini-2.5-flash",
-      "gemini-1.5-flash":  "gemini-2.5-flash",
-      "gemini-3.5-flash":  "gemini-2.5-flash",
+      "gemini-2.5-pro":   "gemini-2.5-flash",
+      "gemini-3.5-flash": "gemini-2.5-flash",
+      "gemini-2.0-flash": "gemini-2.5-flash",
+      "gemini-1.5-pro":   "gemini-1.5-flash",
     };
-    const nextModel = FALLBACK_CHAIN[model];
-    if (!nextModel) return null;
+    const nextModel = FALLBACK_CHAIN[model] || "gemini-2.5-flash";
+    if (nextModel === model) return null; // Avoid infinite loop on same model
     console.warn(`[AI Agent] ${model} failed (${status}). Falling back to ${nextModel}`);
     localStorage.setItem("lifeLedger_geminiModel", nextModel);
     const dropdown = document.getElementById("settingsGeminiModel");
