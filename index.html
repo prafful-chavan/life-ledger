@@ -1808,26 +1808,53 @@
         <div class="settings-divider"></div>
 
         <div class="settings-section">
-          <h4>🧠 AI Agent</h4>
-          <p class="muted-small" style="margin-bottom: 12px;">Power up the "Hey Prafful" assistant with Google Gemini AI for intelligent, data-aware conversations.</p>
+          <h4>🧠 AI Agent ("Hey Prafful")</h4>
+          <p class="muted-small" style="margin-bottom: 12px;">Power up the assistant with Google Gemini or OpenAI (ChatGPT) models for intelligent, data-aware conversations.</p>
+
           <div class="settings-row" style="margin-top: 8px;">
-            <span>Gemini API Key:</span>
-            <input type="password" id="settingsGeminiApiKey" placeholder="Paste your API key" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
+            <span>AI Provider:</span>
+            <select id="settingsAiProvider" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem; font-weight: 500;">
+              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI (ChatGPT)</option>
+            </select>
           </div>
+
+          <div class="settings-row" id="settingsGeminiKeyRow" style="margin-top: 8px;">
+            <span>Gemini Key:</span>
+            <input type="password" id="settingsGeminiApiKey" placeholder="Paste Gemini API key" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
+          </div>
+
+          <div class="settings-row" id="settingsOpenAiKeyRow" style="margin-top: 8px;">
+            <span>OpenAI Key:</span>
+            <input type="password" id="settingsOpenAiApiKey" placeholder="Paste OpenAI API key (sk-...)" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
+          </div>
+
           <div class="settings-row" style="margin-top: 8px;">
             <span>AI Model:</span>
             <select id="settingsGeminiModel" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem; font-weight: 500;">
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended - Fast & Smart)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Reasoning & Complex Tasks)</option>
-              <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy Stable)</option>
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <optgroup label="Google Gemini">
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended - Fast & Smart)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Reasoning & Complex Tasks)</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy Stable)</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              </optgroup>
+              <optgroup label="OpenAI (ChatGPT)">
+                <option value="gpt-4o">GPT-4o (Omni - Smartest & Fast)</option>
+                <option value="gpt-4o-mini">GPT-4o mini (Super Fast & Cost Effective)</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                <option value="o3-mini">o3-mini (Reasoning Model)</option>
+              </optgroup>
             </select>
           </div>
+
           <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <button class="secondary-button" type="button" id="settingsSaveApiKey" style="flex: 1;">💾 Save Key</button>
-            <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1;">🗑️ Clear Key</button>
+            <button class="secondary-button" type="button" id="settingsSaveApiKey" style="flex: 1;">💾 Save Settings</button>
+            <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1;">🗑️ Clear Keys</button>
           </div>
-          <p class="muted-small" style="margin-top: 8px;">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--brand);">aistudio.google.com/apikey</a> · Free tier: 15 req/min, 1500 req/day</p>
+          <p class="muted-small" style="margin-top: 8px;">
+            🔑 Get Keys: <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--brand);">Gemini Key</a> · <a href="https://platform.openai.com/api-keys" target="_blank" style="color: var(--brand);">OpenAI Key</a>
+          </p>
           <div class="settings-row" style="margin-top: 12px;">
             <span>AI Status:</span>
             <span id="settingsAiStatus" class="status-badge">Checking...</span>

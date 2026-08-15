@@ -1389,14 +1389,25 @@ function updateAiModeBadge() {
   const dot = badge?.querySelector(".chat-online-dot");
   const settingsStatus = document.getElementById("settingsAiStatus");
 
-  if (window.LifeLedgerAI?.isAiAvailable()) {
-    if (label) label.textContent = "🧠 AI Powered";
+  const isAvailable = window.LifeLedgerAI?.isAiAvailable();
+  const provider = window.LifeLedgerAI?.getProvider() || "gemini";
+  const model = window.LifeLedgerAI?.getModel() || "";
+  const providerName = provider === "openai" ? "OpenAI" : "Gemini";
+
+  if (isAvailable) {
+    if (label) label.textContent = `🧠 AI Powered (${providerName})`;
     if (dot) dot.style.background = "#10b981";
-    if (settingsStatus) { settingsStatus.textContent = "✅ Connected"; settingsStatus.style.color = "#10b981"; }
+    if (settingsStatus) {
+      settingsStatus.textContent = `✅ Connected (${providerName} ${model})`;
+      settingsStatus.style.color = "#10b981";
+    }
   } else {
     if (label) label.textContent = "Offline Mode";
     if (dot) dot.style.background = "#f59e0b";
-    if (settingsStatus) { settingsStatus.textContent = "❌ No API key"; settingsStatus.style.color = "#ef4444"; }
+    if (settingsStatus) {
+      settingsStatus.textContent = `❌ No API key for ${providerName}`;
+      settingsStatus.style.color = "#ef4444";
+    }
   }
 }
 
@@ -1415,14 +1426,23 @@ function bindExport() {
 }
 
 function bindAiSettings() {
-  // Load existing key and model into inputs
-  const keyInput = document.getElementById("settingsGeminiApiKey");
-  if (keyInput && window.LifeLedgerAI?.getApiKey()) {
-    keyInput.value = window.LifeLedgerAI.getApiKey();
+  const providerSelect = document.getElementById("settingsAiProvider");
+  const geminiKeyInput = document.getElementById("settingsGeminiApiKey");
+  const openAiKeyInput = document.getElementById("settingsOpenAiApiKey");
+  const modelSelect = document.getElementById("settingsGeminiModel");
+
+  const currentProvider = window.LifeLedgerAI?.getProvider() || "gemini";
+  if (providerSelect) providerSelect.value = currentProvider;
+
+  if (geminiKeyInput && window.LifeLedgerAI?.getGeminiApiKey) {
+    geminiKeyInput.value = window.LifeLedgerAI.getGeminiApiKey();
   }
 
-  const modelSelect = document.getElementById("settingsGeminiModel");
-  if (modelSelect && window.LifeLedgerAI?.getModel()) {
+  if (openAiKeyInput && window.LifeLedgerAI?.getOpenAiApiKey) {
+    openAiKeyInput.value = window.LifeLedgerAI.getOpenAiApiKey();
+  }
+
+  if (modelSelect && window.LifeLedgerAI?.getModel) {
     modelSelect.value = window.LifeLedgerAI.getModel();
   }
 
@@ -1440,39 +1460,71 @@ function bindAiSettings() {
     }
   });
 
-  // Save settings (key and model)
+  // Highlight input row based on selected provider
+  function syncProviderVisibility() {
+    const provider = providerSelect?.value || "gemini";
+    const geminiRow = document.getElementById("settingsGeminiKeyRow");
+    const openAiRow = document.getElementById("settingsOpenAiKeyRow");
+
+    if (geminiRow) geminiRow.style.opacity = provider === "gemini" ? "1" : "0.5";
+    if (openAiRow) openAiRow.style.opacity = provider === "openai" ? "1" : "0.5";
+  }
+  syncProviderVisibility();
+
+  providerSelect?.addEventListener("change", () => {
+    const p = providerSelect.value;
+    window.LifeLedgerAI?.setProvider(p);
+    syncProviderVisibility();
+    updateAiModeBadge();
+  });
+
+  // Auto-switch provider when selecting model in dropdown
+  modelSelect?.addEventListener("change", () => {
+    const model = modelSelect.value;
+    window.LifeLedgerAI?.setModel(model);
+    const newProvider = window.LifeLedgerAI?.getProvider() || "gemini";
+    if (providerSelect) providerSelect.value = newProvider;
+    syncProviderVisibility();
+    updateAiModeBadge();
+  });
+
+  // Save settings
   document.getElementById("settingsSaveApiKey")?.addEventListener("click", () => {
-    const key = document.getElementById("settingsGeminiApiKey")?.value?.trim();
-    const model = document.getElementById("settingsGeminiModel")?.value;
+    const provider = providerSelect?.value || "gemini";
+    const geminiKey = geminiKeyInput?.value?.trim();
+    const openAiKey = openAiKeyInput?.value?.trim();
+    const model = modelSelect?.value;
 
-    if (!key) { toast("Please enter an API key."); return; }
-
-    window.LifeLedgerAI?.setApiKey(key);
+    if (geminiKey !== undefined) window.LifeLedgerAI?.setGeminiApiKey(geminiKey);
+    if (openAiKey !== undefined) window.LifeLedgerAI?.setOpenAiApiKey(openAiKey);
+    if (provider) window.LifeLedgerAI?.setProvider(provider);
     if (model) window.LifeLedgerAI?.setModel(model);
 
+    const activeKey = window.LifeLedgerAI?.getApiKey(provider);
+    if (!activeKey) {
+      toast(`⚠️ Please enter an API key for ${provider === 'openai' ? 'OpenAI' : 'Gemini'}.`);
+    } else {
+      toast(`✅ AI settings saved (${provider === 'openai' ? 'OpenAI' : 'Gemini'})!`);
+    }
+
     updateAiModeBadge();
-    toast("✅ Gemini AI settings saved!");
   });
 
   // Clear settings
   document.getElementById("settingsClearApiKey")?.addEventListener("click", () => {
-    window.LifeLedgerAI?.setApiKey("");
-    window.LifeLedgerAI?.setModel("");
+    window.LifeLedgerAI?.setGeminiApiKey("");
+    window.LifeLedgerAI?.setOpenAiApiKey("");
+    window.LifeLedgerAI?.setModel("gemini-2.5-flash");
+    window.LifeLedgerAI?.setProvider("gemini");
 
-    const keyInput = document.getElementById("settingsGeminiApiKey");
-    if (keyInput) keyInput.value = "";
+    if (geminiKeyInput) geminiKeyInput.value = "";
+    if (openAiKeyInput) openAiKeyInput.value = "";
+    if (providerSelect) providerSelect.value = "gemini";
+    if (modelSelect) modelSelect.value = "gemini-2.5-flash";
 
-    const modelSelect = document.getElementById("settingsGeminiModel");
-    if (modelSelect) modelSelect.value = "gemini-3.5-flash";
-
+    syncProviderVisibility();
     updateAiModeBadge();
-    toast("API key and model preferences cleared. AI agent disabled.");
-  });
-
-  // Save model directly on dropdown change
-  modelSelect?.addEventListener("change", () => {
-    const model = modelSelect.value;
-    window.LifeLedgerAI?.setModel(model);
+    toast("API keys cleared. AI agent disabled.");
   });
 
   // Dismiss insights banner

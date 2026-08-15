@@ -13,18 +13,36 @@
 
   const MAX_HISTORY_MESSAGES = 10; // last N chat messages sent as conversation context
 
-  // ─── API Key and Model Management ───────────────────────────────────────────
-  function getApiKey() {
-    // Priority: localStorage > config.js
+  // ─── API Key, Provider, and Model Management ────────────────────────────────
+  function getGeminiApiKey() {
     return localStorage.getItem("lifeLedger_geminiApiKey") || window.LIFE_LEDGER_CONFIG?.GEMINI_API_KEY || "";
   }
 
-  function setApiKey(key) {
-    if (key) {
-      localStorage.setItem("lifeLedger_geminiApiKey", key.trim());
-    } else {
-      localStorage.removeItem("lifeLedger_geminiApiKey");
+  function setGeminiApiKey(key) {
+    if (key) localStorage.setItem("lifeLedger_geminiApiKey", key.trim());
+    else localStorage.removeItem("lifeLedger_geminiApiKey");
+  }
+
+  function getOpenAiApiKey() {
+    return localStorage.getItem("lifeLedger_openaiApiKey") || window.LIFE_LEDGER_CONFIG?.OPENAI_API_KEY || "";
+  }
+
+  function setOpenAiApiKey(key) {
+    if (key) localStorage.setItem("lifeLedger_openaiApiKey", key.trim());
+    else localStorage.removeItem("lifeLedger_openaiApiKey");
+  }
+
+  function getProvider() {
+    const model = getModel();
+    if (model.startsWith("gpt-") || model.startsWith("o3-") || model.startsWith("o1-")) {
+      return "openai";
     }
+    return localStorage.getItem("lifeLedger_aiProvider") || "gemini";
+  }
+
+  function setProvider(provider) {
+    if (provider) localStorage.setItem("lifeLedger_aiProvider", provider);
+    else localStorage.removeItem("lifeLedger_aiProvider");
   }
 
   function getModel() {
@@ -33,14 +51,33 @@
 
   function setModel(model) {
     if (model) {
-      localStorage.setItem("lifeLedger_geminiModel", model.trim());
+      const trimmed = model.trim();
+      localStorage.setItem("lifeLedger_geminiModel", trimmed);
+      if (trimmed.startsWith("gpt-") || trimmed.startsWith("o3-") || trimmed.startsWith("o1-")) {
+        setProvider("openai");
+      } else if (trimmed.startsWith("gemini-")) {
+        setProvider("gemini");
+      }
     } else {
       localStorage.removeItem("lifeLedger_geminiModel");
     }
   }
 
+  function getApiKey(provider = null) {
+    const p = provider || getProvider();
+    if (p === "openai") return getOpenAiApiKey();
+    return getGeminiApiKey();
+  }
+
+  function setApiKey(key, provider = null) {
+    const p = provider || getProvider();
+    if (p === "openai") setOpenAiApiKey(key);
+    else setGeminiApiKey(key);
+  }
+
   function isAiAvailable() {
-    return Boolean(getApiKey());
+    const provider = getProvider();
+    return Boolean(getApiKey(provider));
   }
 
   // ─── Data Context Builder ────────────────────────────────────────────────────
@@ -515,6 +552,188 @@ User Question: ${userMessage}`;
     }
   }
 
+  // ─── OpenAI API Helpers ───────────────────────────────────────────────────────
+  async function callOpenAI(userMessage, dataContext, chatHistory = [], modelOverride = null) {
+    const apiKey = getOpenAiApiKey();
+    if (!apiKey) throw new Error("No OpenAI API key configured. Please enter your key in Settings.");
+
+    const model = modelOverride || getModel();
+    if (requestInFlight && !modelOverride) throw new Error("Please wait for the current response.");
+    if (!modelOverride) requestInFlight = true;
+
+    try {
+      const isReasoning = model.startsWith("o1") || model.startsWith("o3");
+      const systemContent = `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
+
+[SYSTEM INSTRUCTION & PERSONALITY RULES]
+${SYSTEM_PROMPT}
+
+[CURRENT LIFE DATA CONTEXT]
+=========================================
+${dataContext}
+=========================================`;
+
+      const messages = [
+        { role: "system", content: systemContent },
+        ...chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.text
+        })),
+        { role: "user", content: userMessage }
+      ];
+
+      const bodyObj = {
+        model,
+        messages,
+        ...(isReasoning ? { max_completion_tokens: 4096 } : { temperature: 0.7, max_tokens: 4096 })
+      };
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(bodyObj)
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        if (response.status === 401) throw new Error("Invalid OpenAI API key. Please check your key in Settings.");
+        if (response.status === 429) throw new Error("OpenAI rate limit or quota exceeded.");
+        throw new Error(`OpenAI API error (${response.status}): ${errorBody.slice(0, 200)}`);
+      }
+
+      const data = await response.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (!text) throw new Error("Empty response from OpenAI.");
+      return text.trim();
+    } finally {
+      if (!modelOverride) requestInFlight = false;
+    }
+  }
+
+  async function streamOpenAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    const apiKey = getOpenAiApiKey();
+    if (!apiKey) { onError(new Error("No OpenAI API key configured. Please enter your key in Settings.")); return; }
+
+    const model = getModel();
+    if (requestInFlight) { onError(new Error("Please wait for the current response.")); return; }
+    requestInFlight = true;
+
+    try {
+      const isReasoning = model.startsWith("o1") || model.startsWith("o3");
+      const systemContent = `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
+
+[SYSTEM INSTRUCTION & PERSONALITY RULES]
+${SYSTEM_PROMPT}
+
+[CURRENT LIFE DATA CONTEXT]
+=========================================
+${dataContext}
+=========================================`;
+
+      const messages = [
+        { role: "system", content: systemContent },
+        ...chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.text
+        })),
+        { role: "user", content: userMessage }
+      ];
+
+      const bodyObj = {
+        model,
+        messages,
+        stream: true,
+        ...(isReasoning ? { max_completion_tokens: 4096 } : { temperature: 0.7, max_tokens: 4096 })
+      };
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(bodyObj)
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        requestInFlight = false;
+        if (response.status === 401) { onError(new Error("Invalid OpenAI API key.")); return; }
+        if (response.status === 429) { onError(new Error("OpenAI rate limit or quota exceeded.")); return; }
+        console.warn("[AI Agent] OpenAI streaming failed, falling back to non-streaming...");
+        try {
+          const fallbackText = await callOpenAI(userMessage, dataContext, chatHistory);
+          onChunk(fallbackText);
+          onDone(fallbackText);
+        } catch (fallbackErr) {
+          onError(fallbackErr);
+        }
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+          const jsonStr = trimmed.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const chunk = parsed?.choices?.[0]?.delta?.content || "";
+            if (chunk) {
+              fullText += chunk;
+              onChunk(fullText);
+            }
+          } catch (e) {
+            // skip chunk
+          }
+        }
+      }
+
+      requestInFlight = false;
+      if (fullText) {
+        onDone(fullText);
+      } else {
+        onError(new Error("Empty response from OpenAI."));
+      }
+    } catch (err) {
+      requestInFlight = false;
+      onError(err);
+    }
+  }
+
+  // ─── Unified AI Router ───────────────────────────────────────────────────────
+  async function callAi(userMessage, dataContext, chatHistory = [], modelOverride = null) {
+    const provider = getProvider();
+    if (provider === "openai") {
+      return callOpenAI(userMessage, dataContext, chatHistory, modelOverride);
+    }
+    return callGemini(userMessage, dataContext, chatHistory, modelOverride);
+  }
+
+  async function streamAi(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    const provider = getProvider();
+    if (provider === "openai") {
+      return streamOpenAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+    }
+    return streamGemini(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+  }
+
   // ─── Public API ──────────────────────────────────────────────────────────────
 
   /**
@@ -526,7 +745,7 @@ User Question: ${userMessage}`;
    */
   async function askAgent(question, state, chatHistory = []) {
     const dataContext = buildDataContext(state);
-    return callGemini(question, dataContext, chatHistory);
+    return callAi(question, dataContext, chatHistory);
   }
 
   /**
@@ -546,7 +765,7 @@ Example:
 🔥 **Streak Warning**: Your meditation streak is at 15 days — don't break it today!
 🎯 **Goal Update**: At current pace, your Emergency Fund will be complete by March 2027.`;
 
-    return callGemini(prompt, dataContext);
+    return callAi(prompt, dataContext);
   }
 
   /**
@@ -564,18 +783,24 @@ Example:
 
 Keep it concise, actionable, and energizing. Use bullet points.`;
 
-    return callGemini(prompt, dataContext);
+    return callAi(prompt, dataContext);
   }
 
   // ─── Expose module ───────────────────────────────────────────────────────────
   window.LifeLedgerAI = {
     askAgent,
-    streamAgent: streamGemini,  // streaming for chat
+    streamAgent: streamAi,  // streaming for chat
     generateInsights,
     generateDailyBriefing,
     isAiAvailable,
     getApiKey,
     setApiKey,
+    getGeminiApiKey,
+    setGeminiApiKey,
+    getOpenAiApiKey,
+    setOpenAiApiKey,
+    getProvider,
+    setProvider,
     getModel,
     setModel,
     buildDataContext, // exposed for debugging
