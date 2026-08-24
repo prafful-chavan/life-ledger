@@ -1288,14 +1288,14 @@ function bindChat() {
       const watchdog = setTimeout(() => {
         if (isFinished) return;
         isFinished = true;
-        console.warn("[AI Agent] Stream timed out after 25s");
-        window.LifeLedgerAI?.resetRequestInFlight?.();
+        console.warn("[AI Agent] Stream timed out after 60s");
+        window.LifeLedgerAI?.cancelRequest?.();
         streamBubble.remove();
         const fallback = answerQuestion(question);
         addChat("assistant", fallback + "\n\n_⚠️ AI response timed out. Please check your API key or network connection._");
         input.disabled = false;
         input.focus();
-      }, 25000);
+      }, 60000);
 
       window.LifeLedgerAI.streamAgent(
         question,
@@ -1412,22 +1412,21 @@ function updateAiModeBadge() {
   const settingsStatus = document.getElementById("settingsAiStatus");
 
   const isAvailable = window.LifeLedgerAI?.isAiAvailable();
-  const provider = window.LifeLedgerAI?.getProvider() || "gemini";
-  const model = window.LifeLedgerAI?.getModel() || "";
-  const providerName = provider === "openai" ? "OpenAI" : "Gemini";
+  const model = window.LifeLedgerAI?.getModel() || "google/gemini-2.5-flash";
+  const shortModel = model.split("/").pop() || model;
 
   if (isAvailable) {
-    if (label) label.textContent = `🧠 AI Powered (${providerName})`;
+    if (label) label.textContent = `🧠 AI Powered (${shortModel})`;
     if (dot) dot.style.background = "#10b981";
     if (settingsStatus) {
-      settingsStatus.textContent = `✅ Connected (${providerName} ${model})`;
+      settingsStatus.textContent = `✅ Connected (${model})`;
       settingsStatus.style.color = "#10b981";
     }
   } else {
     if (label) label.textContent = "Offline Mode";
     if (dot) dot.style.background = "#f59e0b";
     if (settingsStatus) {
-      settingsStatus.textContent = `❌ No API key for ${providerName}`;
+      settingsStatus.textContent = "❌ No OpenRouter API key";
       settingsStatus.style.color = "#ef4444";
     }
   }
@@ -1448,20 +1447,11 @@ function bindExport() {
 }
 
 function bindAiSettings() {
-  const providerSelect = document.getElementById("settingsAiProvider");
-  const geminiKeyInput = document.getElementById("settingsGeminiApiKey");
-  const openAiKeyInput = document.getElementById("settingsOpenAiApiKey");
-  const modelSelect = document.getElementById("settingsGeminiModel");
+  const keyInput = document.getElementById("settingsOpenRouterApiKey");
+  const modelSelect = document.getElementById("settingsAiModelSelect");
 
-  const currentProvider = window.LifeLedgerAI?.getProvider() || "gemini";
-  if (providerSelect) providerSelect.value = currentProvider;
-
-  if (geminiKeyInput && window.LifeLedgerAI?.getGeminiApiKey) {
-    geminiKeyInput.value = window.LifeLedgerAI.getGeminiApiKey();
-  }
-
-  if (openAiKeyInput && window.LifeLedgerAI?.getOpenAiApiKey) {
-    openAiKeyInput.value = window.LifeLedgerAI.getOpenAiApiKey();
+  if (keyInput && window.LifeLedgerAI?.getApiKey) {
+    keyInput.value = window.LifeLedgerAI.getApiKey();
   }
 
   if (modelSelect && window.LifeLedgerAI?.getModel) {
@@ -1482,50 +1472,36 @@ function bindAiSettings() {
     }
   });
 
-  // Highlight input row based on selected provider
-  function syncProviderVisibility() {
-    const provider = providerSelect?.value || "gemini";
-    const geminiRow = document.getElementById("settingsGeminiKeyRow");
-    const openAiRow = document.getElementById("settingsOpenAiKeyRow");
-
-    if (geminiRow) geminiRow.style.opacity = provider === "gemini" ? "1" : "0.5";
-    if (openAiRow) openAiRow.style.opacity = provider === "openai" ? "1" : "0.5";
-  }
-  syncProviderVisibility();
-
-  providerSelect?.addEventListener("change", () => {
-    const p = providerSelect.value;
-    window.LifeLedgerAI?.setProvider(p);
-    syncProviderVisibility();
-    updateAiModeBadge();
-  });
-
-  // Auto-switch provider when selecting model in dropdown
   modelSelect?.addEventListener("change", () => {
     const model = modelSelect.value;
     window.LifeLedgerAI?.setModel(model);
-    const newProvider = window.LifeLedgerAI?.getProvider() || "gemini";
-    if (providerSelect) providerSelect.value = newProvider;
-    syncProviderVisibility();
     updateAiModeBadge();
   });
 
   // Test AI Connection button
   document.getElementById("settingsTestAiBtn")?.addEventListener("click", async () => {
     const statusEl = document.getElementById("settingsAiStatus");
-    const provider = window.LifeLedgerAI?.getProvider() || "gemini";
-    const providerName = provider === "openai" ? "OpenAI" : "Gemini";
+    const model = window.LifeLedgerAI?.getModel() || "google/gemini-2.5-flash";
+
+    if (!window.LifeLedgerAI?.isAiAvailable()) {
+      if (statusEl) {
+        statusEl.textContent = "❌ Please enter an OpenRouter API key first.";
+        statusEl.style.color = "#ef4444";
+      }
+      toast("⚠️ Please enter your OpenRouter API key first.");
+      return;
+    }
 
     if (statusEl) {
-      statusEl.textContent = `⏳ Testing ${providerName}...`;
+      statusEl.textContent = `⏳ Testing ${model}...`;
       statusEl.style.color = "var(--brand, #3b82f6)";
     }
-    toast(`⏳ Testing ${providerName} connection...`);
+    toast(`⏳ Testing OpenRouter connection (${model})...`);
 
     try {
-      const response = await window.LifeLedgerAI.askAgent("Connection test.", state, []);
+      const response = await window.LifeLedgerAI.askAgent("Connection test. Reply 'Connected successfully!'", state, []);
       if (statusEl) {
-        statusEl.textContent = `✅ Connected & Verified (${providerName})!`;
+        statusEl.textContent = `✅ Connected & Verified!`;
         statusEl.style.color = "#10b981";
       }
       toast(`✅ AI Verified! Response: "${response.slice(0, 60)}..."`);
@@ -1540,21 +1516,16 @@ function bindAiSettings() {
 
   // Save settings
   document.getElementById("settingsSaveApiKey")?.addEventListener("click", () => {
-    const provider = providerSelect?.value || "gemini";
-    const geminiKey = geminiKeyInput?.value?.trim();
-    const openAiKey = openAiKeyInput?.value?.trim();
+    const key = keyInput?.value?.trim();
     const model = modelSelect?.value;
 
-    if (geminiKey !== undefined) window.LifeLedgerAI?.setGeminiApiKey(geminiKey);
-    if (openAiKey !== undefined) window.LifeLedgerAI?.setOpenAiApiKey(openAiKey);
-    if (provider) window.LifeLedgerAI?.setProvider(provider);
+    if (key !== undefined) window.LifeLedgerAI?.setApiKey(key);
     if (model) window.LifeLedgerAI?.setModel(model);
 
-    const activeKey = window.LifeLedgerAI?.getApiKey(provider);
-    if (!activeKey) {
-      toast(`⚠️ Please enter an API key for ${provider === 'openai' ? 'OpenAI' : 'Gemini'}.`);
+    if (!key) {
+      toast("⚠️ Please enter your OpenRouter API key.");
     } else {
-      toast(`✅ AI settings saved (${provider === 'openai' ? 'OpenAI' : 'Gemini'})!`);
+      toast(`✅ AI settings saved! Model: ${model}`);
     }
 
     updateAiModeBadge();
@@ -1562,19 +1533,14 @@ function bindAiSettings() {
 
   // Clear settings
   document.getElementById("settingsClearApiKey")?.addEventListener("click", () => {
-    window.LifeLedgerAI?.setGeminiApiKey("");
-    window.LifeLedgerAI?.setOpenAiApiKey("");
-    window.LifeLedgerAI?.setModel("gemini-2.5-flash");
-    window.LifeLedgerAI?.setProvider("gemini");
+    window.LifeLedgerAI?.setApiKey("");
+    window.LifeLedgerAI?.setModel("google/gemini-2.5-flash");
 
-    if (geminiKeyInput) geminiKeyInput.value = "";
-    if (openAiKeyInput) openAiKeyInput.value = "";
-    if (providerSelect) providerSelect.value = "gemini";
-    if (modelSelect) modelSelect.value = "gemini-2.5-flash";
+    if (keyInput) keyInput.value = "";
+    if (modelSelect) modelSelect.value = "google/gemini-2.5-flash";
 
-    syncProviderVisibility();
     updateAiModeBadge();
-    toast("API keys cleared. AI agent disabled.");
+    toast("API key cleared. AI agent disabled.");
   });
 
   // Dismiss insights banner

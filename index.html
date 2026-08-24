@@ -1808,42 +1808,31 @@
         <div class="settings-divider"></div>
 
         <div class="settings-section">
-          <h4>🧠 AI Agent ("Hey Prafful")</h4>
-          <p class="muted-small" style="margin-bottom: 12px;">Power up the assistant with Google Gemini or OpenAI (ChatGPT) models for intelligent, data-aware conversations.</p>
+          <h4>🧠 AI Agent ("Hey Prafful") — Powered by OpenRouter</h4>
+          <p class="muted-small" style="margin-bottom: 12px;">One API key unlocks GPT-4o, Claude, Gemini, Llama, DeepSeek, and 200+ models with zero rate-limit deadlocks.</p>
 
           <div class="settings-row" style="margin-top: 8px;">
-            <span>AI Provider:</span>
-            <select id="settingsAiProvider" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem; font-weight: 500;">
-              <option value="gemini">Google Gemini</option>
-              <option value="openai">OpenAI (ChatGPT)</option>
-            </select>
-          </div>
-
-          <div class="settings-row" id="settingsGeminiKeyRow" style="margin-top: 8px;">
-            <span>Gemini Key:</span>
-            <input type="password" id="settingsGeminiApiKey" placeholder="Paste Gemini API key" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
-          </div>
-
-          <div class="settings-row" id="settingsOpenAiKeyRow" style="margin-top: 8px;">
-            <span>OpenAI Key:</span>
-            <input type="password" id="settingsOpenAiApiKey" placeholder="Paste OpenAI API key (sk-...)" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
+            <span>OpenRouter Key:</span>
+            <input type="password" id="settingsOpenRouterApiKey" placeholder="Paste OpenRouter key (sk-or-...)" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
           </div>
 
           <div class="settings-row" style="margin-top: 8px;">
             <span>AI Model:</span>
-            <select id="settingsGeminiModel" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem; font-weight: 500;">
-              <optgroup label="Google Gemini">
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended - Fast & Smart)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Reasoning & Complex Tasks)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy Stable)</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <select id="settingsAiModelSelect" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem; font-weight: 500;">
+              <optgroup label="Free / Recommended">
+                <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash (Free &amp; Ultra Fast)</option>
+                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Free &amp; Deep Reasoning)</option>
+                <option value="deepseek/deepseek-chat-v3">DeepSeek V3 (Free &amp; Smart)</option>
+                <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (Free Open Source)</option>
               </optgroup>
               <optgroup label="OpenAI (ChatGPT)">
-                <option value="gpt-4o">GPT-4o (Omni - Smartest & Fast)</option>
-                <option value="gpt-4o-mini">GPT-4o mini (Super Fast & Cost Effective)</option>
-                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                <option value="o3-mini">o3-mini (Reasoning Model)</option>
+                <option value="openai/gpt-4o">GPT-4o (Smartest &amp; Fast)</option>
+                <option value="openai/gpt-4o-mini">GPT-4o mini (Super Fast &amp; Cheap)</option>
+                <option value="openai/o3-mini">o3-mini (Reasoning Model)</option>
+              </optgroup>
+              <optgroup label="Anthropic Claude">
+                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Best Writer &amp; Coder)</option>
+                <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku (Fast &amp; Crisp)</option>
               </optgroup>
             </select>
           </div>
@@ -1851,10 +1840,10 @@
           <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="secondary-button" type="button" id="settingsSaveApiKey" style="flex: 1;">💾 Save Settings</button>
             <button class="secondary-button" type="button" id="settingsTestAiBtn" style="flex: 1;">🧪 Test AI Connection</button>
-            <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1;">🗑️ Clear Keys</button>
+            <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1;">🗑️ Clear Key</button>
           </div>
           <p class="muted-small" style="margin-top: 8px;">
-            🔑 Get Keys: <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--brand);">Gemini Key</a> · <a href="https://platform.openai.com/api-keys" target="_blank" style="color: var(--brand);">OpenAI Key</a>
+            🔑 Get Free Key: <a href="https://openrouter.ai/keys" target="_blank" style="color: var(--brand);">openrouter.ai/keys</a> (Includes $1 free credit for paid models!)
           </p>
           <div class="settings-row" style="margin-top: 12px;">
             <span>AI Status:</span>

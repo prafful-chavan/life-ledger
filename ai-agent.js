@@ -1,98 +1,47 @@
 /**
- * Life Ledger AI Agent — Powered by Google Gemini
- * Provides intelligent, data-aware conversation and proactive insights.
+ * Life Ledger AI Agent — Powered by OpenRouter
+ * One API key → GPT-4o, Claude, Gemini, Llama, DeepSeek, and 200+ models.
  *
  * Architecture:
  *   1. buildDataContext(state) → compact data summary for LLM context
- *   2. askAgent(question, state) → send question + context to Gemini
- *   3. generateInsights(state) → proactive dashboard insights
- *   4. generateDailyBriefing(state) → one-tap daily summary
+ *   2. callAI / streamAI → unified OpenRouter API caller
+ *   3. askAgent(question, state) → non-streaming call
+ *   4. streamAgent → streaming call (for chat)
+ *   5. generateInsights / generateDailyBriefing → proactive features
  */
 (function () {
   "use strict";
 
-  const MAX_HISTORY_MESSAGES = 10; // last N chat messages sent as conversation context
+  const MAX_HISTORY_MESSAGES = 10;
+  const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+  const APP_REFERER = "https://prafful-chavan.github.io/life-ledger/";
+  const APP_TITLE = "Life Ledger - Hey Prafful";
+  const DEFAULT_MODEL = "google/gemini-2.5-flash";
 
-  // ─── API Key, Provider, and Model Management ────────────────────────────────
-  function getGeminiApiKey() {
-    return localStorage.getItem("lifeLedger_geminiApiKey") || window.LIFE_LEDGER_CONFIG?.GEMINI_API_KEY || "";
+  // ─── API Key & Model Management (Simple — one key, one model) ───────────────
+  function getApiKey() {
+    return localStorage.getItem("lifeLedger_openrouterKey") || "";
   }
 
-  function setGeminiApiKey(key) {
-    if (key) localStorage.setItem("lifeLedger_geminiApiKey", key.trim());
-    else localStorage.removeItem("lifeLedger_geminiApiKey");
-  }
-
-  function getOpenAiApiKey() {
-    return localStorage.getItem("lifeLedger_openaiApiKey") || window.LIFE_LEDGER_CONFIG?.OPENAI_API_KEY || "";
-  }
-
-  function setOpenAiApiKey(key) {
-    if (key) localStorage.setItem("lifeLedger_openaiApiKey", key.trim());
-    else localStorage.removeItem("lifeLedger_openaiApiKey");
-  }
-
-  function getProvider() {
-    return localStorage.getItem("lifeLedger_aiProvider") || "gemini";
-  }
-
-  function setProvider(provider) {
-    if (provider) localStorage.setItem("lifeLedger_aiProvider", provider);
-    else localStorage.removeItem("lifeLedger_aiProvider");
+  function setApiKey(key) {
+    if (key) localStorage.setItem("lifeLedger_openrouterKey", key.trim());
+    else localStorage.removeItem("lifeLedger_openrouterKey");
   }
 
   function getModel() {
-    const provider = getProvider();
-    const savedModel = localStorage.getItem("lifeLedger_geminiModel");
-
-    if (provider === "openai") {
-      if (savedModel && (savedModel.startsWith("gpt-") || savedModel.startsWith("o3-") || savedModel.startsWith("o1-"))) {
-        return savedModel;
-      }
-      return "gpt-4o-mini";
-    } else {
-      if (savedModel && savedModel.startsWith("gemini-")) {
-        return savedModel;
-      }
-      return "gemini-2.5-flash";
-    }
+    return localStorage.getItem("lifeLedger_aiModel") || DEFAULT_MODEL;
   }
 
   function setModel(model) {
-    if (model) {
-      const trimmed = model.trim();
-      localStorage.setItem("lifeLedger_geminiModel", trimmed);
-      if (trimmed.startsWith("gpt-") || trimmed.startsWith("o3-") || trimmed.startsWith("o1-")) {
-        setProvider("openai");
-      } else if (trimmed.startsWith("gemini-")) {
-        setProvider("gemini");
-      }
-    } else {
-      localStorage.removeItem("lifeLedger_geminiModel");
-    }
-  }
-
-  function getApiKey(provider = null) {
-    const p = provider || getProvider();
-    if (p === "openai") return getOpenAiApiKey();
-    return getGeminiApiKey();
-  }
-
-  function setApiKey(key, provider = null) {
-    const p = provider || getProvider();
-    if (p === "openai") setOpenAiApiKey(key);
-    else setGeminiApiKey(key);
+    if (model) localStorage.setItem("lifeLedger_aiModel", model.trim());
+    else localStorage.removeItem("lifeLedger_aiModel");
   }
 
   function isAiAvailable() {
-    const provider = getProvider();
-    return Boolean(getApiKey(provider));
+    return Boolean(getApiKey());
   }
 
   // ─── Data Context Builder ────────────────────────────────────────────────────
-  // Serializes the full state into a compact but rich context for the LLM.
-  // Keeps it under ~4K tokens by summarizing arrays and showing recent items.
-
   function formatINR(n) {
     const num = Number(n) || 0;
     return "₹" + num.toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -347,399 +296,186 @@ ${studiesText("ETL", wifeStudies)}
 `.trim();
   }
 
-  // ─── System Prompt ───────────────────────────────────────────────────────────
-  const SYSTEM_PROMPT = `You are "Hey Prafful" — Prafful Chavan's AI personal life coach embedded inside his Life Ledger app. You have COMPLETE access to all his financial, career, health, and life data (provided below).
+  // ─── System Prompt — Pro Banker + CA + Life Coach ────────────────────────────
+  const SYSTEM_PROMPT = `You are "Hey Prafful" — Prafful Chavan's AI-powered personal life operating system. You are embedded inside his Life Ledger app and have COMPLETE access to all his financial, career, health, and life data.
+
+YOU ARE THREE EXPERTS IN ONE:
+
+🏦 EXPERT 1: PERSONAL FINANCE ADVISOR & CHARTERED ACCOUNTANT (CA)
+• Analyze mutual fund performance — identify which funds are growing well, which are underperforming, which to EXIT
+• Analyze stock portfolio — winners, losers, sector concentration risks
+• Tax planning — ELSS, Section 80C, 80D, HRA, NPS, old vs new regime optimization
+• SIP optimization — which SIPs to increase, decrease, or stop
+• Debt management — prioritize loan repayments, interest rate optimization
+• Emergency fund adequacy check (6 months of expenses)
+• Insurance coverage gaps
+• Goal-based investment allocation (which goal needs more funding)
+• Net worth trend analysis and projections
+• FD vs liquid fund vs savings account optimization
+• Compare Prafful vs Wife's financial contributions and suggest balance
+
+💪 EXPERT 2: STRICT ACCOUNTABILITY PARTNER & LIFE COACH
+• Track and ENFORCE goal completion — calculate projected dates, call out delays
+• Push for daily exercise — if not exercised today, be STERN about it
+• Celebrate habit streaks and WARN about breaking them
+• Review pending tasks and PRIORITIZE the top 3 for today
+• Daily motivational push based on actual data, not generic advice
+• Career guidance — study hours tracking, certification progress, skill gaps
+• Compare Prafful's and wife's career progress, suggest actionable steps
+• Weekly and monthly review summaries with specific action items
+
+📊 EXPERT 3: DATA ANALYST & WEALTH STRATEGIST
+• Month-over-month spending trend analysis with exact numbers
+• Category-wise expense breakdown and anomaly detection
+• Savings rate optimization — where can you save more?
+• 5-year and 10-year wealth projections based on current pace
+• Goal completion probability analysis
+• Investment portfolio rebalancing suggestions
+• Identify financial leaks (subscriptions, unnecessary spending)
 
 PERSONALITY & RULES:
-• You are direct, motivational, data-driven, and hold Prafful accountable
-• You speak like a trusted friend who genuinely wants Prafful to succeed
+• You are direct, data-driven, and hold Prafful accountable like a strict mentor
+• You speak like a trusted friend who genuinely wants Prafful and his wife to succeed
 • Use Indian Rupee (₹) formatting with Indian number system (lakhs, crores)
-• Be specific — cite exact numbers from the data, don't be vague
-• When asked about goals, calculate projected completion dates based on current savings pace
-• When asked about habits, celebrate streaks and call out breaks
-• When asked about finances, compare month-over-month and identify trends
-• Push Prafful to exercise if he hasn't today
-• Push Prafful to maintain habit streaks
-• Push Prafful to complete pending tasks
-• Prafful is an 8-year experienced SRE/DevOps/MLOps engineer — understand this context
-• His wife is learning ETL/Data Engineering
-• Match response depth to the question — short for simple queries, EXHAUSTIVE, multi-section deep-dives for analysis, strategy, roadmap, and complex queries
-• For complex or open-ended queries, NEVER truncate or abbreviate. Provide full breakdowns with tables, calculations, step-by-step action items, and clear conclusions
-• For simple questions (what's my balance, today's habits) keep it brief and punchy
+• Be SPECIFIC — cite exact numbers from the data, never be vague
+• For complex questions, provide EXHAUSTIVE multi-section analysis — NEVER truncate or cut short
+• Include tables, calculations, step-by-step action items, and clear conclusions
+• For simple questions (balance, today's habits), keep it brief and punchy
 • Use proper markdown: **bold** for numbers, ## for section headers, - for bullets, > for callouts
 • Use emojis sparingly but effectively
-• If you don't have enough data to answer, say so honestly
-• NEVER make up data — only use what's provided
-• For investment advice, give general principles, add disclaimer you're not a financial advisor
+• If data is insufficient, say so honestly — NEVER fabricate numbers
+• Add financial disclaimer when giving investment-specific advice
+• Prafful is an 8-year experienced SRE/DevOps/MLOps engineer
+• His wife is learning ETL/Data Engineering — support her growth too
+• Treat the provided data as your bible — every number matters`;
 
-CAPABILITIES:
-• Answer any question about Prafful's finances, investments, goals, habits, workouts, career, tasks
-• Predict goal completion dates (remaining ÷ monthly savings rate)
-• Analyze spending trends (this month vs last month)
-• Give motivational pushes based on current data
-• Create action plans and daily briefings
-• Compare Prafful vs wife's progress
-• Identify financial anomalies or concerning patterns`;
+  // ─── OpenRouter API — Clean, Single Implementation ───────────────────────────
 
-  // ─── Gemini API Helpers ───────────────────────────────────────────────────────
-  let requestInFlight = false;
+  // Active AbortController for cancellation (replaces requestInFlight boolean)
+  let activeController = null;
 
-  function buildRequestBody(formattedUserMessage, historyContents) {
-    return {
-      contents: [
-        ...historyContents,
-        { role: "user", parts: [{ text: formattedUserMessage }] }
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.9,
-        maxOutputTokens: 8192,  // ← was 1500, now 8192 for full analysis
+  function buildMessages(userMessage, dataContext, chatHistory) {
+    return [
+      {
+        role: "system",
+        content: `${SYSTEM_PROMPT}\n\n[CURRENT LIFE DATA CONTEXT]\n=========================================\n${dataContext}\n=========================================`
       },
-      safetySettings: [
-        { category: "HARM_CATEGORY_HARASSMENT",        threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-      ]
-    };
+      ...chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: msg.text
+      })),
+      { role: "user", content: userMessage }
+    ];
   }
 
-  function buildFormattedMessage(userMessage, dataContext) {
-    return `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
-
-[SYSTEM INSTRUCTION & PERSONALITY RULES]
-${SYSTEM_PROMPT}
-
-[CURRENT LIFE DATA CONTEXT]
-=========================================
-${dataContext}
-=========================================
-
-User Question: ${userMessage}`;
-  }
-
-  function buildHistory(chatHistory) {
-    return chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.text }]
-    }));
-  }
-
-  async function handleFallback(model, status, userMessage, dataContext, chatHistory) {
-    const FALLBACK_CHAIN = {
-      "gemini-2.5-pro":   "gemini-2.5-flash",
-      "gemini-3.5-flash": "gemini-2.5-flash",
-      "gemini-2.0-flash": "gemini-2.5-flash",
-      "gemini-1.5-pro":   "gemini-1.5-flash",
-    };
-    const nextModel = FALLBACK_CHAIN[model] || "gemini-2.5-flash";
-    if (nextModel === model) return null; // Avoid infinite loop on same model
-    console.warn(`[AI Agent] ${model} failed (${status}). Falling back to ${nextModel}`);
-    localStorage.setItem("lifeLedger_geminiModel", nextModel);
-    const dropdown = document.getElementById("settingsGeminiModel");
-    if (dropdown) dropdown.value = nextModel;
-    return nextModel;
-  }
-
-  // Helper: pause execution for backoff
-  const delayMs = (ms) => new Promise(res => setTimeout(res, ms));
-
-  // ─── Non-streaming call (for insights/briefing) ───────────────────────────────
-  async function callGemini(userMessage, dataContext, chatHistory = [], modelOverride = null, retriesLeft = 2) {
+  /**
+   * Non-streaming call — used for insights, briefings, and test connection.
+   */
+  async function callAI(userMessage, dataContext, chatHistory = []) {
     const apiKey = getApiKey();
-    if (!apiKey) throw new Error("No Gemini API key configured.");
+    if (!apiKey) throw new Error("No OpenRouter API key. Please add your key in Settings.");
 
-    const model = modelOverride || getModel();
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-
-    if (requestInFlight && !modelOverride && retriesLeft === 2) throw new Error("Please wait for the current response.");
-    if (!modelOverride && retriesLeft === 2) requestInFlight = true;
-
-    try {
-      const body = JSON.stringify(buildRequestBody(
-        buildFormattedMessage(userMessage, dataContext),
-        buildHistory(chatHistory)
-      ));
-
-      let response = await fetch(`${endpoint}?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal: AbortSignal.timeout(25000)
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-
-        // 429 / 503 Auto-Retry with Backoff
-        if ((response.status === 429 || response.status === 503) && retriesLeft > 0) {
-          console.warn(`[AI Agent] ${model} status ${response.status}. Retrying in 2s (${retriesLeft} left)...`);
-          await delayMs(2000);
-          return callGemini(userMessage, dataContext, chatHistory, model, retriesLeft - 1);
-        }
-
-        if ([400, 403, 404, 429, 503].includes(response.status)) {
-          const nextModel = await handleFallback(model, response.status, userMessage, dataContext, chatHistory);
-          if (nextModel) {
-            requestInFlight = false;
-            return callGemini(userMessage, dataContext, chatHistory, nextModel);
-          }
-        }
-        if (response.status === 429) throw new Error("Gemini rate limit reached (15 req/min on free tier). Please wait 20 seconds or switch model.");
-        if (response.status === 503) throw new Error("Gemini overloaded. Try again in a moment.");
-        if (response.status === 400 && errorBody.includes("API_KEY")) throw new Error("Invalid Gemini API key.");
-        throw new Error(`Gemini API error (${response.status}): ${errorBody.slice(0, 200)}`);
-      }
-
-      const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error("Empty response from Gemini.");
-      return text.trim();
-    } finally {
-      if (!modelOverride && retriesLeft === 0) requestInFlight = false;
+    // Cancel any active request
+    if (activeController) {
+      activeController.abort();
+      activeController = null;
     }
-  }
 
-  // ─── Streaming call (for chat — renders tokens as they arrive) ────────────────
-  async function streamGemini(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError, modelOverride = null, retriesLeft = 1) {
-    const apiKey = getApiKey();
-    if (!apiKey) { onError(new Error("No Gemini API key configured.")); return; }
-
-    const model = modelOverride || getModel();
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
-
-    if (requestInFlight && !modelOverride && retriesLeft === 1) { onError(new Error("Please wait for the current response.")); return; }
-    if (!modelOverride && retriesLeft === 1) requestInFlight = true;
+    const controller = new AbortController();
+    activeController = controller;
 
     try {
-      const body = JSON.stringify(buildRequestBody(
-        buildFormattedMessage(userMessage, dataContext),
-        buildHistory(chatHistory)
-      ));
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal: AbortSignal.timeout(25000)
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        requestInFlight = false;
-
-        // Auto-retry 429 or 503 after short pause
-        if ((response.status === 429 || response.status === 503) && retriesLeft > 0) {
-          console.warn(`[AI Agent] Gemini stream status ${response.status}. Retrying in 2s...`);
-          await delayMs(2000);
-          return streamGemini(userMessage, dataContext, chatHistory, onChunk, onDone, onError, model, retriesLeft - 1);
-        }
-
-        if ([429, 503, 404].includes(response.status)) {
-          const nextModel = await handleFallback(model, response.status, userMessage, dataContext, chatHistory);
-          if (nextModel) {
-            console.warn(`[AI Agent] Rate limit/error. Auto-switching to ${nextModel}...`);
-            try {
-              const fallbackText = await callGemini(userMessage, dataContext, chatHistory, nextModel);
-              onChunk(fallbackText);
-              onDone(fallbackText);
-              return;
-            } catch (fbErr) {
-              onError(fbErr);
-              return;
-            }
-          }
-        }
-
-        if (response.status === 429) { onError(new Error("Rate limit reached (15 req/min). Wait 20s or switch model.")); return; }
-        if (response.status === 503) { onError(new Error("Gemini overloaded. Try again in a moment.")); return; }
-        if (response.status === 400 && errorBody.includes("API_KEY")) { onError(new Error("Invalid Gemini API key.")); return; }
-
-        // Fallback to non-streaming if streaming endpoint fails
-        console.warn("[AI Agent] Streaming failed, falling back to non-streaming...");
-        try {
-          const fallbackText = await callGemini(userMessage, dataContext, chatHistory);
-          onChunk(fallbackText);
-          onDone(fallbackText);
-        } catch (fallbackErr) {
-          onError(fallbackErr);
-        }
-        return;
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let fullText = "";
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop(); // keep incomplete line in buffer
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const chunk = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (chunk) {
-              fullText += chunk;
-              onChunk(fullText); // pass accumulated text so far
-            }
-          } catch (e) {
-            // skip malformed SSE lines
-          }
-        }
-      }
-
-      requestInFlight = false;
-      if (fullText) {
-        onDone(fullText);
-      } else {
-        console.warn("[AI Agent] Gemini stream empty, falling back to non-streaming...");
-        try {
-          const fallbackText = await callGemini(userMessage, dataContext, chatHistory);
-          onChunk(fallbackText);
-          onDone(fallbackText);
-        } catch (fallbackErr) {
-          onError(fallbackErr);
-        }
-      }
-    } catch (err) {
-      requestInFlight = false;
-      onError(err);
-    }
-  }
-
-  // ─── OpenAI API Helpers ───────────────────────────────────────────────────────
-  async function callOpenAI(userMessage, dataContext, chatHistory = [], modelOverride = null) {
-    const apiKey = getOpenAiApiKey();
-    if (!apiKey) throw new Error("No OpenAI API key configured. Please enter your key in Settings.");
-
-    const model = modelOverride || getModel();
-    if (requestInFlight && !modelOverride) throw new Error("Please wait for the current response.");
-    if (!modelOverride) requestInFlight = true;
-
-    try {
-      const isReasoning = model.startsWith("o1") || model.startsWith("o3");
-      const systemContent = `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
-
-[SYSTEM INSTRUCTION & PERSONALITY RULES]
-${SYSTEM_PROMPT}
-
-[CURRENT LIFE DATA CONTEXT]
-=========================================
-${dataContext}
-=========================================`;
-
-      const messages = [
-        { role: "system", content: systemContent },
-        ...chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
-          role: msg.role === "assistant" ? "assistant" : "user",
-          content: msg.text
-        })),
-        { role: "user", content: userMessage }
-      ];
-
-      const bodyObj = {
-        model,
-        messages,
-        ...(isReasoning ? { max_completion_tokens: 4096 } : { temperature: 0.7, max_tokens: 4096 })
-      };
-
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch(OPENROUTER_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": APP_REFERER,
+          "X-Title": APP_TITLE
         },
-        body: JSON.stringify(bodyObj),
-        signal: AbortSignal.timeout(20000)
+        body: JSON.stringify({
+          model: getModel(),
+          messages: buildMessages(userMessage, dataContext, chatHistory),
+          temperature: 0.7,
+          max_tokens: 16384
+        }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
-        if (response.status === 401) throw new Error("Invalid OpenAI API key. Please check your key in Settings.");
-        if (response.status === 429) throw new Error("OpenAI rate limit or quota exceeded.");
-        throw new Error(`OpenAI API error (${response.status}): ${errorBody.slice(0, 200)}`);
+        if (response.status === 401) throw new Error("Invalid OpenRouter API key. Get one at openrouter.ai/keys");
+        if (response.status === 402) throw new Error("OpenRouter credits exhausted. Add credits at openrouter.ai/credits");
+        if (response.status === 429) throw new Error("Rate limited. Please wait a moment and try again.");
+        if (response.status === 503) throw new Error("Model temporarily unavailable. Try switching models.");
+        throw new Error(`API error (${response.status}): ${errorBody.slice(0, 200)}`);
       }
 
       const data = await response.json();
       const text = data?.choices?.[0]?.message?.content;
-      if (!text) throw new Error("Empty response from OpenAI.");
+      if (!text) throw new Error("Empty response. Try a different model.");
       return text.trim();
     } finally {
-      if (!modelOverride) requestInFlight = false;
+      if (activeController === controller) activeController = null;
     }
   }
 
-  async function streamOpenAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
-    const apiKey = getOpenAiApiKey();
-    if (!apiKey) { onError(new Error("No OpenAI API key configured. Please enter your key in Settings.")); return; }
+  /**
+   * Streaming call — used for chat. Renders tokens as they arrive.
+   */
+  async function streamAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    const apiKey = getApiKey();
+    if (!apiKey) { onError(new Error("No OpenRouter API key. Please add your key in Settings.")); return; }
 
-    const model = getModel();
-    if (requestInFlight) { onError(new Error("Please wait for the current response.")); return; }
-    requestInFlight = true;
+    // Cancel any active request (no deadlock!)
+    if (activeController) {
+      activeController.abort();
+      activeController = null;
+    }
+
+    const controller = new AbortController();
+    activeController = controller;
 
     try {
-      const isReasoning = model.startsWith("o1") || model.startsWith("o3");
-      const systemContent = `You are "Hey Prafful" — Prafful Chavan's AI personal life coach.
-
-[SYSTEM INSTRUCTION & PERSONALITY RULES]
-${SYSTEM_PROMPT}
-
-[CURRENT LIFE DATA CONTEXT]
-=========================================
-${dataContext}
-=========================================`;
-
-      const messages = [
-        { role: "system", content: systemContent },
-        ...chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
-          role: msg.role === "assistant" ? "assistant" : "user",
-          content: msg.text
-        })),
-        { role: "user", content: userMessage }
-      ];
-
-      const bodyObj = {
-        model,
-        messages,
-        stream: true,
-        ...(isReasoning ? { max_completion_tokens: 4096 } : { temperature: 0.7, max_tokens: 4096 })
-      };
-
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch(OPENROUTER_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": APP_REFERER,
+          "X-Title": APP_TITLE
         },
-        body: JSON.stringify(bodyObj),
-        signal: AbortSignal.timeout(20000)
+        body: JSON.stringify({
+          model: getModel(),
+          messages: buildMessages(userMessage, dataContext, chatHistory),
+          stream: true,
+          temperature: 0.7,
+          max_tokens: 16384
+        }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
-        requestInFlight = false;
-        if (response.status === 401) { onError(new Error("Invalid OpenAI API key.")); return; }
-        if (response.status === 429) { onError(new Error("OpenAI rate limit or quota exceeded.")); return; }
-        console.warn("[AI Agent] OpenAI streaming failed, falling back to non-streaming...");
+        if (activeController === controller) activeController = null;
+
+        if (response.status === 401) { onError(new Error("Invalid OpenRouter API key.")); return; }
+        if (response.status === 402) { onError(new Error("OpenRouter credits exhausted.")); return; }
+        if (response.status === 429) { onError(new Error("Rate limited. Wait a moment.")); return; }
+
+        // Fallback to non-streaming
+        console.warn("[AI Agent] Stream failed, falling back to non-streaming...");
         try {
-          const fallbackText = await callOpenAI(userMessage, dataContext, chatHistory);
+          const fallbackText = await callAI(userMessage, dataContext, chatHistory);
           onChunk(fallbackText);
           onDone(fallbackText);
-        } catch (fallbackErr) {
-          onError(fallbackErr);
+        } catch (fbErr) {
+          onError(fbErr);
         }
         return;
       }
 
+      // Parse SSE stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullText = "";
@@ -751,93 +487,63 @@ ${dataContext}
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop();
+        buffer = lines.pop(); // keep incomplete line
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) continue;
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
           const jsonStr = trimmed.slice(6).trim();
           if (jsonStr === "[DONE]") continue;
           try {
             const parsed = JSON.parse(jsonStr);
-            const chunk = parsed?.choices?.[0]?.delta?.content || parsed?.choices?.[0]?.text || "";
+            const chunk = parsed?.choices?.[0]?.delta?.content || "";
             if (chunk) {
               fullText += chunk;
               onChunk(fullText);
             }
           } catch (e) {
-            // skip chunk
+            // skip malformed SSE
           }
         }
       }
 
-      requestInFlight = false;
+      if (activeController === controller) activeController = null;
+
       if (fullText) {
         onDone(fullText);
       } else {
-        console.warn("[AI Agent] OpenAI stream empty, falling back to non-streaming...");
+        // Empty stream — fallback to non-streaming
+        console.warn("[AI Agent] Stream empty, falling back to non-streaming...");
         try {
-          const fallbackText = await callOpenAI(userMessage, dataContext, chatHistory);
+          const fallbackText = await callAI(userMessage, dataContext, chatHistory);
           onChunk(fallbackText);
           onDone(fallbackText);
-        } catch (fallbackErr) {
-          onError(fallbackErr);
+        } catch (fbErr) {
+          onError(fbErr);
         }
       }
     } catch (err) {
-      requestInFlight = false;
-      onError(err);
-    }
-  }
-
-  function resetRequestInFlight() {
-    requestInFlight = false;
-  }
-
-  // ─── Unified AI Router ───────────────────────────────────────────────────────
-  async function callAi(userMessage, dataContext, chatHistory = [], modelOverride = null) {
-    const provider = getProvider();
-    if (provider === "openai") {
-      return callOpenAI(userMessage, dataContext, chatHistory, modelOverride);
-    }
-    return callGemini(userMessage, dataContext, chatHistory, modelOverride);
-  }
-
-  async function streamAi(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
-    try {
-      const provider = getProvider();
-      if (provider === "openai") {
-        return await streamOpenAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
-      }
-      return await streamGemini(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
-    } catch (err) {
-      requestInFlight = false;
+      if (activeController === controller) activeController = null;
+      if (err.name === "AbortError") return; // silently ignore cancelled requests
       onError(err);
     }
   }
 
   // ─── Public API ──────────────────────────────────────────────────────────────
 
-  /**
-   * Ask the AI agent a question with full data context.
-   * @param {string} question - The user's question
-   * @param {object} state - The full app state
-   * @param {Array} chatHistory - Recent chat messages for conversation context
-   * @returns {Promise<string>} - AI response text
-   */
   async function askAgent(question, state, chatHistory = []) {
     const dataContext = buildDataContext(state);
-    return callAi(question, dataContext, chatHistory);
+    return callAI(question, dataContext, chatHistory);
   }
 
-  /**
-   * Generate proactive insights for the dashboard.
-   * Returns 2-4 concise insights about current data.
-   */
+  function streamAgent(question, dataContext, chatHistory, onChunk, onDone, onError) {
+    return streamAI(question, dataContext, chatHistory, onChunk, onDone, onError);
+  }
+
   async function generateInsights(state) {
     const dataContext = buildDataContext(state);
     const prompt = `Based on Prafful's current data, generate exactly 3 brief, actionable insights (1-2 sentences each). Focus on:
-1. Most urgent financial observation (spending trend, savings rate, goal at risk)
+1. Most urgent financial observation (spending trend, savings rate, MF performance, goal at risk)
 2. Most important habit/health observation (streak to protect, exercise gap)
 3. Most impactful career/task action item
 
@@ -847,45 +553,44 @@ Example:
 🔥 **Streak Warning**: Your meditation streak is at 15 days — don't break it today!
 🎯 **Goal Update**: At current pace, your Emergency Fund will be complete by March 2027.`;
 
-    return callAi(prompt, dataContext);
+    return callAI(prompt, dataContext);
   }
 
-  /**
-   * Generate a comprehensive daily briefing.
-   */
   async function generateDailyBriefing(state) {
     const dataContext = buildDataContext(state);
     const prompt = `Generate Prafful's daily briefing for today. Include:
-1. 💰 Quick financial snapshot (net worth, this month savings status)
-2. ✅ Top 3 pending tasks to focus on
-3. 🔥 Habits status — which ones done today, which pending
-4. 🏃 Exercise status for today
-5. 🎯 Goal closest to completion and one that needs attention  
-6. 💪 One motivational push based on his current progress
+1. 💰 Quick financial snapshot (net worth, this month savings status, MF performance)
+2. ✅ Top 3 pending tasks to focus on TODAY
+3. 🔥 Habits status — which ones done today, which pending (be STRICT)
+4. 🏃 Exercise status — have you worked out? If not, PUSH HARD
+5. 🎯 Goal closest to completion and one that needs urgent attention
+6. 💪 One motivational push based on actual progress (not generic)
+7. 📊 One quick financial tip or action item for today
 
 Keep it concise, actionable, and energizing. Use bullet points.`;
 
-    return callAi(prompt, dataContext);
+    return callAI(prompt, dataContext);
   }
 
-  // ─── Expose module ───────────────────────────────────────────────────────────
+  function cancelRequest() {
+    if (activeController) {
+      activeController.abort();
+      activeController = null;
+    }
+  }
+
+  // ─── Expose Module ───────────────────────────────────────────────────────────
   window.LifeLedgerAI = {
     askAgent,
-    streamAgent: streamAi,  // streaming for chat
+    streamAgent,
     generateInsights,
     generateDailyBriefing,
     isAiAvailable,
     getApiKey,
     setApiKey,
-    getGeminiApiKey,
-    setGeminiApiKey,
-    getOpenAiApiKey,
-    setOpenAiApiKey,
-    getProvider,
-    setProvider,
     getModel,
     setModel,
-    resetRequestInFlight,
-    buildDataContext, // exposed for debugging
+    cancelRequest,
+    buildDataContext,
   };
 })();
