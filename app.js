@@ -1026,6 +1026,12 @@ function bindFinanceTabs() {
     syncExpensesFromDrive();
   });
 
+  document.querySelectorAll(".sync-holdings-btn")?.forEach(btn => {
+    btn.addEventListener("click", () => {
+      syncHoldingsFromDrive();
+    });
+  });
+
   const mfHoldingsBtn = document.getElementById("toggleMfViewHoldings");
   const mfTxnsBtn = document.getElementById("toggleMfViewTxns");
   const mfInsightsBtn = document.getElementById("toggleMfViewInsights");
@@ -2078,6 +2084,242 @@ async function syncExpensesFromDrive() {
       btn.disabled = false;
       btn.textContent = "☁ Sync from Drive";
     }
+  }
+}
+
+function parseMasterHoldingsWorkbook(buffer) {
+  if (typeof XLSX === "undefined") {
+    throw new Error("SheetJS (XLSX) library is not loaded.");
+  }
+
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const parsedMutualFunds = [];
+  const parsedStocks = [];
+  const parsedUsStocks = [];
+
+  function parseDateVal(val) {
+    if (!val) return new Date().toISOString().split("T")[0];
+    if (typeof val === "number") {
+      try {
+        const parsed = XLSX.SSF.parse_date_code(val);
+        if (parsed) {
+          const y = parsed.y;
+          const m = String(parsed.m).padStart(2, "0");
+          const d = String(parsed.d).padStart(2, "0");
+          return `${y}-${m}-${d}`;
+        }
+      } catch(e) {}
+    }
+    const str = String(val).trim();
+    if (!str) return new Date().toISOString().split("T")[0];
+
+    const dt = new Date(str);
+    if (!isNaN(dt.getTime())) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+    return new Date().toISOString().split("T")[0];
+  }
+
+  function parseNumVal(val) {
+    if (val === null || val === undefined || val === "") return 0;
+    if (typeof val === "number") return isNaN(val) ? 0 : val;
+    const clean = String(val).replace(/,/g, "").replace(/₹/g, "").replace(/\$/g, "").trim();
+    const n = parseFloat(clean);
+    return isNaN(n) ? 0 : n;
+  }
+
+  (workbook.SheetNames || []).forEach(sheetName => {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return;
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    if (!rows || !rows.length) return;
+
+    const sheetNameLower = sheetName.toLowerCase();
+
+    const isUS = sheetNameLower.includes("us") || sheetNameLower.includes("usa") || sheetNameLower.includes("america");
+    const isMF = sheetNameLower.includes("mf") || sheetNameLower.includes("mutual") || sheetNameLower.includes("fund");
+
+    const defaultOwner = (sheetNameLower.includes("wife") || sheetNameLower.includes("archana")) ? "Wife" : "Me";
+
+    let defaultDemat = "Other";
+    if (sheetNameLower.includes("groww")) defaultDemat = "Groww";
+    else if (sheetNameLower.includes("upstox")) defaultDemat = "Upstox";
+    else if (sheetNameLower.includes("indmoney") || sheetNameLower.includes("ind")) defaultDemat = "INDmoney";
+    else if (sheetNameLower.includes("zerodha") || sheetNameLower.includes("kite")) defaultDemat = "Zerodha";
+
+    rows.forEach(row => {
+      const normRow = {};
+      Object.keys(row).forEach(k => {
+        const normKey = String(k).toLowerCase().replace(/[^a-z0-9]/g, "");
+        normRow[normKey] = row[k];
+      });
+
+      const nameVal = normRow.schemename || normRow.fundname || normRow.scheme || normRow.fund ||
+                      normRow.companyname || normRow.company || normRow.stockname || normRow.stock ||
+                      normRow.symbol || normRow.instrument || normRow.scrip || normRow.name || normRow.ticker || "";
+
+      if (!nameVal || String(nameVal).trim() === "" || String(nameVal).toLowerCase().startsWith("total")) return;
+
+      const cleanName = String(nameVal).trim();
+
+      let rowAsset = isUS ? "usstock" : (isMF ? "mutualFund" : "stock");
+      if (normRow.schemename || normRow.purchasenav || normRow.nav) {
+        rowAsset = "mutualFund";
+      } else if (normRow.priceusd || normRow.amountusd || normRow.ticker || (isUS && (normRow.symbol || normRow.company))) {
+        rowAsset = "usstock";
+      }
+
+      const rawType = String(normRow.transactiontype || normRow.type || normRow.txntype || normRow.action || normRow.buysell || "PURCHASE").toUpperCase();
+      const isRed = rawType.includes("REDEEM") || rawType.includes("REDEMPTION") || rawType.includes("SELL");
+
+      let ownerVal = normRow.owner || normRow.holder || normRow.ownermewife || defaultOwner;
+      ownerVal = String(ownerVal).toLowerCase().includes("wife") || String(ownerVal).toLowerCase().includes("archana") ? "Wife" : "Me";
+
+      const dateVal = parseDateVal(normRow.date || normRow.transactiondate || normRow.purchasedate || normRow.txndate || normRow.buydate || normRow.orderdate);
+
+      const dematVal = String(normRow.broker || normRow.demat || normRow.platform || normRow.account || defaultDemat).trim();
+
+      if (rowAsset === "mutualFund") {
+        const units = parseNumVal(normRow.units || normRow.quantity || normRow.qty || normRow.shares);
+        const nav = parseNumVal(normRow.nav || normRow.purchasenav || normRow.price || normRow.avgprice || normRow.rate);
+        let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.value || normRow.netamount);
+        if (!invested && units && nav) invested = units * nav;
+
+        parsedMutualFunds.push({
+          id: `mf-${generateUUID()}`,
+          fundName: cleanName,
+          transactionType: isRed ? "REDEEM" : "PURCHASE",
+          units: Math.abs(units),
+          nav: nav,
+          invested: Math.abs(invested),
+          purchaseDate: dateVal,
+          date: dateVal,
+          owner: ownerVal,
+          demat: dematVal
+        });
+      } else if (rowAsset === "usstock") {
+        const qty = parseNumVal(normRow.quantity || normRow.qty || normRow.units || normRow.shares);
+        const price = parseNumVal(normRow.price || normRow.avgprice || normRow.buyprice || normRow.priceusd || normRow.rate);
+        let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.amountusd || normRow.value);
+        if (!invested && qty && price) invested = qty * price;
+
+        parsedUsStocks.push({
+          id: `uss-${generateUUID()}`,
+          symbol: cleanName.toUpperCase(),
+          company: cleanName,
+          transactionType: isRed ? "SELL" : "BUY",
+          quantity: Math.abs(qty),
+          avgPrice: price,
+          invested: Math.abs(invested),
+          purchaseDate: dateVal,
+          date: dateVal,
+          owner: ownerVal,
+          demat: dematVal || "INDmoney"
+        });
+      } else {
+        const qty = parseNumVal(normRow.quantity || normRow.qty || normRow.units || normRow.shares);
+        const price = parseNumVal(normRow.price || normRow.avgprice || normRow.buyprice || normRow.rate);
+        let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.amountinr || normRow.value);
+        if (!invested && qty && price) invested = qty * price;
+
+        parsedStocks.push({
+          id: `stk-${generateUUID()}`,
+          symbol: cleanName.toUpperCase().replace(/\s*-EQ$/i, "").trim(),
+          company: cleanName,
+          transactionType: isRed ? "SELL" : "BUY",
+          quantity: Math.abs(qty),
+          avgPrice: price,
+          invested: Math.abs(invested),
+          purchaseDate: dateVal,
+          date: dateVal,
+          owner: ownerVal,
+          demat: dematVal
+        });
+      }
+    });
+  });
+
+  return {
+    mutualFunds: parsedMutualFunds,
+    stocks: parsedStocks,
+    usstocks: parsedUsStocks
+  };
+}
+
+async function syncHoldingsFromDrive() {
+  if (!window.LifeLedgerDrive || !window.LifeLedgerDrive.isConnected()) {
+    toast("Please connect Google Drive in the settings panel first.");
+    return;
+  }
+
+  const syncBtns = document.querySelectorAll(".sync-holdings-btn");
+  syncBtns.forEach(btn => {
+    btn.disabled = true;
+    btn.textContent = "☁ Syncing...";
+  });
+
+  toast("🔍 Scanning Google Drive for 'My stocks and MF holdings for Life-Ledger'...");
+
+  try {
+    const fileData = await window.LifeLedgerDrive.downloadMasterHoldingsFile();
+    if (!fileData || !fileData.buffer) {
+      toast("⚠️ Could not find 'My stocks and MF holdings for Life-Ledger' on Google Drive.");
+      return;
+    }
+
+    console.log(`[app.js] Found holdings workbook: "${fileData.filename}" (Modified: ${fileData.modifiedTime})`);
+    toast(`📥 Parsing tabs from "${fileData.filename}"...`);
+
+    const holdingsData = parseMasterHoldingsWorkbook(fileData.buffer);
+
+    let mfCount = holdingsData.mutualFunds?.length || 0;
+    let stockCount = holdingsData.stocks?.length || 0;
+    let usStockCount = holdingsData.usstocks?.length || 0;
+
+    if (mfCount === 0 && stockCount === 0 && usStockCount === 0) {
+      toast("⚠️ Sheet downloaded, but 0 holdings were extracted. Check tab column headers.");
+      return;
+    }
+
+    // Update state
+    if (mfCount > 0) state.mutualFunds = holdingsData.mutualFunds;
+    if (stockCount > 0) state.stocks = holdingsData.stocks;
+    if (usStockCount > 0) state.usstocks = holdingsData.usstocks;
+
+    toast(`🔄 Live syncing prices for ${mfCount} MF, ${stockCount} Stock, ${usStockCount} US Stock entries...`);
+
+    // Live NAV & Price refresh
+    try {
+      if (mfCount > 0 && typeof refreshMutualFundNAVs === "function") {
+        await refreshMutualFundNAVs(true);
+      }
+      if (stockCount > 0 && typeof refreshStockPrices === "function") {
+        await refreshStockPrices(true);
+      }
+      if (usStockCount > 0 && typeof refreshUsStockPrices === "function") {
+        await refreshUsStockPrices(true);
+      }
+    } catch (e) {
+      console.warn("[app.js] Error updating live price/NAV after holdings sync:", e);
+    }
+
+    // Save vault & re-render
+    renderAll();
+    await saveData(true);
+
+    toast(`✅ Synced! Loaded ${mfCount} MF, ${stockCount} Stock, and ${usStockCount} US Stock txns from Drive.`);
+  } catch (err) {
+    console.error("[app.js] Holdings sync error:", err);
+    toast(`❌ Holdings Sync Failed: ${err.message}`);
+  } finally {
+    syncBtns.forEach(btn => {
+      btn.disabled = false;
+      btn.textContent = "☁ Sync Holdings";
+    });
   }
 }
 

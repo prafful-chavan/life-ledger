@@ -14,11 +14,11 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script defer src="vault-store.js?v=1.0.8"></script>
-    <script defer src="drive-sync.js?v=1.0.8"></script>
+    <script defer src="drive-sync.js?v=1.0.35"></script>
     <script defer src="interview-db.js?v=1.0.8"></script>
-    <script defer src="ai-agent.js?v=1.0.25"></script>
-    <script defer src="app.js?v=1.0.25"></script>
-    <script defer src="auth.js?v=1.0.8"></script>
+    <script defer src="ai-agent.js?v=1.0.35"></script>
+    <script defer src="app.js?v=1.0.35"></script>
+    <script defer src="auth.js?v=1.0.35"></script>
   </head>
   <body class="auth-locked">
     <div id="appLoading" class="app-loading hidden">
@@ -164,6 +164,7 @@
               <span class="sync-icon" aria-hidden="true">✓</span>
               <span class="sync-text">Saved to Drive</span>
             </div>
+            <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings</button>
             <button class="secondary-button" type="button" id="themeToggle" aria-pressed="false">Dark mode</button>
             <button class="secondary-button" type="button" data-open-modal="settingsModal" id="settingsButton" aria-label="Settings">⚙️ Settings</button>
             <button class="secondary-button danger-button" type="button" data-open-modal="resetModal">Reset data</button>
@@ -507,6 +508,7 @@
                 </div>
                 <div class="panel-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <span id="navDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
+                  <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings from Drive</button>
                   <button class="secondary-button" type="button" id="refreshMutualFundNAVsBtn">🔄 Refresh NAVs</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">➕ Add Fund</button>
                   <button class="secondary-button redeem-btn" type="button" id="redeemFundBtn">💸 Redeem Fund</button>
@@ -552,14 +554,13 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h3>Stocks & ETFs</h3>
+                  <h3>Stocks &amp; ETFs</h3>
                   <p>Track holdings across Upstox, Zerodha, Groww, INDmoney — with live prices.</p>
                 </div>
                 <div class="panel-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                   <span id="stockPriceDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
+                  <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings from Drive</button>
                   <button class="secondary-button" type="button" id="refreshStockPricesBtn">🔄 Refresh Prices</button>
-                  <button class="secondary-button" type="button" id="restoreStockPortfolioBtn" title="Load real Upstox + Zerodha portfolio">📋 Load Portfolio</button>
-                  <button class="secondary-button" type="button" id="importStockCSVBtn">📥 Import CSV</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="stock">➕ Add Stock</button>
                 </div>
               </div>
@@ -838,9 +839,8 @@
                 </div>
                 <div class="panel-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                   <span id="usStockPriceDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
+                  <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings from Drive</button>
                   <button class="secondary-button" type="button" id="refreshUsStockPricesBtn">🔄 Refresh Prices</button>
-                  <button class="secondary-button" type="button" id="restoreUsStockPortfolioBtn" title="Load real US portfolio (AAPL, T, VOO, META)">📋 Load Portfolio</button>
-                  <button class="secondary-button" type="button" id="importUsStockCSVBtn">📥 Import CSV</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="usstocks">➕ Add US Stock</button>
                 </div>
               </div>

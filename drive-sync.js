@@ -426,7 +426,7 @@
         `name='${filename}' and trashed=false`
       );
       const response = await driveFetch(
-        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime)&pageSize=1`,
+        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,mimeType,modifiedTime)&pageSize=1`,
         { ...options, silent: true }
       );
       if (!response.ok) return null;
@@ -434,20 +434,58 @@
       const files = data.files || [];
       if (!files.length) return null;
 
-      const fileId = files[0].id;
-      const fileRes = await driveFetch(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-        { ...options, silent: true }
-      );
+      const file = files[0];
+      const isGoogleSheet = file.mimeType === "application/vnd.google-apps.spreadsheet";
+      const downloadUrl = isGoogleSheet
+        ? `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+        : `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+
+      const fileRes = await driveFetch(downloadUrl, { ...options, silent: true });
       if (!fileRes.ok) return null;
       const buffer = await fileRes.arrayBuffer();
       return {
-        filename,
+        filename: file.name,
         buffer,
-        modifiedTime: files[0].modifiedTime
+        modifiedTime: file.modifiedTime
       };
     } catch (e) {
       console.warn(`[drive-sync] downloadRemoteFileByName(${filename}):`, e.message);
+      return null;
+    }
+  }
+
+  async function downloadMasterHoldingsFile(options = {}) {
+    const filename = "My stocks and MF holdings for Life-Ledger";
+    if (!isConfigured()) return null;
+    try {
+      const query = encodeURIComponent(
+        `(name='${filename}' or name contains '${filename}') and trashed=false`
+      );
+      const response = await driveFetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,mimeType,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=5`,
+        { ...options, silent: true }
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      const files = data.files || [];
+      if (!files.length) return null;
+
+      const file = files[0];
+      const isGoogleSheet = file.mimeType === "application/vnd.google-apps.spreadsheet";
+      const downloadUrl = isGoogleSheet
+        ? `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+        : `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+
+      const fileRes = await driveFetch(downloadUrl, { ...options, silent: true });
+      if (!fileRes.ok) return null;
+      const buffer = await fileRes.arrayBuffer();
+      return {
+        filename: file.name,
+        buffer,
+        modifiedTime: file.modifiedTime
+      };
+    } catch (e) {
+      console.warn(`[drive-sync] downloadMasterHoldingsFile failed:`, e.message);
       return null;
     }
   }
@@ -551,6 +589,7 @@
     loadVault,
     saveVault,
     downloadRemoteFileByName,
+    downloadMasterHoldingsFile,
     downloadLatestExpenseFile,
   };
 })();
