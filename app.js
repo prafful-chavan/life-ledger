@@ -2087,6 +2087,28 @@ async function syncExpensesFromDrive() {
   }
 }
 
+/**
+ * parseMasterHoldingsWorkbook
+ * Parses "My Stock and MF holdings for Life-Ledger" Google Sheet workbook.
+ *
+ * Expected tabs (exact or fuzzy-matched):
+ *   My_Upstock      → Indian Stocks, Owner=Me, Broker=Upstox
+ *   My_Zerodha      → Indian Stocks, Owner=Me, Broker=Zerodha
+ *   Wife_Groww      → Indian Stocks, Owner=Wife, Broker=Groww
+ *   Wife_Indmoney   → Indian Stocks, Owner=Wife, Broker=INDmoney (skipped if empty)
+ *   My_US_Stocks    → US Stocks, Owner=Me, Broker=INDmoney
+ *   Mutual_Fund_Me  → Mutual Funds, Owner=Me
+ *   Mutual_Fund_Wife→ Mutual Funds, Owner=Wife
+ *
+ * Stock tab columns (normalised):
+ *   Date | Company Name | Qty | NSE code/Symbol | Exchange | Segment | Amount | Buy/Sell (or Transaction Type)
+ *
+ * MF tab columns (normalised):
+ *   Date | Scheme Name / Fund Name | Units | NAV / Price | Amount | Transaction Type (Purchase/Redeem)
+ *
+ * US Stock tab columns (normalised):
+ *   Date | Company / Symbol | Qty | Price / Avg Price | Amount | Buy/Sell
+ */
 function parseMasterHoldingsWorkbook(buffer) {
   if (typeof XLSX === "undefined") {
     throw new Error("SheetJS (XLSX) library is not loaded.");
@@ -2098,12 +2120,15 @@ function parseMasterHoldingsWorkbook(buffer) {
   const parsedUsStocks = [];
   const seenSignatures = new Set();
 
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
   function parseDateVal(val) {
     if (!val) return new Date().toISOString().split("T")[0];
+    // Excel serial date number
     if (typeof val === "number") {
       try {
         const parsed = XLSX.SSF.parse_date_code(val);
-        if (parsed) {
+        if (parsed && parsed.y > 1900) {
           const y = parsed.y;
           const m = String(parsed.m).padStart(2, "0");
           const d = String(parsed.d).padStart(2, "0");
@@ -2113,6 +2138,20 @@ function parseMasterHoldingsWorkbook(buffer) {
     }
     const str = String(val).trim();
     if (!str) return new Date().toISOString().split("T")[0];
+
+    // DD-MM-YYYY or DD/MM/YYYY
+    const dmyMatch = str.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+    }
+    // DD-MMM-YYYY e.g. 24-Feb-2026
+    const dMonY = str.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,9})[-\/\s](\d{4})$/);
+    if (dMonY) {
+      const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+      const m = months[dMonY[2].toLowerCase().slice(0,3)];
+      if (m) return `${dMonY[3]}-${String(m).padStart(2,"0")}-${dMonY[1].padStart(2,"0")}`;
+    }
 
     const dt = new Date(str);
     if (!isNaN(dt.getTime())) {
@@ -2127,134 +2166,293 @@ function parseMasterHoldingsWorkbook(buffer) {
   function parseNumVal(val) {
     if (val === null || val === undefined || val === "") return 0;
     if (typeof val === "number") return isNaN(val) ? 0 : val;
-    const clean = String(val).replace(/,/g, "").replace(/₹/g, "").replace(/\$/g, "").trim();
+    const clean = String(val).replace(/,/g, "").replace(/₹/g, "").replace(/\$/g, "").replace(/−/g, "-").trim();
     const n = parseFloat(clean);
     return isNaN(n) ? 0 : n;
   }
+
+  /** Normalise a column key: lowercase, strip non-alphanumeric */
+  function normKey(k) {
+    return String(k).toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  /** Get a value from normRow by trying multiple possible normalised keys */
+  function pick(normRow, ...keys) {
+    for (const k of keys) {
+      const v = normRow[normKey(k)];
+      if (v !== undefined && v !== null && v !== "") return v;
+    }
+    return "";
+  }
+
+  /** Normalise a row object's keys */
+  function normRowKeys(row) {
+    const n = {};
+    Object.keys(row).forEach(k => { n[normKey(k)] = row[k]; });
+    return n;
+  }
+
+  /** Detect if a row is a header/summary row (not a real transaction) */
+  function isJunkRow(normRow, nameVal) {
+    const name = String(nameVal).trim().toLowerCase();
+    if (!name) return true;
+    if (name.startsWith("total") || name === "grand total" || name === "sub total") return true;
+    if (name === "name" || name === "fund name" || name === "scheme name" || name === "company" || name === "company name") return true;
+    if (name === "s.no" || name === "sr" || name === "sno" || name === "sl.no") return true;
+    return false;
+  }
+
+  // ── Per-tab configuration ─────────────────────────────────────────────────
+
+  function getTabConfig(sheetName) {
+    const sn = sheetName.toLowerCase().replace(/\s/g, "_").replace(/[^a-z0-9_]/g, "");
+
+    // My_Upstock → Indian Stocks, Me, Upstox
+    if (sn.includes("upstock") || sn.includes("upstox")) {
+      return { asset: "stock", owner: "Me", broker: "Upstox" };
+    }
+    // My_Zerodha → Indian Stocks, Me, Zerodha
+    if (sn.includes("zerodha") || sn.includes("kite")) {
+      return { asset: "stock", owner: "Me", broker: "Zerodha" };
+    }
+    // Wife_Groww → Indian Stocks, Wife, Groww
+    if (sn.includes("wife") && sn.includes("groww")) {
+      return { asset: "stock", owner: "Wife", broker: "Groww" };
+    }
+    // Wife_Indmoney → Indian Stocks, Wife, INDmoney
+    if (sn.includes("wife") && (sn.includes("indmoney") || sn.includes("ind"))) {
+      return { asset: "stock", owner: "Wife", broker: "INDmoney" };
+    }
+    // My_US_Stocks → US Stocks, Me, INDmoney
+    if (sn.includes("us_stock") || sn.includes("usstock") || sn.includes("us_stocks") || (sn.includes("us") && sn.includes("stock"))) {
+      return { asset: "usstock", owner: "Me", broker: "INDmoney" };
+    }
+    // Mutual_Fund_Me → Mutual Funds, Me
+    if (sn.includes("mutual_fund_me") || (sn.includes("mutualfund") && !sn.includes("wife")) || (sn.includes("mf") && sn.includes("me"))) {
+      return { asset: "mutualFund", owner: "Me", broker: "Groww" };
+    }
+    // Mutual_Fund_Wife → Mutual Funds, Wife
+    if (sn.includes("mutual_fund_wife") || (sn.includes("mutualfund") && sn.includes("wife")) || (sn.includes("mf") && sn.includes("wife"))) {
+      return { asset: "mutualFund", owner: "Wife", broker: "Groww" };
+    }
+
+    // Fallback: heuristic from generic keywords
+    const hasMF = sn.includes("mf") || sn.includes("mutual") || sn.includes("fund");
+    const hasUS = sn.includes("usa") || sn.includes("america");
+    const isWife = sn.includes("wife") || sn.includes("archana");
+    const broker = sn.includes("groww") ? "Groww"
+                 : sn.includes("upstox") || sn.includes("upstock") ? "Upstox"
+                 : sn.includes("zerodha") ? "Zerodha"
+                 : sn.includes("indmoney") ? "INDmoney"
+                 : "Other";
+    return {
+      asset: hasMF ? "mutualFund" : hasUS ? "usstock" : "stock",
+      owner: isWife ? "Wife" : "Me",
+      broker
+    };
+  }
+
+  // ── Process each sheet ────────────────────────────────────────────────────
 
   (workbook.SheetNames || []).forEach(sheetName => {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) return;
 
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    // Read with raw: false so XLSX formats dates as strings
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
     if (!rows || !rows.length) return;
 
-    const sheetNameLower = sheetName.toLowerCase();
+    const cfg = getTabConfig(sheetName);
+    console.log(`[holdings] Sheet "${sheetName}" → asset=${cfg.asset}, owner=${cfg.owner}, broker=${cfg.broker}, rows=${rows.length}`);
 
-    const isUS = sheetNameLower.includes("us") || sheetNameLower.includes("usa") || sheetNameLower.includes("america");
-    const isMF = sheetNameLower.includes("mf") || sheetNameLower.includes("mutual") || sheetNameLower.includes("fund");
+    rows.forEach((rawRow, rowIdx) => {
+      const normRow = normRowKeys(rawRow);
 
-    const defaultOwner = (sheetNameLower.includes("wife") || sheetNameLower.includes("archana")) ? "Wife" : "Me";
+      // ── Detect the name/identifier field ──────────────────────────────
+      // Exact column names from your sheet, plus common fallbacks
+      const nameVal = pick(normRow,
+        "Company Name", "companyname",
+        "Scheme Name", "schemename",
+        "Fund Name", "fundname",
+        "Symbol", "symbol",
+        "Ticker", "ticker",
+        "Stock Name", "stockname",
+        "Company", "company",
+        "Name", "name",
+        "Scrip", "scrip",
+        "Instrument", "instrument",
+        "Stock", "stock",
+        "Fund", "fund",
+        "Scheme", "scheme"
+      );
 
-    let defaultDemat = "Other";
-    if (sheetNameLower.includes("groww")) defaultDemat = "Groww";
-    else if (sheetNameLower.includes("upstox")) defaultDemat = "Upstox";
-    else if (sheetNameLower.includes("indmoney") || sheetNameLower.includes("ind")) defaultDemat = "INDmoney";
-    else if (sheetNameLower.includes("zerodha") || sheetNameLower.includes("kite")) defaultDemat = "Zerodha";
-
-    rows.forEach(row => {
-      const normRow = {};
-      Object.keys(row).forEach(k => {
-        const normKey = String(k).toLowerCase().replace(/[^a-z0-9]/g, "");
-        normRow[normKey] = row[k];
-      });
-
-      const nameVal = normRow.schemename || normRow.fundname || normRow.scheme || normRow.fund ||
-                      normRow.companyname || normRow.company || normRow.stockname || normRow.stock ||
-                      normRow.symbol || normRow.instrument || normRow.scrip || normRow.name || normRow.ticker || "";
-
-      if (!nameVal || String(nameVal).trim() === "" || String(nameVal).toLowerCase().startsWith("total")) return;
-
+      if (isJunkRow(normRow, nameVal)) return;
       const cleanName = String(nameVal).trim();
 
-      let rowAsset = isUS ? "usstock" : (isMF ? "mutualFund" : "stock");
-      if (normRow.schemename || normRow.purchasenav || normRow.nav) {
-        rowAsset = "mutualFund";
-      } else if (normRow.priceusd || normRow.amountusd || normRow.ticker || (isUS && (normRow.symbol || normRow.company))) {
-        rowAsset = "usstock";
+      // ── Transaction type ───────────────────────────────────────────────
+      // Columns: "Buy/Sell", "Transaction Type", "Type", "Action", "Txn Type"
+      const txnRaw = String(pick(normRow,
+        "Buy/Sell", "buysell",
+        "Transaction Type", "transactiontype",
+        "Type", "type",
+        "Txn Type", "txntype",
+        "Action", "action",
+        "Order Type", "ordertype"
+      ) || "").toUpperCase().trim();
+
+      // Map to standard types
+      let isSell = false;
+      let isRedeem = false;
+      if (cfg.asset === "mutualFund") {
+        isRedeem = txnRaw.includes("REDEEM") || txnRaw.includes("REDEMPT") || txnRaw.includes("SELL") || txnRaw === "R";
+      } else {
+        isSell = txnRaw.includes("SELL") || txnRaw === "S" || txnRaw === "SOLD";
       }
 
-      const rawType = String(normRow.transactiontype || normRow.type || normRow.txntype || normRow.action || normRow.buysell || "PURCHASE").toUpperCase();
-      const isRed = rawType.includes("REDEEM") || rawType.includes("REDEMPTION") || rawType.includes("SELL");
+      // ── Date ──────────────────────────────────────────────────────────
+      const dateVal = parseDateVal(pick(normRow,
+        "Date", "date",
+        "Transaction Date", "transactiondate",
+        "Purchase Date", "purchasedate",
+        "Txn Date", "txndate",
+        "Order Date", "orderdate",
+        "Buy Date", "buydate",
+        "Trade Date", "tradedate"
+      ));
 
-      let ownerVal = normRow.owner || normRow.holder || normRow.ownermewife || defaultOwner;
-      ownerVal = String(ownerVal).toLowerCase().includes("wife") || String(ownerVal).toLowerCase().includes("archana") ? "Wife" : "Me";
+      // ── STOCK (Indian) ──────────────────────────────────────────────────
+      if (cfg.asset === "stock") {
+        // Qty
+        const qty = parseNumVal(pick(normRow,
+          "Qty", "qty", "Quantity", "quantity",
+          "Units", "units", "Shares", "shares",
+          "No of Shares", "noofshares"
+        ));
+        // Price per share (Amount / Qty if price col absent)
+        let price = parseNumVal(pick(normRow,
+          "Price", "price", "Avg Price", "avgprice",
+          "Buy Price", "buyprice", "Rate", "rate",
+          "Trade Price", "tradeprice"
+        ));
+        // Amount = total investment
+        let amount = Math.abs(parseNumVal(pick(normRow,
+          "Amount", "amount",
+          "Total Amount", "totalamount",
+          "Invested", "invested",
+          "Net Amount", "netamount",
+          "Value", "value",
+          "Amount (INR)", "amountinr"
+        )));
+        if (!price && qty && amount) price = amount / qty;
+        if (!amount && qty && price) amount = qty * price;
 
-      const dateVal = parseDateVal(normRow.date || normRow.transactiondate || normRow.purchasedate || normRow.txndate || normRow.buydate || normRow.orderdate);
+        // NSE symbol (for live price lookup)
+        const nseCode = String(pick(normRow,
+          "NSE code", "nsecode", "NSE Code", "Symbol", "symbol", "Ticker", "ticker", "Scrip", "scrip"
+        ) || cleanName).trim().toUpperCase().replace(/\s*-EQ$/i, "").trim();
 
-      const dematVal = String(normRow.broker || normRow.demat || normRow.platform || normRow.account || defaultDemat).trim();
+        const sig = `stk|${cleanName.toLowerCase()}|${isSell ? 'SELL' : 'BUY'}|${qty.toFixed(4)}|${price.toFixed(4)}|${amount.toFixed(2)}|${dateVal}|${cfg.owner.toLowerCase()}`;
+        if (seenSignatures.has(sig)) return;
+        seenSignatures.add(sig);
 
-      if (rowAsset === "mutualFund") {
-        const units = parseNumVal(normRow.units || normRow.quantity || normRow.qty || normRow.shares);
-        const nav = parseNumVal(normRow.nav || normRow.purchasenav || normRow.price || normRow.avgprice || normRow.rate);
-        let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.value || normRow.netamount);
-        if (!invested && units && nav) invested = units * nav;
+        parsedStocks.push({
+          id: `stk-${generateUUID()}`,
+          symbol: nseCode || cleanName.toUpperCase(),
+          company: cleanName,
+          transactionType: isSell ? "SELL" : "BUY",
+          quantity: Math.abs(qty),
+          avgPrice: Math.abs(price),
+          invested: amount,
+          purchaseDate: dateVal,
+          date: dateVal,
+          owner: cfg.owner,
+          demat: cfg.broker
+        });
 
-        const sig = `mf|${cleanName.toLowerCase()}|${isRed ? 'REDEEM' : 'PURCHASE'}|${Math.abs(units).toFixed(4)}|${nav.toFixed(4)}|${Math.abs(invested).toFixed(2)}|${dateVal}|${ownerVal.toLowerCase()}`;
+      // ── MUTUAL FUND ──────────────────────────────────────────────────
+      } else if (cfg.asset === "mutualFund") {
+        const units = parseNumVal(pick(normRow,
+          "Units", "units", "Qty", "qty", "Quantity", "quantity",
+          "No of Units", "noofunits", "Shares", "shares"
+        ));
+        const nav = parseNumVal(pick(normRow,
+          "NAV", "nav", "Purchase NAV", "purchasenav",
+          "Price", "price", "Avg NAV", "avgnav", "Rate", "rate"
+        ));
+        let amount = Math.abs(parseNumVal(pick(normRow,
+          "Amount", "amount",
+          "Total Amount", "totalamount",
+          "Invested", "invested",
+          "Net Amount", "netamount",
+          "Value", "value",
+          "Investment Amount", "investmentamount"
+        )));
+        if (!amount && units && nav) amount = units * nav;
+
+        const sig = `mf|${cleanName.toLowerCase()}|${isRedeem ? 'REDEEM' : 'PURCHASE'}|${units.toFixed(4)}|${nav.toFixed(4)}|${amount.toFixed(2)}|${dateVal}|${cfg.owner.toLowerCase()}`;
         if (seenSignatures.has(sig)) return;
         seenSignatures.add(sig);
 
         parsedMutualFunds.push({
           id: `mf-${generateUUID()}`,
           fundName: cleanName,
-          transactionType: isRed ? "REDEEM" : "PURCHASE",
+          transactionType: isRedeem ? "REDEEM" : "PURCHASE",
           units: Math.abs(units),
-          nav: nav,
-          invested: Math.abs(invested),
+          nav: Math.abs(nav),
+          invested: amount,
           purchaseDate: dateVal,
           date: dateVal,
-          owner: ownerVal,
-          demat: dematVal
+          owner: cfg.owner,
+          demat: cfg.broker
         });
-      } else if (rowAsset === "usstock") {
-        const qty = parseNumVal(normRow.quantity || normRow.qty || normRow.units || normRow.shares);
-        const price = parseNumVal(normRow.price || normRow.avgprice || normRow.buyprice || normRow.priceusd || normRow.rate);
-        let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.amountusd || normRow.value);
-        if (!invested && qty && price) invested = qty * price;
 
-        const sig = `uss|${cleanName.toLowerCase()}|${isRed ? 'SELL' : 'BUY'}|${Math.abs(qty).toFixed(4)}|${price.toFixed(4)}|${Math.abs(invested).toFixed(2)}|${dateVal}|${ownerVal.toLowerCase()}`;
+      // ── US STOCKS ──────────────────────────────────────────────────
+      } else if (cfg.asset === "usstock") {
+        const qty = parseNumVal(pick(normRow,
+          "Qty", "qty", "Quantity", "quantity",
+          "Units", "units", "Shares", "shares"
+        ));
+        let price = parseNumVal(pick(normRow,
+          "Price", "price", "Avg Price", "avgprice",
+          "Buy Price", "buyprice", "Price (USD)", "priceusd", "Rate", "rate"
+        ));
+        let amount = Math.abs(parseNumVal(pick(normRow,
+          "Amount", "amount",
+          "Total Amount", "totalamount",
+          "Amount (USD)", "amountusd",
+          "Invested", "invested",
+          "Value", "value"
+        )));
+        if (!price && qty && amount) price = amount / qty;
+        if (!amount && qty && price) amount = qty * price;
+
+        const tickerSymbol = String(pick(normRow,
+          "Symbol", "symbol", "Ticker", "ticker",
+          "NSE code", "nsecode", "Stock", "stock"
+        ) || cleanName).trim().toUpperCase();
+
+        const sig = `uss|${tickerSymbol.toLowerCase()}|${isSell ? 'SELL' : 'BUY'}|${qty.toFixed(4)}|${price.toFixed(4)}|${amount.toFixed(2)}|${dateVal}|${cfg.owner.toLowerCase()}`;
         if (seenSignatures.has(sig)) return;
         seenSignatures.add(sig);
 
         parsedUsStocks.push({
           id: `uss-${generateUUID()}`,
-          symbol: cleanName.toUpperCase(),
+          symbol: tickerSymbol,
           company: cleanName,
-          transactionType: isRed ? "SELL" : "BUY",
+          transactionType: isSell ? "SELL" : "BUY",
           quantity: Math.abs(qty),
-          avgPrice: price,
-          invested: Math.abs(invested),
+          avgPrice: Math.abs(price),
+          invested: amount,
           purchaseDate: dateVal,
           date: dateVal,
-          owner: ownerVal,
-          demat: dematVal || "INDmoney"
-        });
-      } else {
-        const qty = parseNumVal(normRow.quantity || normRow.qty || normRow.units || normRow.shares);
-        const price = parseNumVal(normRow.price || normRow.avgprice || normRow.buyprice || normRow.rate);
-        let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.amountinr || normRow.value);
-        if (!invested && qty && price) invested = qty * price;
-
-        const sig = `stk|${cleanName.toLowerCase()}|${isRed ? 'SELL' : 'BUY'}|${Math.abs(qty).toFixed(4)}|${price.toFixed(4)}|${Math.abs(invested).toFixed(2)}|${dateVal}|${ownerVal.toLowerCase()}`;
-        if (seenSignatures.has(sig)) return;
-        seenSignatures.add(sig);
-
-        parsedStocks.push({
-          id: `stk-${generateUUID()}`,
-          symbol: cleanName.toUpperCase().replace(/\s*-EQ$/i, "").trim(),
-          company: cleanName,
-          transactionType: isRed ? "SELL" : "BUY",
-          quantity: Math.abs(qty),
-          avgPrice: price,
-          invested: Math.abs(invested),
-          purchaseDate: dateVal,
-          date: dateVal,
-          owner: ownerVal,
-          demat: dematVal
+          owner: cfg.owner,
+          demat: cfg.broker
         });
       }
     });
   });
+
+  console.log(`[holdings] Parsed: ${parsedMutualFunds.length} MF txns, ${parsedStocks.length} Stock txns, ${parsedUsStocks.length} US Stock txns`);
 
   return {
     mutualFunds: parsedMutualFunds,
@@ -2275,35 +2473,37 @@ async function syncHoldingsFromDrive() {
     btn.textContent = "☁ Syncing...";
   });
 
-  toast("🔍 Scanning Google Drive for 'My stocks and MF holdings for Life-Ledger'...");
+  toast("🔍 Scanning Google Drive for your holdings spreadsheet...");
 
   try {
     const fileData = await window.LifeLedgerDrive.downloadMasterHoldingsFile();
     if (!fileData || !fileData.buffer) {
-      toast("⚠️ Could not find 'My stocks and MF holdings for Life-Ledger' on Google Drive.");
+      toast("⚠️ Could not find your holdings spreadsheet on Google Drive. Check console (F12) for details.");
       return;
     }
 
     console.log(`[app.js] Found holdings workbook: "${fileData.filename}" (Modified: ${fileData.modifiedTime})`);
-    toast(`📥 Parsing tabs from "${fileData.filename}"...`);
+    toast(`📥 Parsing all tabs from "${fileData.filename}"...`);
 
     const holdingsData = parseMasterHoldingsWorkbook(fileData.buffer);
 
-    let mfCount = holdingsData.mutualFunds?.length || 0;
-    let stockCount = holdingsData.stocks?.length || 0;
-    let usStockCount = holdingsData.usstocks?.length || 0;
+    const mfCount = holdingsData.mutualFunds?.length || 0;
+    const stockCount = holdingsData.stocks?.length || 0;
+    const usStockCount = holdingsData.usstocks?.length || 0;
+
+    console.log(`[app.js] Holdings parsed → MF: ${mfCount}, Stocks: ${stockCount}, US Stocks: ${usStockCount}`);
 
     if (mfCount === 0 && stockCount === 0 && usStockCount === 0) {
-      toast("⚠️ Sheet downloaded, but 0 holdings were extracted. Check tab column headers.");
+      toast("⚠️ File downloaded, but 0 holdings extracted. Open F12 console to see which tabs were found.");
       return;
     }
 
-    // Update state
-    if (mfCount > 0) state.mutualFunds = holdingsData.mutualFunds;
-    if (stockCount > 0) state.stocks = holdingsData.stocks;
-    if (usStockCount > 0) state.usstocks = holdingsData.usstocks;
+    // Always fully replace state to keep it in sync with the Drive file
+    state.mutualFunds = holdingsData.mutualFunds;
+    state.stocks = holdingsData.stocks;
+    state.usstocks = holdingsData.usstocks;
 
-    toast(`🔄 Live syncing prices for ${mfCount} MF, ${stockCount} Stock, ${usStockCount} US Stock entries...`);
+    toast(`🔄 Loaded ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks — fetching live prices...`);
 
     // Live NAV & Price refresh
     try {
@@ -2317,14 +2517,14 @@ async function syncHoldingsFromDrive() {
         await refreshUsStockPrices(true);
       }
     } catch (e) {
-      console.warn("[app.js] Error updating live price/NAV after holdings sync:", e);
+      console.warn("[app.js] Error refreshing live prices after holdings sync:", e);
     }
 
-    // Save vault & re-render
+    // Re-render and persist
     renderAll();
     await saveData(true);
 
-    toast(`✅ Synced! Loaded ${mfCount} MF, ${stockCount} Stock, and ${usStockCount} US Stock txns from Drive.`);
+    toast(`✅ Holdings synced! ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks. Live prices updated.`);
   } catch (err) {
     console.error("[app.js] Holdings sync error:", err);
     toast(`❌ Holdings Sync Failed: ${err.message}`);
