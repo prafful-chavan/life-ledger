@@ -455,37 +455,66 @@
   }
 
   async function downloadMasterHoldingsFile(options = {}) {
-    const filename = "My stocks and MF holdings for Life-Ledger";
     if (!isConfigured()) return null;
     try {
-      const query = encodeURIComponent(
-        `(name='${filename}' or name contains '${filename}') and trashed=false`
-      );
-      const response = await driveFetch(
-        `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name,mimeType,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=5`,
-        { ...options, silent: true }
-      );
-      if (!response.ok) return null;
-      const data = await response.json();
-      const files = data.files || [];
-      if (!files.length) return null;
+      // Flexible queries to match "My Stock and MF holdings for Life-Ledger", "My stocks...", etc.
+      const queries = [
+        "name contains 'Stock' and name contains 'MF' and trashed=false",
+        "name contains 'Stock' and name contains 'Life-Ledger' and trashed=false",
+        "name contains 'MF holdings' and trashed=false",
+        "name contains 'Life-Ledger' and trashed=false",
+        "name contains 'holdings' and trashed=false"
+      ];
 
-      const file = files[0];
-      const isGoogleSheet = file.mimeType === "application/vnd.google-apps.spreadsheet";
+      let candidateFiles = [];
+
+      for (const q of queries) {
+        const queryEncoded = encodeURIComponent(q);
+        const response = await driveFetch(
+          `https://www.googleapis.com/drive/v3/files?q=${queryEncoded}&spaces=drive&fields=files(id,name,mimeType,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=10`,
+          { ...options, silent: true }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.files && data.files.length > 0) {
+            candidateFiles = data.files;
+            break;
+          }
+        }
+      }
+
+      if (!candidateFiles.length) {
+        console.warn("[drive-sync] No master holdings file found on Drive.");
+        return null;
+      }
+
+      // Find best matching file
+      const bestMatch = candidateFiles.find(f => {
+        const nameLower = f.name.toLowerCase();
+        return (nameLower.includes("stock") || nameLower.includes("mf") || nameLower.includes("holding")) &&
+               (nameLower.includes("life-ledger") || nameLower.includes("ledger") || nameLower.includes("mf"));
+      }) || candidateFiles[0];
+
+      console.log(`[drive-sync] Found master holdings file: "${bestMatch.name}" (ID: ${bestMatch.id}, Modified: ${bestMatch.modifiedTime})`);
+
+      const isGoogleSheet = bestMatch.mimeType === "application/vnd.google-apps.spreadsheet";
       const downloadUrl = isGoogleSheet
-        ? `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-        : `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+        ? `https://www.googleapis.com/drive/v3/files/${bestMatch.id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+        : `https://www.googleapis.com/drive/v3/files/${bestMatch.id}?alt=media`;
 
       const fileRes = await driveFetch(downloadUrl, { ...options, silent: true });
-      if (!fileRes.ok) return null;
+      if (!fileRes.ok) {
+        console.warn(`[drive-sync] Download failed for ${bestMatch.name}: HTTP ${fileRes.status}`);
+        return null;
+      }
       const buffer = await fileRes.arrayBuffer();
       return {
-        filename: file.name,
+        filename: bestMatch.name,
         buffer,
-        modifiedTime: file.modifiedTime
+        modifiedTime: bestMatch.modifiedTime
       };
     } catch (e) {
-      console.warn(`[drive-sync] downloadMasterHoldingsFile failed:`, e.message);
+      console.warn("[drive-sync] downloadMasterHoldingsFile failed:", e.message);
       return null;
     }
   }

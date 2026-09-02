@@ -2096,6 +2096,7 @@ function parseMasterHoldingsWorkbook(buffer) {
   const parsedMutualFunds = [];
   const parsedStocks = [];
   const parsedUsStocks = [];
+  const seenSignatures = new Set();
 
   function parseDateVal(val) {
     if (!val) return new Date().toISOString().split("T")[0];
@@ -2189,6 +2190,10 @@ function parseMasterHoldingsWorkbook(buffer) {
         let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.value || normRow.netamount);
         if (!invested && units && nav) invested = units * nav;
 
+        const sig = `mf|${cleanName.toLowerCase()}|${isRed ? 'REDEEM' : 'PURCHASE'}|${Math.abs(units).toFixed(4)}|${nav.toFixed(4)}|${Math.abs(invested).toFixed(2)}|${dateVal}|${ownerVal.toLowerCase()}`;
+        if (seenSignatures.has(sig)) return;
+        seenSignatures.add(sig);
+
         parsedMutualFunds.push({
           id: `mf-${generateUUID()}`,
           fundName: cleanName,
@@ -2206,6 +2211,10 @@ function parseMasterHoldingsWorkbook(buffer) {
         const price = parseNumVal(normRow.price || normRow.avgprice || normRow.buyprice || normRow.priceusd || normRow.rate);
         let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.amountusd || normRow.value);
         if (!invested && qty && price) invested = qty * price;
+
+        const sig = `uss|${cleanName.toLowerCase()}|${isRed ? 'SELL' : 'BUY'}|${Math.abs(qty).toFixed(4)}|${price.toFixed(4)}|${Math.abs(invested).toFixed(2)}|${dateVal}|${ownerVal.toLowerCase()}`;
+        if (seenSignatures.has(sig)) return;
+        seenSignatures.add(sig);
 
         parsedUsStocks.push({
           id: `uss-${generateUUID()}`,
@@ -2225,6 +2234,10 @@ function parseMasterHoldingsWorkbook(buffer) {
         const price = parseNumVal(normRow.price || normRow.avgprice || normRow.buyprice || normRow.rate);
         let invested = parseNumVal(normRow.amount || normRow.invested || normRow.totalamount || normRow.amountinr || normRow.value);
         if (!invested && qty && price) invested = qty * price;
+
+        const sig = `stk|${cleanName.toLowerCase()}|${isRed ? 'SELL' : 'BUY'}|${Math.abs(qty).toFixed(4)}|${price.toFixed(4)}|${Math.abs(invested).toFixed(2)}|${dateVal}|${ownerVal.toLowerCase()}`;
+        if (seenSignatures.has(sig)) return;
+        seenSignatures.add(sig);
 
         parsedStocks.push({
           id: `stk-${generateUUID()}`,
