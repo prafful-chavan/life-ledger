@@ -2118,7 +2118,6 @@ function parseMasterHoldingsWorkbook(buffer) {
   const parsedMutualFunds = [];
   const parsedStocks = [];
   const parsedUsStocks = [];
-  const seenSignatures = new Set();
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -2136,8 +2135,15 @@ function parseMasterHoldingsWorkbook(buffer) {
         }
       } catch(e) {}
     }
-    const str = String(val).trim();
+    const str = String(val).trim().replace(/,/g, "");
     if (!str) return new Date().toISOString().split("T")[0];
+
+    // YYYY-MM-DD
+    const ymdMatch = str.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+    if (ymdMatch) {
+      const [, y, m, d] = ymdMatch;
+      return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+    }
 
     // DD-MM-YYYY or DD/MM/YYYY
     const dmyMatch = str.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
@@ -2145,8 +2151,9 @@ function parseMasterHoldingsWorkbook(buffer) {
       const [, d, m, y] = dmyMatch;
       return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
     }
-    // DD-MMM-YYYY e.g. 24-Feb-2026
-    const dMonY = str.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,9})[-\/\s](\d{4})$/);
+
+    // DD MMM YYYY or DD-MMM-YYYY e.g. 28 Aug 2026 or 28-Aug-2026 or 08 Jun 2026
+    const dMonY = str.match(/^(\d{1,2})[-\/\s]+([A-Za-z]{3,9})[-\/\s]+(\d{4})$/);
     if (dMonY) {
       const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
       const m = months[dMonY[2].toLowerCase().slice(0,3)];
@@ -2252,7 +2259,7 @@ function parseMasterHoldingsWorkbook(buffer) {
     };
   }
 
-  // ── Process each sheet ────────────────────────────────────────────────────
+  // ── Process each sheet ────────────────────────────────────────────────    
 
   (workbook.SheetNames || []).forEach(sheetName => {
     const sheet = workbook.Sheets[sheetName];
@@ -2263,17 +2270,16 @@ function parseMasterHoldingsWorkbook(buffer) {
     if (!rows || !rows.length) return;
 
     const cfg = getTabConfig(sheetName);
-    console.log(`[holdings] Sheet "${sheetName}" → asset=${cfg.asset}, owner=${cfg.owner}, broker=${cfg.broker}, rows=${rows.length}`);
+    console.log(`[holdings] Sheet "${sheetName}" → asset=${cfg.asset}, defaultOwner=${cfg.owner}, broker=${cfg.broker}, rows=${rows.length}`);
 
     rows.forEach((rawRow, rowIdx) => {
       const normRow = normRowKeys(rawRow);
 
       // ── Detect the name/identifier field ──────────────────────────────
-      // Exact column names from your sheet, plus common fallbacks
       const nameVal = pick(normRow,
-        "Company Name", "companyname",
         "Scheme Name", "schemename",
         "Fund Name", "fundname",
+        "Company Name", "companyname",
         "Symbol", "symbol",
         "Ticker", "ticker",
         "Stock Name", "stockname",
@@ -2289,11 +2295,42 @@ function parseMasterHoldingsWorkbook(buffer) {
       if (isJunkRow(normRow, nameVal)) return;
       const cleanName = String(nameVal).trim();
 
+      // ── Determine Owner (check row column first, then tab default) ─────
+      const rowOwnerRaw = pick(normRow,
+        "Owner (Me / Wife)", "ownermewife",
+        "Owner (Me/Wife)", "ownermewife",
+        "Owner", "owner",
+        "Holder", "holder",
+        "Person", "person"
+      );
+
+      let ownerVal = cfg.owner;
+      if (rowOwnerRaw) {
+        const oLower = String(rowOwnerRaw).toLowerCase().trim();
+        if (oLower.includes("wife") || oLower.includes("archana")) {
+          ownerVal = "Wife";
+        } else if (oLower.includes("me") || oLower.includes("prafful") || oLower.includes("husband")) {
+          ownerVal = "Me";
+        }
+      }
+
+      // ── Determine Asset Class for row ─────────────────────────────────
+      let rowAsset = cfg.asset;
+      // If default asset is stock but row explicitly has scheme name / NAV / fund keywords, classify as mutualFund
+      if (rowAsset === "stock") {
+        if (normRow.schemename || normRow.fundname || normRow.nav || normRow.purchasenav ||
+            /fund|growth|direct|index|cap|equity|debt|tax|elss/i.test(cleanName)) {
+          if (!normRow.nsecode && !normRow.exchange) {
+            rowAsset = "mutualFund";
+          }
+        }
+      }
+
       // ── Transaction type ───────────────────────────────────────────────
-      // Columns: "Buy/Sell", "Transaction Type", "Type", "Action", "Txn Type"
       const txnRaw = String(pick(normRow,
-        "Buy/Sell", "buysell",
         "Transaction Type", "transactiontype",
+        "Buy/Sell", "buysell",
+        "Buy/Sell (or Transaction Type)", "buysellortransactiontype",
         "Type", "type",
         "Txn Type", "txntype",
         "Action", "action",
@@ -2303,10 +2340,10 @@ function parseMasterHoldingsWorkbook(buffer) {
       // Map to standard types
       let isSell = false;
       let isRedeem = false;
-      if (cfg.asset === "mutualFund") {
-        isRedeem = txnRaw.includes("REDEEM") || txnRaw.includes("REDEMPT") || txnRaw.includes("SELL") || txnRaw === "R";
+      if (rowAsset === "mutualFund") {
+        isRedeem = txnRaw.includes("REDEEM") || txnRaw.includes("REDEMPT") || txnRaw.includes("SELL") || txnRaw.includes("SWITCH OUT") || txnRaw === "R" || txnRaw === "S";
       } else {
-        isSell = txnRaw.includes("SELL") || txnRaw === "S" || txnRaw === "SOLD";
+        isSell = txnRaw.includes("SELL") || txnRaw.includes("REDEEM") || txnRaw === "S" || txnRaw === "SOLD";
       }
 
       // ── Date ──────────────────────────────────────────────────────────
@@ -2321,20 +2358,17 @@ function parseMasterHoldingsWorkbook(buffer) {
       ));
 
       // ── STOCK (Indian) ──────────────────────────────────────────────────
-      if (cfg.asset === "stock") {
-        // Qty
+      if (rowAsset === "stock") {
         const qty = parseNumVal(pick(normRow,
           "Qty", "qty", "Quantity", "quantity",
           "Units", "units", "Shares", "shares",
           "No of Shares", "noofshares"
         ));
-        // Price per share (Amount / Qty if price col absent)
         let price = parseNumVal(pick(normRow,
           "Price", "price", "Avg Price", "avgprice",
           "Buy Price", "buyprice", "Rate", "rate",
           "Trade Price", "tradeprice"
         ));
-        // Amount = total investment
         let amount = Math.abs(parseNumVal(pick(normRow,
           "Amount", "amount",
           "Total Amount", "totalamount",
@@ -2346,14 +2380,9 @@ function parseMasterHoldingsWorkbook(buffer) {
         if (!price && qty && amount) price = amount / qty;
         if (!amount && qty && price) amount = qty * price;
 
-        // NSE symbol (for live price lookup)
         const nseCode = String(pick(normRow,
           "NSE code", "nsecode", "NSE Code", "Symbol", "symbol", "Ticker", "ticker", "Scrip", "scrip"
         ) || cleanName).trim().toUpperCase().replace(/\s*-EQ$/i, "").trim();
-
-        const sig = `stk|${cleanName.toLowerCase()}|${isSell ? 'SELL' : 'BUY'}|${qty.toFixed(4)}|${price.toFixed(4)}|${amount.toFixed(2)}|${dateVal}|${cfg.owner.toLowerCase()}`;
-        if (seenSignatures.has(sig)) return;
-        seenSignatures.add(sig);
 
         parsedStocks.push({
           id: `stk-${generateUUID()}`,
@@ -2365,12 +2394,12 @@ function parseMasterHoldingsWorkbook(buffer) {
           invested: amount,
           purchaseDate: dateVal,
           date: dateVal,
-          owner: cfg.owner,
+          owner: ownerVal,
           demat: cfg.broker
         });
 
       // ── MUTUAL FUND ──────────────────────────────────────────────────
-      } else if (cfg.asset === "mutualFund") {
+      } else if (rowAsset === "mutualFund") {
         const units = parseNumVal(pick(normRow,
           "Units", "units", "Qty", "qty", "Quantity", "quantity",
           "No of Units", "noofunits", "Shares", "shares"
@@ -2389,10 +2418,6 @@ function parseMasterHoldingsWorkbook(buffer) {
         )));
         if (!amount && units && nav) amount = units * nav;
 
-        const sig = `mf|${cleanName.toLowerCase()}|${isRedeem ? 'REDEEM' : 'PURCHASE'}|${units.toFixed(4)}|${nav.toFixed(4)}|${amount.toFixed(2)}|${dateVal}|${cfg.owner.toLowerCase()}`;
-        if (seenSignatures.has(sig)) return;
-        seenSignatures.add(sig);
-
         parsedMutualFunds.push({
           id: `mf-${generateUUID()}`,
           fundName: cleanName,
@@ -2402,12 +2427,12 @@ function parseMasterHoldingsWorkbook(buffer) {
           invested: amount,
           purchaseDate: dateVal,
           date: dateVal,
-          owner: cfg.owner,
+          owner: ownerVal,
           demat: cfg.broker
         });
 
       // ── US STOCKS ──────────────────────────────────────────────────
-      } else if (cfg.asset === "usstock") {
+      } else if (rowAsset === "usstock") {
         const qty = parseNumVal(pick(normRow,
           "Qty", "qty", "Quantity", "quantity",
           "Units", "units", "Shares", "shares"
@@ -2430,10 +2455,6 @@ function parseMasterHoldingsWorkbook(buffer) {
           "Symbol", "symbol", "Ticker", "ticker",
           "NSE code", "nsecode", "Stock", "stock"
         ) || cleanName).trim().toUpperCase();
-
-        const sig = `uss|${tickerSymbol.toLowerCase()}|${isSell ? 'SELL' : 'BUY'}|${qty.toFixed(4)}|${price.toFixed(4)}|${amount.toFixed(2)}|${dateVal}|${cfg.owner.toLowerCase()}`;
-        if (seenSignatures.has(sig)) return;
-        seenSignatures.add(sig);
 
         parsedUsStocks.push({
           id: `uss-${generateUUID()}`,
