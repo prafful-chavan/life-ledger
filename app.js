@@ -4936,34 +4936,66 @@ function renderStockHoldingsPanel() {
 
   const hasRichData = rows.some(s => s.symbol || s.company);
 
-  const totalInvested = rows.reduce((s, item) => s + (toNumber(item.invested) || 0), 0);
-  const totalCurrentValue = rows.reduce((s, item) => {
-    const cv = toNumber(item.currentValue) || (toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice));
-    return s + (cv || toNumber(item.value) || 0);
-  }, 0);
-  const totalGain = totalCurrentValue - totalInvested;
-  const totalGainPct = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
-
-  let oneDayChange = 0, hasOneDayData = false;
+  // ── Build FIFO groups once — used for both summary AND holdings table ────────
+  // Group by symbol+owner+broker so same stock in different accounts is separate
+  const fifoGroups = {};
   rows.forEach(s => {
-    if (s.prevClose && s.currentPrice && s.quantity) {
-      oneDayChange += toNumber(s.quantity) * (toNumber(s.currentPrice) - toNumber(s.prevClose));
-      hasOneDayData = true;
-    }
+    if (!s.symbol && !s.company) return;
+    const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
+    if (!fifoGroups[key]) fifoGroups[key] = [];
+    fifoGroups[key].push(s);
   });
+
+  // ── Compute summary metrics from FIFO-netted positions only ─────────────────
+  // ONLY count positions we still hold (netQty > 0) for Invested & Current Value
+  // COLLECT realized gain from ALL positions (including fully exited ones)
+  let totalInvested = 0;
+  let totalCurrentValue = 0;
+  let totalRealizedGain = 0;
+  let oneDayChange = 0;
+  let hasOneDayData = false;
+  let heldSymbolCount = 0;
+
+  const allFifoData = Object.entries(fifoGroups).map(([key, txns]) => {
+    const basis = calcStockCostBasis(txns);
+    const sym = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
+    const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
+    const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
+    const currentValue = basis.netQty * currentPrice;
+    // Accumulate realized gain from all groups (including fully sold)
+    totalRealizedGain += basis.realizedGain;
+    if (basis.netQty > 0) {
+      totalInvested += basis.invested;
+      totalCurrentValue += currentValue;
+      heldSymbolCount++;
+      if (prevClose && currentPrice) {
+        oneDayChange += basis.netQty * (currentPrice - prevClose);
+        hasOneDayData = true;
+      }
+    }
+    return { key, txns, basis, sym, currentPrice, prevClose, currentValue,
+      company: txns[0].company || sym, category: txns[0].category || 'Stock',
+      demat: txns[0].demat || '-', exchange: txns[0].exchange || 'NSE' };
+  });
+
+  const totalUnrealizedGain = totalCurrentValue - totalInvested;
+  const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealizedGain / totalInvested) * 100 : 0;
+  const totalAllTimePnL = totalUnrealizedGain + totalRealizedGain;
   const oneDayPct = hasOneDayData && (totalCurrentValue - oneDayChange) > 0
     ? (oneDayChange / (totalCurrentValue - oneDayChange)) * 100 : 0;
-  const uniqueSymbols = new Set(rows.filter(s => s.symbol).map(s => s.symbol)).size;
 
+  // ── Summary cards ────────────────────────────────────────────────────────────
   if (summary) {
     const dayChangeColor = oneDayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     const dayChangeArrow = oneDayChange >= 0 ? '▲' : '▼';
-    const gainColor = totalGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const gainColor = totalUnrealizedGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const allTimePnLColor = totalAllTimePnL >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const realizedColor = totalRealizedGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">💰 Invested (${activeHoldingsOwner})</div>
         <div class="value">${formatINR(totalInvested)}</div>
-        <div class="hint">${rows.length} entries · ${uniqueSymbols} symbols</div>
+        <div class="hint">${heldSymbolCount} holdings · current positions only</div>
       </article>
       <article class="metric-card compact-metric">
         <div class="label">📈 Current Value</div>
@@ -4971,57 +5003,40 @@ function renderStockHoldingsPanel() {
         <div class="hint">${hasRichData ? 'Live prices' : 'Manual values'}</div>
       </article>
       <article class="metric-card compact-metric">
-        <div class="label">📊 Total P&L</div>
-        <div class="value" style="color: ${gainColor}">${formatINR(totalGain)}</div>
-        <div class="hint" style="color: ${gainColor}">${totalGain >= 0 ? '+' : ''}${totalGainPct.toFixed(2)}% overall</div>
+        <div class="label">📊 Unrealized P&L</div>
+        <div class="value" style="color: ${gainColor}">${formatINR(totalUnrealizedGain)}</div>
+        <div class="hint" style="color: ${gainColor}">${totalUnrealizedGain >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% on current holdings</div>
       </article>
       <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
         <div class="label">📉 1-Day Change</div>
         <div class="value" style="color: ${dayChangeColor}">${hasOneDayData ? `${dayChangeArrow} ${formatINR(Math.abs(oneDayChange))}` : '—'}</div>
         <div class="hint">${hasOneDayData ? `${oneDayChange >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh prices to see'}</div>
       </article>
+      <article class="metric-card compact-metric" style="border-left: 3px solid ${allTimePnLColor}">
+        <div class="label">💹 All-Time P&L</div>
+        <div class="value" style="color: ${allTimePnLColor}">${formatINR(totalAllTimePnL)}</div>
+        <div class="hint"><span style="color:${gainColor}">Unrealized ${formatINR(totalUnrealizedGain)}</span> + <span style="color:${realizedColor}">Realized ${formatINR(totalRealizedGain)}</span></div>
+      </article>
     `;
   }
 
   if (activeStockView === "holdings" && hasRichData) {
-    // Group transactions by symbol+owner+broker to handle the same stock across different accounts
-    const groups = {};
-    rows.forEach(s => {
-      if (!s.symbol && !s.company) return;
-      // Key includes broker so that Wife-Groww INFY and Me-Zerodha INFY are separate holdings
-      const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(s);
-    });
-    const holdings = Object.entries(groups).map(([key, txns]) => {
-      // Apply FIFO to get net quantity and cost basis after accounting for sells
-      const basis = calcStockCostBasis(txns);
-      const { netQty, invested: totalInv, avgPrice } = basis;
-
-      // Use the current price from whichever transaction has the latest price data
-      const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
-      const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
-      const currentValue = netQty * currentPrice;
-      const gain = currentValue - totalInv;
-      const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
-      const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
-      const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
-      const symbol = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
-      const company = txns[0].company || symbol;
-      const category = txns[0].category || 'Stock';
-      const demat = txns[0].demat || '-';
-      const exchange = txns[0].exchange || 'NSE';
-      // XIRR uses only BUY cash flows (sells are already netted via FIFO)
-      const buyTxns = txns.filter(t => {
-        const tt = String(t.transactionType || '').toUpperCase();
-        return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD';
+    // Holdings view: use pre-computed FIFO groups; filter out fully-sold positions
+    const holdings = allFifoData
+      .filter(g => g.basis.netQty > 0)
+      .map(g => {
+        const { basis, sym, currentPrice, prevClose, currentValue, company, category, demat, exchange, txns } = g;
+        const { netQty, invested: totalInv, avgPrice } = basis;
+        const gain = currentValue - totalInv;
+        const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
+        const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
+        const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+        const buyTxns = txns.filter(t => { const tt = String(t.transactionType || '').toUpperCase(); return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD'; });
+        const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
+        if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
+        const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
+        return { symbol: sym, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
       });
-      const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
-      if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
-      const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
-      return { symbol, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-    // Filter out positions that have been fully sold (FIFO-netted qty <= 0)
-    }).filter(h => h.totalQty > 0);
 
     const sortedStockHoldings = sortHoldings(holdings, stockSortCol, stockSortDir);
 
@@ -5066,29 +5081,33 @@ function renderStockHoldingsPanel() {
       escapeHTML(item.demat)
     ], `No stock holdings for ${activeHoldingsOwner}. Import a CSV or add entries manually.`, 11);
   } else {
+    // Transactions view — shows full history with BUY/SELL badge
     if (targetThead) {
-      targetThead.innerHTML = `<tr><th>Date</th><th>Symbol</th><th>Company</th><th>Qty</th><th>Avg Price</th><th>Invested</th><th>CMP</th><th>Current Value</th><th>P&L</th><th>Owner</th><th>Broker</th><th>Action</th></tr>`;
+      targetThead.innerHTML = `<tr><th>Date</th><th>Type</th><th>Symbol</th><th>Company</th><th>Qty</th><th>Price</th><th>Amount</th><th>CMP</th><th>Current Value</th><th>Owner</th><th>Broker</th><th>Action</th></tr>`;
     }
     renderRows(table, rows, (item) => {
       if (!item.symbol && !item.company && item.value) {
-        return [formatDate(item.date), '-', item.note || '-', '-', '-', '-', '-', formatINR(item.value), '-', item.owner || item.paidBy || 'Me', '-',
+        return [formatDate(item.date), '—', '-', item.note || '-', '-', '-', formatINR(item.value), '-', formatINR(item.value), item.owner || item.paidBy || 'Me', '-',
           `<div class="actions-wrapper"><button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`];
       }
+      const txnType = String(item.transactionType || 'BUY').toUpperCase();
+      const isSell = txnType === 'SELL' || txnType === 'S' || txnType === 'SOLD';
+      const typeBadge = isSell
+        ? `<span style="background:#ef4444;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">SELL</span>`
+        : `<span style="background:#22c55e;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">BUY</span>`;
       const inv = toNumber(item.invested) || 0;
-      const cur = toNumber(item.currentValue) || (toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice)) || 0;
-      const g = cur - inv;
-      const pct = inv ? (g / inv) * 100 : 0;
-      const plColor = g >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+      const cmp = item.currentPrice ? formatINR(item.currentPrice) : (item.avgPrice ? formatINR(item.avgPrice) : '—');
+      const curVal = !isSell && item.currentPrice ? formatINR(toNumber(item.quantity) * toNumber(item.currentPrice)) : (isSell ? '<span style="opacity:0.4">Sold</span>' : '—');
       return [
         formatDate(item.purchaseDate || item.date),
+        typeBadge,
         `<span style="font-weight:600">${escapeHTML(item.symbol || '-')}</span>`,
         escapeHTML(item.company || '-'),
         item.quantity ? Number(item.quantity).toFixed(item.quantity % 1 === 0 ? 0 : 2) : '-',
         item.avgPrice ? formatINR(item.avgPrice) : '-',
         formatINR(inv),
-        item.currentPrice ? formatINR(item.currentPrice) : (item.avgPrice ? formatINR(item.avgPrice) : '-'),
-        formatINR(cur),
-        `<span style="color:${plColor};font-weight:600">${formatINR(g)} (${g >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>`,
+        isSell ? '<span style="opacity:0.4">—</span>' : cmp,
+        curVal,
         item.owner || 'Me',
         escapeHTML(item.demat || '-'),
         `<div class="actions-wrapper"><button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`
@@ -5334,34 +5353,62 @@ function renderUsStockHoldingsPanel() {
 
   const hasRichData = rows.some(s => s.symbol || s.company);
 
-  const totalInvestedUSD = rows.reduce((s, item) => s + (toNumber(item.invested) || 0), 0);
-  const totalCurrentValueUSD = rows.reduce((s, item) => {
-    const cv = toNumber(item.currentValue) || (toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice));
-    return s + (cv || toNumber(item.value) || 0);
-  }, 0);
-  const totalGainUSD = totalCurrentValueUSD - totalInvestedUSD;
-  const totalGainPct = totalInvestedUSD > 0 ? (totalGainUSD / totalInvestedUSD) * 100 : 0;
-
-  let oneDayChangeUSD = 0, hasOneDayData = false;
+  // ── Build FIFO groups once — used for both summary AND holdings table ────────
+  const usFifoGroups = {};
   rows.forEach(s => {
-    if (s.prevClose && s.currentPrice && s.quantity) {
-      oneDayChangeUSD += toNumber(s.quantity) * (toNumber(s.currentPrice) - toNumber(s.prevClose));
-      hasOneDayData = true;
-    }
+    if (!s.symbol && !s.company) return;
+    const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
+    if (!usFifoGroups[key]) usFifoGroups[key] = [];
+    usFifoGroups[key].push(s);
   });
+
+  // ── Compute summary metrics from FIFO-netted positions only ─────────────────
+  let totalInvestedUSD = 0;
+  let totalCurrentValueUSD = 0;
+  let totalRealizedGainUSD = 0;
+  let oneDayChangeUSD = 0;
+  let hasOneDayData = false;
+  let heldSymbolCount = 0;
+
+  const allUsFifoData = Object.entries(usFifoGroups).map(([key, txns]) => {
+    const basis = calcStockCostBasis(txns);
+    const sym = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
+    const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
+    const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
+    const currentValue = basis.netQty * currentPrice;
+    totalRealizedGainUSD += basis.realizedGain;
+    if (basis.netQty > 0) {
+      totalInvestedUSD += basis.invested;
+      totalCurrentValueUSD += currentValue;
+      heldSymbolCount++;
+      if (prevClose && currentPrice) {
+        oneDayChangeUSD += basis.netQty * (currentPrice - prevClose);
+        hasOneDayData = true;
+      }
+    }
+    return { key, txns, basis, sym, currentPrice, prevClose, currentValue,
+      company: txns[0].company || sym, category: txns[0].category || 'Stock',
+      demat: txns[0].demat || '-', exchange: txns[0].exchange || 'NASDAQ' };
+  });
+
+  const totalUnrealizedGainUSD = totalCurrentValueUSD - totalInvestedUSD;
+  const totalUnrealizedPct = totalInvestedUSD > 0 ? (totalUnrealizedGainUSD / totalInvestedUSD) * 100 : 0;
+  const totalAllTimePnLUSD = totalUnrealizedGainUSD + totalRealizedGainUSD;
   const oneDayPct = hasOneDayData && (totalCurrentValueUSD - oneDayChangeUSD) > 0
     ? (oneDayChangeUSD / (totalCurrentValueUSD - oneDayChangeUSD)) * 100 : 0;
-  const uniqueSymbols = new Set(rows.filter(s => s.symbol).map(s => s.symbol)).size;
 
+  // ── Summary cards ────────────────────────────────────────────────────────────
   if (summary) {
     const dayChangeColor = oneDayChangeUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     const dayChangeArrow = oneDayChangeUSD >= 0 ? '▲' : '▼';
-    const gainColor = totalGainUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const gainColor = totalUnrealizedGainUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const allTimePnLColor = totalAllTimePnLUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const realizedColor = totalRealizedGainUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">💰 Invested (${activeHoldingsOwner})</div>
         <div class="value">${formatUSD(totalInvestedUSD)}</div>
-        <div class="hint">${rows.length} entries · ${uniqueSymbols} symbols</div>
+        <div class="hint">${heldSymbolCount} holdings · current positions only</div>
       </article>
       <article class="metric-card compact-metric">
         <div class="label">📈 Current Value</div>
@@ -5369,55 +5416,40 @@ function renderUsStockHoldingsPanel() {
         <div class="hint">${hasRichData ? 'Live USD prices' : 'Manual values'}</div>
       </article>
       <article class="metric-card compact-metric">
-        <div class="label">📊 Total P&L</div>
-        <div class="value" style="color: ${gainColor}">${formatUSD(totalGainUSD)}</div>
-        <div class="hint" style="color: ${gainColor}">${totalGainUSD >= 0 ? '+' : ''}${totalGainPct.toFixed(2)}% overall</div>
+        <div class="label">📊 Unrealized P&L</div>
+        <div class="value" style="color: ${gainColor}">${formatUSD(totalUnrealizedGainUSD)}</div>
+        <div class="hint" style="color: ${gainColor}">${totalUnrealizedGainUSD >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% on current holdings</div>
       </article>
       <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
         <div class="label">📉 1-Day Change</div>
         <div class="value" style="color: ${dayChangeColor}">${hasOneDayData ? `${dayChangeArrow} ${formatUSD(Math.abs(oneDayChangeUSD))}` : '—'}</div>
         <div class="hint">${hasOneDayData ? `${oneDayChangeUSD >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh prices to see'}</div>
       </article>
+      <article class="metric-card compact-metric" style="border-left: 3px solid ${allTimePnLColor}">
+        <div class="label">💹 All-Time P&L</div>
+        <div class="value" style="color: ${allTimePnLColor}">${formatUSD(totalAllTimePnLUSD)}</div>
+        <div class="hint"><span style="color:${gainColor}">Unrealized ${formatUSD(totalUnrealizedGainUSD)}</span> + <span style="color:${realizedColor}">Realized ${formatUSD(totalRealizedGainUSD)}</span></div>
+      </article>
     `;
   }
 
   if (activeUsStockView === "holdings" && hasRichData) {
-    // Group by symbol+owner+broker for accurate per-account FIFO
-    const groups = {};
-    rows.forEach(s => {
-      if (!s.symbol && !s.company) return;
-      const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(s);
-    });
-    const holdings = Object.entries(groups).map(([key, txns]) => {
-      // Apply FIFO — sell transactions consume oldest buy lots first
-      const basis = calcStockCostBasis(txns);
-      const { netQty, invested: totalInv, avgPrice } = basis;
-
-      const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
-      const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
-      const currentValue = netQty * currentPrice;
-      const gain = currentValue - totalInv;
-      const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
-      const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
-      const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
-      const symbol = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
-      const company = txns[0].company || symbol;
-      const category = txns[0].category || 'Stock';
-      const demat = txns[0].demat || '-';
-      const exchange = txns[0].exchange || 'NASDAQ';
-      // XIRR: only BUY cash flows
-      const buyTxns = txns.filter(t => {
-        const tt = String(t.transactionType || '').toUpperCase();
-        return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD';
+    // Holdings view: use pre-computed FIFO groups; filter fully-sold positions
+    const holdings = allUsFifoData
+      .filter(g => g.basis.netQty > 0)
+      .map(g => {
+        const { basis, sym, currentPrice, prevClose, currentValue, company, category, demat, exchange, txns } = g;
+        const { netQty, invested: totalInv, avgPrice } = basis;
+        const gain = currentValue - totalInv;
+        const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
+        const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
+        const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+        const buyTxns = txns.filter(t => { const tt = String(t.transactionType || '').toUpperCase(); return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD'; });
+        const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
+        if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
+        const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
+        return { symbol: sym, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
       });
-      const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
-      if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
-      const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
-      return { symbol, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-    // Filter out fully-sold positions
-    }).filter(h => h.totalQty > 0);
 
     const sortedUsHoldings = sortHoldings(holdings, usStockSortCol, usStockSortDir);
 
@@ -5462,29 +5494,35 @@ function renderUsStockHoldingsPanel() {
       escapeHTML(item.demat)
     ], `No US stock holdings for ${activeHoldingsOwner}. Add entries manually or load sample portfolio.`, 11);
   } else {
+    // Transactions view — shows full history with BUY/SELL badge
     if (targetThead) {
-      targetThead.innerHTML = `<tr><th>Date</th><th>Symbol</th><th>Company</th><th>Qty</th><th>Avg Price ($)</th><th>Invested ($)</th><th>CMP ($)</th><th>Current Value ($)</th><th>P&L</th><th>Owner</th><th>Broker</th><th>Action</th></tr>`;
+      targetThead.innerHTML = `<tr><th>Date</th><th>Type</th><th>Symbol</th><th>Company</th><th>Qty</th><th>Price ($)</th><th>Amount ($)</th><th>CMP ($)</th><th>Current Value ($)</th><th>Owner</th><th>Broker</th><th>Action</th></tr>`;
     }
     renderRows(table, rows, (item) => {
       if (!item.symbol && !item.company && item.value) {
-        return [formatDate(item.date), '-', item.note || '-', '-', '-', '-', '-', formatUSD(item.value), '-', item.owner || item.paidBy || 'Me', '-',
+        return [formatDate(item.date), '—', '-', item.note || '-', '-', '-', formatUSD(item.value), '-', formatUSD(item.value), item.owner || item.paidBy || 'Me', '-',
           `<div class="actions-wrapper"><button class="action-btn edit-btn edit-usstock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-usstock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`];
       }
+      const txnType = String(item.transactionType || 'BUY').toUpperCase();
+      const isSell = txnType === 'SELL' || txnType === 'S' || txnType === 'SOLD';
+      const typeBadge = isSell
+        ? `<span style="background:#ef4444;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">SELL</span>`
+        : `<span style="background:#22c55e;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">BUY</span>`;
       const inv = toNumber(item.invested) || 0;
-      const cur = toNumber(item.currentValue) || (toNumber(item.quantity) * toNumber(item.currentPrice || item.avgPrice)) || 0;
-      const g = cur - inv;
-      const pct = inv ? (g / inv) * 100 : 0;
-      const plColor = g >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+      const qty = toNumber(item.quantity);
+      const cmp = item.currentPrice ? formatUSD(item.currentPrice) : (item.avgPrice ? formatUSD(item.avgPrice) : '—');
+      const curVal = !isSell && item.currentPrice ? formatUSD(qty * toNumber(item.currentPrice)) : (isSell ? '<span style="opacity:0.4">Sold</span>' : '—');
+      const qtyStr = qty > 0 ? (qty < 1 ? qty.toFixed(6) : qty.toFixed(2)) : '-';
       return [
         formatDate(item.purchaseDate || item.date),
+        typeBadge,
         `<span style="font-weight:600">${escapeHTML(item.symbol || '-')}</span>`,
         escapeHTML(item.company || '-'),
-        item.quantity ? (toNumber(item.quantity) < 1 ? toNumber(item.quantity).toFixed(6) : toNumber(item.quantity).toFixed(2)) : '-',
+        qtyStr,
         item.avgPrice ? formatUSD(item.avgPrice) : '-',
         formatUSD(inv),
-        item.currentPrice ? formatUSD(item.currentPrice) : (item.avgPrice ? formatUSD(item.avgPrice) : '-'),
-        formatUSD(cur),
-        `<span style="color:${plColor};font-weight:600">${formatUSD(g)} (${g >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>`,
+        isSell ? '<span style="opacity:0.4">—</span>' : cmp,
+        curVal,
         item.owner || 'Me',
         escapeHTML(item.demat || '-'),
         `<div class="actions-wrapper"><button class="action-btn edit-btn edit-usstock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-usstock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`
@@ -9005,16 +9043,14 @@ function calcMfCostBasis(txns) {
  *   1. BUY transactions create lots ordered by purchase date ascending.
  *   2. SELL transactions consume shares from the oldest available lots first.
  *   3. The remaining cost basis reflects only the unsold lots.
- *
- * This ensures that stocks you have fully sold do not appear in the Holdings view
- * and that partially-sold positions show the correct remaining quantity and cost.
+ *   4. realizedGain = totalSellProceeds − FIFO cost of consumed lots
  *
  * @param {Array} txns - Array of stock transaction objects
- * @returns {{ netQty: number, invested: number, avgPrice: number, boughtQty: number, soldQty: number }}
+ * @returns {{ netQty, invested, avgPrice, boughtQty, soldQty, realizedGain, totalSellProceeds }}
  */
 function calcStockCostBasis(txns) {
   if (!txns || !txns.length) {
-    return { netQty: 0, invested: 0, avgPrice: 0, boughtQty: 0, soldQty: 0 };
+    return { netQty: 0, invested: 0, avgPrice: 0, boughtQty: 0, soldQty: 0, realizedGain: 0, totalSellProceeds: 0 };
   }
 
   // 1. Sort by purchase date ASCENDING so oldest lots come first (FIFO)
@@ -9024,10 +9060,11 @@ function calcStockCostBasis(txns) {
     return da - db;
   });
 
-  // 2. Build buy lots and count sell quantities
+  // 2. Build buy lots; collect sell events with their proceeds
   const lots = [];
   let totalBought = 0;
   let totalSold = 0;
+  const sellEvents = []; // { qty, proceeds }
 
   sorted.forEach(t => {
     const qty = Math.abs(toNumber(t.quantity));
@@ -9036,23 +9073,35 @@ function calcStockCostBasis(txns) {
 
     if (isSellTxn) {
       totalSold += qty;
+      // Proceeds = sell amount from invested field, or qty * price
+      const proceeds = toNumber(t.invested) || qty * toNumber(t.avgPrice || t.price || 0);
+      sellEvents.push({ qty, proceeds });
     } else {
       // BUY transaction
       if (qty > 0) {
         const inv = toNumber(t.invested) || qty * toNumber(t.avgPrice || t.price || 0);
-        lots.push({ qty, remaining: qty, invested: inv });
+        lots.push({ qty, remaining: qty, costPerShare: inv / qty, invested: inv });
         totalBought += qty;
       }
     }
   });
 
-  // 3. Apply sells FIFO — consume oldest lots first
-  let unitsToSell = totalSold;
-  for (const lot of lots) {
-    if (unitsToSell <= 0) break;
-    const take = Math.min(unitsToSell, lot.remaining);
-    lot.remaining -= take;
-    unitsToSell -= take;
+  // 3. Apply sells FIFO — consume oldest lots first; track cost consumed per sale
+  let totalFifoCostConsumed = 0;
+  let totalSellProceeds = 0;
+
+  for (const sale of sellEvents) {
+    let qtyToSell = sale.qty;
+    totalSellProceeds += sale.proceeds;
+    for (const lot of lots) {
+      if (qtyToSell <= 0) break;
+      if (lot.remaining > 0) {
+        const take = Math.min(qtyToSell, lot.remaining);
+        totalFifoCostConsumed += take * lot.costPerShare;
+        lot.remaining -= take;
+        qtyToSell -= take;
+      }
+    }
   }
 
   // 4. Sum remaining cost basis
@@ -9061,15 +9110,17 @@ function calcStockCostBasis(txns) {
   lots.forEach(lot => {
     if (lot.remaining > 0) {
       netQty += lot.remaining;
-      remainingInvested += (lot.remaining / lot.qty) * lot.invested;
+      remainingInvested += lot.remaining * lot.costPerShare;
     }
   });
 
   remainingInvested = Math.max(0, remainingInvested);
   netQty = Math.max(0, netQty);
   const avgPrice = netQty > 0 ? remainingInvested / netQty : 0;
+  // Realized gain = what we received from selling − what those shares cost us (FIFO)
+  const realizedGain = totalSellProceeds - totalFifoCostConsumed;
 
-  return { netQty, invested: remainingInvested, avgPrice, boughtQty: totalBought, soldQty: totalSold };
+  return { netQty, invested: remainingInvested, avgPrice, boughtQty: totalBought, soldQty: totalSold, realizedGain, totalSellProceeds };
 }
 
 function clamp(value, min, max) {
