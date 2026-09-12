@@ -2286,6 +2286,9 @@ function parseMasterHoldingsWorkbook(buffer) {
         "Company", "company",
         "Name", "name",
         "Scrip", "scrip",
+        // Upstox: "Company" already above; but also check "Scrip Code" as fallback name
+        // Wife INDMoney Indian stocks: "Scrip Name" is the company name
+        "Scrip Name", "scripname",
         "Instrument", "instrument",
         "Stock", "stock",
         "Fund", "fund",
@@ -2334,7 +2337,11 @@ function parseMasterHoldingsWorkbook(buffer) {
         "Type", "type",
         "Txn Type", "txntype",
         "Action", "action",
-        "Order Type", "ordertype"
+        "Order Type", "ordertype",
+        // Upstox trade log: "Side" column (BUY / SELL)
+        "Side", "side",
+        // Zerodha trade log: "trade_type" column (BUY / SELL)
+        "trade_type", "tradetype"
       ) || "").toUpperCase().trim();
 
       // Map to standard types
@@ -2354,7 +2361,9 @@ function parseMasterHoldingsWorkbook(buffer) {
         "Txn Date", "txndate",
         "Order Date", "orderdate",
         "Buy Date", "buydate",
-        "Trade Date", "tradedate"
+        "Trade Date", "tradedate",
+        // Wife INDMoney Indian stocks: "Execution Date"
+        "Execution Date", "executiondate"
       ));
 
       // ── STOCK (Indian) ──────────────────────────────────────────────────
@@ -2381,7 +2390,12 @@ function parseMasterHoldingsWorkbook(buffer) {
         if (!amount && qty && price) amount = qty * price;
 
         const nseCode = String(pick(normRow,
-          "NSE code", "nsecode", "NSE Code", "Symbol", "symbol", "Ticker", "ticker", "Scrip", "scrip"
+          "NSE code", "nsecode", "NSE Code",
+          // Upstox trade log: "Scrip Code" is the exchange ticker (e.g. INFY, HDFCBANK)
+          "Scrip Code", "scripcode",
+          // Wife INDMoney Indian stocks: "Scrip Symbol" is the NSE ticker
+          "Scrip Symbol", "scripsymbol",
+          "Symbol", "symbol", "Ticker", "ticker", "Scrip", "scrip"
         ) || cleanName).trim().toUpperCase().replace(/\s*-EQ$/i, "").trim();
 
         parsedStocks.push({
@@ -2439,12 +2453,17 @@ function parseMasterHoldingsWorkbook(buffer) {
         ));
         let price = parseNumVal(pick(normRow,
           "Price", "price", "Avg Price", "avgprice",
-          "Buy Price", "buyprice", "Price (USD)", "priceusd", "Rate", "rate"
+          "Buy Price", "buyprice",
+          // My US stocks INDMoney: "Price ($)"
+          "Price ($)", "price",
+          "Price (USD)", "priceusd", "Rate", "rate"
         ));
         let amount = Math.abs(parseNumVal(pick(normRow,
           "Amount", "amount",
           "Total Amount", "totalamount",
           "Amount (USD)", "amountusd",
+          // My US stocks INDMoney: "Order Amount ($)"
+          "Order Amount ($)", "orderamount",
           "Invested", "invested",
           "Value", "value"
         )));
@@ -2452,6 +2471,8 @@ function parseMasterHoldingsWorkbook(buffer) {
         if (!amount && qty && price) amount = qty * price;
 
         const tickerSymbol = String(pick(normRow,
+          // My US stocks INDMoney: "Stock Symbol" is the ticker (e.g. AAPL, META, VOO)
+          "Stock Symbol", "stocksymbol",
           "Symbol", "symbol", "Ticker", "ticker",
           "NSE code", "nsecode", "Stock", "stock"
         ) || cleanName).trim().toUpperCase();
@@ -4818,7 +4839,17 @@ async function refreshStockPrices(force = false) {
     toast('⚠️ Stock price proxy not configured. Go to Settings → 📈 Stock Prices.');
     return;
   }
-  const uniqueSymbols = [...new Set(state.stocks.filter(s => s.symbol).map(s => s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim()))];
+  // Build net positions via FIFO — only refresh prices for symbols we actually hold
+  const symbolGroups = {};
+  (state.stocks || []).forEach(s => {
+    if (!s.symbol) return;
+    const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    if (!symbolGroups[sym]) symbolGroups[sym] = [];
+    symbolGroups[sym].push(s);
+  });
+  const uniqueSymbols = Object.entries(symbolGroups)
+    .filter(([, txns]) => calcStockCostBasis(txns).netQty > 0)
+    .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) { toast('No stock symbols to refresh.'); return; }
   const cache = getStockPriceCache();
   const needsFetch = force || uniqueSymbols.some(s => isStockPriceStale(cache[s]));
@@ -4953,33 +4984,44 @@ function renderStockHoldingsPanel() {
   }
 
   if (activeStockView === "holdings" && hasRichData) {
+    // Group transactions by symbol+owner+broker to handle the same stock across different accounts
     const groups = {};
     rows.forEach(s => {
       if (!s.symbol && !s.company) return;
-      const key = (s.symbol || s.company || 'Unknown').toUpperCase();
+      // Key includes broker so that Wife-Groww INFY and Me-Zerodha INFY are separate holdings
+      const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(s);
     });
-    const holdings = Object.entries(groups).map(([symbol, txns]) => {
-      const totalQty = txns.reduce((s, t) => s + toNumber(t.quantity), 0);
-      const totalInv = txns.reduce((s, t) => s + (toNumber(t.invested) || toNumber(t.quantity) * toNumber(t.avgPrice)), 0);
-      const avgPrice = totalQty > 0 ? totalInv / totalQty : 0;
+    const holdings = Object.entries(groups).map(([key, txns]) => {
+      // Apply FIFO to get net quantity and cost basis after accounting for sells
+      const basis = calcStockCostBasis(txns);
+      const { netQty, invested: totalInv, avgPrice } = basis;
+
+      // Use the current price from whichever transaction has the latest price data
       const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
       const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
-      const currentValue = totalQty * currentPrice;
+      const currentValue = netQty * currentPrice;
       const gain = currentValue - totalInv;
       const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
-      const dayChange = prevClose ? totalQty * (currentPrice - prevClose) : null;
+      const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
       const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+      const symbol = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
       const company = txns[0].company || symbol;
       const category = txns[0].category || 'Stock';
       const demat = txns[0].demat || '-';
       const exchange = txns[0].exchange || 'NSE';
-      const cashFlows = txns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
-      if (totalQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
+      // XIRR uses only BUY cash flows (sells are already netted via FIFO)
+      const buyTxns = txns.filter(t => {
+        const tt = String(t.transactionType || '').toUpperCase();
+        return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD';
+      });
+      const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
+      if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
       const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
-      return { symbol, company, category, exchange, totalQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-    });
+      return { symbol, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
+    // Filter out positions that have been fully sold (FIFO-netted qty <= 0)
+    }).filter(h => h.totalQty > 0);
 
     const sortedStockHoldings = sortHoldings(holdings, stockSortCol, stockSortDir);
 
@@ -5063,7 +5105,17 @@ function formatUSD(num) {
 async function refreshUsStockPrices(force = false) {
   const proxyUrl = localStorage.getItem(STOCK_PROXY_URL_KEY);
   const allStocks = state.usstocks || [];
-  const uniqueSymbols = [...new Set(allStocks.filter(s => s.symbol).map(s => s.symbol.toUpperCase().trim()))];
+  // Group by symbol and apply FIFO to only refresh prices for positions we still hold
+  const usSymbolGroups = {};
+  allStocks.forEach(s => {
+    if (!s.symbol) return;
+    const sym = s.symbol.toUpperCase().trim();
+    if (!usSymbolGroups[sym]) usSymbolGroups[sym] = [];
+    usSymbolGroups[sym].push(s);
+  });
+  const uniqueSymbols = Object.entries(usSymbolGroups)
+    .filter(([, txns]) => calcStockCostBasis(txns).netQty > 0)
+    .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) {
     toast('No US stocks found to refresh.');
     return;
@@ -5330,33 +5382,42 @@ function renderUsStockHoldingsPanel() {
   }
 
   if (activeUsStockView === "holdings" && hasRichData) {
+    // Group by symbol+owner+broker for accurate per-account FIFO
     const groups = {};
     rows.forEach(s => {
       if (!s.symbol && !s.company) return;
-      const key = (s.symbol || s.company || 'Unknown').toUpperCase();
+      const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(s);
     });
-    const holdings = Object.entries(groups).map(([symbol, txns]) => {
-      const totalQty = txns.reduce((s, t) => s + toNumber(t.quantity), 0);
-      const totalInv = txns.reduce((s, t) => s + (toNumber(t.invested) || toNumber(t.quantity) * toNumber(t.avgPrice)), 0);
-      const avgPrice = totalQty > 0 ? totalInv / totalQty : 0;
+    const holdings = Object.entries(groups).map(([key, txns]) => {
+      // Apply FIFO — sell transactions consume oldest buy lots first
+      const basis = calcStockCostBasis(txns);
+      const { netQty, invested: totalInv, avgPrice } = basis;
+
       const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
       const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
-      const currentValue = totalQty * currentPrice;
+      const currentValue = netQty * currentPrice;
       const gain = currentValue - totalInv;
       const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
-      const dayChange = prevClose ? totalQty * (currentPrice - prevClose) : null;
+      const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
       const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+      const symbol = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
       const company = txns[0].company || symbol;
       const category = txns[0].category || 'Stock';
       const demat = txns[0].demat || '-';
       const exchange = txns[0].exchange || 'NASDAQ';
-      const cashFlows = txns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
-      if (totalQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
+      // XIRR: only BUY cash flows
+      const buyTxns = txns.filter(t => {
+        const tt = String(t.transactionType || '').toUpperCase();
+        return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD';
+      });
+      const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
+      if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
       const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
-      return { symbol, company, category, exchange, totalQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-    });
+      return { symbol, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
+    // Filter out fully-sold positions
+    }).filter(h => h.totalQty > 0);
 
     const sortedUsHoldings = sortHoldings(holdings, usStockSortCol, usStockSortDir);
 
@@ -8937,6 +8998,80 @@ function calcMfCostBasis(txns) {
   };
 }
 
+/**
+ * Calculate net cost basis for a list of stock transactions using FIFO.
+ *
+ * Works the same way as calcMfCostBasis but for equity/US stocks:
+ *   1. BUY transactions create lots ordered by purchase date ascending.
+ *   2. SELL transactions consume shares from the oldest available lots first.
+ *   3. The remaining cost basis reflects only the unsold lots.
+ *
+ * This ensures that stocks you have fully sold do not appear in the Holdings view
+ * and that partially-sold positions show the correct remaining quantity and cost.
+ *
+ * @param {Array} txns - Array of stock transaction objects
+ * @returns {{ netQty: number, invested: number, avgPrice: number, boughtQty: number, soldQty: number }}
+ */
+function calcStockCostBasis(txns) {
+  if (!txns || !txns.length) {
+    return { netQty: 0, invested: 0, avgPrice: 0, boughtQty: 0, soldQty: 0 };
+  }
+
+  // 1. Sort by purchase date ASCENDING so oldest lots come first (FIFO)
+  const sorted = [...txns].sort((a, b) => {
+    const da = new Date(a.purchaseDate || a.date || '1970-01-01').getTime();
+    const db = new Date(b.purchaseDate || b.date || '1970-01-01').getTime();
+    return da - db;
+  });
+
+  // 2. Build buy lots and count sell quantities
+  const lots = [];
+  let totalBought = 0;
+  let totalSold = 0;
+
+  sorted.forEach(t => {
+    const qty = Math.abs(toNumber(t.quantity));
+    const txnType = String(t.transactionType || '').toUpperCase();
+    const isSellTxn = txnType === 'SELL' || txnType === 'S' || txnType === 'SOLD';
+
+    if (isSellTxn) {
+      totalSold += qty;
+    } else {
+      // BUY transaction
+      if (qty > 0) {
+        const inv = toNumber(t.invested) || qty * toNumber(t.avgPrice || t.price || 0);
+        lots.push({ qty, remaining: qty, invested: inv });
+        totalBought += qty;
+      }
+    }
+  });
+
+  // 3. Apply sells FIFO — consume oldest lots first
+  let unitsToSell = totalSold;
+  for (const lot of lots) {
+    if (unitsToSell <= 0) break;
+    const take = Math.min(unitsToSell, lot.remaining);
+    lot.remaining -= take;
+    unitsToSell -= take;
+  }
+
+  // 4. Sum remaining cost basis
+  let remainingInvested = 0;
+  let netQty = 0;
+  lots.forEach(lot => {
+    if (lot.remaining > 0) {
+      netQty += lot.remaining;
+      remainingInvested += (lot.remaining / lot.qty) * lot.invested;
+    }
+  });
+
+  remainingInvested = Math.max(0, remainingInvested);
+  netQty = Math.max(0, netQty);
+  const avgPrice = netQty > 0 ? remainingInvested / netQty : 0;
+
+  return { netQty, invested: remainingInvested, avgPrice, boughtQty: totalBought, soldQty: totalSold };
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -10200,6 +10335,7 @@ if (typeof module !== 'undefined' && module.exports) {
     defaultStockHoldings,
     defaultUsStockHoldings,
     formatUSD,
+    calcStockCostBasis,
   };
 }
 
