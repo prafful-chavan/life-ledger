@@ -343,6 +343,40 @@ runTest('calcStockCostBasis: accurately computes realizedGain from sold shares u
 });
 
 // ----------------------------------------------------------------------
+// Test 15: Mutual Fund Tab Name Matching (6. Mutual fund of my / 7. mutual fund of my wife)
+// ----------------------------------------------------------------------
+runTest('parseMasterHoldingsWorkbook: correctly maps "6. Mutual fund of my" and "7. mutual fund of my wife"', () => {
+  const XLSX = require('xlsx');
+  global.XLSX = XLSX;
+  const app = require('../app.js');
+
+  if (typeof app.parseMasterHoldingsWorkbook !== 'function') return;
+
+  const wb = XLSX.utils.book_new();
+  const mfMyData = [
+    { "Scheme Name": "Nippon India Small Cap Fund", "Transaction Type": "PURCHASE", "Units": 100, "NAV": 120, "Amount": 12000, "Date": "2024-01-15", "Owner (Me / Wife)": "Me" }
+  ];
+  const mfWifeData = [
+    { "Scheme Name": "Parag Parikh Flexi Cap Fund", "Transaction Type": "PURCHASE", "Units": 50, "NAV": 80, "Amount": 4000, "Date": "2024-02-10", "Owner (Me / Wife)": "Wife" }
+  ];
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mfMyData), "6. Mutual fund of my");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mfWifeData), "7. mutual fund of my wife");
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const res = app.parseMasterHoldingsWorkbook(buffer);
+
+  assert.strictEqual(res.mutualFunds.length, 2, 'Should parse 2 mutual fund records');
+  const myFund = res.mutualFunds.find(f => f.fundName.includes('Nippon'));
+  const wifeFund = res.mutualFunds.find(f => f.fundName.includes('Parag'));
+
+  assert.ok(myFund, 'My fund should exist');
+  assert.strictEqual(myFund.owner, 'Me', 'My fund owner should be Me');
+  assert.ok(wifeFund, 'Wife fund should exist');
+  assert.strictEqual(wifeFund.owner, 'Wife', 'Wife fund owner should be Wife');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");

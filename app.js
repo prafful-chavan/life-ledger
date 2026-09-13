@@ -928,6 +928,10 @@ function bindFinanceTabs() {
       const { symbol, owner, demat } = auditUsStockBtn.dataset;
       openHoldingAuditModal(symbol, owner, demat, true);
     }
+    const syncLogBtn = e.target.closest('.open-sync-log-btn');
+    if (syncLogBtn) {
+      openSyncLogModal('all');
+    }
   });
 
   document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", async () => {
@@ -2243,13 +2247,13 @@ function parseMasterHoldingsWorkbook(buffer) {
     if (sn.includes("us_stock") || sn.includes("usstock") || sn.includes("us_stocks") || (sn.includes("us") && sn.includes("stock"))) {
       return { asset: "usstock", owner: "Me", broker: "INDmoney" };
     }
-    // Mutual_Fund_Me → Mutual Funds, Me
-    if (sn.includes("mutual_fund_me") || (sn.includes("mutualfund") && !sn.includes("wife")) || (sn.includes("mf") && sn.includes("me"))) {
-      return { asset: "mutualFund", owner: "Me", broker: "Groww" };
-    }
-    // Mutual_Fund_Wife → Mutual Funds, Wife
-    if (sn.includes("mutual_fund_wife") || (sn.includes("mutualfund") && sn.includes("wife")) || (sn.includes("mf") && sn.includes("wife"))) {
+    // Mutual Fund Wife (e.g. 7. mutual fund of my wife, Mutual_Fund_Wife)
+    if (sn.includes("wife") && (sn.includes("mutual") || sn.includes("fund") || sn.includes("mf"))) {
       return { asset: "mutualFund", owner: "Wife", broker: "Groww" };
+    }
+    // Mutual Fund Me / General (e.g. 6. Mutual fund of my, Mutual_Fund_Me, Mutual Funds)
+    if (sn.includes("mutual") || sn.includes("fund") || sn.includes("mf")) {
+      return { asset: "mutualFund", owner: "Me", broker: "Groww" };
     }
 
     // Fallback: heuristic from generic keywords
@@ -9470,12 +9474,119 @@ function viewTitle(view) {
   );
 }
 
-function toast(message) {
+let systemLogs = [];
+
+function addSystemLog(message, level = "info", category = "System", details = "") {
+  if (!message) return;
+  let detectedLevel = level;
+  if (level === "info") {
+    if (message.includes("❌") || message.includes("Failed") || message.includes("error") || message.includes("Error")) {
+      detectedLevel = "error";
+    } else if (message.includes("⚠️") || message.includes("Warning") || message.includes("Skipped")) {
+      detectedLevel = "warning";
+    } else if (message.includes("✅") || message.includes("✓") || message.includes("Loaded") || message.includes("Synced")) {
+      detectedLevel = "success";
+    }
+  }
+
+  const now = new Date();
+  const entry = {
+    id: `log-${generateUUID()}`,
+    time: now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    date: now.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+    message,
+    level: detectedLevel,
+    category,
+    details: details || ""
+  };
+
+  systemLogs.unshift(entry);
+  if (systemLogs.length > 200) systemLogs.pop();
+  updateSyncLogBadges();
+}
+
+function updateSyncLogBadges() {
+  const issues = systemLogs.filter(l => l.level === "error" || l.level === "warning").length;
+  const badges = document.querySelectorAll(".sync-log-badge");
+  badges.forEach(b => {
+    if (issues > 0) {
+      b.style.display = "inline-flex";
+      b.textContent = issues;
+    } else {
+      b.style.display = "none";
+    }
+  });
+}
+
+function toast(message, level = "info") {
   const element = document.getElementById("toast");
-  element.textContent = message;
-  element.classList.add("show");
-  clearTimeout(toast.timeout);
-  toast.timeout = setTimeout(() => element.classList.remove("show"), 2600);
+  if (element) {
+    element.textContent = message;
+    element.classList.add("show");
+    clearTimeout(toast.timeout);
+    toast.timeout = setTimeout(() => element.classList.remove("show"), 3200);
+  }
+  addSystemLog(message, level, "Notification");
+}
+
+function openSyncLogModal(filterLevel = "all") {
+  const modal = document.getElementById("syncLogModal");
+  const body = document.getElementById("syncLogBody");
+  if (!modal || !body) return;
+
+  const logsToDisplay = systemLogs.filter(l => {
+    if (filterLevel === "issues") return l.level === "error" || l.level === "warning";
+    if (filterLevel === "sync") return l.category === "Drive Sync" || l.category === "Import";
+    return true;
+  });
+
+  body.innerHTML = `
+    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
+      <button class="owner-pill ${filterLevel === 'all' ? 'active' : ''}" type="button" onclick="openSyncLogModal('all')">All Logs (${systemLogs.length})</button>
+      <button class="owner-pill ${filterLevel === 'issues' ? 'active' : ''}" type="button" onclick="openSyncLogModal('issues')">⚠️ Issues &amp; Warnings (${systemLogs.filter(l => l.level==='error'||l.level==='warning').length})</button>
+      <button class="owner-pill ${filterLevel === 'sync' ? 'active' : ''}" type="button" onclick="openSyncLogModal('sync')">☁ Drive Sync History</button>
+      <button class="secondary-button" type="button" style="margin-left: auto; padding: 4px 10px; font-size: 0.75rem;" onclick="systemLogs=[]; openSyncLogModal('all');">🗑️ Clear Log</button>
+    </div>
+    <div class="table-wrap" style="max-height: 400px; overflow-y: auto;">
+      ${logsToDisplay.length === 0 ? '<div style="padding: 20px; text-align: center; opacity: 0.6;">No log entries captured yet.</div>' : `
+        <table style="width: 100%; font-size: 0.75rem; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--line); text-align: left; opacity: 0.7;">
+              <th style="padding: 6px 8px;">Time</th>
+              <th style="padding: 6px 8px;">Category</th>
+              <th style="padding: 6px 8px;">Level</th>
+              <th style="padding: 6px 8px;">Message &amp; Audit Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${logsToDisplay.map(l => {
+              const bg = l.level === 'error' ? 'rgba(239, 68, 68, 0.15)'
+                       : l.level === 'warning' ? 'rgba(245, 158, 11, 0.15)'
+                       : l.level === 'success' ? 'rgba(34, 197, 94, 0.15)'
+                       : 'rgba(255,255,255,0.03)';
+              const badgeColor = l.level === 'error' ? '#ef4444'
+                               : l.level === 'warning' ? '#f59e0b'
+                               : l.level === 'success' ? '#22c55e'
+                               : 'var(--brand)';
+              return `
+                <tr style="border-bottom: 1px solid var(--line); background: ${bg}">
+                  <td style="padding: 6px 8px; white-space: nowrap;">${l.date} ${l.time}</td>
+                  <td style="padding: 6px 8px;"><span style="opacity: 0.8; font-weight: 600;">${l.category}</span></td>
+                  <td style="padding: 6px 8px;"><span style="background: ${badgeColor}; color: white; padding: 1px 6px; border-radius: 3px; font-weight: 700; font-size: 0.65rem;">${l.level.toUpperCase()}</span></td>
+                  <td style="padding: 6px 8px;">
+                    <div>${escapeHTML(l.message)}</div>
+                    ${l.details ? `<div style="font-family: monospace; font-size: 0.7rem; opacity: 0.7; margin-top: 2px;">${escapeHTML(l.details)}</div>` : ''}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>
+  `;
+
+  modal.hidden = false;
 }
 
 function getFundCodesCache() {
@@ -10599,6 +10710,8 @@ if (typeof module !== 'undefined' && module.exports) {
     formatUSD,
     calcStockCostBasis,
     calcStockTotalValue,
+    parseMasterHoldingsWorkbook,
+    addSystemLog,
   };
 }
 
