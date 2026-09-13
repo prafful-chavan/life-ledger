@@ -9602,6 +9602,7 @@ function openSyncLogModal(filterLevel = "all") {
   `;
 
   modal.hidden = false;
+  modal.removeAttribute('hidden');
 }
 
 if (typeof window !== 'undefined') {
