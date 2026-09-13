@@ -377,6 +377,23 @@ runTest('parseMasterHoldingsWorkbook: correctly maps "6. Mutual fund of my" and 
 });
 
 // ----------------------------------------------------------------------
+// Test 16: Prevent header text "Owner (Me / Wife)" from misclassifying rows to Wife
+// ----------------------------------------------------------------------
+runTest('normalizeOwner & matchHoldingsOwner: protects "Owner (Me / Wife)" header string from misclassifying as Wife', () => {
+  const { normalizeOwner, matchHoldingsOwner } = require('../app.js');
+
+  assert.strictEqual(normalizeOwner('Owner (Me / Wife)'), 'Me', 'Header text "Owner (Me / Wife)" should normalize to Me');
+  assert.strictEqual(normalizeOwner('Me / Wife'), 'Me', 'Header text "Me / Wife" should normalize to Me');
+  assert.strictEqual(normalizeOwner('Wife'), 'Wife', '"Wife" should normalize to Wife');
+  assert.strictEqual(normalizeOwner('Me'), 'Me', '"Me" should normalize to Me');
+
+  assert.strictEqual(matchHoldingsOwner('Me', 'Me'), true, 'Me owner matches Me filter');
+  assert.strictEqual(matchHoldingsOwner('Wife', 'Me'), false, 'Wife owner does not match Me filter');
+  assert.strictEqual(matchHoldingsOwner('Me', 'Both'), true, 'Me owner matches Both filter');
+  assert.strictEqual(matchHoldingsOwner('Wife', 'Both'), true, 'Wife owner matches Both filter');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");

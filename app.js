@@ -2338,10 +2338,18 @@ function parseMasterHoldingsWorkbook(buffer) {
       let ownerVal = cfg.owner;
       if (rowOwnerRaw) {
         const oLower = String(rowOwnerRaw).toLowerCase().trim();
-        if (oLower.includes("wife") || oLower.includes("archana")) {
+        if (oLower === "wife" || oLower === "archana") {
           ownerVal = "Wife";
-        } else if (oLower.includes("me") || oLower.includes("prafful") || oLower.includes("husband")) {
+        } else if (oLower === "me" || oLower === "prafful" || oLower === "husband" || oLower === "self") {
           ownerVal = "Me";
+        } else if (oLower === "both" || oLower === "joint") {
+          ownerVal = "Both";
+        } else if (!oLower.includes("owner") && !oLower.includes("me / wife") && !oLower.includes("me/wife")) {
+          if (oLower.includes("wife") || oLower.includes("archana")) {
+            ownerVal = "Wife";
+          } else if (oLower.includes("me") || oLower.includes("prafful") || oLower.includes("husband")) {
+            ownerVal = "Me";
+          }
         }
       }
 
@@ -3029,11 +3037,21 @@ function mergeImportedData(imported) {
 }
 
 function normalizeOwner(value) {
-  const text = String(value || "").trim();
-  if (/wife|archana|spouse/i.test(text)) return "Wife";
-  if (/me|prafful|self/i.test(text)) return "Me";
-  if (/both|joint/i.test(text)) return "Both";
-  return text || "Me";
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "wife" || text === "archana" || text === "spouse") return "Wife";
+  if (text === "me" || text === "prafful" || text === "self" || text === "husband") return "Me";
+  if (text === "both" || text === "joint") return "Both";
+  // Avoid matching "owner (me / wife)" header text as "Wife"
+  if (text.includes("owner") || text.includes("me / wife") || text.includes("me/wife")) return "Me";
+  if (text.includes("wife") || text.includes("archana")) return "Wife";
+  if (text.includes("me") || text.includes("prafful") || text.includes("self")) return "Me";
+  return "Me";
+}
+
+function matchHoldingsOwner(owner, filter) {
+  const normalized = normalizeOwner(owner || "Me");
+  if (!filter || filter === "Both") return true;
+  return normalized === filter || normalized === "Both";
 }
 
 function inferOrganization(sheetName, row) {
@@ -10733,6 +10751,7 @@ if (typeof module !== 'undefined' && module.exports) {
     calcStockTotalValue,
     parseMasterHoldingsWorkbook,
     addSystemLog,
+    matchHoldingsOwner,
   };
 }
 
