@@ -2220,17 +2220,99 @@ function parseMasterHoldingsWorkbook(buffer) {
     return "";
   }
 
-  function deriveStockSymbol(name) {
-    if (!name) return "STOCK";
-    const clean = String(name).toUpperCase().trim();
-    if (clean.includes("NIFTY BEES") || clean.includes("NIFTYBEES")) return "NIFTYBEES";
-    if (clean.includes("GOLD BEES") || clean.includes("GOLDBEES")) return "GOLDBEES";
-    if (clean.includes("SILVER BEES") || clean.includes("NETFSILVER") || clean.includes("SILVER")) return "SILVERBEES";
-    if (clean.includes("BANK BEES") || clean.includes("BANKBEES")) return "BANKBEES";
-    if (clean.includes("IT BEES") || clean.includes("ITBEES")) return "ITBEES";
-    if (clean.includes("MID150") || clean.includes("MIDCAP 150")) return "MID150BEES";
-    const firstWord = clean.split(/[\s,#\-_]+/)[0];
+  const ISIN_TO_NSE_SYMBOL = {
+    "INE208C01025": "AEGISLOG",
+    "INE933K01021": "BAJAJCON",
+    "INE200A01026": "GEVERNOVA",
+    "INE038A01020": "HINDALCO",
+    "INE0J5401028": "HONASA",
+    "INE947Q01028": "LAURUSLABS",
+    "INE745G01043": "MCX",
+    "INF204KB17I5": "GOLDBEES",
+    "INF204KB1V68": "MID150BEES",
+    "INF204KB14I2": "NIFTYBEES",
+    "INF204KC1402": "SILVERBEES",
+    "INE777K01022": "RRKABEL",
+    "INE0CLI01024": "RATEGAIN",
+    "INE763I01026": "TRIL",
+    "INF109KB15Y7": "BHARAT22",
+    "INF247L01AP3": "MON100",
+    "INF179KC1FB2": "HDFCSML250",
+    "INE154A01025": "ITC",
+    "INE397D01024": "BHARTIARTL",
+    "INE002A01018": "RELIANCE",
+    "INE467B01029": "TCS",
+    "INE040A01034": "HDFCBANK",
+    "INE009A01021": "INFY",
+    "INE101A01026": "M&M",
+    "INE062A01020": "SBIN",
+  };
+
+  function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
+    if (isinCode) {
+      const cleanIsin = String(isinCode).trim().toUpperCase();
+      if (ISIN_TO_NSE_SYMBOL[cleanIsin]) return ISIN_TO_NSE_SYMBOL[cleanIsin];
+    }
+    if (rawSymbol) {
+      let sym = String(rawSymbol).trim().toUpperCase()
+        .replace(/\s*-EQ$/i, "")
+        .replace(/\s*NSE\s*EQ/i, "")
+        .replace(/[^A-Z0-9&\-]/g, "")
+        .trim();
+      if (sym && sym !== "STOCK" && sym !== "UNKNOWN") {
+        if (sym === "BHARTI") return "BHARTIARTL";
+        if (sym === "NETFSILVER") return "SILVERBEES";
+        if (sym === "GE") return "GEVERNOVA";
+        if (sym === "R") return "RRKABEL";
+        if (sym === "TRANS") return "TRIL";
+        if (sym === "SBI") return "SBIN";
+        return sym;
+      }
+    }
+
+    const nameUpper = String(cleanName || "").toUpperCase().trim();
+    if (!nameUpper) return "STOCK";
+
+    if (/AEGIS LOGISTICS/i.test(nameUpper)) return "AEGISLOG";
+    if (/BAJAJ CONSUMER/i.test(nameUpper)) return "BAJAJCON";
+    if (/GE VERNOVA/i.test(nameUpper)) return "GEVERNOVA";
+    if (/HINDALCO/i.test(nameUpper)) return "HINDALCO";
+    if (/HONASA|MAMAEARTH/i.test(nameUpper)) return "HONASA";
+    if (/LAURUS LABS/i.test(nameUpper)) return "LAURUSLABS";
+    if (/MULTI COMMODITY|MCX/i.test(nameUpper)) return "MCX";
+    if (/R R KABEL|RR KABEL/i.test(nameUpper)) return "RRKABEL";
+    if (/RATEGAIN/i.test(nameUpper)) return "RATEGAIN";
+    if (/TRANS & RECTI|TRANSFORMERS & RECTIFIERS/i.test(nameUpper)) return "TRIL";
+    if (/BHARAT 22|BHARAT22/i.test(nameUpper)) return "BHARAT22";
+    if (/NASDAQ 100|MON100/i.test(nameUpper)) return "MON100";
+    if (/SMALLCAP 250|HDFCSML250/i.test(nameUpper)) return "HDFCSML250";
+    if (/MIDCAP 150|MID150/i.test(nameUpper)) return "MID150BEES";
+    if (/NIFTY BEES|NIFTYBEES/i.test(nameUpper)) return "NIFTYBEES";
+    if (/GOLD BEES|GOLDBEES/i.test(nameUpper)) return "GOLDBEES";
+    if (/SILVER BEES|SILVERBEES|NETFSILVER/i.test(nameUpper)) return "SILVERBEES";
+    if (/BANK BEES|BANKBEES/i.test(nameUpper)) return "BANKBEES";
+    if (/IT BEES|ITBEES/i.test(nameUpper)) return "ITBEES";
+    if (/BLUE STAR|BLUESTARCO/i.test(nameUpper)) return "BLUESTARCO";
+    if (/JINDAL STEEL|JINDALSTEL/i.test(nameUpper)) return "JINDALSTEL";
+    if (/MAHINDRA & MAHINDRA|M&M/i.test(nameUpper)) return "M&M";
+    if (/POWER FINANCE|PFC/i.test(nameUpper)) return "PFC";
+    if (/PRESTIGE ESTATES|PRESTIGE/i.test(nameUpper)) return "PRESTIGE";
+    if (/REC LTD|RECLTD/i.test(nameUpper)) return "RECLTD";
+    if (/VARUN BEVERAGES|VBL/i.test(nameUpper)) return "VBL";
+    if (/WIPRO/i.test(nameUpper)) return "WIPRO";
+    if (/ITC LTD|ITC/i.test(nameUpper)) return "ITC";
+    if (/BHARTI AIRTEL|AIRTEL/i.test(nameUpper)) return "BHARTIARTL";
+    if (/RELIANCE/i.test(nameUpper)) return "RELIANCE";
+    if (/TCS|TATA CONSULTANCY/i.test(nameUpper)) return "TCS";
+    if (/HDFC BANK/i.test(nameUpper)) return "HDFCBANK";
+    if (/INFOSYS|INFY/i.test(nameUpper)) return "INFY";
+
+    const firstWord = nameUpper.split(/[\s,#\-_]+/)[0];
     return firstWord || "STOCK";
+  }
+
+  function deriveStockSymbol(name) {
+    return resolveNseSymbol("", name, "");
   }
 
   /** Normalise a row object's keys */
@@ -2495,6 +2577,11 @@ function parseMasterHoldingsWorkbook(buffer) {
           if (!currentValue && invested > 0) currentValue = pnl !== 0 ? (invested + pnl) : invested;
         }
 
+        const isinCode = pick(normRow,
+          "ISIN Code", "isincode",
+          "ISIN", "isin"
+        );
+
         const rawSymbol = String(pick(normRow,
           "Symbol", "symbol",
           "Stock Symbol", "stocksymbol",
@@ -2505,7 +2592,7 @@ function parseMasterHoldingsWorkbook(buffer) {
           "Scrip", "scrip"
         ) || "").trim().toUpperCase().replace(/\s*-EQ$/i, "").replace(/\s*NSE\s*EQ/i, "").trim();
 
-        const symbol = rawSymbol || deriveStockSymbol(cleanName);
+        const symbol = resolveNseSymbol(rawSymbol, cleanName, isinCode);
 
         parsedStocks.push({
           id: `stk-${generateUUID()}`,
@@ -5006,7 +5093,7 @@ async function refreshStockPrices(force = false) {
     symbolGroups[sym].push(s);
   });
   const uniqueSymbols = Object.entries(symbolGroups)
-    .filter(([, txns]) => calcStockCostBasis(txns).netQty > 0)
+    .filter(([, items]) => items.some(s => toNumber(s.quantity) > 0))
     .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) { toast('No stock symbols to refresh.'); return; }
   const cache = getStockPriceCache();
@@ -5220,7 +5307,7 @@ async function refreshUsStockPrices(force = false) {
     usSymbolGroups[sym].push(s);
   });
   const uniqueSymbols = Object.entries(usSymbolGroups)
-    .filter(([, txns]) => calcStockCostBasis(txns).netQty > 0)
+    .filter(([, items]) => items.some(s => toNumber(s.quantity) > 0))
     .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) {
     toast('No US stocks found to refresh.');

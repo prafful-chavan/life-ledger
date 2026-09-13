@@ -430,6 +430,46 @@ runTest('parseMasterHoldingsWorkbook: correctly parses "My_US_Stocks" tab with e
 });
 
 // ----------------------------------------------------------------------
+// Test 18: ISIN & Company Name Ticker Resolution for Groww & NSDL CAS exports
+// ----------------------------------------------------------------------
+runTest('resolveNseSymbol & parseMasterHoldingsWorkbook: resolves exact NSE tickers via ISIN & full company names', () => {
+  const XLSX = require('xlsx');
+  global.XLSX = XLSX;
+  const app = require('../app.js');
+
+  const wb = XLSX.utils.book_new();
+  const growwData = [
+    { "Stock Name": "GE VERNOVA T&D INDIA LTD", "ISIN": "INE200A01026", "Quantity": 3, "Average buy price": 3250.73, "Buy value": 9752.19, "Closing price": 4406.50, "Closing value": 13219.50 },
+    { "Stock Name": "R R KABEL LIMITED", "ISIN": "INE777K01022", "Quantity": 3, "Average buy price": 2392.00, "Buy value": 7176.00, "Closing price": 2789.60, "Closing value": 8368.80 },
+    { "Stock Name": "TRANS & RECTI. LTD", "ISIN": "INE763I01026", "Quantity": 5, "Average buy price": 650.00, "Buy value": 3250.00, "Closing price": 720.00, "Closing value": 3600.00 },
+    { "Stock Name": "BAJAJ CONSUMER CARE LTD", "ISIN": "INE933K01021", "Quantity": 10, "Average buy price": 210.00, "Buy value": 2100.00, "Closing price": 240.00, "Closing value": 2400.00 },
+  ];
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(growwData), "Wife_Groww");
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const res = app.parseMasterHoldingsWorkbook(buffer);
+
+  assert.strictEqual(res.stocks.length, 4, 'Should parse 4 Groww stock records');
+
+  const ge = res.stocks.find(s => s.company.includes('GE VERNOVA'));
+  assert.ok(ge, 'GE Vernova should exist');
+  assert.strictEqual(ge.symbol, 'GEVERNOVA', 'ISIN INE200A01026 should resolve symbol to GEVERNOVA');
+
+  const rr = res.stocks.find(s => s.company.includes('R R KABEL'));
+  assert.ok(rr, 'RR Kabel should exist');
+  assert.strictEqual(rr.symbol, 'RRKABEL', 'ISIN INE777K01022 should resolve symbol to RRKABEL');
+
+  const tril = res.stocks.find(s => s.company.includes('TRANS & RECTI'));
+  assert.ok(tril, 'Transformers & Rectifiers should exist');
+  assert.strictEqual(tril.symbol, 'TRIL', 'ISIN INE763I01026 should resolve symbol to TRIL');
+
+  const bajaj = res.stocks.find(s => s.company.includes('BAJAJ CONSUMER'));
+  assert.ok(bajaj, 'Bajaj Consumer should exist');
+  assert.strictEqual(bajaj.symbol, 'BAJAJCON', 'ISIN INE933K01021 should resolve symbol to BAJAJCON');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");
