@@ -1970,6 +1970,23 @@
       </div>
     </div>
 
+    <!-- Holding Audit & Ledger Verification Modal -->
+    <div class="modal" id="holdingAuditModal" role="dialog" aria-modal="true" aria-labelledby="holdingAuditTitle" hidden>
+      <div class="modal-card" style="max-width: 780px; width: 92%; max-height: 85vh; overflow-y: auto;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" id="holdingAuditSubtitle">Position Audit &amp; Ledger Verification</p>
+            <h2 id="holdingAuditTitle">Symbol Audit</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <div id="holdingAuditBody" style="display: flex; flex-direction: column; gap: 16px;"></div>
+        <div class="modal-actions" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
+          <button class="secondary-button" type="button" data-close-modal>Close</button>
+        </div>
+      </div>
+    </div>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </body>
 </html>

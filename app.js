@@ -916,8 +916,17 @@ function bindFinanceTabs() {
         state.stocks = state.stocks.filter(s => s.id !== id);
         saveData(true, 'stock');
         renderStockHoldingsPanel();
-        toast('Stock entry deleted.');
       }
+    }
+    const auditStockBtn = e.target.closest('.audit-stock-btn');
+    if (auditStockBtn) {
+      const { symbol, owner, demat } = auditStockBtn.dataset;
+      openHoldingAuditModal(symbol, owner, demat, false);
+    }
+    const auditUsStockBtn = e.target.closest('.audit-usstock-btn');
+    if (auditUsStockBtn) {
+      const { symbol, owner, demat } = auditUsStockBtn.dataset;
+      openHoldingAuditModal(symbol, owner, demat, true);
     }
   });
 
@@ -4716,6 +4725,7 @@ function parseBrokerStockCSV(csvText, ownerOverride) {
       invested,
       currentValue,
       demat: demat || (broker !== 'Generic' && broker !== 'LifeLedger' ? broker : 'Demat'),
+      transactionType: 'BUY',
       purchaseDate,
       notes,
     };
@@ -4902,7 +4912,7 @@ async function refreshStockPrices(force = false) {
 function updateStocksFromCache() {
   const cache = getStockPriceCache();
   if (Object.keys(cache).length === 0) return;
-  state.stocks.forEach(s => {
+  (state.stocks || []).forEach(s => {
     if (!s.symbol) return;
     const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
     const cached = cache[sym];
@@ -4910,7 +4920,8 @@ function updateStocksFromCache() {
       s.currentPrice = cached.price;
       s.prevClose = cached.prevClose;
       s.priceDate = cached.date;
-      s.currentValue = toNumber(s.quantity) * cached.price;
+      const isSell = ['SELL', 'S', 'SOLD'].includes(String(s.transactionType || '').toUpperCase());
+      s.currentValue = isSell ? 0 : (toNumber(s.quantity) * cached.price);
     }
   });
 }
@@ -5044,7 +5055,7 @@ function renderStockHoldingsPanel() {
       ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
       ['avgPrice', 'Avg Price'], ['totalInv', 'Invested'], ['currentPrice', 'CMP'],
       ['currentValue', 'Current Value'], ['dayChange', '1-Day Chg'],
-      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker']
+      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker'], ['action', 'Audit']
     ];
 
     if (targetThead) {
@@ -5078,8 +5089,9 @@ function renderStockHoldingsPanel() {
         const color = item.xirr >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
         return `<span style="color:${color};font-weight:600">${item.xirr.toFixed(2)}%</span>`;
       })(),
-      escapeHTML(item.demat)
-    ], `No stock holdings for ${activeHoldingsOwner}. Import a CSV or add entries manually.`, 11);
+      escapeHTML(item.demat),
+      `<button class="secondary-button audit-stock-btn" style="padding:2px 8px;font-size:0.7rem;font-weight:600;" data-symbol="${escapeHTML(item.symbol)}" data-owner="${escapeHTML(activeHoldingsOwner)}" data-demat="${escapeHTML(item.demat)}" title="Audit / Verify FIFO Ledger">🔍 Audit</button>`
+    ], `No stock holdings for ${activeHoldingsOwner}. Import a CSV or add entries manually.`, 12);
   } else {
     // Transactions view — shows full history with BUY/SELL badge
     if (targetThead) {
@@ -5319,7 +5331,7 @@ async function fetchUsStockPriceFallback(symbol) {
 function updateUsStocksFromCache() {
   const cache = getStockPriceCache();
   if (Object.keys(cache).length === 0) return;
-  state.usstocks.forEach(s => {
+  (state.usstocks || []).forEach(s => {
     if (!s.symbol) return;
     const sym = s.symbol.toUpperCase().trim();
     const cached = cache[sym];
@@ -5327,7 +5339,8 @@ function updateUsStocksFromCache() {
       s.currentPrice = cached.price;
       s.prevClose = cached.prevClose;
       s.priceDate = cached.date;
-      s.currentValue = toNumber(s.quantity) * cached.price;
+      const isSell = ['SELL', 'S', 'SOLD'].includes(String(s.transactionType || '').toUpperCase());
+      s.currentValue = isSell ? 0 : (toNumber(s.quantity) * cached.price);
     }
   });
 }
@@ -5457,7 +5470,7 @@ function renderUsStockHoldingsPanel() {
       ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
       ['avgPrice', 'Avg Price ($)'], ['totalInv', 'Invested ($)'], ['currentPrice', 'CMP ($)'],
       ['currentValue', 'Current Value ($)'], ['dayChange', '1-Day Chg'],
-      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker']
+      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker'], ['action', 'Audit']
     ];
 
     if (targetThead) {
@@ -5491,8 +5504,9 @@ function renderUsStockHoldingsPanel() {
         const color = item.xirr >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
         return `<span style="color:${color};font-weight:600">${item.xirr.toFixed(2)}%</span>`;
       })(),
-      escapeHTML(item.demat)
-    ], `No US stock holdings for ${activeHoldingsOwner}. Add entries manually or load sample portfolio.`, 11);
+      escapeHTML(item.demat),
+      `<button class="secondary-button audit-usstock-btn" style="padding:2px 8px;font-size:0.7rem;font-weight:600;" data-symbol="${escapeHTML(item.symbol)}" data-owner="${escapeHTML(activeHoldingsOwner)}" data-demat="${escapeHTML(item.demat)}" title="Audit / Verify FIFO Ledger">🔍 Audit</button>`
+    ], `No US stock holdings for ${activeHoldingsOwner}. Add entries manually or load sample portfolio.`, 12);
   } else {
     // Transactions view — shows full history with BUY/SELL badge
     if (targetThead) {
@@ -5584,37 +5598,56 @@ function renderSimpleAssets() {
   });
 }
 
-function matchHoldingsOwner(owner, filter) {
-  const normalized = normalizeOwner(owner || "Me");
-  if (filter === "Both") return true;
-  return normalized === filter || normalized === "Both";
+function calcMfTotalValue(mfList) {
+  const mfByFund = {};
+  (mfList || []).forEach((t) => {
+    const key = `${t.fundName || "Unknown"}|${t.owner || 'Me'}`;
+    if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0 };
+    mfByFund[key].txns.push(t);
+    if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
+  });
+  return Object.entries(mfByFund).reduce((total, [, fund]) => {
+    const netUnits = calcMfCostBasis(fund.txns).netUnits;
+    return total + Math.max(0, netUnits) * fund.latestNav;
+  }, 0);
+}
+
+function calcStockTotalValue(stockList) {
+  const groups = {};
+  (stockList || []).forEach((s) => {
+    if (!s.symbol && !s.company) return;
+    const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  });
+  return Object.entries(groups).reduce((total, [, txns]) => {
+    const basis = calcStockCostBasis(txns);
+    if (basis.netQty <= 0) return total;
+    const price = toNumber(txns[0].currentPrice || txns[0].avgPrice || 0);
+    return total + (basis.netQty * price);
+  }, 0);
 }
 
 function investmentHoldingsTotal() {
-  // Calculate MF current value the SAME way as the fund summary:
-  // Group by fund → sum units → multiply by latestNav (or purchaseNav fallback)
-  // This avoids using the stale `currentValue` field that was initialized to `invested` on import.
   const mfByFund = {};
-  state.mutualFunds.forEach((t) => {
-    const key = t.fundName || "Unknown";
+  (state.mutualFunds || []).forEach((t) => {
+    const key = `${t.fundName || "Unknown"}|${t.owner || 'Me'}`;
     if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0 };
     mfByFund[key].txns.push(t);
     if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
   });
   const mutualFunds = Object.entries(mfByFund).reduce((total, [, fund]) => {
     const netUnits = calcMfCostBasis(fund.txns).netUnits;
-    return total + netUnits * fund.latestNav;
+    return total + Math.max(0, netUnits) * fund.latestNav;
   }, 0);
 
-  const stocksTotal = (state.stocks || []).reduce((total, s) => {
-    const cv = toNumber(s.currentValue) || (toNumber(s.quantity) * toNumber(s.currentPrice || s.avgPrice));
-    return total + (cv || toNumber(s.value) || 0);
-  }, 0);
+  const stocksTotal = calcStockTotalValue(state.stocks);
+  const usStocksTotal = calcStockTotalValue(state.usstocks);
 
   const simpleAssetsTotal = SIMPLE_ASSET_TABS.reduce((total, { stateKey }) => {
     return total + sum(state[stateKey] || [], "value");
   }, 0);
-  return mutualFunds + stocksTotal + simpleAssetsTotal;
+  return mutualFunds + stocksTotal + usStocksTotal + simpleAssetsTotal;
 }
 
 function renderLiabilities() {
@@ -8244,7 +8277,7 @@ function answerQuestion(question) {
     }, 0);
   })();
   const mfCurrent = mfCurrentCalc;
-  const stocksVal = sum(state.stocks, "value");
+  const stocksVal = calcStockTotalValue(state.stocks);
   const fdVal = sum(state.fd, "value");
   const epfVal = sum(state.epf, "value");
   const ppfVal = sum(state.ppf, "value");
@@ -8252,7 +8285,7 @@ function answerQuestion(question) {
   const goldVal = sum(state.gold, "value");
   const silverVal = sum(state.silver, "value");
   const cryptoVal = sum(state.crypto, "value");
-  const usStocksVal = sum(state.usstocks, "value");
+  const usStocksVal = calcStockTotalValue(state.usstocks);
   const bankSavingVal = sum(state.banksaving, "value");
   const othersVal = sum(state.others, "value");
   const registeredAssets = sum(state.assets, "value");
@@ -8516,10 +8549,10 @@ function answerQuestion(question) {
   if (/compare|vs\b|versus|couple|family|husband|wife/.test(q)) {
     const myIncome = sum(state.income.filter((i) => (i.person || "Me") === "Me"), "amount");
     const wifeIncome = sum(state.income.filter((i) => i.person === "Wife"), "amount");
-    const myMf = sum(state.mutualFunds.filter((f) => (f.owner || "Me") === "Me"), "currentValue");
-    const wifeMf = sum(state.mutualFunds.filter((f) => f.owner === "Wife"), "currentValue");
-    const myStocks = sum(state.stocks.filter((s) => (s.owner || "Me") === "Me"), "value");
-    const wifeStocks = sum(state.stocks.filter((s) => s.owner === "Wife"), "value");
+    const myMf = calcMfTotalValue(state.mutualFunds.filter((f) => (f.owner || "Me") === "Me"));
+    const wifeMf = calcMfTotalValue(state.mutualFunds.filter((f) => f.owner === "Wife"));
+    const myStocks = calcStockTotalValue(state.stocks.filter((s) => (s.owner || "Me") === "Me"));
+    const wifeStocks = calcStockTotalValue(state.stocks.filter((s) => s.owner === "Wife"));
     return `**Prafful vs Wife** 👫\n\n| | Prafful | Wife |\n|---|---|---|\n| Total income | ${formatINR(myIncome)} | ${formatINR(wifeIncome)} |\n| Mutual funds | ${formatINR(myMf)} | ${formatINR(wifeMf)} |\n| Stocks | ${formatINR(myStocks)} | ${formatINR(wifeStocks)} |\n| Career topics | ${myStudies.length} | ${wifeStudies.length} |\n| Goals | ${myGoals.length} | ${wifeGoals.length} |\n| Habits | ${myHabits.length} | ${wifeHabits.filter((h) => h.owner === "Wife").length} |`;
   }
 
@@ -9121,6 +9154,184 @@ function calcStockCostBasis(txns) {
   const realizedGain = totalSellProceeds - totalFifoCostConsumed;
 
   return { netQty, invested: remainingInvested, avgPrice, boughtQty: totalBought, soldQty: totalSold, realizedGain, totalSellProceeds };
+}
+
+function openHoldingAuditModal(symbol, owner, demat, isUS = false) {
+  const modal = document.getElementById('holdingAuditModal');
+  const title = document.getElementById('holdingAuditTitle');
+  const subtitle = document.getElementById('holdingAuditSubtitle');
+  const body = document.getElementById('holdingAuditBody');
+  if (!modal || !body) return;
+
+  const rawList = isUS ? (state.usstocks || []) : (state.stocks || []);
+  const matchingTxns = rawList.filter(s => {
+    if (!s.symbol && !s.company) return false;
+    const symMatch = (s.symbol || s.company || '').toUpperCase().trim() === symbol.toUpperCase().trim();
+    const ownerMatch = matchHoldingsOwner(s.owner || 'Me', owner);
+    const dematMatch = !demat || demat === '-' || (s.demat || '').toLowerCase() === demat.toLowerCase();
+    return symMatch && ownerMatch && dematMatch;
+  }).sort((a, b) => new Date(a.purchaseDate || a.date || '1970-01-01') - new Date(b.purchaseDate || b.date || '1970-01-01'));
+
+  const currencyFmt = isUS ? formatUSD : formatINR;
+  const companyName = matchingTxns[0]?.company || symbol;
+
+  if (title) title.textContent = `${symbol} — ${companyName}`;
+  if (subtitle) subtitle.textContent = `Broker: ${demat || 'General'} | Owner: ${owner} | Currency: ${isUS ? 'USD ($)' : 'INR (₹)'}`;
+
+  // 1. Calculate FIFO step by step lot consumption
+  const lots = [];
+  let totalBoughtQty = 0;
+  let totalSoldQty = 0;
+  let totalSellProceeds = 0;
+  let totalFifoCostConsumed = 0;
+
+  const ledgerSteps = matchingTxns.map((t, idx) => {
+    const qty = Math.abs(toNumber(t.quantity));
+    const price = toNumber(t.avgPrice || t.price || 0);
+    const txnType = String(t.transactionType || 'BUY').toUpperCase();
+    const isSell = txnType === 'SELL' || txnType === 'S' || txnType === 'SOLD';
+    const dateStr = formatDate(t.purchaseDate || t.date);
+
+    let amount = toNumber(t.invested) || (qty * price);
+    let lotDetail = '';
+    let realizedPnLForStep = null;
+
+    if (isSell) {
+      totalSoldQty += qty;
+      totalSellProceeds += amount;
+      let qtyToConsume = qty;
+      let stepCostConsumed = 0;
+
+      for (const lot of lots) {
+        if (qtyToConsume <= 0) break;
+        if (lot.remaining > 0) {
+          const take = Math.min(qtyToConsume, lot.remaining);
+          stepCostConsumed += take * lot.costPerShare;
+          lot.remaining -= take;
+          qtyToConsume -= take;
+        }
+      }
+      totalFifoCostConsumed += stepCostConsumed;
+      realizedPnLForStep = amount - stepCostConsumed;
+      lotDetail = `Sold ${qty} shares (consumed cost: ${currencyFmt(stepCostConsumed)})`;
+    } else {
+      totalBoughtQty += qty;
+      const costPerShare = qty > 0 ? amount / qty : 0;
+      lots.push({ qty, remaining: qty, costPerShare, invested: amount, date: dateStr });
+      lotDetail = `Bought ${qty} shares @ ${currencyFmt(price)}`;
+    }
+
+    let runningQty = 0;
+    let runningInvested = 0;
+    lots.forEach(l => {
+      if (l.remaining > 0) {
+        runningQty += l.remaining;
+        runningInvested += l.remaining * l.costPerShare;
+      }
+    });
+
+    return {
+      step: idx + 1,
+      date: dateStr,
+      type: isSell ? 'SELL' : 'BUY',
+      qty,
+      price,
+      amount,
+      lotDetail,
+      realizedPnLForStep,
+      runningQty,
+      runningInvested,
+      avgCost: runningQty > 0 ? (runningInvested / runningQty) : 0
+    };
+  });
+
+  const basis = calcStockCostBasis(matchingTxns);
+  const { netQty, invested: totalInv, avgPrice: finalAvgPrice, realizedGain } = basis;
+  const currentPrice = toNumber(matchingTxns[matchingTxns.length - 1]?.currentPrice || finalAvgPrice);
+  const currentValue = netQty * currentPrice;
+  const unrealizedGain = currentValue - totalInv;
+  const totalPnL = unrealizedGain + realizedGain;
+
+  const gainColor = unrealizedGain >= 0 ? '#22c55e' : '#ef4444';
+  const realizedColor = realizedGain >= 0 ? '#22c55e' : '#ef4444';
+  const totalPnLColor = totalPnL >= 0 ? '#22c55e' : '#ef4444';
+
+  body.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; border-bottom: 1px solid var(--line); padding-bottom: 16px;">
+      <div style="background: var(--surface-2, rgba(255,255,255,0.05)); padding: 10px; border-radius: 8px;">
+        <div style="font-size: 0.7rem; opacity: 0.7;">Active Holding Qty</div>
+        <div style="font-size: 1.1rem; font-weight: 700;">${netQty.toFixed(netQty % 1 === 0 ? 0 : 4)} shares</div>
+        <div style="font-size: 0.65rem; opacity: 0.6;">Bought ${totalBoughtQty.toFixed(0)} · Sold ${totalSoldQty.toFixed(0)}</div>
+      </div>
+      <div style="background: var(--surface-2, rgba(255,255,255,0.05)); padding: 10px; border-radius: 8px;">
+        <div style="font-size: 0.7rem; opacity: 0.7;">Avg Cost Basis</div>
+        <div style="font-size: 1.1rem; font-weight: 700;">${currencyFmt(finalAvgPrice)}</div>
+        <div style="font-size: 0.65rem; opacity: 0.6;">Total Inv: ${currencyFmt(totalInv)}</div>
+      </div>
+      <div style="background: var(--surface-2, rgba(255,255,255,0.05)); padding: 10px; border-radius: 8px;">
+        <div style="font-size: 0.7rem; opacity: 0.7;">Current Value</div>
+        <div style="font-size: 1.1rem; font-weight: 700;">${currencyFmt(currentValue)}</div>
+        <div style="font-size: 0.65rem; opacity: 0.6;">CMP: ${currencyFmt(currentPrice)}</div>
+      </div>
+      <div style="background: var(--surface-2, rgba(255,255,255,0.05)); padding: 10px; border-radius: 8px;">
+        <div style="font-size: 0.7rem; opacity: 0.7;">Unrealized P&L</div>
+        <div style="font-size: 1.1rem; font-weight: 700; color: ${gainColor}">${currencyFmt(unrealizedGain)}</div>
+        <div style="font-size: 0.65rem; color: ${gainColor}">${totalInv > 0 ? ((unrealizedGain/totalInv)*100).toFixed(2) : '0'}% gain</div>
+      </div>
+      <div style="background: var(--surface-2, rgba(255,255,255,0.05)); padding: 10px; border-radius: 8px;">
+        <div style="font-size: 0.7rem; opacity: 0.7;">Realized P&L (Sells)</div>
+        <div style="font-size: 1.1rem; font-weight: 700; color: ${realizedColor}">${currencyFmt(realizedGain)}</div>
+        <div style="font-size: 0.65rem; opacity: 0.6;">From ${totalSoldQty} sold shares</div>
+      </div>
+      <div style="background: var(--surface-2, rgba(255,255,255,0.05)); padding: 10px; border-radius: 8px; border-left: 3px solid ${totalPnLColor}">
+        <div style="font-size: 0.7rem; opacity: 0.7;">All-Time P&L</div>
+        <div style="font-size: 1.1rem; font-weight: 700; color: ${totalPnLColor}">${currencyFmt(totalPnL)}</div>
+        <div style="font-size: 0.65rem; opacity: 0.6;">Unrealized + Realized</div>
+      </div>
+    </div>
+
+    <div>
+      <h4 style="margin-bottom: 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8;">Chronological Transaction Ledger (${ledgerSteps.length} trades)</h4>
+      <div class="table-wrap" style="max-height: 320px; overflow-y: auto;">
+        <table style="width: 100%; font-size: 0.75rem; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--line); text-align: left; opacity: 0.7;">
+              <th style="padding: 6px 8px;">Date</th>
+              <th style="padding: 6px 8px;">Type</th>
+              <th style="padding: 6px 8px;">Qty</th>
+              <th style="padding: 6px 8px;">Price</th>
+              <th style="padding: 6px 8px;">Trade Amt</th>
+              <th style="padding: 6px 8px;">Running Pos</th>
+              <th style="padding: 6px 8px;">Step P&L</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ledgerSteps.map(step => {
+              const typeBadge = step.type === 'SELL'
+                ? `<span style="background:#ef4444;color:white;padding:1px 6px;border-radius:3px;font-size:0.65rem;font-weight:700">SELL</span>`
+                : `<span style="background:#22c55e;color:white;padding:1px 6px;border-radius:3px;font-size:0.65rem;font-weight:700">BUY</span>`;
+              const stepPlStr = step.realizedPnLForStep !== null
+                ? `<span style="color:${step.realizedPnLForStep >= 0 ? '#22c55e' : '#ef4444'};font-weight:600">${step.realizedPnLForStep >= 0 ? '+' : ''}${currencyFmt(step.realizedPnLForStep)}</span>`
+                : '<span style="opacity:0.3">—</span>';
+              return `
+                <tr style="border-bottom: 1px solid var(--line);">
+                  <td style="padding: 6px 8px;">${step.date}</td>
+                  <td style="padding: 6px 8px;">${typeBadge}</td>
+                  <td style="padding: 6px 8px; font-weight:600;">${step.type === 'SELL' ? '-' : '+'}${step.qty}</td>
+                  <td style="padding: 6px 8px;">${currencyFmt(step.price)}</td>
+                  <td style="padding: 6px 8px;">${currencyFmt(step.amount)}</td>
+                  <td style="padding: 6px 8px;"><strong>${step.runningQty.toFixed(step.runningQty % 1 === 0 ? 0 : 2)}</strong> shares @ ${currencyFmt(step.avgCost)}</td>
+                  <td style="padding: 6px 8px;">${stepPlStr}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  modal.hidden = false;
 }
 
 function clamp(value, min, max) {
@@ -10387,6 +10598,7 @@ if (typeof module !== 'undefined' && module.exports) {
     defaultUsStockHoldings,
     formatUSD,
     calcStockCostBasis,
+    calcStockTotalValue,
   };
 }
 

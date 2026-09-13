@@ -301,6 +301,48 @@ runTest('calcStockCostBasis: handles US stocks with fractional shares (e.g. VOO 
 });
 
 // ----------------------------------------------------------------------
+// Test 13: calcStockTotalValue — verify sold positions are excluded from total value
+// ----------------------------------------------------------------------
+runTest('calcStockTotalValue: excludes fully sold positions and does not count SELL rows towards valuation', () => {
+  const { calcStockTotalValue } = require('../app.js');
+
+  const stockList = [
+    // Symbol 1: Active holding (Buy 10 @ 100, CMP 150) -> Value = 10 * 150 = 1500
+    { symbol: 'INFY', owner: 'Me', demat: 'Zerodha', transactionType: 'BUY', quantity: 10, avgPrice: 100, currentPrice: 150 },
+    // Symbol 2: Fully sold holding (Buy 5 @ 200, Sell 5 @ 250, CMP 300) -> Value = 0 (should NOT be 5 * 300)
+    { symbol: 'TCS', owner: 'Me', demat: 'Zerodha', transactionType: 'BUY', quantity: 5, avgPrice: 200, currentPrice: 300 },
+    { symbol: 'TCS', owner: 'Me', demat: 'Zerodha', transactionType: 'SELL', quantity: 5, avgPrice: 250, currentPrice: 300 },
+  ];
+
+  const totalVal = calcStockTotalValue(stockList);
+  assert.strictEqual(totalVal, 1500, 'Total valuation should be 1500 (INFY only), fully-sold TCS must be 0');
+});
+
+// ----------------------------------------------------------------------
+// Test 14: calcStockCostBasis — Realized P&L accuracy on multi-lot sales
+// ----------------------------------------------------------------------
+runTest('calcStockCostBasis: accurately computes realizedGain from sold shares using FIFO cost', () => {
+  const { calcStockCostBasis } = require('../app.js');
+
+  // Lot 1: Buy 10 @ ₹100 = ₹1,000 cost (date 2023-01-01)
+  // Lot 2: Buy 10 @ ₹200 = ₹2,000 cost (date 2023-06-01)
+  // Sell 12 @ ₹250 = ₹3,000 proceeds (date 2024-01-01)
+  // FIFO cost consumed = (10 * 100) + (2 * 200) = 1000 + 400 = ₹1,400
+  // Realized gain = ₹3,000 - ₹1,400 = ₹1,600
+  // Remaining: 8 shares from lot 2 @ ₹200 = ₹1,600 cost basis
+  const txns = [
+    { transactionType: 'BUY',  quantity: 10, avgPrice: 100, invested: 1000, purchaseDate: '2023-01-01' },
+    { transactionType: 'BUY',  quantity: 10, avgPrice: 200, invested: 2000, purchaseDate: '2023-06-01' },
+    { transactionType: 'SELL', quantity: 12, avgPrice: 250, invested: 3000, purchaseDate: '2024-01-01' },
+  ];
+
+  const res = calcStockCostBasis(txns);
+  assert.strictEqual(res.netQty, 8, 'Remaining netQty should be 8');
+  assert.strictEqual(res.invested, 1600, 'Remaining cost basis should be 1600 (8 * 200)');
+  assert.strictEqual(res.realizedGain, 1600, 'Realized gain should be 3000 proceeds - 1400 FIFO cost = 1600');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");
