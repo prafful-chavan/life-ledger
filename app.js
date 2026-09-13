@@ -739,6 +739,12 @@ function bindModals() {
     });
   });
 
+  document.querySelectorAll(".open-sync-log-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      openSyncLogModal("all");
+    });
+  });
+
   document.querySelectorAll("[data-close-modal]").forEach((button) => {
     button.addEventListener("click", () => closeModal(button.closest(".modal")));
   });
@@ -842,6 +848,10 @@ function bindFinanceTabs() {
   });
 
   document.addEventListener("click", async (event) => {
+    const logBtn = event.target.closest(".open-sync-log-btn") || event.target.closest('[data-open-modal="syncLogModal"]');
+    if (logBtn) {
+      openSyncLogModal("all");
+    }
     const editBtn = event.target.closest(".edit-btn");
     const deleteBtn = event.target.closest(".delete-btn");
     if (editBtn) {
@@ -1597,7 +1607,12 @@ async function loadAiInsights() {
 
 function openModal(target) {
   const el = typeof target === "string" ? document.getElementById(target) : target;
-  if (el) el.hidden = false;
+  if (el) {
+    el.hidden = false;
+    if (el.id === "syncLogModal" && typeof openSyncLogModal === "function") {
+      openSyncLogModal("all");
+    }
+  }
 }
 
 function closeModal(modal) {
