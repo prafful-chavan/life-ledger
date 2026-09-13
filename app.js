@@ -2211,13 +2211,25 @@ function parseMasterHoldingsWorkbook(buffer) {
     return String(k).toLowerCase().replace(/[^a-z0-9]/g, "");
   }
 
-  /** Get a value from normRow by trying multiple possible normalised keys */
   function pick(normRow, ...keys) {
     for (const k of keys) {
       const v = normRow[normKey(k)];
       if (v !== undefined && v !== null && v !== "") return v;
     }
     return "";
+  }
+
+  function deriveStockSymbol(name) {
+    if (!name) return "STOCK";
+    const clean = String(name).toUpperCase().trim();
+    if (clean.includes("NIFTY BEES") || clean.includes("NIFTYBEES")) return "NIFTYBEES";
+    if (clean.includes("GOLD BEES") || clean.includes("GOLDBEES")) return "GOLDBEES";
+    if (clean.includes("SILVER BEES") || clean.includes("NETFSILVER") || clean.includes("SILVER")) return "SILVERBEES";
+    if (clean.includes("BANK BEES") || clean.includes("BANKBEES")) return "BANKBEES";
+    if (clean.includes("IT BEES") || clean.includes("ITBEES")) return "ITBEES";
+    if (clean.includes("MID150") || clean.includes("MIDCAP 150")) return "MID150BEES";
+    const firstWord = clean.split(/[\s,#\-_]+/)[0];
+    return firstWord || "STOCK";
   }
 
   /** Normalise a row object's keys */
@@ -2405,47 +2417,90 @@ function parseMasterHoldingsWorkbook(buffer) {
       // ── STOCK (Indian) ──────────────────────────────────────────────────
       if (rowAsset === "stock") {
         const qty = parseNumVal(pick(normRow,
-          "Qty", "qty", "Quantity", "quantity",
-          "Units", "units", "Shares", "shares",
+          "Net Qty", "netqty",
+          "Qty.", "qty",
+          "Quantity", "quantity",
+          "Tot Qty", "totqty",
+          "Free Bal", "freebal",
+          "Units", "units",
+          "Shares", "shares",
           "No of Shares", "noofshares"
         ));
+
         let price = parseNumVal(pick(normRow,
+          "Avg. Price", "avgprice",
+          "Avg. cost", "avgcost",
+          "Average buy price", "averagebuyprice",
           "Price", "price", "Avg Price", "avgprice",
           "Buy Price", "buyprice", "Rate", "rate",
           "Trade Price", "tradeprice"
         ));
-        let amount = Math.abs(parseNumVal(pick(normRow,
+
+        let invested = Math.abs(parseNumVal(pick(normRow,
+          "Invested", "invested",
+          "Buy value", "buyvalue",
           "Amount", "amount",
           "Total Amount", "totalamount",
-          "Invested", "invested",
           "Net Amount", "netamount",
           "Value", "value",
           "Amount (INR)", "amountinr"
         )));
-        if (!price && qty && amount) price = amount / qty;
-        if (!amount && qty && price) amount = qty * price;
 
-        const nseCode = String(pick(normRow,
-          "NSE code", "nsecode", "NSE Code",
-          // Upstox trade log: "Scrip Code" is the exchange ticker (e.g. INFY, HDFCBANK)
+        let ltp = parseNumVal(pick(normRow,
+          "LTP", "ltp",
+          "Closing price", "closingprice",
+          "Rate", "rate",
+          "Market Price", "marketprice",
+          "Current Price", "currentprice"
+        ));
+
+        let currentValue = Math.abs(parseNumVal(pick(normRow,
+          "Current Value", "currentvalue",
+          "Cur. val", "curval",
+          "Closing value", "closingvalue",
+          "Value", "value"
+        )));
+
+        let pnl = parseNumVal(pick(normRow,
+          "Overall P&L", "overallpnl",
+          "Unrealised P&L", "unrealisedpnl",
+          "P&L", "pnl",
+          "Net chg.", "netchg"
+        ));
+
+        if (!price && qty && invested) price = invested / qty;
+        if (!invested && qty && price) invested = qty * price;
+        if (!ltp && price) ltp = price;
+        if (!currentValue && qty && ltp) currentValue = qty * ltp;
+        if (!currentValue && invested) currentValue = invested + pnl;
+
+        const rawSymbol = String(pick(normRow,
+          "Symbol", "symbol",
+          "Stock Symbol", "stocksymbol",
+          "Ticker", "ticker",
+          "NSE code", "nsecode",
           "Scrip Code", "scripcode",
-          // Wife INDMoney Indian stocks: "Scrip Symbol" is the NSE ticker
           "Scrip Symbol", "scripsymbol",
-          "Symbol", "symbol", "Ticker", "ticker", "Scrip", "scrip"
-        ) || cleanName).trim().toUpperCase().replace(/\s*-EQ$/i, "").trim();
+          "Scrip", "scrip"
+        ) || "").trim().toUpperCase().replace(/\s*-EQ$/i, "").replace(/\s*NSE\s*EQ/i, "").trim();
+
+        const symbol = rawSymbol || deriveStockSymbol(cleanName);
 
         parsedStocks.push({
           id: `stk-${generateUUID()}`,
-          symbol: nseCode || cleanName.toUpperCase(),
-          company: cleanName,
-          transactionType: isSell ? "SELL" : "BUY",
+          symbol: symbol,
+          company: cleanName || symbol,
           quantity: Math.abs(qty),
           avgPrice: Math.abs(price),
-          invested: amount,
+          invested: Math.abs(invested),
+          currentPrice: Math.abs(ltp || price),
+          currentValue: Math.abs(currentValue || invested),
+          pnl: pnl,
           purchaseDate: dateVal,
           date: dateVal,
           owner: ownerVal,
-          demat: cfg.broker
+          demat: cfg.broker,
+          category: /BEES|ETF|GOLD|SILVER|NIFTY|LIQUID|INDEX/i.test(symbol + " " + cleanName) ? "ETF" : "Stock"
         });
 
       // ── MUTUAL FUND ──────────────────────────────────────────────────
@@ -2484,30 +2539,38 @@ function parseMasterHoldingsWorkbook(buffer) {
       // ── US STOCKS ──────────────────────────────────────────────────
       } else if (rowAsset === "usstock") {
         const qty = parseNumVal(pick(normRow,
-          "Qty", "qty", "Quantity", "quantity",
-          "Units", "units", "Shares", "shares"
+          "Quantity", "quantity",
+          "Qty", "qty", "Units", "units", "Shares", "shares"
         ));
+
         let price = parseNumVal(pick(normRow,
-          "Price", "price", "Avg Price", "avgprice",
-          "Buy Price", "buyprice",
-          // My US stocks INDMoney: "Price ($)"
+          "Avg. Price ($)", "avgprice",
           "Price ($)", "price",
-          "Price (USD)", "priceusd", "Rate", "rate"
+          "Price", "price", "Avg Price", "avgprice",
+          "Buy Price", "buyprice", "Rate", "rate"
         ));
-        let amount = Math.abs(parseNumVal(pick(normRow,
-          "Amount", "amount",
-          "Total Amount", "totalamount",
-          "Amount (USD)", "amountusd",
-          // My US stocks INDMoney: "Order Amount ($)"
-          "Order Amount ($)", "orderamount",
-          "Invested", "invested",
-          "Value", "value"
+
+        let currentValue = Math.abs(parseNumVal(pick(normRow,
+          "Total Value ($)", "totalvalue",
+          "Current Value", "currentvalue",
+          "Cur. val", "curval",
+          "Value", "value",
+          "Amount (USD)", "amountusd"
         )));
-        if (!price && qty && amount) price = amount / qty;
-        if (!amount && qty && price) amount = qty * price;
+
+        let invested = Math.abs(parseNumVal(pick(normRow,
+          "Invested", "invested",
+          "Order Amount ($)", "orderamount",
+          "Amount", "amount"
+        )));
+
+        if (!invested && qty && price) invested = qty * price;
+        if (!price && qty && invested) price = invested / qty;
+        if (!currentValue && qty && price) currentValue = qty * price;
+
+        let currentPrice = (qty > 0 && currentValue > 0) ? (currentValue / qty) : price;
 
         const tickerSymbol = String(pick(normRow,
-          // My US stocks INDMoney: "Stock Symbol" is the ticker (e.g. AAPL, META, VOO)
           "Stock Symbol", "stocksymbol",
           "Symbol", "symbol", "Ticker", "ticker",
           "NSE code", "nsecode", "Stock", "stock"
@@ -2516,15 +2579,17 @@ function parseMasterHoldingsWorkbook(buffer) {
         parsedUsStocks.push({
           id: `uss-${generateUUID()}`,
           symbol: tickerSymbol,
-          company: cleanName,
-          transactionType: isSell ? "SELL" : "BUY",
+          company: cleanName || tickerSymbol,
           quantity: Math.abs(qty),
           avgPrice: Math.abs(price),
-          invested: amount,
+          invested: Math.abs(invested),
+          currentPrice: Math.abs(currentPrice || price),
+          currentValue: Math.abs(currentValue || invested),
           purchaseDate: dateVal,
           date: dateVal,
           owner: cfg.owner,
-          demat: cfg.broker
+          demat: cfg.broker,
+          category: /QQQ|VOO|SPY|IVV|VTI|ETF/i.test(tickerSymbol) ? "ETF" : "Stock"
         });
       }
     });
@@ -4984,185 +5049,112 @@ function renderStockHoldingsPanel() {
 
   const hasRichData = rows.some(s => s.symbol || s.company);
 
-  // ── Build FIFO groups once — used for both summary AND holdings table ────────
-  // Group by symbol+owner+broker so same stock in different accounts is separate
-  const fifoGroups = {};
-  rows.forEach(s => {
-    if (!s.symbol && !s.company) return;
-    const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
-    if (!fifoGroups[key]) fifoGroups[key] = [];
-    fifoGroups[key].push(s);
-  });
-
-  // ── Compute summary metrics from FIFO-netted positions only ─────────────────
-  // ONLY count positions we still hold (netQty > 0) for Invested & Current Value
-  // COLLECT realized gain from ALL positions (including fully exited ones)
+  // Compute summary metrics directly from holding snapshots
   let totalInvested = 0;
   let totalCurrentValue = 0;
-  let totalRealizedGain = 0;
+  let heldSymbolCount = 0;
   let oneDayChange = 0;
   let hasOneDayData = false;
-  let heldSymbolCount = 0;
 
-  const allFifoData = Object.entries(fifoGroups).map(([key, txns]) => {
-    const basis = calcStockCostBasis(txns);
-    const sym = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
-    const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
-    const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
-    const currentValue = basis.netQty * currentPrice;
-    // Accumulate realized gain from all groups (including fully sold)
-    totalRealizedGain += basis.realizedGain;
-    if (basis.netQty > 0) {
-      totalInvested += basis.invested;
+  const holdings = rows.map(item => {
+    const qty = toNumber(item.quantity);
+    const avgPrice = toNumber(item.avgPrice);
+    const currentPrice = toNumber(item.currentPrice || item.avgPrice);
+    const invested = toNumber(item.invested || (qty * avgPrice));
+    const currentValue = toNumber(item.currentValue || (qty * currentPrice));
+    const gain = item.pnl !== undefined && item.pnl !== 0 ? toNumber(item.pnl) : (currentValue - invested);
+    const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
+    const prevClose = item.prevClose ? toNumber(item.prevClose) : null;
+    const dayChange = prevClose ? qty * (currentPrice - prevClose) : null;
+    const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+
+    if (qty > 0) {
+      totalInvested += invested;
       totalCurrentValue += currentValue;
       heldSymbolCount++;
-      if (prevClose && currentPrice) {
-        oneDayChange += basis.netQty * (currentPrice - prevClose);
+      if (dayChange !== null) {
+        oneDayChange += dayChange;
         hasOneDayData = true;
       }
     }
-    return { key, txns, basis, sym, currentPrice, prevClose, currentValue,
-      company: txns[0].company || sym, category: txns[0].category || 'Stock',
-      demat: txns[0].demat || '-', exchange: txns[0].exchange || 'NSE' };
+
+    return {
+      symbol: item.symbol || "UNKNOWN",
+      company: item.company || item.symbol || "Stock",
+      category: item.category || "Stock",
+      exchange: item.exchange || "NSE",
+      totalQty: qty,
+      avgPrice,
+      totalInv: invested,
+      currentPrice,
+      prevClose,
+      currentValue,
+      gain,
+      gainPct,
+      dayChange,
+      dayChangePct,
+      demat: item.demat || "-",
+      id: item.id
+    };
   });
 
   const totalUnrealizedGain = totalCurrentValue - totalInvested;
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealizedGain / totalInvested) * 100 : 0;
-  const totalAllTimePnL = totalUnrealizedGain + totalRealizedGain;
-  const oneDayPct = hasOneDayData && (totalCurrentValue - oneDayChange) > 0
-    ? (oneDayChange / (totalCurrentValue - oneDayChange)) * 100 : 0;
 
-  // ── Summary cards ────────────────────────────────────────────────────────────
+  // Render Summary Cards
   if (summary) {
-    const dayChangeColor = oneDayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-    const dayChangeArrow = oneDayChange >= 0 ? '▲' : '▼';
     const gainColor = totalUnrealizedGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-    const allTimePnLColor = totalAllTimePnL >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-    const realizedColor = totalRealizedGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">💰 Invested (${activeHoldingsOwner})</div>
         <div class="value">${formatINR(totalInvested)}</div>
-        <div class="hint">${heldSymbolCount} holdings · current positions only</div>
+        <div class="hint">${heldSymbolCount} holdings positions</div>
       </article>
       <article class="metric-card compact-metric">
         <div class="label">📈 Current Value</div>
         <div class="value">${formatINR(totalCurrentValue)}</div>
-        <div class="hint">${hasRichData ? 'Live prices' : 'Manual values'}</div>
+        <div class="hint">Live &amp; Sheet Values</div>
       </article>
       <article class="metric-card compact-metric">
-        <div class="label">📊 Unrealized P&L</div>
+        <div class="label">📊 Overall P&L</div>
         <div class="value" style="color: ${gainColor}">${formatINR(totalUnrealizedGain)}</div>
-        <div class="hint" style="color: ${gainColor}">${totalUnrealizedGain >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% on current holdings</div>
-      </article>
-      <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
-        <div class="label">📉 1-Day Change</div>
-        <div class="value" style="color: ${dayChangeColor}">${hasOneDayData ? `${dayChangeArrow} ${formatINR(Math.abs(oneDayChange))}` : '—'}</div>
-        <div class="hint">${hasOneDayData ? `${oneDayChange >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh prices to see'}</div>
-      </article>
-      <article class="metric-card compact-metric" style="border-left: 3px solid ${allTimePnLColor}">
-        <div class="label">💹 All-Time P&L</div>
-        <div class="value" style="color: ${allTimePnLColor}">${formatINR(totalAllTimePnL)}</div>
-        <div class="hint"><span style="color:${gainColor}">Unrealized ${formatINR(totalUnrealizedGain)}</span> + <span style="color:${realizedColor}">Realized ${formatINR(totalRealizedGain)}</span></div>
+        <div class="hint" style="color: ${gainColor}">${totalUnrealizedGain >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% total return</div>
       </article>
     `;
   }
 
-  if (activeStockView === "holdings" && hasRichData) {
-    // Holdings view: use pre-computed FIFO groups; filter out fully-sold positions
-    const holdings = allFifoData
-      .filter(g => g.basis.netQty > 0)
-      .map(g => {
-        const { basis, sym, currentPrice, prevClose, currentValue, company, category, demat, exchange, txns } = g;
-        const { netQty, invested: totalInv, avgPrice } = basis;
-        const gain = currentValue - totalInv;
-        const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
-        const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
-        const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
-        const buyTxns = txns.filter(t => { const tt = String(t.transactionType || '').toUpperCase(); return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD'; });
-        const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
-        if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
-        const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
-        return { symbol: sym, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-      });
+  // Render Table Rows
+  const sortedStockHoldings = sortHoldings(holdings, stockSortCol, stockSortDir);
 
-    const sortedStockHoldings = sortHoldings(holdings, stockSortCol, stockSortDir);
+  const stockColumns = [
+    ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
+    ['avgPrice', 'Avg Price'], ['totalInv', 'Invested'], ['currentPrice', 'CMP / LTP'],
+    ['currentValue', 'Current Value'], ['gain', 'Overall P&L'], ['demat', 'Broker']
+  ];
 
-    const stockColumns = [
-      ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
-      ['avgPrice', 'Avg Price'], ['totalInv', 'Invested'], ['currentPrice', 'CMP'],
-      ['currentValue', 'Current Value'], ['dayChange', '1-Day Chg'],
-      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker'], ['action', 'Audit']
-    ];
-
-    if (targetThead) {
-      targetThead.innerHTML = buildSortableThead(stockColumns, stockSortCol, stockSortDir);
-      bindSortableHeaders(targetThead, (col) => {
-        if (stockSortCol === col) { stockSortDir = stockSortDir === 'asc' ? 'desc' : 'asc'; }
-        else { stockSortCol = col; stockSortDir = 'desc'; }
-        renderStockHoldingsPanel();
-      });
-    }
-    renderRows(table, sortedStockHoldings, (item) => [
-      `<span style="font-weight:600">${escapeHTML(item.symbol)}</span> <small style="opacity:0.5">${escapeHTML(item.exchange)}</small>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
-      escapeHTML(item.company),
-      item.totalQty.toFixed(item.totalQty % 1 === 0 ? 0 : 2),
-      formatINR(item.avgPrice),
-      formatINR(item.totalInv),
-      formatINR(item.currentPrice),
-      formatINR(item.currentValue),
-      (() => {
-        if (item.dayChange === null) return '<span style="opacity:0.4">—</span>';
-        const color = item.dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-        const arrow = item.dayChange >= 0 ? '▲' : '▼';
-        return `<span style="color:${color};font-weight:600">${arrow} ${formatINR(Math.abs(item.dayChange))} <small>(${item.dayChange >= 0 ? '+' : ''}${item.dayChangePct.toFixed(2)}%)</small></span>`;
-      })(),
-      (() => {
-        const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-        return `<span style="color:${color};font-weight:600">${formatINR(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
-      })(),
-      (() => {
-        if (item.xirr === null) return '<span style="opacity:0.4">—</span>';
-        const color = item.xirr >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-        return `<span style="color:${color};font-weight:600">${item.xirr.toFixed(2)}%</span>`;
-      })(),
-      escapeHTML(item.demat),
-      `<button class="secondary-button audit-stock-btn" style="padding:2px 8px;font-size:0.7rem;font-weight:600;" data-symbol="${escapeHTML(item.symbol)}" data-owner="${escapeHTML(activeHoldingsOwner)}" data-demat="${escapeHTML(item.demat)}" title="Audit / Verify FIFO Ledger">🔍 Audit</button>`
-    ], `No stock holdings for ${activeHoldingsOwner}. Import a CSV or add entries manually.`, 12);
-  } else {
-    // Transactions view — shows full history with BUY/SELL badge
-    if (targetThead) {
-      targetThead.innerHTML = `<tr><th>Date</th><th>Type</th><th>Symbol</th><th>Company</th><th>Qty</th><th>Price</th><th>Amount</th><th>CMP</th><th>Current Value</th><th>Owner</th><th>Broker</th><th>Action</th></tr>`;
-    }
-    renderRows(table, rows, (item) => {
-      if (!item.symbol && !item.company && item.value) {
-        return [formatDate(item.date), '—', '-', item.note || '-', '-', '-', formatINR(item.value), '-', formatINR(item.value), item.owner || item.paidBy || 'Me', '-',
-          `<div class="actions-wrapper"><button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`];
-      }
-      const txnType = String(item.transactionType || 'BUY').toUpperCase();
-      const isSell = txnType === 'SELL' || txnType === 'S' || txnType === 'SOLD';
-      const typeBadge = isSell
-        ? `<span style="background:#ef4444;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">SELL</span>`
-        : `<span style="background:#22c55e;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">BUY</span>`;
-      const inv = toNumber(item.invested) || 0;
-      const cmp = item.currentPrice ? formatINR(item.currentPrice) : (item.avgPrice ? formatINR(item.avgPrice) : '—');
-      const curVal = !isSell && item.currentPrice ? formatINR(toNumber(item.quantity) * toNumber(item.currentPrice)) : (isSell ? '<span style="opacity:0.4">Sold</span>' : '—');
-      return [
-        formatDate(item.purchaseDate || item.date),
-        typeBadge,
-        `<span style="font-weight:600">${escapeHTML(item.symbol || '-')}</span>`,
-        escapeHTML(item.company || '-'),
-        item.quantity ? Number(item.quantity).toFixed(item.quantity % 1 === 0 ? 0 : 2) : '-',
-        item.avgPrice ? formatINR(item.avgPrice) : '-',
-        formatINR(inv),
-        isSell ? '<span style="opacity:0.4">—</span>' : cmp,
-        curVal,
-        item.owner || 'Me',
-        escapeHTML(item.demat || '-'),
-        `<div class="actions-wrapper"><button class="action-btn edit-btn edit-stock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-stock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`
-      ];
-    }, `No stock entries for ${activeHoldingsOwner}. Import a CSV or add entries manually.`, 12);
+  if (targetThead) {
+    targetThead.innerHTML = buildSortableThead(stockColumns, stockSortCol, stockSortDir);
+    bindSortableHeaders(targetThead, (col) => {
+      if (stockSortCol === col) { stockSortDir = stockSortDir === 'asc' ? 'desc' : 'asc'; }
+      else { stockSortCol = col; stockSortDir = 'desc'; }
+      renderStockHoldingsPanel();
+    });
   }
+
+  renderRows(table, sortedStockHoldings, (item) => [
+    `<span style="font-weight:600">${escapeHTML(item.symbol)}</span>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
+    escapeHTML(item.company),
+    item.totalQty.toFixed(item.totalQty % 1 === 0 ? 0 : 2),
+    formatINR(item.avgPrice),
+    formatINR(item.totalInv),
+    formatINR(item.currentPrice),
+    formatINR(item.currentValue),
+    (() => {
+      const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+      return `<span style="color:${color};font-weight:600">${formatINR(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
+    })(),
+    escapeHTML(item.demat)
+  ], `No stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 9);
 }
 
 function formatUSD(num) {
@@ -5389,12 +5381,6 @@ function renderUsStockHoldingsPanel() {
   const tableEl = table.closest("table");
   const targetThead = tableEl ? tableEl.querySelector("thead") : null;
 
-  const priceDateEl = document.getElementById("usStockPriceDateLabel");
-  if (priceDateEl) {
-    const sampleWithDate = (state.usstocks || []).find(s => s.priceDate);
-    priceDateEl.textContent = sampleWithDate?.priceDate ? `Prices: ${sampleWithDate.priceDate}` : '';
-  }
-
   const allStocks = [...(state.usstocks || [])];
   const rows = allStocks
     .filter(item => matchHoldingsOwner(item.owner || 'Me', activeHoldingsOwner))
@@ -5403,183 +5389,96 @@ function renderUsStockHoldingsPanel() {
 
   const hasRichData = rows.some(s => s.symbol || s.company);
 
-  // ── Build FIFO groups once — used for both summary AND holdings table ────────
-  const usFifoGroups = {};
-  rows.forEach(s => {
-    if (!s.symbol && !s.company) return;
-    const key = `${(s.symbol || s.company || 'Unknown').toUpperCase()}|${s.owner || 'Me'}|${s.demat || ''}`;
-    if (!usFifoGroups[key]) usFifoGroups[key] = [];
-    usFifoGroups[key].push(s);
-  });
-
-  // ── Compute summary metrics from FIFO-netted positions only ─────────────────
   let totalInvestedUSD = 0;
   let totalCurrentValueUSD = 0;
-  let totalRealizedGainUSD = 0;
-  let oneDayChangeUSD = 0;
-  let hasOneDayData = false;
   let heldSymbolCount = 0;
 
-  const allUsFifoData = Object.entries(usFifoGroups).map(([key, txns]) => {
-    const basis = calcStockCostBasis(txns);
-    const sym = (txns[0].symbol || txns[0].company || 'Unknown').toUpperCase();
-    const currentPrice = toNumber(txns[0].currentPrice || txns[0].avgPrice);
-    const prevClose = txns[0].prevClose ? toNumber(txns[0].prevClose) : null;
-    const currentValue = basis.netQty * currentPrice;
-    totalRealizedGainUSD += basis.realizedGain;
-    if (basis.netQty > 0) {
-      totalInvestedUSD += basis.invested;
+  const holdings = rows.map(item => {
+    const qty = toNumber(item.quantity);
+    const avgPrice = toNumber(item.avgPrice);
+    const currentPrice = toNumber(item.currentPrice || item.avgPrice);
+    const invested = toNumber(item.invested || (qty * avgPrice));
+    const currentValue = toNumber(item.currentValue || (qty * currentPrice));
+    const gain = currentValue - invested;
+    const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
+
+    if (qty > 0) {
+      totalInvestedUSD += invested;
       totalCurrentValueUSD += currentValue;
       heldSymbolCount++;
-      if (prevClose && currentPrice) {
-        oneDayChangeUSD += basis.netQty * (currentPrice - prevClose);
-        hasOneDayData = true;
-      }
     }
-    return { key, txns, basis, sym, currentPrice, prevClose, currentValue,
-      company: txns[0].company || sym, category: txns[0].category || 'Stock',
-      demat: txns[0].demat || '-', exchange: txns[0].exchange || 'NASDAQ' };
+
+    return {
+      symbol: item.symbol || "UNKNOWN",
+      company: item.company || item.symbol || "US Stock",
+      category: item.category || "Stock",
+      totalQty: qty,
+      avgPrice,
+      totalInv: invested,
+      currentPrice,
+      currentValue,
+      gain,
+      gainPct,
+      demat: item.demat || "INDmoney",
+      id: item.id
+    };
   });
 
   const totalUnrealizedGainUSD = totalCurrentValueUSD - totalInvestedUSD;
   const totalUnrealizedPct = totalInvestedUSD > 0 ? (totalUnrealizedGainUSD / totalInvestedUSD) * 100 : 0;
-  const totalAllTimePnLUSD = totalUnrealizedGainUSD + totalRealizedGainUSD;
-  const oneDayPct = hasOneDayData && (totalCurrentValueUSD - oneDayChangeUSD) > 0
-    ? (oneDayChangeUSD / (totalCurrentValueUSD - oneDayChangeUSD)) * 100 : 0;
 
-  // ── Summary cards ────────────────────────────────────────────────────────────
   if (summary) {
-    const dayChangeColor = oneDayChangeUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-    const dayChangeArrow = oneDayChangeUSD >= 0 ? '▲' : '▼';
     const gainColor = totalUnrealizedGainUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-    const allTimePnLColor = totalAllTimePnLUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-    const realizedColor = totalRealizedGainUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">💰 Invested (${activeHoldingsOwner})</div>
         <div class="value">${formatUSD(totalInvestedUSD)}</div>
-        <div class="hint">${heldSymbolCount} holdings · current positions only</div>
+        <div class="hint">${heldSymbolCount} US holdings</div>
       </article>
       <article class="metric-card compact-metric">
         <div class="label">📈 Current Value</div>
         <div class="value">${formatUSD(totalCurrentValueUSD)}</div>
-        <div class="hint">${hasRichData ? 'Live USD prices' : 'Manual values'}</div>
+        <div class="hint">Live &amp; Sheet Values ($)</div>
       </article>
       <article class="metric-card compact-metric">
-        <div class="label">📊 Unrealized P&L</div>
+        <div class="label">📊 Overall P&L</div>
         <div class="value" style="color: ${gainColor}">${formatUSD(totalUnrealizedGainUSD)}</div>
-        <div class="hint" style="color: ${gainColor}">${totalUnrealizedGainUSD >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% on current holdings</div>
-      </article>
-      <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
-        <div class="label">📉 1-Day Change</div>
-        <div class="value" style="color: ${dayChangeColor}">${hasOneDayData ? `${dayChangeArrow} ${formatUSD(Math.abs(oneDayChangeUSD))}` : '—'}</div>
-        <div class="hint">${hasOneDayData ? `${oneDayChangeUSD >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh prices to see'}</div>
-      </article>
-      <article class="metric-card compact-metric" style="border-left: 3px solid ${allTimePnLColor}">
-        <div class="label">💹 All-Time P&L</div>
-        <div class="value" style="color: ${allTimePnLColor}">${formatUSD(totalAllTimePnLUSD)}</div>
-        <div class="hint"><span style="color:${gainColor}">Unrealized ${formatUSD(totalUnrealizedGainUSD)}</span> + <span style="color:${realizedColor}">Realized ${formatUSD(totalRealizedGainUSD)}</span></div>
+        <div class="hint" style="color: ${gainColor}">${totalUnrealizedGainUSD >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% total return</div>
       </article>
     `;
   }
 
-  if (activeUsStockView === "holdings" && hasRichData) {
-    // Holdings view: use pre-computed FIFO groups; filter fully-sold positions
-    const holdings = allUsFifoData
-      .filter(g => g.basis.netQty > 0)
-      .map(g => {
-        const { basis, sym, currentPrice, prevClose, currentValue, company, category, demat, exchange, txns } = g;
-        const { netQty, invested: totalInv, avgPrice } = basis;
-        const gain = currentValue - totalInv;
-        const gainPct = totalInv > 0 ? (gain / totalInv) * 100 : 0;
-        const dayChange = prevClose ? netQty * (currentPrice - prevClose) : null;
-        const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
-        const buyTxns = txns.filter(t => { const tt = String(t.transactionType || '').toUpperCase(); return tt !== 'SELL' && tt !== 'S' && tt !== 'SOLD'; });
-        const cashFlows = buyTxns.filter(t => t.purchaseDate && t.invested).map(t => ({ date: new Date(t.purchaseDate), amount: -toNumber(t.invested) }));
-        if (netQty > 0 && currentValue > 0) cashFlows.push({ date: new Date(), amount: currentValue });
-        const xirr = cashFlows.length >= 2 ? calculateXIRR(cashFlows) : null;
-        return { symbol: sym, company, category, exchange, totalQty: netQty, avgPrice, totalInv, currentPrice, prevClose, currentValue, gain, gainPct, dayChange, dayChangePct, demat, xirr };
-      });
+  const sortedUsHoldings = sortHoldings(holdings, usStockSortCol, usStockSortDir);
 
-    const sortedUsHoldings = sortHoldings(holdings, usStockSortCol, usStockSortDir);
+  const usStockColumns = [
+    ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
+    ['avgPrice', 'Avg Price ($)'], ['totalInv', 'Invested ($)'], ['currentPrice', 'Price ($)'],
+    ['currentValue', 'Current Value ($)'], ['gain', 'Overall P&L ($)'], ['demat', 'Broker']
+  ];
 
-    const usStockColumns = [
-      ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
-      ['avgPrice', 'Avg Price ($)'], ['totalInv', 'Invested ($)'], ['currentPrice', 'CMP ($)'],
-      ['currentValue', 'Current Value ($)'], ['dayChange', '1-Day Chg'],
-      ['gain', 'P&L'], ['xirr', 'XIRR'], ['demat', 'Broker'], ['action', 'Audit']
-    ];
-
-    if (targetThead) {
-      targetThead.innerHTML = buildSortableThead(usStockColumns, usStockSortCol, usStockSortDir);
-      bindSortableHeaders(targetThead, (col) => {
-        if (usStockSortCol === col) { usStockSortDir = usStockSortDir === 'asc' ? 'desc' : 'asc'; }
-        else { usStockSortCol = col; usStockSortDir = 'desc'; }
-        renderUsStockHoldingsPanel();
-      });
-    }
-    renderRows(table, sortedUsHoldings, (item) => [
-      `<span style="font-weight:600">${escapeHTML(item.symbol)}</span> <small style="opacity:0.5">${escapeHTML(item.exchange)}</small>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
-      escapeHTML(item.company),
-      item.totalQty > 0 ? (item.totalQty < 1 ? item.totalQty.toFixed(6) : item.totalQty.toFixed(2)) : '-',
-      formatUSD(item.avgPrice),
-      formatUSD(item.totalInv),
-      formatUSD(item.currentPrice),
-      formatUSD(item.currentValue),
-      (() => {
-        if (item.dayChange === null) return '<span style="opacity:0.4">—</span>';
-        const color = item.dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-        const arrow = item.dayChange >= 0 ? '▲' : '▼';
-        return `<span style="color:${color};font-weight:600">${arrow} ${formatUSD(Math.abs(item.dayChange))} <small>(${item.dayChange >= 0 ? '+' : ''}${item.dayChangePct.toFixed(2)}%)</small></span>`;
-      })(),
-      (() => {
-        const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-        return `<span style="color:${color};font-weight:600">${formatUSD(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
-      })(),
-      (() => {
-        if (item.xirr === null) return '<span style="opacity:0.4">—</span>';
-        const color = item.xirr >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-        return `<span style="color:${color};font-weight:600">${item.xirr.toFixed(2)}%</span>`;
-      })(),
-      escapeHTML(item.demat),
-      `<button class="secondary-button audit-usstock-btn" style="padding:2px 8px;font-size:0.7rem;font-weight:600;" data-symbol="${escapeHTML(item.symbol)}" data-owner="${escapeHTML(activeHoldingsOwner)}" data-demat="${escapeHTML(item.demat)}" title="Audit / Verify FIFO Ledger">🔍 Audit</button>`
-    ], `No US stock holdings for ${activeHoldingsOwner}. Add entries manually or load sample portfolio.`, 12);
-  } else {
-    // Transactions view — shows full history with BUY/SELL badge
-    if (targetThead) {
-      targetThead.innerHTML = `<tr><th>Date</th><th>Type</th><th>Symbol</th><th>Company</th><th>Qty</th><th>Price ($)</th><th>Amount ($)</th><th>CMP ($)</th><th>Current Value ($)</th><th>Owner</th><th>Broker</th><th>Action</th></tr>`;
-    }
-    renderRows(table, rows, (item) => {
-      if (!item.symbol && !item.company && item.value) {
-        return [formatDate(item.date), '—', '-', item.note || '-', '-', '-', formatUSD(item.value), '-', formatUSD(item.value), item.owner || item.paidBy || 'Me', '-',
-          `<div class="actions-wrapper"><button class="action-btn edit-btn edit-usstock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-usstock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`];
-      }
-      const txnType = String(item.transactionType || 'BUY').toUpperCase();
-      const isSell = txnType === 'SELL' || txnType === 'S' || txnType === 'SOLD';
-      const typeBadge = isSell
-        ? `<span style="background:#ef4444;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">SELL</span>`
-        : `<span style="background:#22c55e;color:white;padding:1px 7px;border-radius:4px;font-size:0.7rem;font-weight:700">BUY</span>`;
-      const inv = toNumber(item.invested) || 0;
-      const qty = toNumber(item.quantity);
-      const cmp = item.currentPrice ? formatUSD(item.currentPrice) : (item.avgPrice ? formatUSD(item.avgPrice) : '—');
-      const curVal = !isSell && item.currentPrice ? formatUSD(qty * toNumber(item.currentPrice)) : (isSell ? '<span style="opacity:0.4">Sold</span>' : '—');
-      const qtyStr = qty > 0 ? (qty < 1 ? qty.toFixed(6) : qty.toFixed(2)) : '-';
-      return [
-        formatDate(item.purchaseDate || item.date),
-        typeBadge,
-        `<span style="font-weight:600">${escapeHTML(item.symbol || '-')}</span>`,
-        escapeHTML(item.company || '-'),
-        qtyStr,
-        item.avgPrice ? formatUSD(item.avgPrice) : '-',
-        formatUSD(inv),
-        isSell ? '<span style="opacity:0.4">—</span>' : cmp,
-        curVal,
-        item.owner || 'Me',
-        escapeHTML(item.demat || '-'),
-        `<div class="actions-wrapper"><button class="action-btn edit-btn edit-usstock-btn" data-id="${item.id}" title="Edit">✏️</button><button class="action-btn delete-btn delete-usstock-btn" data-id="${item.id}" title="Delete">🗑️</button></div>`
-      ];
-    }, `No US stock entries for ${activeHoldingsOwner}. Add entries manually.`, 12);
+  if (targetThead) {
+    targetThead.innerHTML = buildSortableThead(usStockColumns, usStockSortCol, usStockSortDir);
+    bindSortableHeaders(targetThead, (col) => {
+      if (usStockSortCol === col) { usStockSortDir = usStockSortDir === 'asc' ? 'desc' : 'asc'; }
+      else { usStockSortCol = col; usStockSortDir = 'desc'; }
+      renderUsStockHoldingsPanel();
+    });
   }
+
+  renderRows(table, sortedUsHoldings, (item) => [
+    `<span style="font-weight:600">${escapeHTML(item.symbol)}</span>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
+    escapeHTML(item.company),
+    item.totalQty < 1 ? item.totalQty.toFixed(6) : item.totalQty.toFixed(2),
+    formatUSD(item.avgPrice),
+    formatUSD(item.totalInv),
+    formatUSD(item.currentPrice),
+    formatUSD(item.currentValue),
+    (() => {
+      const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+      return `<span style="color:${color};font-weight:600">${formatUSD(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
+    })(),
+    escapeHTML(item.demat)
+  ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 9);
 }
 
 const SIMPLE_ASSET_TABS = [
