@@ -3702,4 +3702,195 @@ body[data-theme="dark"] .sortable-th:hover {
   }
 }
 
+/* ────────────────────────────────────────────────────────────────────────── */
+/* 📱🌐 COMPREHENSIVE RESPONSIVE DESIGN (MOBILE, TABLET, IPAD & ULTRA-WIDE)  */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Large Monitors & Ultra-wide Desktop (>= 1600px) */
+@media (min-width: 1600px) {
+  .main-content {
+    max-width: 1720px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+/* 2. Desktop & Laptops (1081px - 1599px) */
+@media (min-width: 1081px) and (max-width: 1599px) {
+  .metric-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+/* 3. iPad / Tablets / Medium Screens (681px - 1080px) */
+@media (max-width: 1080px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .topbar-actions button {
+    font-size: 0.8rem;
+    padding: 7px 12px;
+  }
+}
+
+/* 4. Mobile Phones (iPhone, Android, Foldables <= 680px) */
+@media (max-width: 680px) {
+  /* Prevent horizontal screen shake / body overflow */
+  html, body {
+    overflow-x: hidden;
+    touch-action: manipulation;
+  }
+
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  /* Sticky Top Bar & Actions */
+  .topbar {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    display: flex;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .topbar-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .topbar-actions button {
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    padding: 8px 12px;
+    min-height: 40px;
+    touch-action: manipulation;
+  }
+
+  /* Section Headings */
+  .section-heading {
+    gap: 8px;
+  }
+
+  .section-heading h2 {
+    font-size: 1.35rem;
+  }
+
+  /* Metric Cards Grid on Phones */
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
+  }
+
+  .metric-card {
+    padding: 12px 14px;
+  }
+
+  .metric-card .value {
+    font-size: 1.15rem;
+  }
+
+  .metric-card .label {
+    font-size: 0.72rem;
+  }
+
+  .metric-card .hint {
+    font-size: 0.68rem;
+  }
+
+  /* Filter Pill Strips (Owner, Broker, Views) */
+  .owner-toggle,
+  .broker-toggle,
+  .stock-view-toggle,
+  .mf-view-toggle {
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    gap: 6px !important;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .owner-toggle::-webkit-scrollbar,
+  .broker-toggle::-webkit-scrollbar,
+  .stock-view-toggle::-webkit-scrollbar,
+  .mf-view-toggle::-webkit-scrollbar {
+    display: none;
+  }
+
+  .owner-pill {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    min-height: 36px;
+  }
+
+  /* Table Container Touch Optimization */
+  .table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius);
+    margin-top: 10px;
+  }
+
+  table {
+    min-width: 780px;
+    font-size: 0.78rem;
+  }
+
+  th, td {
+    padding: 10px 10px;
+    white-space: nowrap;
+  }
+
+  th {
+    font-size: 0.7rem;
+  }
+
+  /* Mobile Keyboard-Aware Modals */
+  .modal-content {
+    width: 94vw !important;
+    max-width: 100% !important;
+    max-height: 85dvh !important;
+    padding: 16px !important;
+    border-radius: 16px !important;
+    margin: 10px auto !important;
+  }
+
+  .modal-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* 5. Extra Small Phones (<= 380px) */
+@media (max-width: 380px) {
+  .metric-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .metric-card .value {
+    font-size: 1.05rem;
+  }
+}
+
 
