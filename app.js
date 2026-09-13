@@ -9589,6 +9589,11 @@ function openSyncLogModal(filterLevel = "all") {
   modal.hidden = false;
 }
 
+if (typeof window !== 'undefined') {
+  window.openSyncLogModal = openSyncLogModal;
+  window.addSystemLog = addSystemLog;
+}
+
 function getFundCodesCache() {
   try {
     const cache = localStorage.getItem("lifeLedgerFundCodes:v3");

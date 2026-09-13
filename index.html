@@ -167,6 +167,7 @@
             <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings</button>
             <button class="secondary-button" type="button" id="themeToggle" aria-pressed="false">Dark mode</button>
             <button class="secondary-button" type="button" data-open-modal="settingsModal" id="settingsButton" aria-label="Settings">⚙️ Settings</button>
+            <button class="secondary-button open-sync-log-btn" type="button" data-open-modal="syncLogModal" title="View captured popup notifications, Drive sync logs & issues">🔔 Log <span class="sync-log-badge" style="display:none;background:#ef4444;color:white;border-radius:10px;padding:0 5px;font-size:0.65rem;margin-left:3px;"></span></button>
             <button class="secondary-button danger-button" type="button" data-open-modal="resetModal">Reset data</button>
             <button class="primary-button" type="button" data-open-modal="importModal">Upload sheet</button>
           </div>
@@ -509,7 +510,6 @@
                 <div class="panel-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <span id="navDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
                   <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings from Drive</button>
-                  <button class="secondary-button open-sync-log-btn" type="button" title="View captured popup notifications, Drive sync logs & issues">🔔 Log <span class="sync-log-badge" style="display:none;background:#ef4444;color:white;border-radius:10px;padding:0 5px;font-size:0.65rem;margin-left:3px;"></span></button>
                   <button class="secondary-button" type="button" id="refreshMutualFundNAVsBtn">🔄 Refresh NAVs</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">➕ Add Fund</button>
                   <button class="secondary-button redeem-btn" type="button" id="redeemFundBtn">💸 Redeem Fund</button>
@@ -561,7 +561,6 @@
                 <div class="panel-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                   <span id="stockPriceDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
                   <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings from Drive</button>
-                  <button class="secondary-button open-sync-log-btn" type="button" title="View captured popup notifications, Drive sync logs & issues">🔔 Log <span class="sync-log-badge" style="display:none;background:#ef4444;color:white;border-radius:10px;padding:0 5px;font-size:0.65rem;margin-left:3px;"></span></button>
                   <button class="secondary-button" type="button" id="refreshStockPricesBtn">🔄 Refresh Prices</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="stock">➕ Add Stock</button>
                 </div>
@@ -842,7 +841,6 @@
                 <div class="panel-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                   <span id="usStockPriceDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
                   <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings from Drive</button>
-                  <button class="secondary-button open-sync-log-btn" type="button" title="View captured popup notifications, Drive sync logs & issues">🔔 Log <span class="sync-log-badge" style="display:none;background:#ef4444;color:white;border-radius:10px;padding:0 5px;font-size:0.65rem;margin-left:3px;"></span></button>
                   <button class="secondary-button" type="button" id="refreshUsStockPricesBtn">🔄 Refresh Prices</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="usstocks">➕ Add US Stock</button>
                 </div>
