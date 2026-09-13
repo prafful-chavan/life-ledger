@@ -5078,13 +5078,74 @@ function isStockPriceStale(cached) {
   return false;
 }
 
+async function fetchIndianStockPriceFallback(symbol) {
+  const cleanSym = String(symbol).toUpperCase().replace(/\s*-EQ$/i, '').trim();
+  const yahooSymbol = cleanSym.endsWith('.NS') || cleanSym.endsWith('.BO') ? cleanSym : `${cleanSym}.NS`;
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
+
+  const corsProxies = [
+    (targetUrl) => `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+    (targetUrl) => `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+    (targetUrl) => `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
+  ];
+
+  for (const proxyFn of corsProxies) {
+    try {
+      const proxyUrl = proxyFn(yahooUrl);
+      const resp = await fetch(proxyUrl, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      const jsonStart = text.indexOf('{');
+      if (jsonStart < 0) continue;
+      const data = JSON.parse(text.slice(jsonStart));
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta && meta.regularMarketPrice > 0) {
+        return {
+          currentPrice: meta.regularMarketPrice,
+          prevClose: meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice,
+          source: 'yahoo-cors-proxy',
+        };
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+
+  // Direct Yahoo Finance
+  const directEndpoints = [
+    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`,
+  ];
+
+  for (const url of directEndpoints) {
+    try {
+      const resp = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta && meta.regularMarketPrice > 0) {
+        return {
+          currentPrice: meta.regularMarketPrice,
+          prevClose: meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice,
+          source: 'yahoo-direct',
+        };
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 async function refreshStockPrices(force = false) {
   const proxyUrl = localStorage.getItem(STOCK_PROXY_URL_KEY);
-  if (!proxyUrl) {
-    toast('⚠️ Stock price proxy not configured. Go to Settings → 📈 Stock Prices.');
-    return;
-  }
-  // Build net positions via FIFO — only refresh prices for symbols we actually hold
   const symbolGroups = {};
   (state.stocks || []).forEach(s => {
     if (!s.symbol) return;
@@ -5096,51 +5157,107 @@ async function refreshStockPrices(force = false) {
     .filter(([, items]) => items.some(s => toNumber(s.quantity) > 0))
     .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) { toast('No stock symbols to refresh.'); return; }
+
   const cache = getStockPriceCache();
+  const now = Date.now();
   const needsFetch = force || uniqueSymbols.some(s => isStockPriceStale(cache[s]));
-  if (!needsFetch) { toast('Stock prices are up to date.'); return; }
+  if (!needsFetch) {
+    updateStocksFromCache();
+    renderStockHoldingsPanel();
+    toast('Stock prices are up to date.');
+    return;
+  }
+
+  if (force) {
+    uniqueSymbols.forEach(sym => {
+      if (cache[sym]) cache[sym].timestamp = 0;
+    });
+    saveStockPriceCache(cache);
+  }
+
   toast('🔄 Refreshing stock prices…');
-  try {
-    const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
-    const data = await response.json();
-    const now = Date.now();
-    let updatedCount = 0;
-    for (const [symbol, priceData] of Object.entries(data)) {
-      if (priceData.error) continue;
-      cache[symbol.toUpperCase()] = {
-        price: toNumber(priceData.price),
-        prevClose: toNumber(priceData.prevClose),
-        change: toNumber(priceData.change),
-        changePct: toNumber(priceData.changePct),
-        timestamp: now,
-        date: priceData.date || new Date().toLocaleDateString('en-IN'),
-      };
-      updatedCount++;
-    }
-    if (updatedCount > 0) {
-      saveStockPriceCache(cache);
-      state.stocks.forEach(s => {
-        if (!s.symbol) return;
-        const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
-        const cached = cache[sym];
-        if (cached && cached.price) {
-          s.currentPrice = cached.price;
-          s.prevClose = cached.prevClose;
-          s.priceDate = cached.date;
-          s.currentValue = toNumber(s.quantity) * cached.price;
+  let updatedCount = 0;
+  let failedSymbols = [...uniqueSymbols];
+
+  // Strategy 1: Custom Proxy URL (if configured)
+  if (proxyUrl) {
+    try {
+      const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        failedSymbols = [];
+        for (const [symbol, priceData] of Object.entries(data)) {
+          const sym = symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+          if (!priceData || priceData.error || !priceData.price || toNumber(priceData.price) <= 0) {
+            failedSymbols.push(sym);
+            continue;
+          }
+          cache[sym] = {
+            price: toNumber(priceData.price),
+            prevClose: toNumber(priceData.prevClose) || toNumber(priceData.price),
+            change: toNumber(priceData.change),
+            changePct: toNumber(priceData.changePct),
+            timestamp: now,
+            date: priceData.date || new Date().toLocaleDateString('en-IN'),
+            source: 'proxy',
+          };
+          updatedCount++;
         }
-      });
-      await saveData(true);
-      renderStockHoldingsPanel();
-      toast(`✅ Updated prices for ${updatedCount} stocks`);
-    } else {
-      toast('⚠️ No prices returned. Check proxy URL and symbols.');
+      } else {
+        console.warn(`[Stock Prices] Custom proxy returned ${response.status}. Falling back to Yahoo Finance...`);
+      }
+    } catch (err) {
+      console.warn('[Stock Prices] Custom proxy fetch failed:', err.message);
     }
-  } catch (err) {
-    console.error('Stock price refresh failed:', err);
-    toast(`❌ Price refresh failed: ${err.message}`);
+  }
+
+  // Strategy 2: Yahoo Finance Fallback for failed / un-fetched symbols
+  if (failedSymbols.length > 0) {
+    console.log(`[Stock Prices] Fetching via Yahoo Finance fallback for ${failedSymbols.length} symbols:`, failedSymbols);
+    for (const sym of [...failedSymbols]) {
+      try {
+        const result = await fetchIndianStockPriceFallback(sym);
+        if (result && result.currentPrice > 0) {
+          const prevClose = result.prevClose || result.currentPrice;
+          const change = result.currentPrice - prevClose;
+          const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+          cache[sym] = {
+            price: result.currentPrice,
+            prevClose: prevClose,
+            change: change,
+            changePct: changePct,
+            timestamp: now,
+            date: new Date().toLocaleDateString('en-IN'),
+            source: result.source || 'yahoo-fallback',
+          };
+          updatedCount++;
+        }
+      } catch (e) {
+        console.warn(`[Stock Prices] Yahoo fallback failed for ${sym}:`, e.message);
+      }
+    }
+  }
+
+  if (updatedCount > 0) {
+    saveStockPriceCache(cache);
+    state.stocks.forEach(s => {
+      if (!s.symbol) return;
+      const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+      const cached = cache[sym];
+      if (cached && cached.price) {
+        s.currentPrice = cached.price;
+        s.prevClose = cached.prevClose;
+        s.priceDate = cached.date;
+        const qty = toNumber(s.quantity);
+        s.currentValue = qty > 0 ? (qty * cached.price) : 0;
+      }
+    });
+    await saveData(true);
+    renderStockHoldingsPanel();
+    toast(`✅ Updated prices for ${updatedCount} stocks`);
+  } else {
+    toast('⚠️ Price refresh could not reach stock API. Check network connection.');
   }
 }
 
