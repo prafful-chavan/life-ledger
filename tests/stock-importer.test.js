@@ -470,6 +470,40 @@ runTest('resolveNseSymbol & parseMasterHoldingsWorkbook: resolves exact NSE tick
 });
 
 // ----------------------------------------------------------------------
+// Test 19: Minimal 3-Column Stock Sheet Parsing (Stock Name/ISIN | Quantity | Avg Price)
+// ----------------------------------------------------------------------
+runTest('parseMasterHoldingsWorkbook: parses minimal 3-column stock sheet and auto-generates all metrics', () => {
+  const XLSX = require('xlsx');
+  global.XLSX = XLSX;
+  const app = require('../app.js');
+
+  const wb = XLSX.utils.book_new();
+  const minimalStockData = [
+    { "Stock Name": "AEGIS LOGISTICS LIMITED", "Quantity": 10, "Avg Price": 450.50 },
+    { "ISIN": "INE200A01026", "Quantity": 3, "Avg Price": 3250.73 },
+    { "Stock Name": "NIFTY BEES", "Quantity": 100, "Avg Price": 220.00 }
+  ];
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(minimalStockData), "My_Zerodha");
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const res = app.parseMasterHoldingsWorkbook(buffer);
+
+  assert.strictEqual(res.stocks.length, 3, 'Should parse 3 minimal stock records');
+
+  const aegis = res.stocks.find(s => s.symbol === 'AEGISLOG');
+  assert.ok(aegis, 'AEGISLOG should be resolved from company name');
+  assert.strictEqual(aegis.quantity, 10);
+  assert.strictEqual(aegis.avgPrice, 450.50);
+  assert.strictEqual(aegis.invested, 4505.00);
+
+  const ge = res.stocks.find(s => s.symbol === 'GEVERNOVA');
+  assert.ok(ge, 'GEVERNOVA should be resolved from ISIN INE200A01026');
+  assert.strictEqual(ge.quantity, 3);
+  assert.strictEqual(ge.invested, 9752.19);
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");

@@ -2327,7 +2327,7 @@ function parseMasterHoldingsWorkbook(buffer) {
     const name = String(nameVal).trim().toLowerCase();
     if (!name) return true;
     if (name.startsWith("total") || name === "grand total" || name === "sub total") return true;
-    if (name === "name" || name === "fund name" || name === "scheme name" || name === "company" || name === "company name" || name === "stock symbol" || name === "symbol" || name === "stock name" || name === "instrument" || name === "stock" || name === "ticker") return true;
+    if (name === "name" || name === "fund name" || name === "scheme name" || name === "company" || name === "company name" || name === "stock symbol" || name === "symbol" || name === "stock name" || name === "instrument" || name === "stock" || name === "ticker" || name === "isin" || name === "isin code" || name === "scrip" || name === "scrip name") return true;
     if (name === "s.no" || name === "sr" || name === "sno" || name === "sl.no") return true;
     return false;
   }
@@ -2402,18 +2402,19 @@ function parseMasterHoldingsWorkbook(buffer) {
       const nameVal = pick(normRow,
         "Scheme Name", "schemename",
         "Fund Name", "fundname",
+        "Stock Name", "stockname",
         "Company Name", "companyname",
-        // My_US_Stocks: "Stock Symbol" is the ticker column (AAPL, META, VOO, T, QQQM)
+        "Company", "company",
         "Stock Symbol", "stocksymbol",
         "Symbol", "symbol",
         "Ticker", "ticker",
-        "Stock Name", "stockname",
-        "Company", "company",
-        "Name", "name",
-        "Scrip", "scrip",
         "Scrip Name", "scripname",
         "Instrument", "instrument",
         "Stock", "stock",
+        "Name", "name",
+        "Scrip", "scrip",
+        "ISIN Code", "isincode",
+        "ISIN", "isin",
         "Fund", "fund",
         "Scheme", "scheme"
       );
