@@ -3444,15 +3444,120 @@ function renderAll() {
   renderChat();
 }
 
+function calculatePortfolio1DayChange() {
+  let total1DayChangeINR = 0;
+  let totalPortfolioValueINR = 0;
+  let hasData = false;
+
+  // 1. Mutual Funds
+  const mfByFund = {};
+  (state.mutualFunds || []).forEach((t) => {
+    const key = `${t.fundName || "Unknown"}|${t.owner || 'Me'}`;
+    if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || 0 };
+    mfByFund[key].txns.push(t);
+    if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
+    if (t.prevNav) mfByFund[key].prevNav = toNumber(t.prevNav);
+  });
+  Object.values(mfByFund).forEach(fund => {
+    const netUnits = calcMfCostBasis(fund.txns).netUnits;
+    if (netUnits > 0 && fund.latestNav > 0) {
+      const curVal = netUnits * fund.latestNav;
+      totalPortfolioValueINR += curVal;
+      if (fund.prevNav > 0) {
+        const dayChange = netUnits * (fund.latestNav - fund.prevNav);
+        total1DayChangeINR += dayChange;
+        hasData = true;
+      }
+    }
+  });
+
+  // 2. Indian Stocks (all brokers: Upstox, Zerodha, Groww, INDmoney)
+  const stockGroups = {};
+  (state.stocks || []).forEach(s => {
+    if (!s.symbol) return;
+    const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    if (!stockGroups[sym]) stockGroups[sym] = [];
+    stockGroups[sym].push(s);
+  });
+  Object.values(stockGroups).forEach(items => {
+    items.forEach(s => {
+      const qty = toNumber(s.quantity);
+      const curPrice = toNumber(s.currentPrice || s.avgPrice);
+      const prevClose = s.prevClose ? toNumber(s.prevClose) : 0;
+      if (qty > 0 && curPrice > 0) {
+        const curVal = qty * curPrice;
+        totalPortfolioValueINR += curVal;
+        if (prevClose > 0) {
+          const dayChange = qty * (curPrice - prevClose);
+          total1DayChangeINR += dayChange;
+          hasData = true;
+        }
+      }
+    });
+  });
+
+  // 3. US Stocks (converted to INR at ~84.50 rate)
+  const usdInrRate = 84.50;
+  const usStockGroups = {};
+  (state.usstocks || []).forEach(s => {
+    if (!s.symbol) return;
+    const sym = s.symbol.toUpperCase().trim();
+    if (!usStockGroups[sym]) usStockGroups[sym] = [];
+    usStockGroups[sym].push(s);
+  });
+  Object.values(usStockGroups).forEach(items => {
+    items.forEach(s => {
+      const qty = toNumber(s.quantity);
+      const curPrice = toNumber(s.currentPrice || s.avgPrice);
+      const prevClose = s.prevClose ? toNumber(s.prevClose) : 0;
+      if (qty > 0 && curPrice > 0) {
+        const curValINR = qty * curPrice * usdInrRate;
+        totalPortfolioValueINR += curValINR;
+        if (prevClose > 0) {
+          const dayChangeUSD = qty * (curPrice - prevClose);
+          total1DayChangeINR += dayChangeUSD * usdInrRate;
+          hasData = true;
+        }
+      }
+    });
+  });
+
+  const prevValINR = totalPortfolioValueINR - total1DayChangeINR;
+  const changePct = hasData && prevValINR > 0 ? (total1DayChangeINR / prevValINR) * 100 : 0;
+
+  return {
+    total1DayChangeINR,
+    totalPortfolioValueINR,
+    changePct,
+    hasData
+  };
+}
+
 function renderMetrics() {
   const metrics = calculateMetrics();
+  const dayChangeMetrics = calculatePortfolio1DayChange();
   const metricGrid = document.getElementById("metricGrid");
   metricGrid.innerHTML = "";
+
+  const dayColor = dayChangeMetrics.total1DayChangeINR >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+  const dayArrow = dayChangeMetrics.total1DayChangeINR >= 0 ? '▲' : '▼';
+
   [
     {
       label: "Net worth",
       value: formatINR(metrics.netWorth),
       hint: `Investment holdings − liabilities`,
+    },
+    {
+      label: "📉 1-Day Net Worth",
+      value: dayChangeMetrics.hasData
+        ? `<span style="color:${dayColor}">${dayArrow} ${formatINR(Math.abs(dayChangeMetrics.total1DayChangeINR))}</span>`
+        : '—',
+      hint: dayChangeMetrics.hasData
+        ? `<span style="color:${dayColor}">${dayChangeMetrics.total1DayChangeINR >= 0 ? '+' : ''}${dayChangeMetrics.changePct.toFixed(2)}% today (MF + Stocks + US)</span>`
+        : 'Refresh prices to calculate',
+      isHTML: true,
+      customBorder: `3px solid ${dayColor}`
     },
     {
       label: metrics.isFallbackIncome ? `Income (${metrics.fallbackMonthLabel})` : "This month income",
@@ -3474,10 +3579,13 @@ function renderMetrics() {
   ].forEach((metric) => {
     const card = document.createElement("article");
     card.className = "metric-card";
+    if (metric.customBorder) {
+      card.style.borderLeft = metric.customBorder;
+    }
     card.innerHTML = `
       <div class="label">${escapeHTML(metric.label)}</div>
-      <div class="value">${escapeHTML(metric.value)}</div>
-      <div class="hint">${escapeHTML(metric.hint)}</div>
+      <div class="value">${metric.isHTML ? metric.value : escapeHTML(metric.value)}</div>
+      <div class="hint">${metric.isHTML ? metric.hint : escapeHTML(metric.hint)}</div>
     `;
     metricGrid.append(card);
   });
@@ -5434,6 +5542,11 @@ function renderStockHoldingsPanel() {
   // Render Summary Cards
   if (summary) {
     const gainColor = totalUnrealizedGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const dayChangeColor = oneDayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const dayChangeArrow = oneDayChange >= 0 ? '▲' : '▼';
+    const oneDayPct = hasOneDayData && (totalCurrentValue - oneDayChange) > 0
+      ? (oneDayChange / (totalCurrentValue - oneDayChange)) * 100 : 0;
+
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">💰 Invested (${activeHoldingsOwner})</div>
@@ -5450,6 +5563,11 @@ function renderStockHoldingsPanel() {
         <div class="value" style="color: ${gainColor}">${formatINR(totalUnrealizedGain)}</div>
         <div class="hint" style="color: ${gainColor}">${totalUnrealizedGain >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% total return</div>
       </article>
+      <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
+        <div class="label">📉 1-Day Change</div>
+        <div class="value" style="color: ${dayChangeColor}">${hasOneDayData ? `${dayChangeArrow} ${formatINR(Math.abs(oneDayChange))}` : '—'}</div>
+        <div class="hint">${hasOneDayData ? `${oneDayChange >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh prices to see'}</div>
+      </article>
     `;
   }
 
@@ -5459,7 +5577,7 @@ function renderStockHoldingsPanel() {
   const stockColumns = [
     ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
     ['avgPrice', 'Avg Price'], ['totalInv', 'Invested'], ['currentPrice', 'CMP / LTP'],
-    ['currentValue', 'Current Value'], ['gain', 'Overall P&L'], ['demat', 'Broker']
+    ['currentValue', 'Current Value'], ['dayChange', '1-Day Chg'], ['gain', 'Overall P&L'], ['demat', 'Broker']
   ];
 
   if (targetThead) {
@@ -5480,11 +5598,18 @@ function renderStockHoldingsPanel() {
     formatINR(item.currentPrice),
     formatINR(item.currentValue),
     (() => {
+      if (item.dayChange === null) return '<span style="opacity:0.4">—</span>';
+      const color = item.dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+      const arrow = item.dayChange >= 0 ? '▲' : '▼';
+      const pctStr = item.dayChangePct !== null ? ` (${item.dayChange >= 0 ? '+' : ''}${item.dayChangePct.toFixed(2)}%)` : '';
+      return `<span style="color:${color};font-weight:600">${arrow} ${formatINR(Math.abs(item.dayChange))}<small>${pctStr}</small></span>`;
+    })(),
+    (() => {
       const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
       return `<span style="color:${color};font-weight:600">${formatINR(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
     })(),
     escapeHTML(item.demat)
-  ], `No stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 9);
+  ], `No stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
 }
 
 function formatUSD(num) {
