@@ -2438,6 +2438,7 @@ function parseMasterHoldingsWorkbook(buffer) {
           "No of Shares", "noofshares"
         ));
 
+        // Average cost per share
         let price = parseNumVal(pick(normRow,
           "Avg. Price", "avgprice",
           "Avg. cost", "avgcost",
@@ -2447,30 +2448,35 @@ function parseMasterHoldingsWorkbook(buffer) {
           "Trade Price", "tradeprice"
         ));
 
-        let invested = Math.abs(parseNumVal(pick(normRow,
+        // Invested cost (Do NOT pick "Value" here because "Value" means Current Value in NSDL/CAS sheets!)
+        let invested = parseNumVal(pick(normRow,
           "Invested", "invested",
           "Buy value", "buyvalue",
+          "Cost Basis", "costbasis",
           "Amount", "amount",
           "Total Amount", "totalamount",
           "Net Amount", "netamount",
-          "Value", "value",
           "Amount (INR)", "amountinr"
-        )));
+        ));
 
+        // LTP / Closing price / Current Rate
         let ltp = parseNumVal(pick(normRow,
           "LTP", "ltp",
           "Closing price", "closingprice",
+          "Closing Price",
           "Rate", "rate",
           "Market Price", "marketprice",
           "Current Price", "currentprice"
         ));
 
-        let currentValue = Math.abs(parseNumVal(pick(normRow,
+        // Current Market Value
+        let currentValue = parseNumVal(pick(normRow,
           "Current Value", "currentvalue",
           "Cur. val", "curval",
           "Closing value", "closingvalue",
+          "Market Value", "marketvalue",
           "Value", "value"
-        )));
+        ));
 
         let pnl = parseNumVal(pick(normRow,
           "Overall P&L", "overallpnl",
@@ -2479,11 +2485,15 @@ function parseMasterHoldingsWorkbook(buffer) {
           "Net chg.", "netchg"
         ));
 
-        if (!price && qty && invested) price = invested / qty;
-        if (!invested && qty && price) invested = qty * price;
-        if (!ltp && price) ltp = price;
-        if (!currentValue && qty && ltp) currentValue = qty * ltp;
-        if (!currentValue && invested) currentValue = invested + pnl;
+        // Mathematical consistency check
+        if (qty > 0) {
+          if (!price && invested > 0) price = invested / qty;
+          if (!invested && price > 0) invested = qty * price;
+          if (ltp > 0 && (!currentValue || Math.abs(currentValue - (qty * ltp)) > 1)) currentValue = qty * ltp;
+          if (!ltp && currentValue > 0) ltp = currentValue / qty;
+          if (!ltp && price > 0) ltp = price;
+          if (!currentValue && invested > 0) currentValue = pnl !== 0 ? (invested + pnl) : invested;
+        }
 
         const rawSymbol = String(pick(normRow,
           "Symbol", "symbol",
@@ -2501,11 +2511,11 @@ function parseMasterHoldingsWorkbook(buffer) {
           id: `stk-${generateUUID()}`,
           symbol: symbol,
           company: cleanName || symbol,
-          quantity: Math.abs(qty),
-          avgPrice: Math.abs(price),
-          invested: Math.abs(invested),
-          currentPrice: Math.abs(ltp || price),
-          currentValue: Math.abs(currentValue || invested),
+          quantity: qty,
+          avgPrice: price,
+          invested: invested,
+          currentPrice: ltp || price,
+          currentValue: currentValue || invested,
           pnl: pnl,
           purchaseDate: dateVal,
           date: dateVal,
@@ -5097,8 +5107,8 @@ function renderStockHoldingsPanel() {
     const avgPrice = toNumber(item.avgPrice);
     const currentPrice = toNumber(item.currentPrice || item.avgPrice);
     const invested = toNumber(item.invested || (qty * avgPrice));
-    const currentValue = toNumber(item.currentValue || (qty * currentPrice));
-    const gain = item.pnl !== undefined && item.pnl !== 0 ? toNumber(item.pnl) : (currentValue - invested);
+    const currentValue = (qty > 0 && currentPrice > 0) ? (qty * currentPrice) : toNumber(item.currentValue || invested);
+    const gain = currentValue - invested;
     const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
     const prevClose = item.prevClose ? toNumber(item.prevClose) : null;
     const dayChange = prevClose ? qty * (currentPrice - prevClose) : null;
@@ -5436,7 +5446,7 @@ function renderUsStockHoldingsPanel() {
     const avgPrice = toNumber(item.avgPrice);
     const currentPrice = toNumber(item.currentPrice || item.avgPrice);
     const invested = toNumber(item.invested || (qty * avgPrice));
-    const currentValue = toNumber(item.currentValue || (qty * currentPrice));
+    const currentValue = (qty > 0 && currentPrice > 0) ? (qty * currentPrice) : toNumber(item.currentValue || invested);
     const gain = currentValue - invested;
     const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
     const prevClose = item.prevClose ? toNumber(item.prevClose) : null;
