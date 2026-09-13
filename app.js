@@ -2221,6 +2221,29 @@ function parseMasterHoldingsWorkbook(buffer) {
   }
 
   const ISIN_TO_NSE_SYMBOL = {
+    // Upstox (Me)
+    "INF174KA1HJ8": "GOLDBEES",
+    "INF247L01AP3": "MON100",
+    "INF204KB15V2": "ITBEES",
+    "INF179KC1FB2": "HDFCSML250",
+    "INF179KC1HT0": "HDFCMID150",
+    "INF204KB14I2": "NIFTYBEES",
+    "INF204KB1V68": "MID150BEES",
+    "INF204KB15I9": "BANKBEES",
+
+    // Zerodha (Me)
+    "INE472A01039": "BLUESTARCO",
+    "INE188A01015": "FACT",
+    "INE176B01034": "HAVELLS",
+    "INE749A01030": "JINDALSTEL",
+    "INE101A01026": "M&M",
+    "INE134E01011": "PFC",
+    "INE811K01011": "PRESTIGE",
+    "INE020B01018": "RECLTD",
+    "INE200M01039": "VBL",
+    "INE075A01022": "WIPRO",
+
+    // Groww (Wife)
     "INE208C01025": "AEGISLOG",
     "INE933K01021": "BAJAJCON",
     "INE200A01026": "GEVERNOVA",
@@ -2229,23 +2252,72 @@ function parseMasterHoldingsWorkbook(buffer) {
     "INE947Q01028": "LAURUSLABS",
     "INE745G01043": "MCX",
     "INF204KB17I5": "GOLDBEES",
-    "INF204KB1V68": "MID150BEES",
-    "INF204KB14I2": "NIFTYBEES",
     "INF204KC1402": "SILVERBEES",
     "INE777K01022": "RRKABEL",
     "INE0CLI01024": "RATEGAIN",
     "INE763I01026": "TRIL",
+
+    // INDmoney (Wife)
     "INF109KB15Y7": "BHARAT22",
-    "INF247L01AP3": "MON100",
-    "INF179KC1FB2": "HDFCSML250",
+
+    // Common Bluechips
     "INE154A01025": "ITC",
     "INE397D01024": "BHARTIARTL",
     "INE002A01018": "RELIANCE",
     "INE467B01029": "TCS",
     "INE040A01034": "HDFCBANK",
     "INE009A01021": "INFY",
-    "INE101A01026": "M&M",
     "INE062A01020": "SBIN",
+  };
+
+  const ISIN_TO_COMPANY_NAME = {
+    // Upstox (Me)
+    "INF174KA1HJ8": "Nippon India ETF Gold BeES",
+    "INF247L01AP3": "Motilal Oswal Nasdaq 100 ETF",
+    "INF204KB15V2": "Nippon India ETF IT BeES",
+    "INF179KC1FB2": "HDFC Nifty Smallcap 250 ETF",
+    "INF179KC1HT0": "HDFC Nifty Midcap 150 ETF",
+    "INF204KB14I2": "Nippon India ETF Nifty 50 BeES",
+    "INF204KB1V68": "Nippon India ETF Nifty Midcap 150 BeES",
+    "INF204KB15I9": "Nippon India ETF Bank BeES",
+
+    // Zerodha (Me)
+    "INE472A01039": "Blue Star Ltd",
+    "INE188A01015": "Fertilisers & Chemicals Travancore Ltd",
+    "INE176B01034": "Havells India Ltd",
+    "INE749A01030": "Jindal Steel & Power Ltd",
+    "INE101A01026": "Mahindra & Mahindra Ltd",
+    "INE134E01011": "Power Finance Corporation Ltd",
+    "INE811K01011": "Prestige Estates Projects Ltd",
+    "INE020B01018": "REC Ltd",
+    "INE200M01039": "Varun Beverages Ltd",
+    "INE075A01022": "Wipro Ltd",
+
+    // Groww (Wife)
+    "INE208C01025": "Aegis Logistics Ltd",
+    "INE933K01021": "Bajaj Consumer Care Ltd",
+    "INE200A01026": "GE Vernova T&D India Ltd",
+    "INE038A01020": "Hindalco Industries Ltd",
+    "INE0J5401028": "Honasa Consumer Ltd",
+    "INE947Q01028": "Laurus Labs Ltd",
+    "INE745G01043": "Multi Commodity Exchange of India",
+    "INF204KB17I5": "Nippon India ETF Gold BeES",
+    "INF204KC1402": "Nippon India ETF Silver BeES",
+    "INE777K01022": "RR Kabel Ltd",
+    "INE0CLI01024": "RateGain Travel Technologies Ltd",
+    "INE763I01026": "Transformers & Rectifiers India Ltd",
+
+    // INDmoney (Wife)
+    "INF109KB15Y7": "ICICI Prudential Bharat 22 ETF",
+
+    // Common Bluechips
+    "INE154A01025": "ITC Ltd",
+    "INE397D01024": "Bharti Airtel Ltd",
+    "INE002A01018": "Reliance Industries Ltd",
+    "INE467B01029": "Tata Consultancy Services Ltd",
+    "INE040A01034": "HDFC Bank Ltd",
+    "INE009A01021": "Infosys Ltd",
+    "INE062A01020": "State Bank of India",
   };
 
   function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
@@ -2527,6 +2599,7 @@ function parseMasterHoldingsWorkbook(buffer) {
           "Avg. cost", "avgcost",
           "Average buy price", "averagebuyprice",
           "Price", "price", "Avg Price", "avgprice",
+          "AVG", "avg",
           "Buy Price", "buyprice", "Rate", "rate",
           "Trade Price", "tradeprice"
         ));
@@ -2595,10 +2668,16 @@ function parseMasterHoldingsWorkbook(buffer) {
 
         const symbol = resolveNseSymbol(rawSymbol, cleanName, isinCode);
 
+        const cleanIsin = String(isinCode || "").trim().toUpperCase();
+        let companyName = cleanName;
+        if (!companyName || companyName.toUpperCase() === cleanIsin) {
+          companyName = ISIN_TO_COMPANY_NAME[cleanIsin] || symbol;
+        }
+
         parsedStocks.push({
           id: `stk-${generateUUID()}`,
           symbol: symbol,
-          company: cleanName || symbol,
+          company: companyName || symbol,
           quantity: qty,
           avgPrice: price,
           invested: invested,

@@ -504,6 +504,91 @@ runTest('parseMasterHoldingsWorkbook: parses minimal 3-column stock sheet and au
 });
 
 // ----------------------------------------------------------------------
+// Test 20: User Master ISIN & Quantity Scheme Verification
+// ----------------------------------------------------------------------
+runTest('parseMasterHoldingsWorkbook: parses user exact ISIN + Qty + AVG master tables accurately', () => {
+  const XLSX = require('xlsx');
+  global.XLSX = XLSX;
+  const app = require('../app.js');
+
+  const wb = XLSX.utils.book_new();
+
+  // Tab 1: upstock
+  const upstockData = [
+    { "ISIN": "INF174KA1HJ8", "Qty": "1,523", "AVG": "80.21" },
+    { "ISIN": "INF247L01AP3", "Qty": "441", "AVG": "193.28" },
+    { "ISIN": "INF204KB15V2", "Qty": "3,262", "AVG": "39.45" },
+    { "ISIN": "INF179KC1FB2", "Qty": "464", "AVG": "170.49" },
+    { "ISIN": "INF179KC1HT0", "Qty": "1,678", "AVG": "21.12" },
+    { "ISIN": "INF204KB14I2", "Qty": "569", "AVG": "264.94" },
+    { "ISIN": "INF204KB1V68", "Qty": "221", "AVG": "217.54" },
+    { "ISIN": "INF204KB15I9", "Qty": "149", "AVG": "543.48" }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(upstockData), "upstock");
+
+  // Tab 2: my-zerodha
+  const zerodhaData = [
+    { "ISIN": "INE472A01039", "Qty": "19", "AVG": "1534.29" },
+    { "ISIN": "INE188A01015", "Qty": "37", "AVG": "855.23" },
+    { "ISIN": "INE176B01034", "Qty": "13", "AVG": "1533.61" },
+    { "ISIN": "INE749A01030", "Qty": "19", "AVG": "753.02" },
+    { "ISIN": "INE101A01026", "Qty": "11", "AVG": "2441.3" },
+    { "ISIN": "INE134E01011", "Qty": "60", "AVG": "401.31" },
+    { "ISIN": "INE811K01011", "Qty": "10", "AVG": "1667.95" },
+    { "ISIN": "INE020B01018", "Qty": "70", "AVG": "438.62" },
+    { "ISIN": "INE200M01039", "Qty": "56", "AVG": "506.77" },
+    { "ISIN": "INE075A01022", "Qty": "93", "AVG": "262.32" }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zerodhaData), "my-zerodha");
+
+  // Tab 3: wife groww
+  const growwData = [
+    { "ISIN": "INE208C01025", "Qty": "7", "AVG": "1297" },
+    { "ISIN": "INE933K01021", "Qty": "30", "AVG": "517.4" },
+    { "ISIN": "INE200A01026", "Qty": "3", "AVG": "3250.73" },
+    { "ISIN": "INE038A01020", "Qty": "9", "AVG": "1043.7" },
+    { "ISIN": "INE0J5401028", "Qty": "28", "AVG": "366.47" },
+    { "ISIN": "INE947Q01028", "Qty": "6", "AVG": "1653.2" },
+    { "ISIN": "INE745G01043", "Qty": "3", "AVG": "3005" },
+    { "ISIN": "INF204KB17I5", "Qty": "840", "AVG": "90.47" },
+    { "ISIN": "INF204KB1V68", "Qty": "18", "AVG": "206.6" },
+    { "ISIN": "INF204KB14I2", "Qty": "490", "AVG": "263.67" },
+    { "ISIN": "INF204KC1402", "Qty": "50", "AVG": "240.24" },
+    { "ISIN": "INE777K01022", "Qty": "3", "AVG": "2392" },
+    { "ISIN": "INE0CLI01024", "Qty": "14", "AVG": "962.15" },
+    { "ISIN": "INE763I01026", "Qty": "14", "AVG": "534.41" }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(growwData), "wife groww");
+
+  // Tab 4: wife indmoney
+  const indData = [
+    { "ISIN": "INF109KB15Y7", "Qty": "311", "AVG": "112.26" },
+    { "ISIN": "INF247L01AP3", "Qty": "200", "AVG": "221.8" },
+    { "ISIN": "INF179KC1FB2", "Qty": "239", "AVG": "166.38" }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(indData), "wife indmoney");
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const res = app.parseMasterHoldingsWorkbook(buffer);
+
+  assert.strictEqual(res.stocks.length, 35, 'Should parse all 35 Indian stock holdings across 4 tabs');
+
+  const blue = res.stocks.find(s => s.symbol === 'BLUESTARCO');
+  assert.ok(blue, 'Blue Star should exist from ISIN INE472A01039');
+  assert.strictEqual(blue.quantity, 19);
+  assert.strictEqual(blue.avgPrice, 1534.29);
+  assert.strictEqual(blue.company, 'Blue Star Ltd');
+
+  const ge = res.stocks.find(s => s.symbol === 'GEVERNOVA');
+  assert.ok(ge, 'GE Vernova should exist from ISIN INE200A01026');
+  assert.strictEqual(ge.company, 'GE Vernova T&D India Ltd');
+
+  const bharat = res.stocks.find(s => s.symbol === 'BHARAT22');
+  assert.ok(bharat, 'Bharat 22 ETF should exist from ISIN INF109KB15Y7');
+  assert.strictEqual(bharat.company, 'ICICI Prudential Bharat 22 ETF');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");
