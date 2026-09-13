@@ -945,9 +945,10 @@ function bindFinanceTabs() {
     }
   });
 
-  document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", async () => {
-    await refreshMutualFundNAVs(true);
-  });
+  document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", () => refreshAllLivePrices(true));
+  document.getElementById('refreshStockPricesBtn')?.addEventListener('click', () => refreshAllLivePrices(true));
+  document.getElementById('refreshUsStockPricesBtn')?.addEventListener('click', () => refreshAllLivePrices(true));
+  document.getElementById('topbarRefreshAllBtn')?.addEventListener('click', () => refreshAllLivePrices(true));
 
   document.getElementById("redeemFundBtn")?.addEventListener("click", () => {
     buildQuickAddForm("mutualFund");
@@ -971,7 +972,7 @@ function bindFinanceTabs() {
     document.getElementById('toggleStockViewHoldings')?.classList.remove('active');
     renderStockHoldingsPanel();
   });
-  document.getElementById('refreshStockPricesBtn')?.addEventListener('click', () => refreshStockPrices(true));
+
 
   document.querySelectorAll('[data-stock-broker]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1004,7 +1005,7 @@ function bindFinanceTabs() {
     document.getElementById('toggleUsStockViewHoldings')?.classList.remove('active');
     renderUsStockHoldingsPanel();
   });
-  document.getElementById('refreshUsStockPricesBtn')?.addEventListener('click', () => refreshUsStockPrices(true));
+
 
   document.querySelectorAll('[data-us-broker]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5961,8 +5962,24 @@ function renderUsStockHoldingsPanel() {
       const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
       return `<span style="color:${color};font-weight:600">${formatUSD(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
     })(),
-    escapeHTML(item.demat)
   ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
+}
+
+async function refreshAllLivePrices(force = true) {
+  toast('🔄 Refreshing all live prices (Mutual Funds + Stocks + US Stocks)…');
+  const promises = [];
+  if (typeof refreshMutualFundNAVs === 'function') {
+    promises.push(refreshMutualFundNAVs(force).catch(e => console.warn('[Refresh All] MF NAV error:', e)));
+  }
+  if (typeof refreshStockPrices === 'function') {
+    promises.push(refreshStockPrices(force).catch(e => console.warn('[Refresh All] Indian Stock price error:', e)));
+  }
+  if (typeof refreshUsStockPrices === 'function') {
+    promises.push(refreshUsStockPrices(force).catch(e => console.warn('[Refresh All] US Stock price error:', e)));
+  }
+  await Promise.allSettled(promises);
+  renderAll();
+  toast('✅ All live prices refreshed! (Mutual Funds, Indian Stocks & US Stocks updated)');
 }
 
 const SIMPLE_ASSET_TABS = [
