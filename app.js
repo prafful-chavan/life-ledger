@@ -2,7 +2,8 @@ const THEME_STORAGE_KEY = "lifeLedgerTheme:v1";
 const INR = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 const COLORS = ["#176b5b", "#d8913c", "#4774b8", "#bd4b4b", "#7a5aa6", "#578b47", "#c16b3f"];
@@ -2244,7 +2245,7 @@ function parseMasterHoldingsWorkbook(buffer) {
     const name = String(nameVal).trim().toLowerCase();
     if (!name) return true;
     if (name.startsWith("total") || name === "grand total" || name === "sub total") return true;
-    if (name === "name" || name === "fund name" || name === "scheme name" || name === "company" || name === "company name") return true;
+    if (name === "name" || name === "fund name" || name === "scheme name" || name === "company" || name === "company name" || name === "stock symbol" || name === "symbol" || name === "stock name" || name === "instrument" || name === "stock" || name === "ticker") return true;
     if (name === "s.no" || name === "sr" || name === "sno" || name === "sl.no") return true;
     return false;
   }
@@ -2254,6 +2255,10 @@ function parseMasterHoldingsWorkbook(buffer) {
   function getTabConfig(sheetName) {
     const sn = sheetName.toLowerCase().replace(/\s/g, "_").replace(/[^a-z0-9_]/g, "");
 
+    // My_US_Stocks → US Stocks, Me, INDmoney (check US stocks first before generic INDmoney)
+    if (sn.includes("us_stock") || sn.includes("usstock") || sn.includes("us_stocks") || sn.includes("usa") || sn.includes("america") || (sn.includes("us") && (sn.includes("stock") || sn.includes("holding") || sn.includes("equity") || sn.includes("portfolio")))) {
+      return { asset: "usstock", owner: "Me", broker: "INDmoney" };
+    }
     // My_Upstock → Indian Stocks, Me, Upstox
     if (sn.includes("upstock") || sn.includes("upstox")) {
       return { asset: "stock", owner: "Me", broker: "Upstox" };
@@ -2270,10 +2275,6 @@ function parseMasterHoldingsWorkbook(buffer) {
     if (sn.includes("wife") && (sn.includes("indmoney") || sn.includes("ind"))) {
       return { asset: "stock", owner: "Wife", broker: "INDmoney" };
     }
-    // My_US_Stocks → US Stocks, Me, INDmoney
-    if (sn.includes("us_stock") || sn.includes("usstock") || sn.includes("us_stocks") || (sn.includes("us") && sn.includes("stock"))) {
-      return { asset: "usstock", owner: "Me", broker: "INDmoney" };
-    }
     // Mutual Fund Wife (e.g. 7. mutual fund of my wife, Mutual_Fund_Wife)
     if (sn.includes("wife") && (sn.includes("mutual") || sn.includes("fund") || sn.includes("mf"))) {
       return { asset: "mutualFund", owner: "Wife", broker: "Groww" };
@@ -2285,7 +2286,7 @@ function parseMasterHoldingsWorkbook(buffer) {
 
     // Fallback: heuristic from generic keywords
     const hasMF = sn.includes("mf") || sn.includes("mutual") || sn.includes("fund");
-    const hasUS = sn.includes("usa") || sn.includes("america");
+    const hasUS = sn.includes("us") || sn.includes("usa") || sn.includes("america");
     const isWife = sn.includes("wife") || sn.includes("archana");
     const broker = sn.includes("groww") ? "Groww"
                  : sn.includes("upstox") || sn.includes("upstock") ? "Upstox"
@@ -2320,14 +2321,14 @@ function parseMasterHoldingsWorkbook(buffer) {
         "Scheme Name", "schemename",
         "Fund Name", "fundname",
         "Company Name", "companyname",
+        // My_US_Stocks: "Stock Symbol" is the ticker column (AAPL, META, VOO, T, QQQM)
+        "Stock Symbol", "stocksymbol",
         "Symbol", "symbol",
         "Ticker", "ticker",
         "Stock Name", "stockname",
         "Company", "company",
         "Name", "name",
         "Scrip", "scrip",
-        // Upstox: "Company" already above; but also check "Scrip Code" as fallback name
-        // Wife INDMoney Indian stocks: "Scrip Name" is the company name
         "Scrip Name", "scripname",
         "Instrument", "instrument",
         "Stock", "stock",
@@ -2367,6 +2368,14 @@ function parseMasterHoldingsWorkbook(buffer) {
 
       // ── Determine Asset Class for row ─────────────────────────────────
       let rowAsset = cfg.asset;
+
+      // Auto-detect US stock row from unique US stock columns (Stock Symbol, Avg. Price ($), Total Value ($))
+      if (normRow.stocksymbol || normRow.totalvalue || normRow.holdingsince || normRow.orderamount || /us/i.test(sheetName)) {
+        if (normRow.stocksymbol || normRow.totalvalue || normRow.holdingsince || normRow.orderamount) {
+          rowAsset = "usstock";
+        }
+      }
+
       // If default asset is stock but row explicitly has scheme name / NAV / fund keywords, classify as mutualFund
       if (rowAsset === "stock") {
         if (normRow.schemename || normRow.fundname || normRow.nav || normRow.purchasenav ||
@@ -2410,6 +2419,8 @@ function parseMasterHoldingsWorkbook(buffer) {
         "Order Date", "orderdate",
         "Buy Date", "buydate",
         "Trade Date", "tradedate",
+        // INDmoney US stocks: "Holding Since" is the purchase date
+        "Holding Since", "holdingsince",
         // Wife INDMoney Indian stocks: "Execution Date"
         "Execution Date", "executiondate"
       ));
@@ -2538,58 +2549,83 @@ function parseMasterHoldingsWorkbook(buffer) {
 
       // ── US STOCKS ──────────────────────────────────────────────────
       } else if (rowAsset === "usstock") {
+        // Full precision — never round fractional shares (e.g. 0.154829703)
         const qty = parseNumVal(pick(normRow,
           "Quantity", "quantity",
           "Qty", "qty", "Units", "units", "Shares", "shares"
         ));
 
-        let price = parseNumVal(pick(normRow,
+        // INDmoney: "Avg. Price ($)" — normKey strips dots/$ → "avgprice"
+        const price = parseNumVal(pick(normRow,
           "Avg. Price ($)", "avgprice",
+          "Avg Price ($)", "avgprice",
+          "Avg. Price", "avgprice",
           "Price ($)", "price",
-          "Price", "price", "Avg Price", "avgprice",
-          "Buy Price", "buyprice", "Rate", "rate"
+          "Price", "price",
+          "Buy Price", "buyprice",
+          "Rate", "rate"
         ));
 
-        let currentValue = Math.abs(parseNumVal(pick(normRow,
+        // INDmoney: "Total Value ($)" is the current market value
+        const currentValue = parseNumVal(pick(normRow,
           "Total Value ($)", "totalvalue",
+          "Current Value ($)", "currentvalue",
           "Current Value", "currentvalue",
           "Cur. val", "curval",
-          "Value", "value",
-          "Amount (USD)", "amountusd"
-        )));
+          "Market Value ($)", "marketvalue",
+          "Value", "value"
+        ));
 
-        let invested = Math.abs(parseNumVal(pick(normRow,
+        // Day P&L if available (some broker exports include it)
+        const dayPnl = parseNumVal(pick(normRow,
+          "Day P&L ($)", "daypnl",
+          "Day P&L", "daypnl",
+          "Day Change ($)", "daychange",
+          "1D Change", "1dchange",
+          "Today's Gain", "todaysgain"
+        ));
+
+        // Invested = qty × avgPrice (preserve full precision)
+        const invested = (qty > 0 && price > 0) ? qty * price : parseNumVal(pick(normRow,
           "Invested", "invested",
           "Order Amount ($)", "orderamount",
+          "Cost Basis", "costbasis",
           "Amount", "amount"
-        )));
+        ));
 
-        if (!invested && qty && price) invested = qty * price;
-        if (!price && qty && invested) price = invested / qty;
-        if (!currentValue && qty && price) currentValue = qty * price;
+        // Current price derived from total value / qty for maximum accuracy
+        const currentPrice = (qty > 0 && currentValue > 0)
+          ? currentValue / qty
+          : (price || 0);
 
-        let currentPrice = (qty > 0 && currentValue > 0) ? (currentValue / qty) : price;
+        // prevClose: if dayPnl known, prevClose = (currentValue - dayPnl) / qty
+        const prevClose = (dayPnl !== 0 && qty > 0 && currentValue > 0)
+          ? (currentValue - dayPnl) / qty
+          : null;
 
         const tickerSymbol = String(pick(normRow,
           "Stock Symbol", "stocksymbol",
           "Symbol", "symbol", "Ticker", "ticker",
-          "NSE code", "nsecode", "Stock", "stock"
+          "Stock", "stock"
         ) || cleanName).trim().toUpperCase();
 
         parsedUsStocks.push({
           id: `uss-${generateUUID()}`,
           symbol: tickerSymbol,
           company: cleanName || tickerSymbol,
-          quantity: Math.abs(qty),
-          avgPrice: Math.abs(price),
-          invested: Math.abs(invested),
-          currentPrice: Math.abs(currentPrice || price),
-          currentValue: Math.abs(currentValue || invested),
+          // Store full precision — never truncate
+          quantity: qty,
+          avgPrice: price,
+          invested: invested,
+          currentPrice: currentPrice,
+          currentValue: currentValue || invested,
+          dayPnl: dayPnl || 0,
+          prevClose: prevClose,
           purchaseDate: dateVal,
           date: dateVal,
           owner: cfg.owner,
           demat: cfg.broker,
-          category: /QQQ|VOO|SPY|IVV|VTI|ETF/i.test(tickerSymbol) ? "ETF" : "Stock"
+          category: /QQQM|QQQ|VOO|SPY|IVV|VTI|SCHD|GLD|IAU|ETF/i.test(tickerSymbol) ? "ETF" : "Stock"
         });
       }
     });
@@ -5392,6 +5428,8 @@ function renderUsStockHoldingsPanel() {
   let totalInvestedUSD = 0;
   let totalCurrentValueUSD = 0;
   let heldSymbolCount = 0;
+  let oneDayChangeUSD = 0;
+  let hasOneDayDataUSD = false;
 
   const holdings = rows.map(item => {
     const qty = toNumber(item.quantity);
@@ -5401,11 +5439,18 @@ function renderUsStockHoldingsPanel() {
     const currentValue = toNumber(item.currentValue || (qty * currentPrice));
     const gain = currentValue - invested;
     const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
+    const prevClose = item.prevClose ? toNumber(item.prevClose) : null;
+    const dayChange = prevClose ? qty * (currentPrice - prevClose) : (item.dayPnl !== undefined && item.dayPnl !== 0 ? toNumber(item.dayPnl) : null);
+    const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
 
     if (qty > 0) {
       totalInvestedUSD += invested;
       totalCurrentValueUSD += currentValue;
       heldSymbolCount++;
+      if (dayChange !== null) {
+        oneDayChangeUSD += dayChange;
+        hasOneDayDataUSD = true;
+      }
     }
 
     return {
@@ -5416,9 +5461,12 @@ function renderUsStockHoldingsPanel() {
       avgPrice,
       totalInv: invested,
       currentPrice,
+      prevClose,
       currentValue,
       gain,
       gainPct,
+      dayChange,
+      dayChangePct,
       demat: item.demat || "INDmoney",
       id: item.id
     };
@@ -5429,6 +5477,11 @@ function renderUsStockHoldingsPanel() {
 
   if (summary) {
     const gainColor = totalUnrealizedGainUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const dayChangeColor = oneDayChangeUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+    const dayChangeArrow = oneDayChangeUSD >= 0 ? '▲' : '▼';
+    const oneDayPct = hasOneDayDataUSD && (totalCurrentValueUSD - oneDayChangeUSD) > 0
+      ? (oneDayChangeUSD / (totalCurrentValueUSD - oneDayChangeUSD)) * 100 : 0;
+
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">💰 Invested (${activeHoldingsOwner})</div>
@@ -5438,12 +5491,17 @@ function renderUsStockHoldingsPanel() {
       <article class="metric-card compact-metric">
         <div class="label">📈 Current Value</div>
         <div class="value">${formatUSD(totalCurrentValueUSD)}</div>
-        <div class="hint">Live &amp; Sheet Values ($)</div>
+        <div class="hint">Live USD prices</div>
       </article>
       <article class="metric-card compact-metric">
         <div class="label">📊 Overall P&L</div>
         <div class="value" style="color: ${gainColor}">${formatUSD(totalUnrealizedGainUSD)}</div>
         <div class="hint" style="color: ${gainColor}">${totalUnrealizedGainUSD >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(2)}% total return</div>
+      </article>
+      <article class="metric-card compact-metric" style="border-left: 3px solid ${dayChangeColor}">
+        <div class="label">📉 1-Day Change</div>
+        <div class="value" style="color: ${dayChangeColor}">${hasOneDayDataUSD ? `${dayChangeArrow} ${formatUSD(Math.abs(oneDayChangeUSD))}` : '—'}</div>
+        <div class="hint">${hasOneDayDataUSD ? `${oneDayChangeUSD >= 0 ? '+' : ''}${oneDayPct.toFixed(2)}% today` : 'Refresh prices to see'}</div>
       </article>
     `;
   }
@@ -5453,7 +5511,7 @@ function renderUsStockHoldingsPanel() {
   const usStockColumns = [
     ['symbol', 'Symbol'], ['company', 'Company'], ['totalQty', 'Qty'],
     ['avgPrice', 'Avg Price ($)'], ['totalInv', 'Invested ($)'], ['currentPrice', 'Price ($)'],
-    ['currentValue', 'Current Value ($)'], ['gain', 'Overall P&L ($)'], ['demat', 'Broker']
+    ['currentValue', 'Current Value ($)'], ['dayChange', '1-Day Chg ($)'], ['gain', 'Overall P&L ($)'], ['demat', 'Broker']
   ];
 
   if (targetThead) {
@@ -5474,11 +5532,18 @@ function renderUsStockHoldingsPanel() {
     formatUSD(item.currentPrice),
     formatUSD(item.currentValue),
     (() => {
+      if (item.dayChange === null) return '<span style="opacity:0.4">—</span>';
+      const color = item.dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+      const arrow = item.dayChange >= 0 ? '▲' : '▼';
+      const pctStr = item.dayChangePct !== null ? ` (${item.dayChange >= 0 ? '+' : ''}${item.dayChangePct.toFixed(2)}%)` : '';
+      return `<span style="color:${color};font-weight:600">${arrow} ${formatUSD(Math.abs(item.dayChange))}<small>${pctStr}</small></span>`;
+    })(),
+    (() => {
       const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
       return `<span style="color:${color};font-weight:600">${formatUSD(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
     })(),
     escapeHTML(item.demat)
-  ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 9);
+  ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
 }
 
 const SIMPLE_ASSET_TABS = [

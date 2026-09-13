@@ -394,6 +394,42 @@ runTest('normalizeOwner & matchHoldingsOwner: protects "Owner (Me / Wife)" heade
 });
 
 // ----------------------------------------------------------------------
+// Test 17: User Real US Stocks Tab (My_US_Stocks) with Stock Symbol, Holding Since, Quantity, Avg. Price ($), Total Value ($)
+// ----------------------------------------------------------------------
+runTest('parseMasterHoldingsWorkbook: correctly parses "My_US_Stocks" tab with exact user fractional holdings and dates', () => {
+  const XLSX = require('xlsx');
+  global.XLSX = XLSX;
+  const app = require('../app.js');
+
+  const wb = XLSX.utils.book_new();
+  const usStockData = [
+    { "Stock Symbol": "META", "Holding Since": "17 Apr 2026, 8:47 PM", "Quantity": "0.154829703", "Avg. Price ($)": "683.3960019", "Total Value ($)": "105.81" },
+    { "Stock Symbol": "QQQM", "Holding Since": "24 Aug 2026, 9:48 PM", "Quantity": "0.350314339", "Avg. Price ($)": "292.1376279", "Total Value ($)": "102.34" },
+    { "Stock Symbol": "VOO", "Holding Since": "21 May 2026, 1:18 PM", "Quantity": "0.596376748", "Avg. Price ($)": "692.6326343", "Total Value ($)": "413.069998" },
+    { "Stock Symbol": "AAPL", "Holding Since": "11 Dec 2023, 10:57 PM", "Quantity": "3.312562802", "Avg. Price ($)": "231.7752299", "Total Value ($)": "767.770005" },
+    { "Stock Symbol": "T", "Holding Since": "11 Dec 2023, 11:01 PM", "Quantity": "3.844429144", "Avg. Price ($)": "18.18715013", "Total Value ($)": "69.91921" }
+  ];
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(usStockData), "My_US_Stocks");
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const res = app.parseMasterHoldingsWorkbook(buffer);
+
+  assert.strictEqual(res.usstocks.length, 5, 'Should parse 5 US stock records');
+
+  const meta = res.usstocks.find(s => s.symbol === 'META');
+  assert.ok(meta, 'META should be parsed');
+  assert.strictEqual(meta.quantity, 0.154829703, 'META quantity should preserve exact 9-decimal precision');
+  assert.strictEqual(meta.avgPrice, 683.3960019, 'META avgPrice should preserve exact precision');
+  assert.strictEqual(meta.currentValue, 105.81, 'META currentValue should be 105.81');
+  assert.strictEqual(meta.purchaseDate, '2026-04-17', 'META purchase date should be parsed as 2026-04-17');
+
+  const voo = res.usstocks.find(s => s.symbol === 'VOO');
+  assert.ok(voo, 'VOO should be parsed');
+  assert.strictEqual(voo.category, 'ETF', 'VOO should be tagged as ETF');
+});
+
+// ----------------------------------------------------------------------
 // Test Summary
 // ----------------------------------------------------------------------
 console.log("==========================================");
