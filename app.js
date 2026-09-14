@@ -5663,7 +5663,7 @@ async function refreshUsStockPrices(force = false) {
     try {
       const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}&market=US`;
       console.log('[US Stocks] Fetching from proxy:', url);
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
       const data = await response.json();
       console.log('[US Stocks] Proxy response:', JSON.stringify(data).slice(0, 1000));
@@ -5692,30 +5692,32 @@ async function refreshUsStockPrices(force = false) {
     }
   }
 
-  // ─── Strategy 2: CORS proxy + Yahoo Finance for failed symbols ─────────
+  // ─── Strategy 2: Parallel High-Speed Fallback for failed symbols ─────────
   if (failedSymbols.length > 0) {
-    console.log(`[US Stocks] Trying CORS-proxy fallbacks for: ${failedSymbols.join(', ')}`);
-    for (const sym of [...failedSymbols]) {
-      try {
-        const price = await fetchUsStockPriceFallback(sym);
-        if (price && price.currentPrice > 0) {
-          cache[sym] = {
-            price: price.currentPrice,
-            prevClose: price.prevClose || price.currentPrice,
-            change: price.currentPrice - (price.prevClose || price.currentPrice),
-            changePct: price.prevClose ? ((price.currentPrice - price.prevClose) / price.prevClose * 100) : 0,
-            timestamp: now,
-            date: new Date().toLocaleDateString('en-US'),
-            source: price.source || 'fallback',
-          };
-          updatedCount++;
-          failedSymbols = failedSymbols.filter(s => s !== sym);
-          console.log(`[US Stocks] ✅ Fallback got ${sym}: $${price.currentPrice}`);
-        }
-      } catch (fallbackErr) {
-        console.warn(`[US Stocks] All fallbacks failed for ${sym}:`, fallbackErr.message);
+    console.log(`[US Stocks] Fetching via parallel fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
+    const fallbackResults = await Promise.allSettled(
+      failedSymbols.map(sym => fetchStockPriceSingleSymbolFast(sym, true).then(res => ({ sym, res })))
+    );
+
+    fallbackResults.forEach(r => {
+      if (r.status === 'fulfilled' && r.value && r.value.res && r.value.res.currentPrice > 0) {
+        const { sym, res } = r.value;
+        const prevClose = res.prevClose || res.currentPrice;
+        const change = res.currentPrice - prevClose;
+        const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+        cache[sym] = {
+          price: res.currentPrice,
+          prevClose: prevClose,
+          change: change,
+          changePct: changePct,
+          timestamp: now,
+          date: new Date().toLocaleDateString('en-US'),
+          source: res.source || 'fast-api',
+        };
+        updatedCount++;
+        failedSymbols = failedSymbols.filter(s => s !== sym);
       }
-    }
+    });
   }
 
   // ─── Apply to state ────────────────────────────────────────────────────
@@ -5743,74 +5745,8 @@ async function refreshUsStockPrices(force = false) {
   }
 }
 
-/**
- * Multi-strategy fallback for fetching US stock prices from the browser.
- * Tries: (1) Yahoo via CORS proxies, (2) Yahoo direct, (3) Finnhub free tier.
- */
 async function fetchUsStockPriceFallback(symbol) {
-  const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-
-  // ─── Strategy A: Yahoo Finance via CORS proxy services ─────────────────
-  const corsProxies = [
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  ];
-
-  for (const proxyFn of corsProxies) {
-    try {
-      const proxyUrl = proxyFn(yahooUrl);
-      const resp = await fetch(proxyUrl, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!resp.ok) continue;
-      const text = await resp.text();
-      // Some proxies wrap in HTML; try to find JSON
-      const jsonStart = text.indexOf('{');
-      if (jsonStart < 0) continue;
-      const data = JSON.parse(text.slice(jsonStart));
-      const meta = data?.chart?.result?.[0]?.meta;
-      if (meta && meta.regularMarketPrice > 0) {
-        return {
-          currentPrice: meta.regularMarketPrice,
-          prevClose: meta.previousClose || meta.chartPreviousClose || 0,
-          source: 'yahoo-cors-proxy',
-        };
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-
-  // ─── Strategy B: Yahoo Finance direct (might work if CORS is relaxed) ──
-  const directEndpoints = [
-    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
-  ];
-
-  for (const url of directEndpoints) {
-    try {
-      const resp = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      const meta = data?.chart?.result?.[0]?.meta;
-      if (meta && meta.regularMarketPrice > 0) {
-        return {
-          currentPrice: meta.regularMarketPrice,
-          prevClose: meta.previousClose || meta.chartPreviousClose || 0,
-          source: 'yahoo-direct',
-        };
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-
-  return null;
+  return fetchStockPriceSingleSymbolFast(symbol, true);
 }
 
 function updateUsStocksFromCache() {
@@ -10275,18 +10211,13 @@ async function refreshMutualFundNAVs(force = false) {
     const needsFetch = force || schemeEntries.some(e => isNavStale(navCache[e.code]));
     if (needsFetch) toast('Refreshing mutual fund NAVs from mfapi.in…');
 
-    for (const { name, code } of schemeEntries) {
+    const fetchPromises = schemeEntries.map(async ({ name, code }) => {
       const cached = navCache[code];
-
-      if (!force && !isNavStale(cached)) {
-        continue; // cache is fresh — skip fetch
-      }
+      if (!force && !isNavStale(cached)) return;
 
       try {
-        // Fetch full history — data[0] = latest, data[1] = previous trading day
-        // This is needed for 1-day change calculation
-        const response = await fetch(`https://api.mfapi.in/mf/${code}`);
-        if (!response.ok) continue;
+        const response = await fetch(`https://api.mfapi.in/mf/${code}`, { signal: AbortSignal.timeout(5000) });
+        if (!response.ok) return;
         const json = await response.json();
 
         if (json && json.status === 'SUCCESS' && Array.isArray(json.data) && json.data[0]) {
@@ -10301,16 +10232,14 @@ async function refreshMutualFundNAVs(force = false) {
             timestamp: now,
           };
           updatedCount += 1;
-
-          // Asynchronously pre-fetch and cache full history for Smart Insights
           fetchHistoricalNAV(code).catch(() => {});
         }
-        // Small delay to avoid hammering the API
-        await new Promise(r => setTimeout(r, 80));
       } catch (e) {
         console.warn(`Failed to fetch NAV for ${code} (${name}):`, e);
       }
-    }
+    });
+
+    await Promise.allSettled(fetchPromises);
 
     if (updatedCount > 0 || force) {
       saveNavCache(navCache);
