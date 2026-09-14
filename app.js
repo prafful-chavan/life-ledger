@@ -945,9 +945,18 @@ function bindFinanceTabs() {
     }
   });
 
-  document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", () => refreshAllLivePrices(true));
-  document.getElementById('refreshStockPricesBtn')?.addEventListener('click', () => refreshAllLivePrices(true));
-  document.getElementById('refreshUsStockPricesBtn')?.addEventListener('click', () => refreshAllLivePrices(true));
+  document.getElementById("refreshMutualFundNAVsBtn")?.addEventListener("click", async () => {
+    await refreshMutualFundNAVs(true);
+    renderAll();
+  });
+  document.getElementById('refreshStockPricesBtn')?.addEventListener('click', async () => {
+    await refreshStockPrices(true);
+    renderAll();
+  });
+  document.getElementById('refreshUsStockPricesBtn')?.addEventListener('click', async () => {
+    await refreshUsStockPrices(true);
+    renderAll();
+  });
   document.getElementById('topbarRefreshAllBtn')?.addEventListener('click', () => refreshAllLivePrices(true));
 
   document.getElementById("redeemFundBtn")?.addEventListener("click", () => {
