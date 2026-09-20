@@ -482,9 +482,68 @@ function bootstrapApp(initialState) {
   refreshMutualFundNAVs(false);
   refreshStockPrices(false);
   refreshUsStockPrices(false);
+  initBrokerAutoRefresh();
 
   // Load AI insights in background (non-blocking)
   setTimeout(() => loadAiInsights(), 1500);
+}
+
+let brokerAutoRefreshInterval = null;
+
+function initBrokerAutoRefresh() {
+  if (brokerAutoRefreshInterval) return;
+
+  // Run initial auto-check after 5 seconds
+  setTimeout(() => checkAndRunAutoRefresh(), 5000);
+
+  // Periodic check every 15 minutes
+  brokerAutoRefreshInterval = setInterval(() => {
+    checkAndRunAutoRefresh();
+  }, 15 * 60 * 1000);
+}
+
+async function checkAndRunAutoRefresh() {
+  const now = Date.now();
+  const cache = getStockPriceCache();
+  const usStocks = state.usstocks || [];
+  const stocks = state.stocks || [];
+
+  // 1. Auto-refresh Indian Stocks every 2 hours if any position is stale (> 2 hours old)
+  const needsStockRefresh = stocks.some(s => {
+    if (!s.symbol || toNumber(s.quantity) <= 0) return false;
+    const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    return !cache[sym] || (now - cache[sym].timestamp > 2 * 60 * 60 * 1000);
+  });
+  if (needsStockRefresh && typeof refreshStockPrices === 'function') {
+    console.log('[Auto-Refresh] Fetching latest Indian stock prices (2h auto-refresh)…');
+    await refreshStockPrices(true).catch(e => console.warn('[Auto-Refresh] Stock error:', e));
+  }
+
+  // 2. Auto-refresh US Stocks every 2 hours if any position is stale (> 2 hours old)
+  const needsUsStockRefresh = usStocks.some(s => {
+    if (!s.symbol || toNumber(s.quantity) <= 0) return false;
+    const sym = s.symbol.toUpperCase().trim();
+    return !cache[sym] || (now - cache[sym].timestamp > 2 * 60 * 60 * 1000);
+  });
+  if (needsUsStockRefresh && typeof refreshUsStockPrices === 'function') {
+    console.log('[Auto-Refresh] Fetching latest US stock prices (2h auto-refresh)…');
+    await refreshUsStockPrices(true).catch(e => console.warn('[Auto-Refresh] US Stock error:', e));
+  }
+
+  // 3. Auto-refresh Mutual Fund NAVs daily after 8 PM IST
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const currentHourIST = ist.getHours();
+  const lastNavAutoFetchKey = 'lifeLedger_lastNavAutoFetchDate';
+  const lastNavAutoFetchDate = localStorage.getItem(lastNavAutoFetchKey);
+  const todayISTString = ist.toISOString().slice(0, 10);
+
+  if (currentHourIST >= 20 && lastNavAutoFetchDate !== todayISTString) {
+    if (typeof refreshMutualFundNAVs === 'function') {
+      console.log('[Auto-Refresh] Daily 8 PM IST Mutual Fund NAV trigger running…');
+      await refreshMutualFundNAVs(true).catch(e => console.warn('[Auto-Refresh] MF NAV error:', e));
+      localStorage.setItem(lastNavAutoFetchKey, todayISTString);
+    }
+  }
 }
 
 if (typeof window !== "undefined") {
@@ -5276,70 +5335,55 @@ function isStockPriceStale(cached) {
   return false;
 }
 
-async function fetchIndianStockPriceFallback(symbol) {
+async function fetchStockPriceSingleSymbolFast(symbol, isUS = false) {
   const cleanSym = String(symbol).toUpperCase().replace(/\s*-EQ$/i, '').trim();
-  const yahooSymbol = cleanSym.endsWith('.NS') || cleanSym.endsWith('.BO') ? cleanSym : `${cleanSym}.NS`;
+  const yahooSymbol = isUS ? cleanSym : (cleanSym.endsWith('.NS') || cleanSym.endsWith('.BO') ? cleanSym : `${cleanSym}.NS`);
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
 
-  const corsProxies = [
-    (targetUrl) => `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-    (targetUrl) => `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
-    (targetUrl) => `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
+  const endpoints = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`
   ];
 
-  for (const proxyFn of corsProxies) {
+  const fetchPromises = endpoints.map(async (url) => {
     try {
-      const proxyUrl = proxyFn(yahooUrl);
-      const resp = await fetch(proxyUrl, {
+      const resp = await fetch(url, {
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(4000)
       });
-      if (!resp.ok) continue;
+      if (!resp.ok) return null;
       const text = await resp.text();
       const jsonStart = text.indexOf('{');
-      if (jsonStart < 0) continue;
+      if (jsonStart < 0) return null;
       const data = JSON.parse(text.slice(jsonStart));
       const meta = data?.chart?.result?.[0]?.meta;
       if (meta && meta.regularMarketPrice > 0) {
         return {
           currentPrice: meta.regularMarketPrice,
           prevClose: meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice,
-          source: 'yahoo-cors-proxy',
+          source: 'fast-api',
         };
       }
-    } catch (e) {
-      continue;
+    } catch {
+      return null;
+    }
+    return null;
+  });
+
+  const results = await Promise.allSettled(fetchPromises);
+  for (const res of results) {
+    if (res.status === 'fulfilled' && res.value && res.value.currentPrice > 0) {
+      return res.value;
     }
   }
-
-  // Direct Yahoo Finance
-  const directEndpoints = [
-    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`,
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`,
-  ];
-
-  for (const url of directEndpoints) {
-    try {
-      const resp = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      const meta = data?.chart?.result?.[0]?.meta;
-      if (meta && meta.regularMarketPrice > 0) {
-        return {
-          currentPrice: meta.regularMarketPrice,
-          prevClose: meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice,
-          source: 'yahoo-direct',
-        };
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-
   return null;
+}
+
+async function fetchIndianStockPriceFallback(symbol) {
+  return fetchStockPriceSingleSymbolFast(symbol, false);
 }
 
 async function refreshStockPrices(force = false) {
@@ -5377,11 +5421,11 @@ async function refreshStockPrices(force = false) {
   let updatedCount = 0;
   let failedSymbols = [...uniqueSymbols];
 
-  // Strategy 1: Custom Proxy URL (if configured)
+  // Strategy 1: Custom Proxy URL (if configured with 6s timeout)
   if (proxyUrl) {
     try {
       const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}`;
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (response.ok) {
         const data = await response.json();
         failedSymbols = [];
@@ -5410,31 +5454,32 @@ async function refreshStockPrices(force = false) {
     }
   }
 
-  // Strategy 2: Yahoo Finance Fallback for failed / un-fetched symbols
+  // Strategy 2: Parallel High-Speed Fallback for failed / un-fetched symbols
   if (failedSymbols.length > 0) {
-    console.log(`[Stock Prices] Fetching via Yahoo Finance fallback for ${failedSymbols.length} symbols:`, failedSymbols);
-    for (const sym of [...failedSymbols]) {
-      try {
-        const result = await fetchIndianStockPriceFallback(sym);
-        if (result && result.currentPrice > 0) {
-          const prevClose = result.prevClose || result.currentPrice;
-          const change = result.currentPrice - prevClose;
-          const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-          cache[sym] = {
-            price: result.currentPrice,
-            prevClose: prevClose,
-            change: change,
-            changePct: changePct,
-            timestamp: now,
-            date: new Date().toLocaleDateString('en-IN'),
-            source: result.source || 'yahoo-fallback',
-          };
-          updatedCount++;
-        }
-      } catch (e) {
-        console.warn(`[Stock Prices] Yahoo fallback failed for ${sym}:`, e.message);
+    console.log(`[Stock Prices] Fetching via parallel fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
+    const fallbackResults = await Promise.allSettled(
+      failedSymbols.map(sym => fetchStockPriceSingleSymbolFast(sym, false).then(res => ({ sym, res })))
+    );
+
+    fallbackResults.forEach(r => {
+      if (r.status === 'fulfilled' && r.value && r.value.res && r.value.res.currentPrice > 0) {
+        const { sym, res } = r.value;
+        const prevClose = res.prevClose || res.currentPrice;
+        const change = res.currentPrice - prevClose;
+        const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+        cache[sym] = {
+          price: res.currentPrice,
+          prevClose: prevClose,
+          change: change,
+          changePct: changePct,
+          timestamp: now,
+          date: new Date().toLocaleDateString('en-IN'),
+          source: res.source || 'fast-api',
+        };
+        updatedCount++;
+        failedSymbols = failedSymbols.filter(s => s !== sym);
       }
-    }
+    });
   }
 
   if (updatedCount > 0) {
