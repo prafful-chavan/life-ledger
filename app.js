@@ -5352,7 +5352,7 @@ async function fetchStockPriceSingleSymbolFast(symbol, isUS = false) {
     try {
       const resp = await fetch(url, {
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(4000)
+        signal: AbortSignal.timeout(8000)
       });
       if (!resp.ok) return null;
       const text = await resp.text();
@@ -5417,15 +5417,15 @@ async function refreshStockPrices(force = false) {
     saveStockPriceCache(cache);
   }
 
-  toast('🔄 Refreshing stock prices…');
+  toast('🔄 Refreshing stock prices via Google Proxy…');
   let updatedCount = 0;
   let failedSymbols = [...uniqueSymbols];
 
-  // Strategy 1: Custom Proxy URL (if configured with 6s timeout)
+  // Strategy 1: Google Apps Script Proxy URL (with generous 25s timeout)
   if (proxyUrl) {
     try {
       const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(25000) });
       if (response.ok) {
         const data = await response.json();
         failedSymbols = [];
@@ -5717,7 +5717,7 @@ async function refreshUsStockPrices(force = false) {
     try {
       const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}&market=US`;
       console.log('[US Stocks] Fetching from proxy:', url);
-      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(25000) });
       if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
       const data = await response.json();
       console.log('[US Stocks] Proxy response:', JSON.stringify(data).slice(0, 1000));
