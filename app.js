@@ -10053,11 +10053,18 @@ async function resolveSchemeCodes(fundNames) {
 
   // Canonical overrides for known mutual fund scheme codes
   const overrides = {
+    "127042": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "127039": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
+    "inf247l01445": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "inf247l01411": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
+    "motilal oswal midcap fund direct idcw": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "motilal oswal midcap fund idcw": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "motilal oswal midcap fund 127042": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "motilal oswal midcap fund direct": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "motilal oswal midcap fund": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "motilal oswal midcap": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
     "motilal oswal midcap fund direct growth": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
-    "motilal oswal midcap fund direct": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
     "motilal oswal midcap fund growth": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
-    "motilal oswal midcap fund": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
-    "motilal oswal midcap": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
     "motilal oswal midcap fund regular growth": { schemeCode: 127040, schemeName: "Motilal Oswal Midcap Fund - Regular Plan Growth Option" },
     "quant small cap fund direct growth": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
     "quant small cap fund direct": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
@@ -10085,6 +10092,8 @@ async function resolveSchemeCodes(fundNames) {
     const norm = name.trim().toLowerCase().replace(/\s+/g, ' ');
     if (overrides[norm]) {
       cache[name] = overrides[norm];
+    } else if (/^\d{6}$/.test(norm)) {
+      cache[name] = { schemeCode: parseInt(norm, 10), schemeName: name };
     }
   });
 
@@ -10312,22 +10321,48 @@ function saveNavCache(cache) {
 
 
 async function refreshMutualFundNAVs(force = false) {
+  if (!state.mutualFunds || state.mutualFunds.length === 0) return;
+
+  const isinMap = {
+    "INF247L01445": 127042,
+    "INF247L01411": 127039,
+    "INF247L01437": 127040,
+    "INF247L01460": 127044
+  };
+
+  state.mutualFunds.forEach(item => {
+    if (item.isin && isinMap[String(item.isin).toUpperCase()]) {
+      item.schemeCode = isinMap[String(item.isin).toUpperCase()];
+    }
+  });
+
   const uniqueNames = [...new Set(state.mutualFunds.map(item => item.fundName).filter(Boolean))];
-  if (uniqueNames.length === 0) return;
+  const codesCache = await resolveSchemeCodes(uniqueNames);
+
+  const schemeEntries = [];
+  const seenCodes = new Set();
+
+  state.mutualFunds.forEach(item => {
+    let code = item.schemeCode || item.amfiCode || (item.isin && isinMap[String(item.isin).toUpperCase()]);
+    if (!code) {
+      code = codesCache[item.fundName]?.schemeCode;
+    }
+    if (code) {
+      const codeNum = parseInt(code, 10);
+      if (codeNum && !seenCodes.has(codeNum)) {
+        seenCodes.add(codeNum);
+        schemeEntries.push({ name: item.fundName || String(codeNum), code: codeNum });
+      }
+    }
+  });
+
+  if (schemeEntries.length === 0) return;
 
   try {
-    const codesCache = await resolveSchemeCodes(uniqueNames);
-    const schemeEntries = uniqueNames
-      .map(name => ({ name, code: codesCache[name]?.schemeCode }))
-      .filter(e => e.code);
-
-    if (schemeEntries.length === 0) return;
-
     const navCache = getNavCache();
     const now = Date.now();
     let updatedCount = 0;
 
-    // Show spinner only if we are going to actually fetch
     const needsFetch = force || schemeEntries.some(e => isNavStale(navCache[e.code]));
     if (needsFetch) toast('Refreshing mutual fund NAVs from mfapi.in…');
 
@@ -10367,11 +10402,13 @@ async function refreshMutualFundNAVs(force = false) {
         toast(updatedCount > 0 ? `✓ Updated ${updatedCount} NAV${updatedCount > 1 ? 's' : ''} from mfapi.in` : 'NAVs are already up to date.');
       }
 
-      // Push freshened NAVs into state
       state.mutualFunds.forEach(item => {
-        const cachedCodeObj = codesCache[item.fundName];
-        if (cachedCodeObj) {
-          const cachedNavObj = navCache[cachedCodeObj.schemeCode];
+        let schemeCode = item.schemeCode || item.amfiCode || (item.isin && isinMap[String(item.isin).toUpperCase()]);
+        if (!schemeCode) {
+          schemeCode = codesCache[item.fundName]?.schemeCode;
+        }
+        if (schemeCode) {
+          const cachedNavObj = navCache[schemeCode];
           if (cachedNavObj) {
             item.latestNav = cachedNavObj.nav;
             item.navDate = cachedNavObj.date;
