@@ -512,6 +512,7 @@
                   <span id="navDateLabel" style="font-size:0.75rem;opacity:0.6;"></span>
                   <button class="secondary-button sync-holdings-btn" type="button" title="Sync 'My stocks and MF holdings for Life-Ledger' from Drive">☁ Sync Holdings from Drive</button>
                   <button class="secondary-button" type="button" id="refreshMutualFundNAVsBtn">🔄 Refresh NAVs</button>
+                  <button class="secondary-button" type="button" id="mfReconcileBtn">🔍 Groww Reconcile</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="mutualFund">➕ Add Fund</button>
                   <button class="secondary-button redeem-btn" type="button" id="redeemFundBtn">💸 Redeem Fund</button>
                 </div>
@@ -1744,6 +1745,25 @@
             <button class="secondary-button" type="button" data-close-modal>Cancel</button>
             <button class="primary-button" type="button" id="stockCSVImportBtn">📥 Import All</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="mfReconcileModal" role="dialog" aria-modal="true" aria-labelledby="mfReconcileTitle" hidden>
+      <div class="modal-card" style="max-width: 900px; width: 95%;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Mutual Funds Audit</p>
+            <h2 id="mfReconcileTitle">🔍 Groww Portfolio Reconciliation</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <div class="help-box" style="margin-bottom: 12px; font-size:0.8rem;">
+          Compares your actual holdings against Groww benchmarks using exact AMFI Scheme Codes, ISINs, and live MFAPI NAVs.
+        </div>
+        <div id="mfReconcileContent" class="table-wrap" style="max-height: 450px; overflow-y: auto;"></div>
+        <div class="modal-actions" style="margin-top: 12px;">
+          <button class="secondary-button" type="button" data-close-modal>Close</button>
         </div>
       </div>
     </div>

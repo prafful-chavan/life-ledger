@@ -1008,6 +1008,7 @@ function bindFinanceTabs() {
     await refreshMutualFundNAVs(true);
     renderAll();
   });
+  document.getElementById("mfReconcileBtn")?.addEventListener("click", openMfReconciliationModal);
   document.getElementById('refreshStockPricesBtn')?.addEventListener('click', async () => {
     await refreshStockPrices(true);
     renderAll();
@@ -10018,11 +10019,29 @@ if (typeof window !== 'undefined') {
   window.addSystemLog = addSystemLog;
 }
 
+const CANONICAL_MF_SCHEME_MAP = {
+  147946: { schemeCode: 147946, isin: "INF194KB1AL4", amc: "Bandhan", schemeName: "BANDHAN Small Cap Fund - Direct Plan - Growth", plan: "Direct", option: "Growth", owner: "Wife" },
+  118955: { schemeCode: 118955, isin: "INF179K01UT0", amc: "HDFC", schemeName: "HDFC Flexi Cap Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Wife" },
+  120716: { schemeCode: 120716, isin: "INF789F01XA0", amc: "UTI", schemeName: "UTI Nifty 50 Index Fund - Direct Plan - Growth", plan: "Direct", option: "Growth", owner: "Wife" },
+  127042: { schemeCode: 127042, isin: "INF247L01445", amc: "Motilal Oswal", schemeName: "Motilal Oswal Midcap Fund", plan: "Direct", option: "Growth", owner: "Wife" },
+  153055: { schemeCode: 153055, isin: "INF277KA1CU2", amc: "Tata", schemeName: "Tata India Innovation Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Wife" },
+  152931: { schemeCode: 152931, isin: "INF251K01TY9", amc: "Baroda BNP Paribas", schemeName: "Baroda BNP Paribas Nifty200 Momentum 30 Index Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Wife" },
+  118759: { schemeCode: 118759, isin: "INF204K01I50", amc: "Nippon India", schemeName: "Nippon India Pharma Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Me" },
+  122639: { schemeCode: 122639, isin: "INF879O01027", amc: "PPFAS", schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth", plan: "Direct", option: "Growth", owner: "Me" },
+  120465: { schemeCode: 120465, isin: "", amc: "Axis", schemeName: "Axis Large Cap Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Me" },
+  120828: { schemeCode: 120828, isin: "INF966L01689", amc: "Quant", schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Me" },
+  120503: { schemeCode: 120503, isin: "INF846K01EW2", amc: "Axis", schemeName: "Axis ELSS- Tax Saver Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Me" },
+  120847: { schemeCode: 120847, isin: "INF966L01986", amc: "Quant", schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Me" },
+  152821: { schemeCode: 152821, isin: "", amc: "ITI", schemeName: "ITI Large & Mid Cap Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Me" },
+  152951: { schemeCode: 152951, isin: "INF277KA1CO5", amc: "Tata", schemeName: "Tata Nifty Capital Markets Index Fund - Direct Plan - Growth Option", plan: "Direct", option: "Growth", owner: "Me" },
+  152770: { schemeCode: 152770, isin: "INF666M01IL4", amc: "Groww", schemeName: "Groww Nifty EV & New Age Automotive ETF FOF - Direct Plan - Growth", plan: "Direct", option: "Growth", owner: "Me" },
+  120334: { schemeCode: 120334, isin: "INF109K015K4", amc: "ICICI Prudential", schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth", plan: "Direct", option: "Growth", owner: "Me" }
+};
+
 function getFundCodesCache() {
   try {
     const cache = localStorage.getItem("lifeLedgerFundCodes:v3");
     if (!cache) {
-      // Clean up legacy caches
       localStorage.removeItem("lifeLedgerFundCodes");
       localStorage.removeItem("lifeLedgerFundCodes:v2");
       return {};
@@ -10051,41 +10070,107 @@ async function resolveSchemeCodes(fundNames) {
   if (!fundNames || fundNames.length === 0) return getFundCodesCache();
   const cache = getFundCodesCache();
 
-  // Canonical overrides for known mutual fund scheme codes
+  // Master overrides for known mutual fund scheme codes and ISINs
   const overrides = {
-    "127042": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    // Quant ELSS Tax Saver (BUG B FIX: schemeCode 120847, ISIN INF966L01986, NAV ~₹456.72)
+    "quant elss tax saver fund direct growth": { schemeCode: 120847, schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option" },
+    "quant elss tax saver fund direct": { schemeCode: 120847, schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option" },
+    "quant elss tax saver fund": { schemeCode: 120847, schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option" },
+    "quant elss tax saver": { schemeCode: 120847, schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option" },
+    "quant elss": { schemeCode: 120847, schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option" },
+    "inf966l01986": { schemeCode: 120847, schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option" },
+    "120847": { schemeCode: 120847, schemeName: "Quant ELSS Tax Saver Fund - Direct Plan - Growth Option" },
+
+    // Motilal Oswal Midcap (BUG A FIX: schemeCode 127042, ISIN INF247L01445, NAV ~₹117.00)
+    "127042": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
     "127039": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
-    "inf247l01445": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
+    "inf247l01445": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
     "inf247l01411": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
-    "motilal oswal midcap fund direct idcw": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
-    "motilal oswal midcap fund idcw": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
-    "motilal oswal midcap fund 127042": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
-    "motilal oswal midcap fund direct": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
-    "motilal oswal midcap fund": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
-    "motilal oswal midcap": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund - Direct Plan IDCW Option" },
-    "motilal oswal midcap fund direct growth": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
-    "motilal oswal midcap fund growth": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
-    "motilal oswal midcap fund regular growth": { schemeCode: 127040, schemeName: "Motilal Oswal Midcap Fund - Regular Plan Growth Option" },
+    "motilal oswal midcap fund direct idcw": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+    "motilal oswal midcap fund idcw": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+    "motilal oswal midcap fund 127042": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+    "motilal oswal midcap fund direct": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+    "motilal oswal midcap fund": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+    "motilal oswal midcap": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+    "motilal oswal midcap fund direct growth": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+    "motilal oswal midcap fund growth": { schemeCode: 127042, schemeName: "Motilal Oswal Midcap Fund" },
+
+    // ICICI Prudential Multi Asset (BUG E FIX: both display names resolve to 120334)
+    "icici prudential multi asset allocation fund direct growth": { schemeCode: 120334, schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth" },
+    "icici prudential multi asset fund direct growth": { schemeCode: 120334, schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth" },
+    "icici prudential multi asset allocation fund": { schemeCode: 120334, schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth" },
+    "icici prudential multi asset fund": { schemeCode: 120334, schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth" },
+    "inf109k015k4": { schemeCode: 120334, schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth" },
+    "120334": { schemeCode: 120334, schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth" },
+
+    // Tata India Innovation Fund (schemeCode 153055, ISIN INF277KA1CU2)
+    "tata india innovation fund direct growth": { schemeCode: 153055, schemeName: "Tata India Innovation Fund - Direct Plan - Growth Option" },
+    "tata india innovation fund direct": { schemeCode: 153055, schemeName: "Tata India Innovation Fund - Direct Plan - Growth Option" },
+    "tata india innovation fund": { schemeCode: 153055, schemeName: "Tata India Innovation Fund - Direct Plan - Growth Option" },
+    "inf277ka1cu2": { schemeCode: 153055, schemeName: "Tata India Innovation Fund - Direct Plan - Growth Option" },
+    "153055": { schemeCode: 153055, schemeName: "Tata India Innovation Fund - Direct Plan - Growth Option" },
+
+    // Bandhan Small Cap
+    "bandhan small cap fund direct growth": { schemeCode: 147946, schemeName: "BANDHAN Small Cap Fund - Direct Plan - Growth" },
+    "bandhan small cap fund": { schemeCode: 147946, schemeName: "BANDHAN Small Cap Fund - Direct Plan - Growth" },
+    "inf194kb1al4": { schemeCode: 147946, schemeName: "BANDHAN Small Cap Fund - Direct Plan - Growth" },
+    "147946": { schemeCode: 147946, schemeName: "BANDHAN Small Cap Fund - Direct Plan - Growth" },
+
+    // HDFC Flexi Cap
+    "hdfc flexi cap fund direct growth": { schemeCode: 118955, schemeName: "HDFC Flexi Cap Fund - Direct Plan - Growth Option" },
+    "hdfc flexi cap fund": { schemeCode: 118955, schemeName: "HDFC Flexi Cap Fund - Direct Plan - Growth Option" },
+    "inf179k01ut0": { schemeCode: 118955, schemeName: "HDFC Flexi Cap Fund - Direct Plan - Growth Option" },
+    "118955": { schemeCode: 118955, schemeName: "HDFC Flexi Cap Fund - Direct Plan - Growth Option" },
+
+    // Baroda BNP Paribas Nifty200 Momentum 30 Index Fund
+    "baroda bnp paribas nifty200 momentum 30 index fund direct growth": { schemeCode: 152931, schemeName: "Baroda BNP Paribas Nifty200 Momentum 30 Index Fund - Direct Plan - Growth Option" },
+    "inf251k01ty9": { schemeCode: 152931, schemeName: "Baroda BNP Paribas Nifty200 Momentum 30 Index Fund - Direct Plan - Growth Option" },
+    "152931": { schemeCode: 152931, schemeName: "Baroda BNP Paribas Nifty200 Momentum 30 Index Fund - Direct Plan - Growth Option" },
+
+    // Nippon India Pharma
+    "nippon india pharma fund direct growth": { schemeCode: 118759, schemeName: "Nippon India Pharma Fund - Direct Plan - Growth Option" },
+    "nippon india pharma fund": { schemeCode: 118759, schemeName: "Nippon India Pharma Fund - Direct Plan - Growth Option" },
+    "inf204k01i50": { schemeCode: 118759, schemeName: "Nippon India Pharma Fund - Direct Plan - Growth Option" },
+    "118759": { schemeCode: 118759, schemeName: "Nippon India Pharma Fund - Direct Plan - Growth Option" },
+
+    // Axis Large Cap
+    "axis large cap fund direct growth": { schemeCode: 120465, schemeName: "Axis Large Cap Fund - Direct Plan - Growth Option" },
+    "axis large cap fund": { schemeCode: 120465, schemeName: "Axis Large Cap Fund - Direct Plan - Growth Option" },
+    "120465": { schemeCode: 120465, schemeName: "Axis Large Cap Fund - Direct Plan - Growth Option" },
+
+    // Axis ELSS Tax Saver
+    "axis elss tax saver fund direct growth": { schemeCode: 120503, schemeName: "Axis ELSS- Tax Saver Fund - Direct Plan - Growth Option" },
+    "inf846k01ew2": { schemeCode: 120503, schemeName: "Axis ELSS- Tax Saver Fund - Direct Plan - Growth Option" },
+    "120503": { schemeCode: 120503, schemeName: "Axis ELSS- Tax Saver Fund - Direct Plan - Growth Option" },
+
+    // Tata Nifty Capital Markets Index Fund
+    "tata nifty capital markets index fund direct growth": { schemeCode: 152951, schemeName: "Tata Nifty Capital Markets Index Fund - Direct Plan - Growth Option" },
+    "inf277ka1co5": { schemeCode: 152951, schemeName: "Tata Nifty Capital Markets Index Fund - Direct Plan - Growth Option" },
+    "152951": { schemeCode: 152951, schemeName: "Tata Nifty Capital Markets Index Fund - Direct Plan - Growth Option" },
+
+    // Groww Nifty EV & New Age Automotive ETF FoF
+    "groww nifty ev & new age automotive etf fof direct growth": { schemeCode: 152770, schemeName: "Groww Nifty EV & New Age Automotive ETF FOF - Direct Plan - Growth" },
+    "inf666m01il4": { schemeCode: 152770, schemeName: "Groww Nifty EV & New Age Automotive ETF FOF - Direct Plan - Growth" },
+    "152770": { schemeCode: 152770, schemeName: "Groww Nifty EV & New Age Automotive ETF FOF - Direct Plan - Growth" },
+
+    // Quant Small Cap
     "quant small cap fund direct growth": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
     "quant small cap fund direct": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
     "quant small cap fund": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
+    "inf966l01689": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
+    "120828": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
+
+    // Parag Parikh Flexi Cap
     "parag parikh flexi cap fund direct growth": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
     "parag parikh flexi cap fund direct": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
     "parag parikh flexi cap fund": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
-    "nippon india small cap fund direct growth": { schemeCode: 118778, schemeName: "Nippon India Small Cap Fund - Direct Plan - Growth Option" },
-    "nippon india small cap fund direct": { schemeCode: 118778, schemeName: "Nippon India Small Cap Fund - Direct Plan - Growth Option" },
-    "sbi small cap fund direct growth": { schemeCode: 125497, schemeName: "SBI SMALL CAP FUND - Direct Plan - Growth" },
-    "sbi small cap fund direct": { schemeCode: 125497, schemeName: "SBI SMALL CAP FUND - Direct Plan - Growth" },
-    "hdfc mid-cap opportunities fund direct growth": { schemeCode: 118989, schemeName: "HDFC Mid Cap Fund - Direct Plan - Growth Option" },
-    "hdfc mid cap opportunities fund direct growth": { schemeCode: 118989, schemeName: "HDFC Mid Cap Fund - Direct Plan - Growth Option" },
-    "axis small cap fund direct growth": { schemeCode: 125354, schemeName: "Axis Small Cap Fund - Direct Plan - Growth Option" },
-    "mirae asset large cap fund direct growth": { schemeCode: 118834, schemeName: "Mirae Asset Large & Midcap Fund - Direct Plan - Growth" },
-    "icici prudential bluechip fund direct growth": { schemeCode: 120586, schemeName: "ICICI Prudential Large Cap Fund - Direct Plan - Growth" },
-    "kotak emerging equity fund direct growth": { schemeCode: 120172, schemeName: "Kotak Emerging Equity Scheme - Direct Plan - Growth" },
-    "uti flexi cap fund direct growth": { schemeCode: 120716, schemeName: "UTI Flexi Cap Fund - Direct Plan - Growth" },
-    "large & mid cap fund direct growth": { schemeCode: 152821, schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth" },
-    "large & midcap fund direct growth": { schemeCode: 152821, schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth" },
-    "large and mid cap fund direct growth": { schemeCode: 152821, schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth" }
+    "inf879o01027": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
+    "122639": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
+
+    // UTI Nifty 50 Index Fund
+    "uti nifty 50 index fund direct growth": { schemeCode: 120716, schemeName: "UTI Nifty 50 Index Fund - Direct Plan - Growth" },
+    "inf789f01xa0": { schemeCode: 120716, schemeName: "UTI Nifty 50 Index Fund - Direct Plan - Growth" },
+    "120716": { schemeCode: 120716, schemeName: "UTI Nifty 50 Index Fund - Direct Plan - Growth" }
   };
 
   fundNames.forEach(name => {
@@ -10324,10 +10409,23 @@ async function refreshMutualFundNAVs(force = false) {
   if (!state.mutualFunds || state.mutualFunds.length === 0) return;
 
   const isinMap = {
+    "INF194KB1AL4": 147946,
+    "INF179K01UT0": 118955,
+    "INF789F01XA0": 120716,
     "INF247L01445": 127042,
     "INF247L01411": 127039,
     "INF247L01437": 127040,
-    "INF247L01460": 127044
+    "INF247L01460": 127044,
+    "INF277KA1CU2": 153055,
+    "INF251K01TY9": 152931,
+    "INF204K01I50": 118759,
+    "INF879O01027": 122639,
+    "INF966L01689": 120828,
+    "INF846K01EW2": 120503,
+    "INF966L01986": 120847, // Quant ELSS Tax Saver Direct Growth!
+    "INF277KA1CO5": 152951,
+    "INF666M01IL4": 152770,
+    "INF109K015K4": 120334  // ICICI Prudential Multi Asset Allocation Fund!
   };
 
   state.mutualFunds.forEach(item => {
@@ -10424,6 +10522,112 @@ async function refreshMutualFundNAVs(force = false) {
     console.error('Failed to refresh mutual fund NAVs:', err);
     toast('⚠ NAV refresh failed — showing cached values.');
   }
+}
+
+function openMfReconciliationModal() {
+  const modal = document.getElementById("mfReconcileModal");
+  const container = document.getElementById("mfReconcileContent");
+  if (!modal || !container) return;
+
+  const codesCache = getFundCodesCache();
+  const navCache = getNavCache();
+
+  const groups = {};
+  (state.mutualFunds || []).forEach(item => {
+    let schemeCode = item.schemeCode || item.amfiCode;
+    if (!schemeCode && item.isin) {
+      const match = Object.values(CANONICAL_MF_SCHEME_MAP).find(c => c.isin && c.isin.toUpperCase() === String(item.isin).toUpperCase());
+      if (match) schemeCode = match.schemeCode;
+    }
+    if (!schemeCode) {
+      schemeCode = codesCache[item.fundName]?.schemeCode;
+    }
+
+    const key = `${schemeCode || item.fundName}|${item.owner || 'Me'}`;
+    if (!groups[key]) {
+      groups[key] = {
+        fundName: item.fundName,
+        schemeCode: schemeCode || 'Unresolved',
+        isin: item.isin || CANONICAL_MF_SCHEME_MAP[schemeCode]?.isin || '—',
+        owner: item.owner || 'Me',
+        txns: [],
+        latestNav: item.latestNav || navCache[schemeCode]?.nav || 0,
+        navDate: item.navDate || navCache[schemeCode]?.date || '—',
+        isStale: navCache[schemeCode]?.isStale || false
+      };
+    }
+    groups[key].txns.push(item);
+  });
+
+  let html = `
+    <table style="width:100%;font-size:0.78rem;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border);text-align:left;">
+          <th style="padding:6px;">Owner</th>
+          <th style="padding:6px;">Fund Name</th>
+          <th style="padding:6px;">Code / ISIN</th>
+          <th style="padding:6px;text-align:right;">Units</th>
+          <th style="padding:6px;text-align:right;">Invested</th>
+          <th style="padding:6px;text-align:right;">Latest NAV</th>
+          <th style="padding:6px;text-align:right;">Current Value</th>
+          <th style="padding:6px;text-align:center;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  let grandInvested = 0;
+  let grandCurrent = 0;
+
+  Object.values(groups).forEach(g => {
+    const basis = calcMfCostBasis(g.txns);
+    const units = basis.netUnits;
+    const invested = basis.invested;
+    const nav = g.latestNav || 0;
+    const curVal = units * nav;
+
+    grandInvested += invested;
+    grandCurrent += curVal;
+
+    const isOK = g.schemeCode !== 'Unresolved' && nav > 0 && !g.isStale;
+    const statusBadge = isOK
+      ? `<span style="background:rgba(34,197,94,0.15);color:#22c55e;padding:2px 8px;border-radius:12px;font-weight:600;">✓ Reconciled</span>`
+      : `<span style="background:rgba(239,68,68,0.15);color:#ef4444;padding:2px 8px;border-radius:12px;font-weight:600;">⚠ Review</span>`;
+
+    html += `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:6px;font-weight:600;">${escapeHTML(g.owner)}</td>
+        <td style="padding:6px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(g.fundName)}">
+          ${escapeHTML(g.fundName)}
+        </td>
+        <td style="padding:6px;font-family:monospace;font-size:0.72rem;opacity:0.8;">
+          ${g.schemeCode}<br><span style="opacity:0.6">${g.isin}</span>
+        </td>
+        <td style="padding:6px;text-align:right;font-family:monospace;">${units.toFixed(3)}</td>
+        <td style="padding:6px;text-align:right;">${formatINR(invested)}</td>
+        <td style="padding:6px;text-align:right;font-family:monospace;">${nav > 0 ? formatINR(nav) : '—'}<br><span style="font-size:0.68rem;opacity:0.6">${g.navDate}</span></td>
+        <td style="padding:6px;text-align:right;font-weight:600;">${formatINR(curVal)}</td>
+        <td style="padding:6px;text-align:center;">${statusBadge}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border);font-weight:700;">
+          <td colspan="4" style="padding:8px;">FAMILY TOTAL</td>
+          <td style="padding:8px;text-align:right;">${formatINR(grandInvested)}</td>
+          <td></td>
+          <td style="padding:8px;text-align:right;color:var(--primary);font-size:0.9rem;">${formatINR(grandCurrent)}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+
+  container.innerHTML = html;
+  modal.hidden = false;
 }
 
 function calculateXIRR(cashFlows) {
