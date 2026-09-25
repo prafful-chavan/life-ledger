@@ -10051,20 +10051,34 @@ async function resolveSchemeCodes(fundNames) {
   if (!fundNames || fundNames.length === 0) return getFundCodesCache();
   const cache = getFundCodesCache();
 
-  // Custom overrides for known difficult scheme codes
+  // Canonical overrides for known mutual fund scheme codes
   const overrides = {
-    "large & mid cap fund direct growth": {
-      schemeCode: "152821",
-      schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth"
-    },
-    "large & midcap fund direct growth": {
-      schemeCode: "152821",
-      schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth"
-    },
-    "large and mid cap fund direct growth": {
-      schemeCode: "152821",
-      schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth"
-    }
+    "motilal oswal midcap fund direct growth": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
+    "motilal oswal midcap fund direct": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
+    "motilal oswal midcap fund growth": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
+    "motilal oswal midcap fund": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
+    "motilal oswal midcap": { schemeCode: 127039, schemeName: "Motilal Oswal Midcap Fund - Direct Plan Growth Option" },
+    "motilal oswal midcap fund regular growth": { schemeCode: 127040, schemeName: "Motilal Oswal Midcap Fund - Regular Plan Growth Option" },
+    "quant small cap fund direct growth": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
+    "quant small cap fund direct": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
+    "quant small cap fund": { schemeCode: 120828, schemeName: "Quant Small Cap Fund - Direct Plan - Growth Option" },
+    "parag parikh flexi cap fund direct growth": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
+    "parag parikh flexi cap fund direct": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
+    "parag parikh flexi cap fund": { schemeCode: 122639, schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth" },
+    "nippon india small cap fund direct growth": { schemeCode: 118778, schemeName: "Nippon India Small Cap Fund - Direct Plan - Growth Option" },
+    "nippon india small cap fund direct": { schemeCode: 118778, schemeName: "Nippon India Small Cap Fund - Direct Plan - Growth Option" },
+    "sbi small cap fund direct growth": { schemeCode: 125497, schemeName: "SBI SMALL CAP FUND - Direct Plan - Growth" },
+    "sbi small cap fund direct": { schemeCode: 125497, schemeName: "SBI SMALL CAP FUND - Direct Plan - Growth" },
+    "hdfc mid-cap opportunities fund direct growth": { schemeCode: 118989, schemeName: "HDFC Mid Cap Fund - Direct Plan - Growth Option" },
+    "hdfc mid cap opportunities fund direct growth": { schemeCode: 118989, schemeName: "HDFC Mid Cap Fund - Direct Plan - Growth Option" },
+    "axis small cap fund direct growth": { schemeCode: 125354, schemeName: "Axis Small Cap Fund - Direct Plan - Growth Option" },
+    "mirae asset large cap fund direct growth": { schemeCode: 118834, schemeName: "Mirae Asset Large & Midcap Fund - Direct Plan - Growth" },
+    "icici prudential bluechip fund direct growth": { schemeCode: 120586, schemeName: "ICICI Prudential Large Cap Fund - Direct Plan - Growth" },
+    "kotak emerging equity fund direct growth": { schemeCode: 120172, schemeName: "Kotak Emerging Equity Scheme - Direct Plan - Growth" },
+    "uti flexi cap fund direct growth": { schemeCode: 120716, schemeName: "UTI Flexi Cap Fund - Direct Plan - Growth" },
+    "large & mid cap fund direct growth": { schemeCode: 152821, schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth" },
+    "large & midcap fund direct growth": { schemeCode: 152821, schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth" },
+    "large and mid cap fund direct growth": { schemeCode: 152821, schemeName: "ITI Large & Midcap Fund - Direct Plan - Growth" }
   };
 
   fundNames.forEach(name => {
@@ -10087,7 +10101,6 @@ async function resolveSchemeCodes(fundNames) {
     if (!response.ok) throw new Error("Failed to fetch mutual fund master list.");
     const allFunds = await response.json();
     
-    // Normalize cap size terms to avoid midcap/mid cap issues
     function cleanAndNormalize(str) {
       if (!str) return "";
       let cleaned = str.toLowerCase().replace(/[^a-z0-9\s]+/g, ' ');
@@ -10099,52 +10112,105 @@ async function resolveSchemeCodes(fundNames) {
         .replace(/micro\s+cap/g, 'microcap');
     }
     
-    missing.forEach(query => {
+    for (const query of missing) {
       const queryNorm = cleanAndNormalize(query);
-      const queryWords = queryNorm.split(/\s+/).filter(w => w.length > 1);
-      
-      const noiseWords = new Set([
-        "me", "wife", "sip", "lumpsum", "mutual", "fund", "funds", 
-        "investment", "investments", "my", "our", "portfolio", "she", 
-        "he", "both", "direct", "regular", "growth", "idcw", "dividend", 
-        "payout", "reinvestment", "plan", "option"
-      ]);
-      
-      const amcCandidates = queryWords.filter(w => !noiseWords.has(w));
-      const amcWord = amcCandidates[0];
+      const isDirect = !queryNorm.includes("regular");
+      const isGrowth = !queryNorm.includes("dividend") && !queryNorm.includes("idcw");
+      const hasIndex = queryNorm.includes("index");
+      const hasEtf = queryNorm.includes("etf");
+      const hasFof = queryNorm.includes("fof");
+      const hasLarge = queryNorm.includes("large");
+
+      const queryWords = queryNorm.split(/\s+/).filter(w => w.length > 1 && !["fund", "funds", "mutual", "scheme", "plan", "option"].includes(w));
+      const amcWord = queryWords[0];
+
+      let candidates = allFunds.filter(f => {
+        const sName = f.schemeName.toLowerCase();
+        return sName.includes(amcWord) && queryWords.slice(1).some(w => sName.includes(w));
+      });
+
+      if (candidates.length === 0) {
+        candidates = allFunds.filter(f => f.schemeName.toLowerCase().includes(amcWord));
+      }
+
+      const scored = candidates.map(scheme => {
+        const sName = cleanAndNormalize(scheme.schemeName);
+        let score = 0;
+
+        queryWords.forEach(w => {
+          if (sName.includes(w)) score += 15;
+        });
+
+        if (!hasIndex && sName.includes("index")) score -= 80;
+        if (!hasEtf && sName.includes("etf")) score -= 80;
+        if (!hasFof && (sName.includes("fof") || sName.includes("fund of fund"))) score -= 80;
+        if (!hasLarge && sName.includes("large")) score -= 50;
+
+        return { scheme, score };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      const topCandidates = scored.slice(0, 10);
+
       let best = null;
       let bestScore = -Infinity;
-      
-      const isGrowthPreferred = !query.toLowerCase().includes('dividend') && !query.toLowerCase().includes('idcw');
-      const isDirectPreferred = !query.toLowerCase().includes('regular');
 
-      for (const scheme of allFunds) {
-        const name = scheme.schemeName;
-        const nameNorm = cleanAndNormalize(name);
-        const schemeWords = nameNorm.split(/\s+/).filter(w => w.length > 1);
-        
-        if (amcWord && !schemeWords.includes(amcWord)) continue;
-        
-        const overlap = queryWords.filter(w => schemeWords.includes(w)).length;
-        if (overlap === 0) continue;
-        
-        let score = (overlap * 100) - Math.abs(name.length - query.length);
-        if (isGrowthPreferred && nameNorm.includes('growth')) score += 50;
-        if (isDirectPreferred && nameNorm.includes('direct')) score += 20;
+      for (const { scheme } of topCandidates) {
+        let fullSchemeName = scheme.schemeName;
+        try {
+          const detailRes = await fetch(`https://api.mfapi.in/mf/${scheme.schemeCode}`, { signal: AbortSignal.timeout(3000) });
+          const detailData = await detailRes.json();
+          if (detailData && detailData.meta && detailData.meta.scheme_name) {
+            fullSchemeName = detailData.meta.scheme_name;
+          }
+        } catch (e) {}
+
+        const fnNorm = cleanAndNormalize(fullSchemeName);
+        let score = 0;
+
+        queryWords.forEach(w => {
+          if (fnNorm.includes(w)) score += 15;
+        });
+
+        if (!hasIndex && fnNorm.includes("index")) score -= 80;
+        if (!hasEtf && fnNorm.includes("etf")) score -= 80;
+        if (!hasFof && (fnNorm.includes("fof") || fnNorm.includes("fund of fund"))) score -= 80;
+        if (!hasLarge && fnNorm.includes("large")) score -= 50;
+
+        const sHasDirect = fnNorm.includes("direct");
+        const sHasRegular = fnNorm.includes("regular");
+        const sHasGrowth = fnNorm.includes("growth");
+        const sHasIdcw = fnNorm.includes("idcw") || fnNorm.includes("dividend");
+
+        if (isDirect) {
+          if (sHasDirect) score += 70;
+          if (sHasRegular) score -= 60;
+        } else {
+          if (sHasRegular) score += 70;
+          if (sHasDirect) score -= 60;
+        }
+
+        if (isGrowth) {
+          if (sHasGrowth) score += 40;
+          if (sHasIdcw) score -= 40;
+        } else {
+          if (sHasIdcw) score += 40;
+          if (sHasGrowth) score -= 40;
+        }
 
         if (score > bestScore) {
           bestScore = score;
-          best = scheme;
+          best = { schemeCode: scheme.schemeCode, schemeName: fullSchemeName };
         }
       }
-      
+
       if (best) {
         cache[query] = {
           schemeCode: best.schemeCode,
           schemeName: best.schemeName
         };
       }
-    });
+    }
     
     saveFundCodesCache(cache);
   } catch (err) {
