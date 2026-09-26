@@ -2186,6 +2186,336 @@ async function syncExpensesFromDrive() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 🇮🇳 MASTER ISIN DICTIONARY & DYNAMIC RESOLUTION ENGINE
+// Maps Indian ISIN codes (INE/INF/IN00) to standard NSE tickers, company names, and categories.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const MASTER_ISIN_MAP = {
+  // ── Upstox (Me) ──
+  "INF174KA1HJ8": { symbol: "GOLDBEES", company: "Nippon India ETF Gold BeES", category: "ETF" },
+  "INF247L01AP3": { symbol: "MON100", company: "Motilal Oswal Nasdaq 100 ETF", category: "ETF" },
+  "INF204KB15V2": { symbol: "ITBEES", company: "Nippon India ETF IT BeES", category: "ETF" },
+  "INF179KC1FB2": { symbol: "HDFCSML250", company: "HDFC Nifty Smallcap 250 ETF", category: "ETF" },
+  "INF179KC1HT0": { symbol: "HDFCMID150", company: "HDFC Nifty Midcap 150 ETF", category: "ETF" },
+  "INF204KB14I2": { symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", category: "ETF" },
+  "INF204KB1V68": { symbol: "MID150BEES", company: "Nippon India ETF Nifty Midcap 150 BeES", category: "ETF" },
+  "INF204KB15I9": { symbol: "BANKBEES", company: "Nippon India ETF Bank BeES", category: "ETF" },
+
+  // ── Zerodha (Me) ──
+  "INE472A01039": { symbol: "BLUESTARCO", company: "Blue Star Ltd", category: "Stock" },
+  "INE188A01015": { symbol: "FACT", company: "Fertilisers & Chemicals Travancore Ltd", category: "Stock" },
+  "INE176B01034": { symbol: "HAVELLS", company: "Havells India Ltd", category: "Stock" },
+  "INE749A01030": { symbol: "JINDALSTEL", company: "Jindal Steel & Power Ltd", category: "Stock" },
+  "INE101A01026": { symbol: "M&M", company: "Mahindra & Mahindra Ltd", category: "Stock" },
+  "INE134E01011": { symbol: "PFC", company: "Power Finance Corporation Ltd", category: "Stock" },
+  "INE811K01011": { symbol: "PRESTIGE", company: "Prestige Estates Projects Ltd", category: "Stock" },
+  "INE020B01018": { symbol: "RECLTD", company: "REC Ltd", category: "Stock" },
+  "IN0020230184": { symbol: "SGBFEB32IV-GB", company: "Sovereign Gold Bond 2032 Series IV", category: "Bond" },
+  "IN0020230176": { symbol: "SGBFEB32IV-GB", company: "Sovereign Gold Bond 2032 Series IV", category: "Bond" },
+  "INE200M01039": { symbol: "VBL", company: "Varun Beverages Ltd", category: "Stock" },
+  "INE075A01022": { symbol: "WIPRO", company: "Wipro Ltd", category: "Stock" },
+
+  // ── Groww (Wife) ──
+  "INE208C01025": { symbol: "AEGISLOG", company: "Aegis Logistics Ltd", category: "Stock" },
+  "INE933K01021": { symbol: "BAJAJCON", company: "Bajaj Consumer Care Ltd", category: "Stock" },
+  "INE200A01026": { symbol: "GEVERNOVA", company: "GE Vernova T&D India Ltd", category: "Stock" },
+  "INE038A01020": { symbol: "HINDALCO", company: "Hindalco Industries Ltd", category: "Stock" },
+  "INE0J5401028": { symbol: "HONASA", company: "Honasa Consumer Ltd (Mamaearth)", category: "Stock" },
+  "INE947Q01028": { symbol: "LAURUSLABS", company: "Laurus Labs Ltd", category: "Stock" },
+  "INE745G01043": { symbol: "MCX", company: "Multi Commodity Exchange of India", category: "Stock" },
+  "INF204KB17I5": { symbol: "GOLDBEES", company: "Nippon India ETF Gold BeES", category: "ETF" },
+  "INF204KC1402": { symbol: "SILVERBEES", company: "Nippon India ETF Silver BeES", category: "ETF" },
+  "INE777K01022": { symbol: "RRKABEL", company: "RR Kabel Ltd", category: "Stock" },
+  "INE0CLI01024": { symbol: "RATEGAIN", company: "RateGain Travel Technologies Ltd", category: "Stock" },
+  "INE101D01020": { symbol: "GRANULES", company: "Granules India Ltd", category: "Stock" },
+  "INE034A01011": { symbol: "ARVIND", company: "Arvind Ltd", category: "Stock" },
+  "INE763I01026": { symbol: "TRIL", company: "Transformers & Rectifiers India Ltd", category: "Stock" },
+
+  // ── INDmoney (Wife) ──
+  "INF109KB15Y7": { symbol: "BHARAT22", company: "ICICI Prudential Bharat 22 ETF", category: "ETF" },
+
+  // ── Common Bluechips, Nifty 50 & Large Caps ──
+  "INE154A01025": { symbol: "ITC", company: "ITC Ltd", category: "Stock" },
+  "INE397D01024": { symbol: "BHARTIARTL", company: "Bharti Airtel Ltd", category: "Stock" },
+  "INE002A01018": { symbol: "RELIANCE", company: "Reliance Industries Ltd", category: "Stock" },
+  "INE467B01029": { symbol: "TCS", company: "Tata Consultancy Services Ltd", category: "Stock" },
+  "INE040A01034": { symbol: "HDFCBANK", company: "HDFC Bank Ltd", category: "Stock" },
+  "INE009A01021": { symbol: "INFY", company: "Infosys Ltd", category: "Stock" },
+  "INE062A01020": { symbol: "SBIN", company: "State Bank of India", category: "Stock" },
+  "INE090A01021": { symbol: "ICICIBANK", company: "ICICI Bank Ltd", category: "Stock" },
+  "INE238A01034": { symbol: "AXISBANK", company: "Axis Bank Ltd", category: "Stock" },
+  "INE237A01028": { symbol: "KOTAKBANK", company: "Kotak Mahindra Bank Ltd", category: "Stock" },
+  "INE018A01030": { symbol: "LT", company: "Larsen & Toubro Ltd", category: "Stock" },
+  "INE155A01022": { symbol: "TATAMOTORS", company: "Tata Motors Ltd", category: "Stock" },
+  "INE081A01020": { symbol: "TATASTEEL", company: "Tata Steel Ltd", category: "Stock" },
+  "INE081A01012": { symbol: "TATASTEEL", company: "Tata Steel Ltd", category: "Stock" },
+  "INE585B01010": { symbol: "MARUTI", company: "Maruti Suzuki India Ltd", category: "Stock" },
+  "INE044A01036": { symbol: "SUNPHARMA", company: "Sun Pharmaceutical Industries Ltd", category: "Stock" },
+  "INE280A01028": { symbol: "TITAN", company: "Titan Company Ltd", category: "Stock" },
+  "INE296A01024": { symbol: "BAJFINANCE", company: "Bajaj Finance Ltd", category: "Stock" },
+  "INE918I01026": { symbol: "BAJAJFINSV", company: "Bajaj Finserv Ltd", category: "Stock" },
+  "INE021A01026": { symbol: "ASIANPAINT", company: "Asian Paints Ltd", category: "Stock" },
+  "INE030A01027": { symbol: "HINDUNILVR", company: "Hindustan Unilever Ltd", category: "Stock" },
+  "INE733E01010": { symbol: "NTPC", company: "NTPC Ltd", category: "Stock" },
+  "INE752E01010": { symbol: "POWERGRID", company: "Power Grid Corporation of India Ltd", category: "Stock" },
+  "INE213A01029": { symbol: "ONGC", company: "Oil & Natural Gas Corporation Ltd", category: "Stock" },
+  "INE522F01014": { symbol: "COALINDIA", company: "Coal India Ltd", category: "Stock" },
+  "INE423A01024": { symbol: "ADANIENT", company: "Adani Enterprises Ltd", category: "Stock" },
+  "INE742F01042": { symbol: "ADANIPORTS", company: "Adani Ports & SEZ Ltd", category: "Stock" },
+  "INE245A01021": { symbol: "TATAPOWER", company: "Tata Power Co Ltd", category: "Stock" },
+  "INE758T01015": { symbol: "ZOMATO", company: "Zomato Ltd", category: "Stock" },
+  "INE414G01012": { symbol: "JIOFIN", company: "Jio Financial Services Ltd", category: "Stock" },
+  "INE066F01020": { symbol: "HAL", company: "Hindustan Aeronautics Ltd", category: "Stock" },
+  "INE263A01024": { symbol: "BEL", company: "Bharat Electronics Ltd", category: "Stock" },
+  "INE249Z01012": { symbol: "MAZDOCK", company: "Mazagon Dock Shipbuilders Ltd", category: "Stock" },
+  "INE849A01020": { symbol: "TRENT", company: "Trent Ltd", category: "Stock" },
+  "INE205A01025": { symbol: "VEDL", company: "Vedanta Ltd", category: "Stock" },
+  "INE455K01017": { symbol: "POLYCAB", company: "Polycab India Ltd", category: "Stock" },
+  "INE040H01021": { symbol: "SUZLON", company: "Suzlon Energy Ltd", category: "Stock" },
+  "INE053F01010": { symbol: "IRFC", company: "Indian Railway Finance Corporation Ltd", category: "Stock" },
+  "INE415G01027": { symbol: "RVNL", company: "Rail Vikas Nigam Ltd", category: "Stock" },
+  "INE736A01011": { symbol: "CDSL", company: "Central Depository Services (India) Ltd", category: "Stock" },
+  "INE118H01025": { symbol: "BSE", company: "BSE Ltd", category: "Stock" },
+  "INE059A01026": { symbol: "CIPLA", company: "Cipla Ltd", category: "Stock" },
+  "INE089A01023": { symbol: "DRREDDY", company: "Dr. Reddy's Laboratories Ltd", category: "Stock" },
+  "INE361B01024": { symbol: "DIVISLAB", company: "Divi's Laboratories Ltd", category: "Stock" },
+  "INE669C01036": { symbol: "TECHM", company: "Tech Mahindra Ltd", category: "Stock" },
+  "INE860A01027": { symbol: "HCLTECH", company: "HCL Technologies Ltd", category: "Stock" },
+  "INE481G01011": { symbol: "ULTRACEMCO", company: "UltraTech Cement Ltd", category: "Stock" },
+  "INE239A01024": { symbol: "NESTLEIND", company: "Nestle India Ltd", category: "Stock" },
+  "INE239A01016": { symbol: "NESTLEIND", company: "Nestle India Ltd", category: "Stock" },
+  "INE216A01030": { symbol: "BRITANNIA", company: "Britannia Industries Ltd", category: "Stock" },
+  "INE016A01026": { symbol: "DABUR", company: "Dabur India Ltd", category: "Stock" },
+  "INE196A01026": { symbol: "MARICO", company: "Marico Ltd", category: "Stock" },
+  "INE318A01026": { symbol: "PIDILITIND", company: "Pidilite Industries Ltd", category: "Stock" },
+  "INE463A01038": { symbol: "BERGEPAINT", company: "Berger Paints India Ltd", category: "Stock" },
+  "INE102D01028": { symbol: "GODREJCP", company: "Godrej Consumer Products Ltd", category: "Stock" },
+  "INE192A01025": { symbol: "TATACONSUM", company: "Tata Consumer Products Ltd", category: "Stock" },
+  "INE066A01021": { symbol: "EICHERMOT", company: "Eicher Motors Ltd", category: "Stock" },
+  "INE158A01026": { symbol: "HEROMOTOCO", company: "Hero MotoCorp Ltd", category: "Stock" },
+  "INE494B01023": { symbol: "TVSMOTOR", company: "TVS Motor Company Ltd", category: "Stock" },
+  "INE214A01020": { symbol: "ASHOKLEY", company: "Ashok Leyland Ltd", category: "Stock" },
+  "INE465A01025": { symbol: "BHARATFORG", company: "Bharat Forge Ltd", category: "Stock" },
+  "INE775A01035": { symbol: "MOTHERSON", company: "Samvardhana Motherson International Ltd", category: "Stock" },
+  "INE029A01011": { symbol: "BPCL", company: "Bharat Petroleum Corporation Ltd", category: "Stock" },
+  "INE242A01010": { symbol: "IOC", company: "Indian Oil Corporation Ltd", category: "Stock" },
+  "INE129A01019": { symbol: "GAIL", company: "GAIL (India) Ltd", category: "Stock" },
+  "INE271C01023": { symbol: "DLF", company: "DLF Ltd", category: "Stock" },
+  "INE053A01032": { symbol: "INDHOTEL", company: "The Indian Hotels Company Ltd", category: "Stock" },
+  "INE171A01029": { symbol: "FEDERALBNK", company: "The Federal Bank Ltd", category: "Stock" },
+  "INE092T01019": { symbol: "IDFCFIRSTB", company: "IDFC First Bank Ltd", category: "Stock" },
+  "INE160A01022": { symbol: "PNB", company: "Punjab National Bank", category: "Stock" },
+  "INE077A01010": { symbol: "BANKBARODA", company: "Bank of Baroda", category: "Stock" },
+  "INE476A01014": { symbol: "CANBK", company: "Canara Bank", category: "Stock" },
+  "INE476A01022": { symbol: "CANBK", company: "Canara Bank", category: "Stock" },
+  "INE692A01016": { symbol: "UNIONBANK", company: "Union Bank of India", category: "Stock" },
+  "INE414E01012": { symbol: "MUTHOOTFIN", company: "Muthoot Finance Ltd", category: "Stock" },
+  "INE121A01024": { symbol: "CHOLAFIN", company: "Cholamandalam Investment & Finance Company Ltd", category: "Stock" },
+  "INE721A01013": { symbol: "SHRIRAMFIN", company: "Shriram Finance Ltd", category: "Stock" },
+  "INF204KB14H4": { symbol: "JUNIORBEES", company: "Nippon India ETF Nifty Next 50 Junior BeES", category: "ETF" },
+  "INF582M01014": { symbol: "CPSEETF", company: "CPSE ETF", category: "ETF" }
+};
+
+/**
+ * Look up stock information from ISIN code using static dictionary or local cache.
+ */
+function getIsinMapping(isin) {
+  if (!isin) return null;
+  const clean = String(isin).trim().toUpperCase();
+  if (MASTER_ISIN_MAP[clean]) return MASTER_ISIN_MAP[clean];
+  try {
+    const cached = JSON.parse(localStorage.getItem('lifeLedgerIsinCache:v1') || '{}');
+    if (cached[clean]) return cached[clean];
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Resolve an unknown ISIN code dynamically using Yahoo Finance search API with CORS fallbacks.
+ */
+async function resolveIsinOnline(isin) {
+  if (!isin) return null;
+  const cleanIsin = String(isin).trim().toUpperCase();
+  const existing = getIsinMapping(cleanIsin);
+  if (existing) return existing;
+
+  const yahooSearchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(cleanIsin)}`;
+  const endpoints = [
+    yahooSearchUrl,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooSearchUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yahooSearchUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooSearchUrl)}`,
+    `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(cleanIsin)}`
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) });
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      const jsonStart = text.indexOf('{');
+      if (jsonStart < 0) continue;
+      const data = JSON.parse(text.slice(jsonStart));
+      const quotes = data?.quotes || [];
+      const q = quotes.find(x => x.symbol && (x.symbol.endsWith('.NS') || x.symbol.endsWith('.BO'))) || quotes[0];
+      if (q && q.symbol) {
+        const symbol = q.symbol.toUpperCase().replace(/\.(NS|BO)$/i, '').trim();
+        const company = q.longname || q.shortname || symbol;
+        const category = q.quoteType === 'ETF' || /ETF|BEES/i.test(symbol + ' ' + company) ? 'ETF' : 'Stock';
+        const result = { symbol, company, category };
+
+        MASTER_ISIN_MAP[cleanIsin] = result;
+        try {
+          const cached = JSON.parse(localStorage.getItem('lifeLedgerIsinCache:v1') || '{}');
+          cached[cleanIsin] = result;
+          localStorage.setItem('lifeLedgerIsinCache:v1', JSON.stringify(cached));
+        } catch (e) {}
+
+        return result;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+/**
+ * Resolves raw symbols, company names, or ISIN codes to a clean, canonical NSE symbol.
+ */
+function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
+  const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
+
+  // 1. Direct ISIN parameter
+  if (isinCode) {
+    const cleanIsin = String(isinCode).trim().toUpperCase();
+    const info = getIsinMapping(cleanIsin);
+    if (info) return info.symbol;
+  }
+
+  // 2. cleanName is an ISIN
+  const nameUpper = String(cleanName || "").toUpperCase().trim();
+  if (isinPattern.test(nameUpper)) {
+    const info = getIsinMapping(nameUpper);
+    if (info) return info.symbol;
+  }
+
+  // 3. rawSymbol is an ISIN
+  if (rawSymbol && isinPattern.test(String(rawSymbol).trim().toUpperCase())) {
+    const info = getIsinMapping(String(rawSymbol).trim().toUpperCase());
+    if (info) return info.symbol;
+  }
+
+  // 4. Clean raw symbol aliases
+  if (rawSymbol) {
+    let sym = String(rawSymbol).trim().toUpperCase()
+      .replace(/\s*-EQ$/i, "")
+      .replace(/\s*NSE\s*EQ/i, "")
+      .replace(/[^A-Z0-9&\-]/g, "")
+      .trim();
+    if (sym && sym !== "STOCK" && sym !== "UNKNOWN") {
+      if (sym === "BHARTI") return "BHARTIARTL";
+      if (sym === "NETFSILVER") return "SILVERBEES";
+      if (sym === "GE") return "GEVERNOVA";
+      if (sym === "R") return "RRKABEL";
+      if (sym === "TRANS") return "TRIL";
+      if (sym === "SBI") return "SBIN";
+      if (sym === "BAJAJCORP") return "BAJAJCON";
+      if (sym === "ICICIB22") return "BHARAT22";
+      return sym;
+    }
+  }
+
+  if (!nameUpper) return "STOCK";
+
+  // Name regex matches
+  if (/AEGIS LOGISTICS/i.test(nameUpper)) return "AEGISLOG";
+  if (/BAJAJ CONSUMER/i.test(nameUpper)) return "BAJAJCON";
+  if (/GE VERNOVA/i.test(nameUpper)) return "GEVERNOVA";
+  if (/HINDALCO/i.test(nameUpper)) return "HINDALCO";
+  if (/HONASA|MAMAEARTH/i.test(nameUpper)) return "HONASA";
+  if (/LAURUS LABS/i.test(nameUpper)) return "LAURUSLABS";
+  if (/MULTI COMMODITY|MCX/i.test(nameUpper)) return "MCX";
+  if (/R R KABEL|RR KABEL/i.test(nameUpper)) return "RRKABEL";
+  if (/RATEGAIN/i.test(nameUpper)) return "RATEGAIN";
+  if (/TRANS & RECTI|TRANSFORMERS & RECTIFIERS/i.test(nameUpper)) return "TRIL";
+  if (/BHARAT 22|BHARAT22/i.test(nameUpper)) return "BHARAT22";
+  if (/NASDAQ 100|MON100/i.test(nameUpper)) return "MON100";
+  if (/SMALLCAP 250|HDFCSML250/i.test(nameUpper)) return "HDFCSML250";
+  if (/MIDCAP 150|MID150/i.test(nameUpper)) return "MID150BEES";
+  if (/NIFTY BEES|NIFTYBEES/i.test(nameUpper)) return "NIFTYBEES";
+  if (/GOLD BEES|GOLDBEES/i.test(nameUpper)) return "GOLDBEES";
+  if (/SILVER BEES|SILVERBEES|NETFSILVER/i.test(nameUpper)) return "SILVERBEES";
+  if (/BANK BEES|BANKBEES/i.test(nameUpper)) return "BANKBEES";
+  if (/IT BEES|ITBEES/i.test(nameUpper)) return "ITBEES";
+  if (/BLUE STAR|BLUESTARCO/i.test(nameUpper)) return "BLUESTARCO";
+  if (/JINDAL STEEL|JINDALSTEL/i.test(nameUpper)) return "JINDALSTEL";
+  if (/MAHINDRA & MAHINDRA|M&M/i.test(nameUpper)) return "M&M";
+  if (/POWER FINANCE|PFC/i.test(nameUpper)) return "PFC";
+  if (/PRESTIGE ESTATES|PRESTIGE/i.test(nameUpper)) return "PRESTIGE";
+  if (/REC LTD|RECLTD/i.test(nameUpper)) return "RECLTD";
+  if (/VARUN BEVERAGES|VBL/i.test(nameUpper)) return "VBL";
+  if (/WIPRO/i.test(nameUpper)) return "WIPRO";
+  if (/ITC LTD|ITC/i.test(nameUpper)) return "ITC";
+  if (/BHARTI AIRTEL|AIRTEL/i.test(nameUpper)) return "BHARTIARTL";
+  if (/RELIANCE/i.test(nameUpper)) return "RELIANCE";
+  if (/TCS|TATA CONSULTANCY/i.test(nameUpper)) return "TCS";
+  if (/HDFC BANK/i.test(nameUpper)) return "HDFCBANK";
+  if (/INFOSYS|INFY/i.test(nameUpper)) return "INFY";
+  if (/GRANULES/i.test(nameUpper)) return "GRANULES";
+  if (/ARVIND/i.test(nameUpper)) return "ARVIND";
+  if (/FERTILISERS & CHEMICALS|FACT/i.test(nameUpper)) return "FACT";
+  if (/HAVELLS/i.test(nameUpper)) return "HAVELLS";
+  if (/Sovereign Gold Bond/i.test(nameUpper)) return "SGBFEB32IV-GB";
+
+  const firstWord = nameUpper.split(/[\s,#\-_]+/)[0];
+  if (isinPattern.test(firstWord)) {
+    const isinInfo = getIsinMapping(firstWord);
+    return isinInfo ? isinInfo.symbol : firstWord;
+  }
+  return firstWord || "STOCK";
+}
+
+function deriveStockSymbol(name) {
+  return resolveNseSymbol("", name, "");
+}
+
+/**
+ * Scans state.stocks and automatically repairs any stock entries that currently display
+ * raw ISIN codes instead of human-readable company names and proper NSE symbols.
+ */
+async function autoResolveUnknownIsinStocks() {
+  const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
+  const isinStocks = (state.stocks || []).filter(s => 
+    isinPattern.test(s.symbol || '') || isinPattern.test(s.company || '') || isinPattern.test(s.isin || '')
+  );
+  if (isinStocks.length === 0) return false;
+
+  let changed = false;
+  for (const s of isinStocks) {
+    const rawIsin = (isinPattern.test(s.isin || '') && s.isin) ||
+                    (isinPattern.test(s.symbol || '') && s.symbol) ||
+                    (isinPattern.test(s.company || '') && s.company);
+    if (!rawIsin) continue;
+    const cleanIsin = rawIsin.toUpperCase().trim();
+    let info = getIsinMapping(cleanIsin);
+    if (!info) {
+      info = await resolveIsinOnline(cleanIsin);
+    }
+    if (info && info.symbol) {
+      s.symbol = info.symbol;
+      s.company = info.company;
+      s.category = info.category || s.category;
+      s.isin = cleanIsin;
+      changed = true;
+    }
+  }
+  if (changed) {
+    await saveData(true);
+    renderStockHoldingsPanel();
+  }
+  return changed;
+}
+
 /**
  * parseMasterHoldingsWorkbook
  * Parses "My Stock and MF holdings for Life-Ledger" Google Sheet workbook.
@@ -2288,173 +2618,6 @@ function parseMasterHoldingsWorkbook(buffer) {
       if (v !== undefined && v !== null && v !== "") return v;
     }
     return "";
-  }
-
-  const ISIN_TO_NSE_SYMBOL = {
-    // Upstox (Me)
-    "INF174KA1HJ8": "GOLDBEES",
-    "INF247L01AP3": "MON100",
-    "INF204KB15V2": "ITBEES",
-    "INF179KC1FB2": "HDFCSML250",
-    "INF179KC1HT0": "HDFCMID150",
-    "INF204KB14I2": "NIFTYBEES",
-    "INF204KB1V68": "MID150BEES",
-    "INF204KB15I9": "BANKBEES",
-
-    // Zerodha (Me)
-    "INE472A01039": "BLUESTARCO",
-    "INE188A01015": "FACT",
-    "INE176B01034": "HAVELLS",
-    "INE749A01030": "JINDALSTEL",
-    "INE101A01026": "M&M",
-    "INE134E01011": "PFC",
-    "INE811K01011": "PRESTIGE",
-    "INE020B01018": "RECLTD",
-    "INE200M01039": "VBL",
-    "INE075A01022": "WIPRO",
-
-    // Groww (Wife)
-    "INE208C01025": "AEGISLOG",
-    "INE933K01021": "BAJAJCON",
-    "INE200A01026": "GEVERNOVA",
-    "INE038A01020": "HINDALCO",
-    "INE0J5401028": "HONASA",
-    "INE947Q01028": "LAURUSLABS",
-    "INE745G01043": "MCX",
-    "INF204KB17I5": "GOLDBEES",
-    "INF204KC1402": "SILVERBEES",
-    "INE777K01022": "RRKABEL",
-    "INE0CLI01024": "RATEGAIN",
-    "INE763I01026": "TRIL",
-
-    // INDmoney (Wife)
-    "INF109KB15Y7": "BHARAT22",
-
-    // Common Bluechips
-    "INE154A01025": "ITC",
-    "INE397D01024": "BHARTIARTL",
-    "INE002A01018": "RELIANCE",
-    "INE467B01029": "TCS",
-    "INE040A01034": "HDFCBANK",
-    "INE009A01021": "INFY",
-    "INE062A01020": "SBIN",
-  };
-
-  const ISIN_TO_COMPANY_NAME = {
-    // Upstox (Me)
-    "INF174KA1HJ8": "Nippon India ETF Gold BeES",
-    "INF247L01AP3": "Motilal Oswal Nasdaq 100 ETF",
-    "INF204KB15V2": "Nippon India ETF IT BeES",
-    "INF179KC1FB2": "HDFC Nifty Smallcap 250 ETF",
-    "INF179KC1HT0": "HDFC Nifty Midcap 150 ETF",
-    "INF204KB14I2": "Nippon India ETF Nifty 50 BeES",
-    "INF204KB1V68": "Nippon India ETF Nifty Midcap 150 BeES",
-    "INF204KB15I9": "Nippon India ETF Bank BeES",
-
-    // Zerodha (Me)
-    "INE472A01039": "Blue Star Ltd",
-    "INE188A01015": "Fertilisers & Chemicals Travancore Ltd",
-    "INE176B01034": "Havells India Ltd",
-    "INE749A01030": "Jindal Steel & Power Ltd",
-    "INE101A01026": "Mahindra & Mahindra Ltd",
-    "INE134E01011": "Power Finance Corporation Ltd",
-    "INE811K01011": "Prestige Estates Projects Ltd",
-    "INE020B01018": "REC Ltd",
-    "INE200M01039": "Varun Beverages Ltd",
-    "INE075A01022": "Wipro Ltd",
-
-    // Groww (Wife)
-    "INE208C01025": "Aegis Logistics Ltd",
-    "INE933K01021": "Bajaj Consumer Care Ltd",
-    "INE200A01026": "GE Vernova T&D India Ltd",
-    "INE038A01020": "Hindalco Industries Ltd",
-    "INE0J5401028": "Honasa Consumer Ltd",
-    "INE947Q01028": "Laurus Labs Ltd",
-    "INE745G01043": "Multi Commodity Exchange of India",
-    "INF204KB17I5": "Nippon India ETF Gold BeES",
-    "INF204KC1402": "Nippon India ETF Silver BeES",
-    "INE777K01022": "RR Kabel Ltd",
-    "INE0CLI01024": "RateGain Travel Technologies Ltd",
-    "INE763I01026": "Transformers & Rectifiers India Ltd",
-
-    // INDmoney (Wife)
-    "INF109KB15Y7": "ICICI Prudential Bharat 22 ETF",
-
-    // Common Bluechips
-    "INE154A01025": "ITC Ltd",
-    "INE397D01024": "Bharti Airtel Ltd",
-    "INE002A01018": "Reliance Industries Ltd",
-    "INE467B01029": "Tata Consultancy Services Ltd",
-    "INE040A01034": "HDFC Bank Ltd",
-    "INE009A01021": "Infosys Ltd",
-    "INE062A01020": "State Bank of India",
-  };
-
-  function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
-    if (isinCode) {
-      const cleanIsin = String(isinCode).trim().toUpperCase();
-      if (ISIN_TO_NSE_SYMBOL[cleanIsin]) return ISIN_TO_NSE_SYMBOL[cleanIsin];
-    }
-    if (rawSymbol) {
-      let sym = String(rawSymbol).trim().toUpperCase()
-        .replace(/\s*-EQ$/i, "")
-        .replace(/\s*NSE\s*EQ/i, "")
-        .replace(/[^A-Z0-9&\-]/g, "")
-        .trim();
-      if (sym && sym !== "STOCK" && sym !== "UNKNOWN") {
-        if (sym === "BHARTI") return "BHARTIARTL";
-        if (sym === "NETFSILVER") return "SILVERBEES";
-        if (sym === "GE") return "GEVERNOVA";
-        if (sym === "R") return "RRKABEL";
-        if (sym === "TRANS") return "TRIL";
-        if (sym === "SBI") return "SBIN";
-        return sym;
-      }
-    }
-
-    const nameUpper = String(cleanName || "").toUpperCase().trim();
-    if (!nameUpper) return "STOCK";
-
-    if (/AEGIS LOGISTICS/i.test(nameUpper)) return "AEGISLOG";
-    if (/BAJAJ CONSUMER/i.test(nameUpper)) return "BAJAJCON";
-    if (/GE VERNOVA/i.test(nameUpper)) return "GEVERNOVA";
-    if (/HINDALCO/i.test(nameUpper)) return "HINDALCO";
-    if (/HONASA|MAMAEARTH/i.test(nameUpper)) return "HONASA";
-    if (/LAURUS LABS/i.test(nameUpper)) return "LAURUSLABS";
-    if (/MULTI COMMODITY|MCX/i.test(nameUpper)) return "MCX";
-    if (/R R KABEL|RR KABEL/i.test(nameUpper)) return "RRKABEL";
-    if (/RATEGAIN/i.test(nameUpper)) return "RATEGAIN";
-    if (/TRANS & RECTI|TRANSFORMERS & RECTIFIERS/i.test(nameUpper)) return "TRIL";
-    if (/BHARAT 22|BHARAT22/i.test(nameUpper)) return "BHARAT22";
-    if (/NASDAQ 100|MON100/i.test(nameUpper)) return "MON100";
-    if (/SMALLCAP 250|HDFCSML250/i.test(nameUpper)) return "HDFCSML250";
-    if (/MIDCAP 150|MID150/i.test(nameUpper)) return "MID150BEES";
-    if (/NIFTY BEES|NIFTYBEES/i.test(nameUpper)) return "NIFTYBEES";
-    if (/GOLD BEES|GOLDBEES/i.test(nameUpper)) return "GOLDBEES";
-    if (/SILVER BEES|SILVERBEES|NETFSILVER/i.test(nameUpper)) return "SILVERBEES";
-    if (/BANK BEES|BANKBEES/i.test(nameUpper)) return "BANKBEES";
-    if (/IT BEES|ITBEES/i.test(nameUpper)) return "ITBEES";
-    if (/BLUE STAR|BLUESTARCO/i.test(nameUpper)) return "BLUESTARCO";
-    if (/JINDAL STEEL|JINDALSTEL/i.test(nameUpper)) return "JINDALSTEL";
-    if (/MAHINDRA & MAHINDRA|M&M/i.test(nameUpper)) return "M&M";
-    if (/POWER FINANCE|PFC/i.test(nameUpper)) return "PFC";
-    if (/PRESTIGE ESTATES|PRESTIGE/i.test(nameUpper)) return "PRESTIGE";
-    if (/REC LTD|RECLTD/i.test(nameUpper)) return "RECLTD";
-    if (/VARUN BEVERAGES|VBL/i.test(nameUpper)) return "VBL";
-    if (/WIPRO/i.test(nameUpper)) return "WIPRO";
-    if (/ITC LTD|ITC/i.test(nameUpper)) return "ITC";
-    if (/BHARTI AIRTEL|AIRTEL/i.test(nameUpper)) return "BHARTIARTL";
-    if (/RELIANCE/i.test(nameUpper)) return "RELIANCE";
-    if (/TCS|TATA CONSULTANCY/i.test(nameUpper)) return "TCS";
-    if (/HDFC BANK/i.test(nameUpper)) return "HDFCBANK";
-    if (/INFOSYS|INFY/i.test(nameUpper)) return "INFY";
-
-    const firstWord = nameUpper.split(/[\s,#\-_]+/)[0];
-    return firstWord || "STOCK";
-  }
-
-  function deriveStockSymbol(name) {
-    return resolveNseSymbol("", name, "");
   }
 
   /** Normalise a row object's keys */
@@ -2726,6 +2889,12 @@ function parseMasterHoldingsWorkbook(buffer) {
           "ISIN", "isin"
         );
 
+        // Detect if cleanName itself looks like an ISIN (INE/INF followed by alphanumeric)
+        const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
+        const nameIsIsin = isinPattern.test(cleanName);
+        // Use whichever ISIN we have: explicit column or detected from name
+        const effectiveIsin = String(isinCode || (nameIsIsin ? cleanName : '')).trim().toUpperCase();
+
         const rawSymbol = String(pick(normRow,
           "Symbol", "symbol",
           "Stock Symbol", "stocksymbol",
@@ -2736,13 +2905,20 @@ function parseMasterHoldingsWorkbook(buffer) {
           "Scrip", "scrip"
         ) || "").trim().toUpperCase().replace(/\s*-EQ$/i, "").replace(/\s*NSE\s*EQ/i, "").trim();
 
-        const symbol = resolveNseSymbol(rawSymbol, cleanName, isinCode);
+        const symbol = resolveNseSymbol(rawSymbol, cleanName, effectiveIsin);
 
-        const cleanIsin = String(isinCode || "").trim().toUpperCase();
+        const isinInfo = getIsinMapping(effectiveIsin);
         let companyName = cleanName;
-        if (!companyName || companyName.toUpperCase() === cleanIsin) {
-          companyName = ISIN_TO_COMPANY_NAME[cleanIsin] || symbol;
+        // If name is blank, is an ISIN code, or looks like a raw ticker that matches symbol → resolve from ISIN map
+        if (!companyName || isinPattern.test(companyName) || companyName.toUpperCase() === effectiveIsin) {
+          companyName = isinInfo ? isinInfo.company : (symbol !== effectiveIsin ? symbol : cleanName);
         }
+        // Final fallback: if companyName still looks like an ISIN, use symbol as display name
+        if (isinPattern.test(companyName)) {
+          companyName = isinInfo ? isinInfo.company : symbol;
+        }
+
+        const category = isinInfo ? isinInfo.category : (/BEES|ETF|GOLD|SILVER|NIFTY|LIQUID|INDEX/i.test(symbol + " " + companyName) ? "ETF" : "Stock");
 
         parsedStocks.push({
           id: `stk-${generateUUID()}`,
@@ -2754,11 +2930,12 @@ function parseMasterHoldingsWorkbook(buffer) {
           currentPrice: ltp || price,
           currentValue: currentValue || invested,
           pnl: pnl,
+          isin: effectiveIsin,
           purchaseDate: dateVal,
           date: dateVal,
           owner: ownerVal,
           demat: cfg.broker,
-          category: /BEES|ETF|GOLD|SILVER|NIFTY|LIQUID|INDEX/i.test(symbol + " " + cleanName) ? "ETF" : "Stock"
+          category: category
         });
 
       // ── MUTUAL FUND ──────────────────────────────────────────────────
@@ -5166,6 +5343,25 @@ function parseBrokerStockCSV(csvText, ownerOverride) {
       invested = toNumber(investedRaw);
     }
     
+    // Check if any field contains an ISIN code (Groww places ISIN in notes)
+    const isinCand = [notes, symbol, company].find(c => c && /^IN[EF0-9][A-Z0-9]{7,}$/i.test(String(c).trim()));
+    const effectiveIsin = isinCand ? String(isinCand).trim().toUpperCase() : '';
+    if (effectiveIsin) {
+      const isinInfo = getIsinMapping(effectiveIsin);
+      if (isinInfo) {
+        symbol = isinInfo.symbol;
+        if (!company || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(company) || company === symbol) {
+          company = isinInfo.company;
+        }
+        if (isinInfo.category) catRaw = isinInfo.category;
+      }
+    }
+
+    // Resolve symbol using standard NSE resolver
+    if (symbol || company || effectiveIsin) {
+      symbol = resolveNseSymbol(symbol, company, effectiveIsin);
+    }
+
     // Fallbacks and derived values
     if (!symbol && company) {
       symbol = company.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -5388,11 +5584,23 @@ async function fetchIndianStockPriceFallback(symbol) {
 }
 
 async function refreshStockPrices(force = false) {
+  // First ensure all stocks with raw ISIN codes are resolved to proper symbols and company names
+  await autoResolveUnknownIsinStocks().catch(e => console.warn('[Stock Prices] Auto-resolve error:', e));
+
   const proxyUrl = localStorage.getItem(STOCK_PROXY_URL_KEY);
   const symbolGroups = {};
   (state.stocks || []).forEach(s => {
-    if (!s.symbol) return;
-    const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    if (!s.symbol && !s.company) return;
+    let sym = String(s.symbol || s.company).toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    // Extra safety: if symbol still looks like an ISIN, resolve from master map
+    if (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym)) {
+      const info = getIsinMapping(sym);
+      if (info && info.symbol) {
+        s.symbol = info.symbol;
+        if (!s.company || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(s.company)) s.company = info.company;
+        sym = info.symbol;
+      }
+    }
     if (!symbolGroups[sym]) symbolGroups[sym] = [];
     symbolGroups[sym].push(s);
   });
@@ -5509,8 +5717,20 @@ function updateStocksFromCache() {
   const cache = getStockPriceCache();
   if (Object.keys(cache).length === 0) return;
   (state.stocks || []).forEach(s => {
-    if (!s.symbol) return;
-    const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    if (!s.symbol && !s.company) return;
+    let sym = String(s.symbol || s.company).toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    // If symbol or company still looks like an ISIN code, resolve it
+    if (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(s.company || '')) {
+      const isinToResolve = /^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) ? sym : s.company;
+      const info = getIsinMapping(isinToResolve);
+      if (info && info.symbol) {
+        s.symbol = info.symbol;
+        if (!s.company || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(s.company)) {
+          s.company = info.company;
+        }
+        sym = info.symbol;
+      }
+    }
     const cached = cache[sym];
     if (cached && cached.price) {
       s.currentPrice = cached.price;
@@ -5549,16 +5769,34 @@ function renderStockHoldingsPanel() {
   let heldSymbolCount = 0;
   let oneDayChange = 0;
   let hasOneDayData = false;
+  const cache = getStockPriceCache();
 
   const holdings = rows.map(item => {
+    let sym = item.symbol || "UNKNOWN";
+    let comp = item.company || sym || "Stock";
+    let cat = item.category || "Stock";
+
+    if (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp)) {
+      const isinCode = /^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) ? sym : comp;
+      const isinInfo = getIsinMapping(isinCode);
+      if (isinInfo) {
+        sym = isinInfo.symbol;
+        if (!comp || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp) || comp === item.symbol) {
+          comp = isinInfo.company;
+        }
+        cat = isinInfo.category || cat;
+      }
+    }
+
     const qty = toNumber(item.quantity);
     const avgPrice = toNumber(item.avgPrice);
-    const currentPrice = toNumber(item.currentPrice || item.avgPrice);
+    const cachedItem = cache[sym] || cache[item.symbol];
+    const currentPrice = toNumber(item.currentPrice || cachedItem?.price || item.avgPrice);
     const invested = toNumber(item.invested || (qty * avgPrice));
     const currentValue = (qty > 0 && currentPrice > 0) ? (qty * currentPrice) : toNumber(item.currentValue || invested);
     const gain = currentValue - invested;
     const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
-    const prevClose = item.prevClose ? toNumber(item.prevClose) : null;
+    const prevClose = item.prevClose ? toNumber(item.prevClose) : (cachedItem?.prevClose ? toNumber(cachedItem.prevClose) : null);
     const dayChange = prevClose ? qty * (currentPrice - prevClose) : null;
     const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
 
@@ -5573,9 +5811,9 @@ function renderStockHoldingsPanel() {
     }
 
     return {
-      symbol: item.symbol || "UNKNOWN",
-      company: item.company || item.symbol || "Stock",
-      category: item.category || "Stock",
+      symbol: sym,
+      company: comp,
+      category: cat,
       exchange: item.exchange || "NSE",
       totalQty: qty,
       avgPrice,
@@ -11442,6 +11680,11 @@ if (typeof module !== 'undefined' && module.exports) {
     parseMasterHoldingsWorkbook,
     addSystemLog,
     matchHoldingsOwner,
+    MASTER_ISIN_MAP,
+    getIsinMapping,
+    resolveIsinOnline,
+    resolveNseSymbol,
+    autoResolveUnknownIsinStocks
   };
 }
 

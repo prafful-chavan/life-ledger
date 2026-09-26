@@ -43,6 +43,25 @@ var US_EXCHANGES = {
   "VGT": "NYSEARCA", "VXUS": "NYSEARCA",
 };
 
+// ─── Known Indian ISIN to NSE Ticker mapping ─────────────────────────────────
+var ISIN_TO_TICKER = {
+  "INF174KA1HJ8": "GOLDBEES", "INF247L01AP3": "MON100", "INF204KB15V2": "ITBEES",
+  "INF179KC1FB2": "HDFCSML250", "INF179KC1HT0": "HDFCMID150", "INF204KB14I2": "NIFTYBEES",
+  "INF204KB1V68": "MID150BEES", "INF204KB15I9": "BANKBEES", "INE472A01039": "BLUESTARCO",
+  "INE188A01015": "FACT", "INE176B01034": "HAVELLS", "INE749A01030": "JINDALSTEL",
+  "INE101A01026": "M&M", "INE134E01011": "PFC", "INE811K01011": "PRESTIGE",
+  "INE020B01018": "RECLTD", "INE200M01039": "VBL", "INE075A01022": "WIPRO",
+  "INE208C01025": "AEGISLOG", "INE933K01021": "BAJAJCON", "INE200A01026": "GEVERNOVA",
+  "INE038A01020": "HINDALCO", "INE0J5401028": "HONASA", "INE947Q01028": "LAURUSLABS",
+  "INE745G01043": "MCX", "INF204KB17I5": "GOLDBEES", "INF204KC1402": "SILVERBEES",
+  "INE777K01022": "RRKABEL", "INE0CLI01024": "RATEGAIN", "INE101D01020": "GRANULES",
+  "INE034A01011": "ARVIND", "INE763I01026": "TRIL", "INF109KB15Y7": "BHARAT22",
+  "INE154A01025": "ITC", "INE397D01024": "BHARTIARTL", "INE002A01018": "RELIANCE",
+  "INE467B01029": "TCS", "INE040A01034": "HDFCBANK", "INE009A01021": "INFY",
+  "INE062A01020": "SBIN", "INE090A01021": "ICICIBANK", "INE238A01034": "AXISBANK",
+  "INE237A01028": "KOTAKBANK", "INE018A01030": "LT", "INE155A01022": "TATAMOTORS"
+};
+
 /**
  * Determines if a symbol is a US stock/ETF.
  * Returns exchange prefix if US, or empty string if Indian.
@@ -70,12 +89,22 @@ function isLikelyUS(symbol) {
 
 function doGet(e) {
   var symbolsStr = (e && e.parameter && e.parameter.symbols) ? e.parameter.symbols : "";
-  var symbols = symbolsStr.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+  var rawSymbols = symbolsStr.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   
   var results = {};
   
-  if (symbols.length === 0) {
+  if (rawSymbols.length === 0) {
     return createJsonResponse({ error: "No symbols provided. Pass ?symbols=AAPL,RELIANCE,VOO" });
+  }
+
+  // Map ISINs to standard tickers
+  var symbols = [];
+  var isinOrigMap = {};
+  for (var m = 0; m < rawSymbols.length; m++) {
+    var rawSym = rawSymbols[m].toUpperCase().trim();
+    var resolvedSym = ISIN_TO_TICKER[rawSym] || rawSym;
+    symbols.push(resolvedSym);
+    isinOrigMap[resolvedSym] = rawSym;
   }
 
   // Create a temporary spreadsheet to use GOOGLEFINANCE function
@@ -143,13 +172,15 @@ function doGet(e) {
 
     for (var j = 0; j < symbols.length; j++) {
       var s = symbols[j].toUpperCase().trim();
+      var rawOrig = isinOrigMap[s] || s;
       var price = Number(allValues[j][0]) || 0;
       var prevClose = Number(allValues[j][1]) || 0;
       var change = Number(allValues[j][2]) || 0;
       var changePct = Number(allValues[j][3]) || 0;
 
+      var resItem = null;
       if (price > 0) {
-        results[s] = {
+        resItem = {
           symbol: s,
           price: price,
           prevClose: prevClose || price,
@@ -161,7 +192,11 @@ function doGet(e) {
       } else {
         // Fallback: scrape Google Finance HTML
         Logger.log("GOOGLEFINANCE returned 0 for " + s + ", trying HTML scrape fallback...");
-        results[s] = fetchViaScrape(s);
+        resItem = fetchViaScrape(s);
+      }
+      results[s] = resItem;
+      if (rawOrig !== s) {
+        results[rawOrig] = resItem;
       }
     }
 
@@ -170,8 +205,13 @@ function doGet(e) {
     // Fallback all via HTTP scrape
     for (var k = 0; k < symbols.length; k++) {
       var sym2 = symbols[k].toUpperCase().trim();
+      var rawOrig2 = isinOrigMap[sym2] || sym2;
       if (!results[sym2]) {
-        results[sym2] = fetchViaScrape(sym2);
+        var scrapeRes = fetchViaScrape(sym2);
+        results[sym2] = scrapeRes;
+        if (rawOrig2 !== sym2) {
+          results[rawOrig2] = scrapeRes;
+        }
       }
     }
   } finally {
