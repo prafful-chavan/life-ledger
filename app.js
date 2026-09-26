@@ -1509,7 +1509,7 @@ function bindChat() {
   // Daily Briefing button
   document.getElementById("dailyBriefingBtn")?.addEventListener("click", async () => {
     if (!window.LifeLedgerAI?.isAiAvailable()) {
-      toast("Set up your Gemini API key in Settings to use AI features.");
+      toast("Set up your Google Gemini or OpenRouter API key in Settings to use AI features.");
       return;
     }
     addChat("user", "📋 Generate my daily briefing");
@@ -1552,21 +1552,23 @@ function updateAiModeBadge() {
   const settingsStatus = document.getElementById("settingsAiStatus");
 
   const isAvailable = window.LifeLedgerAI?.isAiAvailable();
-  const model = window.LifeLedgerAI?.getModel() || "google/gemini-2.5-flash";
+  const provider = window.LifeLedgerAI?.getProvider() || "gemini";
+  const providerName = provider === "gemini" ? "Gemini" : "OpenRouter";
+  const model = window.LifeLedgerAI?.getModel() || (provider === "gemini" ? "gemini-2.5-flash" : "google/gemini-2.5-flash");
   const shortModel = model.split("/").pop() || model;
 
   if (isAvailable) {
-    if (label) label.textContent = `🧠 AI Powered (${shortModel})`;
+    if (label) label.textContent = `🧠 ${providerName} (${shortModel})`;
     if (dot) dot.style.background = "#10b981";
     if (settingsStatus) {
-      settingsStatus.textContent = `✅ Connected (${model})`;
+      settingsStatus.textContent = `✅ ${providerName} Active (${shortModel})`;
       settingsStatus.style.color = "#10b981";
     }
   } else {
     if (label) label.textContent = "Offline Mode";
     if (dot) dot.style.background = "#f59e0b";
     if (settingsStatus) {
-      settingsStatus.textContent = "❌ No OpenRouter API key";
+      settingsStatus.textContent = "❌ No API Key Configured";
       settingsStatus.style.color = "#ef4444";
     }
   }
@@ -1587,17 +1589,91 @@ function bindExport() {
 }
 
 function bindAiSettings() {
-  const keyInput = document.getElementById("settingsOpenRouterApiKey");
-  const modelSelect = document.getElementById("settingsAiModelSelect");
+  // Provider Tabs & Panels
+  const tabGemini = document.getElementById("tabProviderGemini");
+  const tabOpenRouter = document.getElementById("tabProviderOpenRouter");
+  const geminiPanel = document.getElementById("geminiSettingsPanel");
+  const openrouterPanel = document.getElementById("openrouterSettingsPanel");
 
-  if (keyInput && window.LifeLedgerAI?.getApiKey) {
-    keyInput.value = window.LifeLedgerAI.getApiKey();
+  // Inputs & Controls
+  const geminiKeyInput = document.getElementById("settingsGeminiApiKey");
+  const geminiModelSelect = document.getElementById("settingsGeminiModelSelect");
+  const toggleGeminiKeyBtn = document.getElementById("toggleGeminiKeyVis");
+
+  const openrouterKeyInput = document.getElementById("settingsOpenRouterApiKey");
+  const openrouterModelSelect = document.getElementById("settingsAiModelSelect");
+  const toggleOpenRouterKeyBtn = document.getElementById("toggleOpenRouterKeyVis");
+
+  const statusEl = document.getElementById("settingsAiStatus");
+  const saveBtn = document.getElementById("settingsSaveApiKey");
+  const testBtn = document.getElementById("settingsTestAiBtn");
+  const clearBtn = document.getElementById("settingsClearApiKey");
+
+  // Provider Tab Switching
+  function switchProvider(provider) {
+    const isGemini = provider === "gemini";
+    if (tabGemini) {
+      tabGemini.classList.toggle("active", isGemini);
+      tabGemini.setAttribute("aria-selected", isGemini ? "true" : "false");
+    }
+    if (tabOpenRouter) {
+      tabOpenRouter.classList.toggle("active", !isGemini);
+      tabOpenRouter.setAttribute("aria-selected", !isGemini ? "true" : "false");
+    }
+    if (geminiPanel) geminiPanel.style.display = isGemini ? "block" : "none";
+    if (openrouterPanel) openrouterPanel.style.display = !isGemini ? "block" : "none";
+    window.LifeLedgerAI?.setProvider(provider);
+    updateAiModeBadge();
   }
 
-  if (modelSelect && window.LifeLedgerAI?.getModel) {
-    modelSelect.value = window.LifeLedgerAI.getModel();
+  tabGemini?.addEventListener("click", () => switchProvider("gemini"));
+  tabOpenRouter?.addEventListener("click", () => switchProvider("openrouter"));
+
+  // Prefill existing values
+  const currentProvider = window.LifeLedgerAI?.getProvider ? window.LifeLedgerAI.getProvider() : "gemini";
+  switchProvider(currentProvider);
+
+  if (geminiKeyInput && window.LifeLedgerAI?.getGeminiKey) {
+    geminiKeyInput.value = window.LifeLedgerAI.getGeminiKey();
+  }
+  if (geminiModelSelect && window.LifeLedgerAI?.getGeminiModel) {
+    geminiModelSelect.value = window.LifeLedgerAI.getGeminiModel();
   }
 
+  if (openrouterKeyInput && window.LifeLedgerAI?.getOpenRouterKey) {
+    openrouterKeyInput.value = window.LifeLedgerAI.getOpenRouterKey();
+  }
+  if (openrouterModelSelect && window.LifeLedgerAI?.getOpenRouterModel) {
+    openrouterModelSelect.value = window.LifeLedgerAI.getOpenRouterModel();
+  }
+
+  // Key Visibility Toggles
+  toggleGeminiKeyBtn?.addEventListener("click", () => {
+    if (!geminiKeyInput) return;
+    const isPass = geminiKeyInput.type === "password";
+    geminiKeyInput.type = isPass ? "text" : "password";
+    toggleGeminiKeyBtn.textContent = isPass ? "🔒" : "👁️";
+  });
+
+  toggleOpenRouterKeyBtn?.addEventListener("click", () => {
+    if (!openrouterKeyInput) return;
+    const isPass = openrouterKeyInput.type === "password";
+    openrouterKeyInput.type = isPass ? "text" : "password";
+    toggleOpenRouterKeyBtn.textContent = isPass ? "🔒" : "👁️";
+  });
+
+  // Model Select changes
+  geminiModelSelect?.addEventListener("change", () => {
+    window.LifeLedgerAI?.setGeminiModel(geminiModelSelect.value);
+    updateAiModeBadge();
+  });
+
+  openrouterModelSelect?.addEventListener("change", () => {
+    window.LifeLedgerAI?.setOpenRouterModel(openrouterModelSelect.value);
+    updateAiModeBadge();
+  });
+
+  // Stock Price Proxy setting
   const stockProxyInput = document.getElementById('settingsStockProxyUrl');
   const stockProxySaveBtn = document.getElementById('settingsSaveStockProxy');
   if (stockProxyInput) stockProxyInput.value = localStorage.getItem(STOCK_PROXY_URL_KEY) || '';
@@ -1612,39 +1688,35 @@ function bindAiSettings() {
     }
   });
 
-  modelSelect?.addEventListener("change", () => {
-    const model = modelSelect.value;
-    window.LifeLedgerAI?.setModel(model);
-    updateAiModeBadge();
-  });
-
   // Test AI Connection button
-  document.getElementById("settingsTestAiBtn")?.addEventListener("click", async () => {
-    const statusEl = document.getElementById("settingsAiStatus");
-    const model = window.LifeLedgerAI?.getModel() || "google/gemini-2.5-flash";
+  testBtn?.addEventListener("click", async () => {
+    const activeProv = window.LifeLedgerAI?.getProvider() || "gemini";
+    const activeProvName = activeProv === "gemini" ? "Google Gemini" : "OpenRouter";
+    const activeModel = window.LifeLedgerAI?.getModel() || (activeProv === "gemini" ? "gemini-2.5-flash" : "google/gemini-2.5-flash");
+    const activeKey = activeProv === "gemini" ? window.LifeLedgerAI?.getGeminiKey() : window.LifeLedgerAI?.getOpenRouterKey();
 
-    if (!window.LifeLedgerAI?.isAiAvailable()) {
+    if (!activeKey) {
       if (statusEl) {
-        statusEl.textContent = "❌ Please enter an OpenRouter API key first.";
+        statusEl.textContent = `❌ Enter ${activeProvName} key first`;
         statusEl.style.color = "#ef4444";
       }
-      toast("⚠️ Please enter your OpenRouter API key first.");
+      toast(`⚠️ Please enter your ${activeProvName} API key first.`);
       return;
     }
 
     if (statusEl) {
-      statusEl.textContent = `⏳ Testing ${model}...`;
+      statusEl.textContent = `⏳ Testing ${activeProvName} (${activeModel})...`;
       statusEl.style.color = "var(--brand, #3b82f6)";
     }
-    toast(`⏳ Testing OpenRouter connection (${model})...`);
+    toast(`⏳ Testing ${activeProvName} connection (${activeModel})...`);
 
     try {
-      const response = await window.LifeLedgerAI.askAgent("Connection test. Reply 'Connected successfully!'", state, []);
+      const response = await window.LifeLedgerAI.askAgent("Connection test. Reply with 'Connected successfully!'", state, []);
       if (statusEl) {
-        statusEl.textContent = `✅ Connected & Verified!`;
+        statusEl.textContent = `✅ ${activeProvName} Connected & Verified!`;
         statusEl.style.color = "#10b981";
       }
-      toast(`✅ AI Verified! Response: "${response.slice(0, 60)}..."`);
+      toast(`✅ ${activeProvName} Verified! Response: "${response.slice(0, 50)}..."`);
     } catch (err) {
       if (statusEl) {
         statusEl.textContent = `❌ Test Failed: ${err.message.slice(0, 45)}`;
@@ -1655,32 +1727,45 @@ function bindAiSettings() {
   });
 
   // Save settings
-  document.getElementById("settingsSaveApiKey")?.addEventListener("click", () => {
-    const key = keyInput?.value?.trim();
-    const model = modelSelect?.value;
+  saveBtn?.addEventListener("click", () => {
+    const gKey = geminiKeyInput?.value?.trim() || "";
+    const gModel = geminiModelSelect?.value || "gemini-2.5-flash";
+    const oKey = openrouterKeyInput?.value?.trim() || "";
+    const oModel = openrouterModelSelect?.value || "google/gemini-2.5-flash";
 
-    if (key !== undefined) window.LifeLedgerAI?.setApiKey(key);
-    if (model) window.LifeLedgerAI?.setModel(model);
+    window.LifeLedgerAI?.setGeminiKey(gKey);
+    window.LifeLedgerAI?.setGeminiModel(gModel);
+    window.LifeLedgerAI?.setOpenRouterKey(oKey);
+    window.LifeLedgerAI?.setOpenRouterModel(oModel);
 
-    if (!key) {
-      toast("⚠️ Please enter your OpenRouter API key.");
+    const activeProv = window.LifeLedgerAI?.getProvider() || "gemini";
+    const activeProvName = activeProv === "gemini" ? "Google Gemini" : "OpenRouter";
+    const activeModel = activeProv === "gemini" ? gModel : oModel;
+    const hasActiveKey = activeProv === "gemini" ? Boolean(gKey) : Boolean(oKey);
+
+    if (!hasActiveKey && !gKey && !oKey) {
+      toast("⚠️ Please enter an API key for Google Gemini or OpenRouter.");
     } else {
-      toast(`✅ AI settings saved! Model: ${model}`);
+      toast(`✅ AI settings saved! Active: ${activeProvName} (${activeModel})`);
     }
 
     updateAiModeBadge();
   });
 
-  // Clear settings
-  document.getElementById("settingsClearApiKey")?.addEventListener("click", () => {
-    window.LifeLedgerAI?.setApiKey("");
-    window.LifeLedgerAI?.setModel("google/gemini-2.5-flash");
-
-    if (keyInput) keyInput.value = "";
-    if (modelSelect) modelSelect.value = "google/gemini-2.5-flash";
+  // Clear key
+  clearBtn?.addEventListener("click", () => {
+    const activeProv = window.LifeLedgerAI?.getProvider() || "gemini";
+    if (activeProv === "gemini") {
+      window.LifeLedgerAI?.setGeminiKey("");
+      if (geminiKeyInput) geminiKeyInput.value = "";
+      toast("Google Gemini API key cleared.");
+    } else {
+      window.LifeLedgerAI?.setOpenRouterKey("");
+      if (openrouterKeyInput) openrouterKeyInput.value = "";
+      toast("OpenRouter API key cleared.");
+    }
 
     updateAiModeBadge();
-    toast("API key cleared. AI agent disabled.");
   });
 
   // Dismiss insights banner

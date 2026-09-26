@@ -2058,6 +2058,65 @@ body[data-theme="dark"] .metric-card.compact-metric .value {
   border-color: rgba(34, 197, 94, 0.2);
 }
 
+/* AI Provider Switcher & Settings */
+.ai-provider-toggle-wrap {
+  display: flex;
+  gap: 6px;
+  background: var(--panel-soft);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.ai-provider-tab {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 650;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ai-provider-tab:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ai-provider-tab.active {
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 750;
+  border-color: var(--line);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.key-toggle-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, var(--line));
+  background: var(--panel-soft);
+  color: var(--fg, var(--ink));
+  cursor: pointer;
+  font-size: 0.85rem;
+  touch-action: manipulation;
+  transition: background 0.15s ease;
+}
+
+.key-toggle-btn:hover {
+  background: var(--panel);
+}
+
 /* Sync Status Indicator */
 .sync-status {
   font-size: 0.85rem;

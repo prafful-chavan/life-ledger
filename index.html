@@ -1963,46 +1963,89 @@
         <div class="settings-divider"></div>
 
         <div class="settings-section">
-          <h4>🧠 AI Agent ("Hey Prafful") — Powered by OpenRouter</h4>
-          <p class="muted-small" style="margin-bottom: 12px;">One API key unlocks GPT-4o, Claude, Gemini, Llama, DeepSeek, and 200+ models with zero rate-limit deadlocks.</p>
-
-          <div class="settings-row" style="margin-top: 8px;">
-            <span>OpenRouter Key:</span>
-            <input type="password" id="settingsOpenRouterApiKey" placeholder="Paste OpenRouter key (sk-or-...)" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
-          </div>
-
-          <div class="settings-row" style="margin-top: 8px;">
-            <span>AI Model:</span>
-            <select id="settingsAiModelSelect" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem; font-weight: 500;">
-              <optgroup label="Free / Recommended">
-                <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash (Free &amp; Ultra Fast)</option>
-                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Free &amp; Deep Reasoning)</option>
-                <option value="deepseek/deepseek-chat-v3">DeepSeek V3 (Free &amp; Smart)</option>
-                <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (Free Open Source)</option>
-              </optgroup>
-              <optgroup label="OpenAI (ChatGPT)">
-                <option value="openai/gpt-4o">GPT-4o (Smartest &amp; Fast)</option>
-                <option value="openai/gpt-4o-mini">GPT-4o mini (Super Fast &amp; Cheap)</option>
-                <option value="openai/o3-mini">o3-mini (Reasoning Model)</option>
-              </optgroup>
-              <optgroup label="Anthropic Claude">
-                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Best Writer &amp; Coder)</option>
-                <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku (Fast &amp; Crisp)</option>
-              </optgroup>
-            </select>
-          </div>
-
-          <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <button class="secondary-button" type="button" id="settingsSaveApiKey" style="flex: 1;">💾 Save Settings</button>
-            <button class="secondary-button" type="button" id="settingsTestAiBtn" style="flex: 1;">🧪 Test AI Connection</button>
-            <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1;">🗑️ Clear Key</button>
-          </div>
-          <p class="muted-small" style="margin-top: 8px;">
-            🔑 Get Free Key: <a href="https://openrouter.ai/keys" target="_blank" style="color: var(--brand);">openrouter.ai/keys</a> (Includes $1 free credit for paid models!)
-          </p>
-          <div class="settings-row" style="margin-top: 12px;">
-            <span>AI Status:</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h4 style="margin: 0;">🧠 AI Agent ("Hey Prafful")</h4>
             <span id="settingsAiStatus" class="status-badge">Checking...</span>
+          </div>
+          <p class="muted-small" style="margin-bottom: 12px;">Choose your AI provider: Direct <strong>Google AI Studio</strong> (100% Free Gemini keys) or <strong>OpenRouter</strong> (Multi-model aggregator). You can configure one or both!</p>
+
+          <!-- Provider Switcher Tabs -->
+          <div class="ai-provider-toggle-wrap" role="tablist" aria-label="AI Provider Selection">
+            <button type="button" class="ai-provider-tab active" id="tabProviderGemini" role="tab" aria-selected="true">
+              ✨ Google Gemini (Free)
+            </button>
+            <button type="button" class="ai-provider-tab" id="tabProviderOpenRouter" role="tab" aria-selected="false">
+              🌐 OpenRouter (Multi-Model)
+            </button>
+          </div>
+
+          <!-- Google Gemini Panel (AI Studio) -->
+          <div id="geminiSettingsPanel">
+            <div class="settings-row" style="margin-top: 8px;">
+              <span>Gemini Key:</span>
+              <div style="flex: 1; display: flex; gap: 6px;">
+                <input type="password" id="settingsGeminiApiKey" placeholder="Paste Google AI Studio key (AIzaSy...)" autocomplete="off" style="flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, var(--line)); background: var(--surface, var(--panel-soft)); color: var(--fg, var(--ink)); font-size: 16px;" />
+                <button type="button" id="toggleGeminiKeyVis" class="key-toggle-btn" title="Show/Hide Key" aria-label="Toggle Gemini key visibility">👁️</button>
+              </div>
+            </div>
+
+            <div class="settings-row" style="margin-top: 8px;">
+              <span>Gemini Model:</span>
+              <select id="settingsGeminiModelSelect" style="flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, var(--line)); background: var(--surface, var(--panel-soft)); color: var(--fg, var(--ink)); font-size: 16px; font-weight: 500;">
+                <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Free &amp; Ultra Fast — Recommended)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Free &amp; Deep Reasoning)</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash (Free &amp; High Speed)</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Free &amp; Lightweight)</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Free, 2M Context)</option>
+              </select>
+            </div>
+
+            <p class="muted-small" style="margin-top: 8px;">
+              🔑 <strong>Free Gemini Key:</strong> Create your 100% free API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style="color: var(--brand); text-decoration: underline;">aistudio.google.com/app/apikey</a> (No credit card or billing needed).
+            </p>
+          </div>
+
+          <!-- OpenRouter Panel -->
+          <div id="openrouterSettingsPanel" style="display: none;">
+            <div class="settings-row" style="margin-top: 8px;">
+              <span>OpenRouter Key:</span>
+              <div style="flex: 1; display: flex; gap: 6px;">
+                <input type="password" id="settingsOpenRouterApiKey" placeholder="Paste OpenRouter key (sk-or-...)" autocomplete="off" style="flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, var(--line)); background: var(--surface, var(--panel-soft)); color: var(--fg, var(--ink)); font-size: 16px;" />
+                <button type="button" id="toggleOpenRouterKeyVis" class="key-toggle-btn" title="Show/Hide Key" aria-label="Toggle OpenRouter key visibility">👁️</button>
+              </div>
+            </div>
+
+            <div class="settings-row" style="margin-top: 8px;">
+              <span>OpenRouter Model:</span>
+              <select id="settingsAiModelSelect" style="flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, var(--line)); background: var(--surface, var(--panel-soft)); color: var(--fg, var(--ink)); font-size: 16px; font-weight: 500;">
+                <optgroup label="Free / Recommended">
+                  <option value="google/gemini-2.5-flash" selected>Gemini 2.5 Flash (Free &amp; Ultra Fast)</option>
+                  <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Free &amp; Deep Reasoning)</option>
+                  <option value="deepseek/deepseek-chat-v3">DeepSeek V3 (Free &amp; Smart)</option>
+                  <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (Free Open Source)</option>
+                </optgroup>
+                <optgroup label="OpenAI (ChatGPT)">
+                  <option value="openai/gpt-4o">GPT-4o (Smartest &amp; Fast)</option>
+                  <option value="openai/gpt-4o-mini">GPT-4o mini (Super Fast &amp; Cheap)</option>
+                  <option value="openai/o3-mini">o3-mini (Reasoning Model)</option>
+                </optgroup>
+                <optgroup label="Anthropic Claude">
+                  <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Best Writer &amp; Coder)</option>
+                  <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku (Fast &amp; Crisp)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <p class="muted-small" style="margin-top: 8px;">
+              🔑 <strong>OpenRouter Key:</strong> Get key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style="color: var(--brand); text-decoration: underline;">openrouter.ai/keys</a> (Includes $1 free credit for paid models!)
+            </p>
+          </div>
+
+          <!-- Common AI Action Buttons -->
+          <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+            <button class="secondary-button" type="button" id="settingsSaveApiKey" style="flex: 1; min-width: 120px;">💾 Save Settings</button>
+            <button class="secondary-button" type="button" id="settingsTestAiBtn" style="flex: 1; min-width: 140px;">🧪 Test Connection</button>
+            <button class="secondary-button danger-button" type="button" id="settingsClearApiKey" style="flex: 1; min-width: 100px;">🗑️ Clear Key</button>
           </div>
         </div>
 

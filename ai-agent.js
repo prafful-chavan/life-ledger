@@ -1,44 +1,185 @@
 /**
- * Life Ledger AI Agent — Powered by OpenRouter
- * One API key → GPT-4o, Claude, Gemini, Llama, DeepSeek, and 200+ models.
+ * Life Ledger AI Agent — Dual Provider Architecture
+ * Supports:
+ *   1. Google Gemini Direct API (via 100% free Google AI Studio keys)
+ *   2. OpenRouter (Multi-model aggregator: GPT-4o, Claude, DeepSeek, Llama, etc.)
  *
  * Architecture:
  *   1. buildDataContext(state) → compact data summary for LLM context
- *   2. callAI / streamAI → unified OpenRouter API caller
- *   3. askAgent(question, state) → non-streaming call
- *   4. streamAgent → streaming call (for chat)
- *   5. generateInsights / generateDailyBriefing → proactive features
+ *   2. Provider management & storage → Gemini & OpenRouter keys & models
+ *   3. callAI / streamAI → intelligent provider router with automatic fallback
+ *   4. askAgent(question, state) → non-streaming call
+ *   5. streamAgent → streaming call (for chat)
+ *   6. generateInsights / generateDailyBriefing → proactive life & wealth features
  */
 (function () {
   "use strict";
 
   const MAX_HISTORY_MESSAGES = 10;
   const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+  const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
   const APP_REFERER = "https://prafful-chavan.github.io/life-ledger/";
   const APP_TITLE = "Life Ledger - Hey Prafful";
-  const DEFAULT_MODEL = "google/gemini-2.5-flash";
 
-  // ─── API Key & Model Management (Simple — one key, one model) ───────────────
+  const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+  const DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash";
+
+  // Active AbortController for in-flight requests (replaces deadlock flags)
+  let activeController = null;
+
+  // Safe storage helper (works in browser & Node.js unit tests)
+  function getStorage() {
+    if (typeof localStorage !== "undefined") return localStorage;
+    if (typeof global !== "undefined" && global.localStorage) return global.localStorage;
+    if (typeof global !== "undefined") {
+      if (!global._memoryStorage) {
+        global._memoryStorage = {
+          _data: {},
+          getItem(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; },
+          setItem(k, v) { this._data[k] = String(v); },
+          removeItem(k) { delete this._data[k]; },
+          clear() { this._data = {}; }
+        };
+      }
+      return global._memoryStorage;
+    }
+    return {
+      getItem() { return null; },
+      setItem() {},
+      removeItem() {},
+      clear() {}
+    };
+  }
+
+  // ─── Provider & Key Management ──────────────────────────────────────────────
+
+  function getGeminiKey() {
+    const store = getStorage();
+    return (store.getItem("lifeLedger_geminiKey") || "").trim();
+  }
+
+  function setGeminiKey(key) {
+    const store = getStorage();
+    if (key && key.trim()) {
+      store.setItem("lifeLedger_geminiKey", key.trim());
+    } else {
+      store.removeItem("lifeLedger_geminiKey");
+    }
+  }
+
+  function getGeminiModel() {
+    const store = getStorage();
+    return store.getItem("lifeLedger_geminiModel") || DEFAULT_GEMINI_MODEL;
+  }
+
+  function setGeminiModel(model) {
+    const store = getStorage();
+    if (model && model.trim()) {
+      store.setItem("lifeLedger_geminiModel", model.trim());
+    } else {
+      store.removeItem("lifeLedger_geminiModel");
+    }
+  }
+
+  function getOpenRouterKey() {
+    const store = getStorage();
+    return (store.getItem("lifeLedger_openrouterKey") || "").trim();
+  }
+
+  function setOpenRouterKey(key) {
+    const store = getStorage();
+    if (key && key.trim()) {
+      store.setItem("lifeLedger_openrouterKey", key.trim());
+    } else {
+      store.removeItem("lifeLedger_openrouterKey");
+    }
+  }
+
+  function getOpenRouterModel() {
+    const store = getStorage();
+    return store.getItem("lifeLedger_openrouterModel") || store.getItem("lifeLedger_aiModel") || DEFAULT_OPENROUTER_MODEL;
+  }
+
+  function setOpenRouterModel(model) {
+    const store = getStorage();
+    if (model && model.trim()) {
+      store.setItem("lifeLedger_openrouterModel", model.trim());
+      store.setItem("lifeLedger_aiModel", model.trim()); // backward compatibility
+    } else {
+      store.removeItem("lifeLedger_openrouterModel");
+      store.removeItem("lifeLedger_aiModel");
+    }
+  }
+
+  /**
+   * Returns active provider: "gemini" or "openrouter".
+   * Auto-detects if user hasn't explicitly chosen one.
+   */
+  function getProvider() {
+    const store = getStorage();
+    const explicit = store.getItem("lifeLedger_aiProvider");
+    if (explicit === "gemini" || explicit === "openrouter") {
+      return explicit;
+    }
+    // Intelligent auto-detection based on configured keys
+    const hasGemini = Boolean(getGeminiKey());
+    const hasOpenRouter = Boolean(getOpenRouterKey());
+    if (hasGemini && !hasOpenRouter) return "gemini";
+    if (hasOpenRouter && !hasGemini) return "openrouter";
+    return "gemini"; // default provider
+  }
+
+  function setProvider(provider) {
+    const store = getStorage();
+    const normalized = provider === "openrouter" ? "openrouter" : "gemini";
+    store.setItem("lifeLedger_aiProvider", normalized);
+  }
+
+  function getActiveProvider() {
+    return getProvider();
+  }
+
+  /**
+   * Returns true if either Gemini or OpenRouter has an API key configured.
+   */
+  function isAiAvailable() {
+    return Boolean(getGeminiKey() || getOpenRouterKey());
+  }
+
+  function isProviderAvailable(provider) {
+    return provider === "gemini" ? Boolean(getGeminiKey()) : Boolean(getOpenRouterKey());
+  }
+
+  // Backward-compatibility aliases
   function getApiKey() {
-    return localStorage.getItem("lifeLedger_openrouterKey") || "";
+    const provider = getProvider();
+    if (provider === "gemini") {
+      return getGeminiKey() || getOpenRouterKey();
+    }
+    return getOpenRouterKey() || getGeminiKey();
   }
 
   function setApiKey(key) {
-    if (key) localStorage.setItem("lifeLedger_openrouterKey", key.trim());
-    else localStorage.removeItem("lifeLedger_openrouterKey");
+    const provider = getProvider();
+    if (provider === "gemini") {
+      setGeminiKey(key);
+    } else {
+      setOpenRouterKey(key);
+    }
   }
 
   function getModel() {
-    return localStorage.getItem("lifeLedger_aiModel") || DEFAULT_MODEL;
+    const provider = getProvider();
+    return provider === "gemini" ? getGeminiModel() : getOpenRouterModel();
   }
 
   function setModel(model) {
-    if (model) localStorage.setItem("lifeLedger_aiModel", model.trim());
-    else localStorage.removeItem("lifeLedger_aiModel");
-  }
-
-  function isAiAvailable() {
-    return Boolean(getApiKey());
+    const provider = getProvider();
+    if (provider === "gemini") {
+      setGeminiModel(model);
+    } else {
+      setOpenRouterModel(model);
+    }
   }
 
   // ─── Data Context Builder ────────────────────────────────────────────────────
@@ -381,33 +522,97 @@ PERSONALITY & RULES:
 • His wife is learning ETL/Data Engineering — support her growth too
 • Treat the provided data as your bible — every number matters`;
 
-  // ─── OpenRouter API — Clean, Single Implementation ───────────────────────────
+  // ─── Gemini Payload & Content Formatter ─────────────────────────────────────
 
-  // Active AbortController for cancellation (replaces requestInFlight boolean)
-  let activeController = null;
+  /**
+   * Google Gemini API requires role: 'user' | 'model' (never 'assistant').
+   * It also requires alternating turns and the first turn must be 'user'.
+   */
+  function buildGeminiContents(userMessage, chatHistory = []) {
+    const rawMessages = [];
+    const recent = (chatHistory || []).slice(-MAX_HISTORY_MESSAGES);
+    for (const msg of recent) {
+      const role = (msg.role === "assistant" || msg.role === "model") ? "model" : "user";
+      const text = (msg.text || "").trim();
+      if (text) {
+        rawMessages.push({ role, text });
+      }
+    }
 
-  function buildMessages(userMessage, dataContext, chatHistory) {
+    const currentPrompt = (userMessage || "").trim() || "Hello";
+    rawMessages.push({ role: "user", text: currentPrompt });
+
+    // Discard any leading 'model' turn so contents[0] is always 'user'
+    while (rawMessages.length > 0 && rawMessages[0].role === "model") {
+      rawMessages.shift();
+    }
+
+    // Consolidate consecutive turns of the same role
+    const consolidated = [];
+    for (const item of rawMessages) {
+      if (consolidated.length > 0 && consolidated[consolidated.length - 1].role === item.role) {
+        consolidated[consolidated.length - 1].parts[0].text += "\n\n" + item.text;
+      } else {
+        consolidated.push({
+          role: item.role,
+          parts: [{ text: item.text }]
+        });
+      }
+    }
+
+    if (consolidated.length === 0) {
+      consolidated.push({ role: "user", parts: [{ text: currentPrompt }] });
+    }
+
+    return consolidated;
+  }
+
+  function buildGeminiPayload(userMessage, dataContext, chatHistory = []) {
+    const systemText = `${SYSTEM_PROMPT}\n\n[CURRENT LIFE DATA CONTEXT]\n=========================================\n${dataContext}\n=========================================`;
+    return {
+      systemInstruction: {
+        parts: [{ text: systemText }]
+      },
+      contents: buildGeminiContents(userMessage, chatHistory),
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192
+      }
+    };
+  }
+
+  // ─── OpenRouter Payload Formatter ───────────────────────────────────────────
+
+  function buildOpenRouterMessages(userMessage, dataContext, chatHistory = []) {
     return [
       {
         role: "system",
         content: `${SYSTEM_PROMPT}\n\n[CURRENT LIFE DATA CONTEXT]\n=========================================\n${dataContext}\n=========================================`
       },
-      ...chatHistory.slice(-MAX_HISTORY_MESSAGES).map(msg => ({
+      ...(chatHistory || []).slice(-MAX_HISTORY_MESSAGES).map(msg => ({
         role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.text
+        content: msg.text || ""
       })),
-      { role: "user", content: userMessage }
+      { role: "user", content: (userMessage || "").trim() || "Hello" }
     ];
   }
 
-  /**
-   * Non-streaming call — used for insights, briefings, and test connection.
-   */
-  async function callAI(userMessage, dataContext, chatHistory = []) {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error("No OpenRouter API key. Please add your key in Settings.");
+  function buildOpenRouterPayload(userMessage, dataContext, chatHistory = [], model = DEFAULT_OPENROUTER_MODEL, stream = false) {
+    return {
+      model: model,
+      messages: buildOpenRouterMessages(userMessage, dataContext, chatHistory),
+      temperature: 0.7,
+      max_tokens: 16384,
+      stream: Boolean(stream)
+    };
+  }
 
-    // Cancel any active request
+  // ─── Google Gemini API Handlers ─────────────────────────────────────────────
+
+  async function callGeminiAI(userMessage, dataContext, chatHistory = []) {
+    const apiKey = getGeminiKey();
+    if (!apiKey) throw new Error("No Google Gemini API key. Please add your key in Settings.");
+
     if (activeController) {
       activeController.abort();
       activeController = null;
@@ -415,6 +620,177 @@ PERSONALITY & RULES:
 
     const controller = new AbortController();
     activeController = controller;
+
+    const model = getGeminiModel();
+    const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const payload = buildGeminiPayload(userMessage, dataContext, chatHistory);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        let parsedMessage = "";
+        try {
+          const parsed = JSON.parse(errorBody);
+          parsedMessage = parsed.error?.message || "";
+        } catch (e) {}
+
+        if (response.status === 400) {
+          throw new Error(`Gemini Bad Request: ${parsedMessage || "Invalid model name or parameter"}`);
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(`Invalid Gemini API key. Verify your key at aistudio.google.com/app/apikey`);
+        }
+        if (response.status === 429) {
+          throw new Error("Gemini rate limit exceeded. Please wait a few seconds and try again.");
+        }
+        throw new Error(`Gemini API error (${response.status}): ${parsedMessage || errorBody.slice(0, 160)}`);
+      }
+
+      const data = await response.json();
+      const candidate = data?.candidates?.[0];
+      if (!candidate) {
+        if (data?.promptFeedback?.blockReason) {
+          throw new Error(`Gemini safety block: ${data.promptFeedback.blockReason}`);
+        }
+        throw new Error("No response generated by Gemini. Try a different question.");
+      }
+
+      const text = (candidate.content?.parts || []).map(p => p.text || "").join("").trim();
+      if (!text) throw new Error("Empty response from Gemini.");
+      return text;
+    } finally {
+      if (activeController === controller) activeController = null;
+    }
+  }
+
+  async function streamGeminiAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    const apiKey = getGeminiKey();
+    if (!apiKey) {
+      onError(new Error("No Google Gemini API key. Please add your key in Settings."));
+      return;
+    }
+
+    if (activeController) {
+      activeController.abort();
+      activeController = null;
+    }
+
+    const controller = new AbortController();
+    activeController = controller;
+
+    const model = getGeminiModel();
+    const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
+    const payload = buildGeminiPayload(userMessage, dataContext, chatHistory);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        if (activeController === controller) activeController = null;
+
+        if (response.status === 401 || response.status === 403) {
+          onError(new Error("Invalid Gemini API key. Get one at aistudio.google.com/app/apikey"));
+          return;
+        }
+        if (response.status === 429) {
+          onError(new Error("Gemini rate limit reached. Please wait a few moments."));
+          return;
+        }
+
+        // Fallback to non-streaming
+        console.warn("[AI Agent] Gemini stream failed, falling back to non-streaming...");
+        try {
+          const fallbackText = await callGeminiAI(userMessage, dataContext, chatHistory);
+          onChunk(fallbackText);
+          onDone(fallbackText);
+        } catch (fbErr) {
+          onError(fbErr);
+        }
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep partial line
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.replace(/^data:\s*/, "");
+          if (jsonStr === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const partText = parsed.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+            if (partText) {
+              fullText += partText;
+              onChunk(fullText);
+            }
+          } catch (e) {
+            // ignore unparseable line
+          }
+        }
+      }
+
+      if (activeController === controller) activeController = null;
+
+      if (fullText) {
+        onDone(fullText);
+      } else {
+        console.warn("[AI Agent] Gemini stream yielded empty text, falling back to non-streaming...");
+        try {
+          const fallbackText = await callGeminiAI(userMessage, dataContext, chatHistory);
+          onChunk(fallbackText);
+          onDone(fallbackText);
+        } catch (fbErr) {
+          onError(fbErr);
+        }
+      }
+    } catch (err) {
+      if (activeController === controller) activeController = null;
+      if (err.name === "AbortError") return;
+      onError(err);
+    }
+  }
+
+  // ─── OpenRouter API Handlers ────────────────────────────────────────────────
+
+  async function callOpenRouterAI(userMessage, dataContext, chatHistory = []) {
+    const apiKey = getOpenRouterKey();
+    if (!apiKey) throw new Error("No OpenRouter API key. Please add your key in Settings.");
+
+    if (activeController) {
+      activeController.abort();
+      activeController = null;
+    }
+
+    const controller = new AbortController();
+    activeController = controller;
+
+    const model = getOpenRouterModel();
+    const payload = buildOpenRouterPayload(userMessage, dataContext, chatHistory, model, false);
 
     try {
       const response = await fetch(OPENROUTER_ENDPOINT, {
@@ -425,12 +801,7 @@ PERSONALITY & RULES:
           "HTTP-Referer": APP_REFERER,
           "X-Title": APP_TITLE
         },
-        body: JSON.stringify({
-          model: getModel(),
-          messages: buildMessages(userMessage, dataContext, chatHistory),
-          temperature: 0.7,
-          max_tokens: 16384
-        }),
+        body: JSON.stringify(payload),
         signal: controller.signal
       });
 
@@ -452,14 +823,13 @@ PERSONALITY & RULES:
     }
   }
 
-  /**
-   * Streaming call — used for chat. Renders tokens as they arrive.
-   */
-  async function streamAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
-    const apiKey = getApiKey();
-    if (!apiKey) { onError(new Error("No OpenRouter API key. Please add your key in Settings.")); return; }
+  async function streamOpenRouterAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    const apiKey = getOpenRouterKey();
+    if (!apiKey) {
+      onError(new Error("No OpenRouter API key. Please add your key in Settings."));
+      return;
+    }
 
-    // Cancel any active request (no deadlock!)
     if (activeController) {
       activeController.abort();
       activeController = null;
@@ -467,6 +837,9 @@ PERSONALITY & RULES:
 
     const controller = new AbortController();
     activeController = controller;
+
+    const model = getOpenRouterModel();
+    const payload = buildOpenRouterPayload(userMessage, dataContext, chatHistory, model, true);
 
     try {
       const response = await fetch(OPENROUTER_ENDPOINT, {
@@ -477,13 +850,7 @@ PERSONALITY & RULES:
           "HTTP-Referer": APP_REFERER,
           "X-Title": APP_TITLE
         },
-        body: JSON.stringify({
-          model: getModel(),
-          messages: buildMessages(userMessage, dataContext, chatHistory),
-          stream: true,
-          temperature: 0.7,
-          max_tokens: 16384
-        }),
+        body: JSON.stringify(payload),
         signal: controller.signal
       });
 
@@ -495,10 +862,9 @@ PERSONALITY & RULES:
         if (response.status === 402) { onError(new Error("OpenRouter credits exhausted.")); return; }
         if (response.status === 429) { onError(new Error("Rate limited. Wait a moment.")); return; }
 
-        // Fallback to non-streaming
-        console.warn("[AI Agent] Stream failed, falling back to non-streaming...");
+        console.warn("[AI Agent] OpenRouter stream failed, falling back to non-streaming...");
         try {
-          const fallbackText = await callAI(userMessage, dataContext, chatHistory);
+          const fallbackText = await callOpenRouterAI(userMessage, dataContext, chatHistory);
           onChunk(fallbackText);
           onDone(fallbackText);
         } catch (fbErr) {
@@ -507,7 +873,6 @@ PERSONALITY & RULES:
         return;
       }
 
-      // Parse SSE stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullText = "";
@@ -519,7 +884,7 @@ PERSONALITY & RULES:
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop(); // keep incomplete line
+        buffer = lines.pop();
 
         for (const line of lines) {
           const trimmed = line.trim();
@@ -534,7 +899,7 @@ PERSONALITY & RULES:
               onChunk(fullText);
             }
           } catch (e) {
-            // skip malformed SSE
+            // ignore malformed SSE
           }
         }
       }
@@ -544,10 +909,9 @@ PERSONALITY & RULES:
       if (fullText) {
         onDone(fullText);
       } else {
-        // Empty stream — fallback to non-streaming
-        console.warn("[AI Agent] Stream empty, falling back to non-streaming...");
+        console.warn("[AI Agent] OpenRouter stream empty, falling back to non-streaming...");
         try {
-          const fallbackText = await callAI(userMessage, dataContext, chatHistory);
+          const fallbackText = await callOpenRouterAI(userMessage, dataContext, chatHistory);
           onChunk(fallbackText);
           onDone(fallbackText);
         } catch (fbErr) {
@@ -556,8 +920,65 @@ PERSONALITY & RULES:
       }
     } catch (err) {
       if (activeController === controller) activeController = null;
-      if (err.name === "AbortError") return; // silently ignore cancelled requests
+      if (err.name === "AbortError") return;
       onError(err);
+    }
+  }
+
+  // ─── Dual-Provider Dispatchers ──────────────────────────────────────────────
+
+  /**
+   * Routes to the active provider, with automatic fallback if the other provider's key exists.
+   */
+  async function callAI(userMessage, dataContext, chatHistory = []) {
+    const provider = getActiveProvider();
+    const hasGemini = Boolean(getGeminiKey());
+    const hasOpenRouter = Boolean(getOpenRouterKey());
+
+    if (provider === "gemini") {
+      if (hasGemini) {
+        return callGeminiAI(userMessage, dataContext, chatHistory);
+      }
+      if (hasOpenRouter) {
+        console.warn("[AI Agent] Gemini key missing, falling back to OpenRouter...");
+        return callOpenRouterAI(userMessage, dataContext, chatHistory);
+      }
+      throw new Error("No Google Gemini API key. Please add your key in Settings.");
+    } else {
+      if (hasOpenRouter) {
+        return callOpenRouterAI(userMessage, dataContext, chatHistory);
+      }
+      if (hasGemini) {
+        console.warn("[AI Agent] OpenRouter key missing, falling back to Google Gemini...");
+        return callGeminiAI(userMessage, dataContext, chatHistory);
+      }
+      throw new Error("No OpenRouter API key. Please add your key in Settings.");
+    }
+  }
+
+  function streamAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    const provider = getActiveProvider();
+    const hasGemini = Boolean(getGeminiKey());
+    const hasOpenRouter = Boolean(getOpenRouterKey());
+
+    if (provider === "gemini") {
+      if (hasGemini) {
+        return streamGeminiAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+      }
+      if (hasOpenRouter) {
+        console.warn("[AI Agent] Gemini key missing, falling back to OpenRouter stream...");
+        return streamOpenRouterAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+      }
+      onError(new Error("No Google Gemini API key. Please add your key in Settings."));
+    } else {
+      if (hasOpenRouter) {
+        return streamOpenRouterAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+      }
+      if (hasGemini) {
+        console.warn("[AI Agent] OpenRouter key missing, falling back to Google Gemini stream...");
+        return streamGeminiAI(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
+      }
+      onError(new Error("No OpenRouter API key. Please add your key in Settings."));
     }
   }
 
@@ -612,17 +1033,40 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
   }
 
   // ─── Expose Module ───────────────────────────────────────────────────────────
-  window.LifeLedgerAI = {
+  const LifeLedgerAI = {
     askAgent,
     streamAgent,
     generateInsights,
     generateDailyBriefing,
     isAiAvailable,
+    isProviderAvailable,
+    getProvider,
+    setProvider,
+    getActiveProvider,
+    getGeminiKey,
+    setGeminiKey,
+    getGeminiModel,
+    setGeminiModel,
+    getOpenRouterKey,
+    setOpenRouterKey,
+    getOpenRouterModel,
+    setOpenRouterModel,
     getApiKey,
     setApiKey,
     getModel,
     setModel,
+    buildGeminiContents,
+    buildGeminiPayload,
+    buildOpenRouterPayload,
+    buildOpenRouterMessages,
     cancelRequest,
     buildDataContext,
   };
+
+  if (typeof window !== "undefined") {
+    window.LifeLedgerAI = LifeLedgerAI;
+  }
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = LifeLedgerAI;
+  }
 })();
