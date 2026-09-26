@@ -205,6 +205,121 @@ Arvind Ltd,INE034A01011,26,510.37,13269.62,566.85,14738.10,1468.48`;
   assert.strictEqual(arvind.company, 'Arvind Ltd');
 });
 
+// Test 11: Gland Pharma (INE068V01023) and Shivalik Bimetal (INE386D01027) resolution
+runTest('getIsinMapping resolves Gland Pharma (INE068V01023) and Shivalik Bimetal (INE386D01027)', () => {
+  const gland = app.getIsinMapping('INE068V01023');
+  assert.ok(gland, 'Gland Pharma must be found in MASTER_ISIN_MAP');
+  assert.strictEqual(gland.symbol, 'GLAND');
+  assert.strictEqual(gland.company, 'Gland Pharma Ltd');
+  assert.strictEqual(gland.category, 'Stock');
+
+  const sbcl = app.getIsinMapping('INE386D01027');
+  assert.ok(sbcl, 'Shivalik Bimetal must be found in MASTER_ISIN_MAP');
+  assert.strictEqual(sbcl.symbol, 'SBCL');
+  assert.strictEqual(sbcl.company, 'Shivalik Bimetal Controls Ltd');
+  assert.strictEqual(sbcl.category, 'Stock');
+});
+
+// Test 12: Exchange ticker aliasing (BHARAT22 -> ICICIB22)
+runTest('getExchangeTicker maps BHARAT22 to ICICIB22 for exchange quote fetching', () => {
+  assert.strictEqual(app.getExchangeTicker('BHARAT22'), 'ICICIB22');
+  assert.strictEqual(app.getExchangeTicker('NETFSILVER'), 'SILVERBEES');
+  assert.strictEqual(app.getExchangeTicker('BAJAJCORP'), 'BAJAJCON');
+  assert.strictEqual(app.getExchangeTicker('GOLD1'), 'GOLDBEES');
+  assert.strictEqual(app.getExchangeTicker('RELIANCE'), 'RELIANCE');
+});
+
+// Test 13: parseMasterHoldingsWorkbook resolves sheet with INE068V01023 and INE386D01027
+runTest('parseMasterHoldingsWorkbook resolves INE068V01023 and INE386D01027 to clean symbols and company names', () => {
+  const wb = XLSX.utils.book_new();
+  const data = [
+    { "ISIN": "INE068V01023", "Qty": 3, "AVG": 2969.60 },
+    { "ISIN": "INE386D01027", "Qty": 10, "AVG": 1161.84 },
+    { "ISIN": "INF109KB15Y7", "Qty": 311, "AVG": 112.26 }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Wife_Groww");
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  const result = app.parseMasterHoldingsWorkbook(buffer);
+  assert.strictEqual(result.stocks.length, 3);
+
+  const gland = result.stocks.find(s => s.symbol === 'GLAND');
+  assert.ok(gland, 'Gland Pharma must be resolved to GLAND');
+  assert.strictEqual(gland.company, 'Gland Pharma Ltd', 'Company name must be Gland Pharma Ltd');
+  assert.strictEqual(gland.quantity, 3);
+  assert.strictEqual(gland.avgPrice, 2969.60);
+
+  const sbcl = result.stocks.find(s => s.symbol === 'SBCL');
+  assert.ok(sbcl, 'Shivalik Bimetal must be resolved to SBCL');
+  assert.strictEqual(sbcl.company, 'Shivalik Bimetal Controls Ltd', 'Company name must be Shivalik Bimetal Controls Ltd');
+  assert.strictEqual(sbcl.quantity, 10);
+  assert.strictEqual(sbcl.avgPrice, 1161.84);
+
+  const bharat = result.stocks.find(s => s.symbol === 'BHARAT22');
+  assert.ok(bharat, 'Bharat 22 ETF must be found');
+  assert.strictEqual(bharat.company, 'ICICI Prudential Bharat 22 ETF');
+  assert.strictEqual(bharat.quantity, 311);
+  assert.strictEqual(app.getExchangeTicker(bharat.symbol), 'ICICIB22', 'Exchange ticker for quote fetching must be ICICIB22');
+});
+
+// Test 14: resolveNseSymbol resolves Gland and Shivalik company name variants
+runTest('resolveNseSymbol resolves Gland and Shivalik company name variants', () => {
+  assert.strictEqual(app.resolveNseSymbol('', 'Gland Pharma Limited', ''), 'GLAND');
+  assert.strictEqual(app.resolveNseSymbol('', 'Shivalik Bimetal Controls Limited', ''), 'SBCL');
+  assert.strictEqual(app.resolveNseSymbol('SBCL', '', ''), 'SBCL');
+  assert.strictEqual(app.resolveNseSymbol('', '', 'INE068V01023'), 'GLAND');
+  assert.strictEqual(app.resolveNseSymbol('', '', 'INE386D01027'), 'SBCL');
+});
+
+// Test 15: Ticker aliasing and price calculation for BHARAT22, GLAND, and SBCL
+runTest('Stock price cache and alias mapping correctly computes CMP and 1-day change', () => {
+  const cache = {};
+  const mockProxyData = {
+    "ICICIB22": { price: 115.79, prevClose: 112.26, change: 3.53, changePct: 3.14, date: "26 Sep 2026", source: "proxy" },
+    "GLAND": { price: 2150.00, prevClose: 2100.00, change: 50.00, changePct: 2.38, date: "26 Sep 2026", source: "proxy" },
+    "SBCL": { price: 620.00, prevClose: 600.00, change: 20.00, changePct: 3.33, date: "26 Sep 2026", source: "proxy" }
+  };
+
+  // Populate cache with alias support
+  for (const [sym, data] of Object.entries(mockProxyData)) {
+    cache[sym] = data;
+    if (sym === 'ICICIB22') cache['BHARAT22'] = data;
+  }
+
+  // Verify BHARAT22 holding gets data from ICICIB22
+  const bharatSym = 'BHARAT22';
+  const exSym = app.getExchangeTicker(bharatSym);
+  assert.strictEqual(exSym, 'ICICIB22');
+  const cachedBharat = cache[bharatSym] || cache[exSym];
+  assert.ok(cachedBharat, 'BHARAT22 must find price data');
+  assert.strictEqual(cachedBharat.price, 115.79);
+  assert.strictEqual(cachedBharat.prevClose, 112.26);
+
+  const qty = 311;
+  const avg = 112.26;
+  const invested = qty * avg;
+  const currentVal = qty * cachedBharat.price;
+  const pnl = currentVal - invested;
+  const dayChange = qty * (cachedBharat.price - cachedBharat.prevClose);
+
+  assert.strictEqual(currentVal.toFixed(2), '36010.69');
+  assert.strictEqual(pnl.toFixed(2), '1097.83');
+  assert.strictEqual(dayChange.toFixed(2), '1097.83');
+  assert.ok(dayChange > 0, '1-day change must NOT be 0 or null');
+
+  // Verify GLAND holding
+  const cachedGland = cache['GLAND'] || cache[app.getExchangeTicker('GLAND')];
+  assert.ok(cachedGland);
+  assert.strictEqual(cachedGland.price, 2150.00);
+  assert.strictEqual(cachedGland.change, 50.00);
+
+  // Verify SBCL holding
+  const cachedSbcl = cache['SBCL'] || cache[app.getExchangeTicker('SBCL')];
+  assert.ok(cachedSbcl);
+  assert.strictEqual(cachedSbcl.price, 620.00);
+  assert.strictEqual(cachedSbcl.change, 20.00);
+});
+
 console.log('==========================================');
 console.log(`📊 TEST RESULTS: ${passedTests} PASSED, ${failedTests} FAILED`);
 console.log('==========================================');

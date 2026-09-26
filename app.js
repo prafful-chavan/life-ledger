@@ -713,7 +713,27 @@ function normalizeData(data) {
       const wifeList = hasWife ? rawStocks.filter(s => s.owner === 'Wife') : defaultWife;
       const bothList = rawStocks.filter(s => s.owner === 'Both');
 
-      return ensureIds([...meList, ...wifeList, ...bothList], "stk");
+      const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
+      const cleanList = [...meList, ...wifeList, ...bothList].map(s => {
+        const rawIsin = (isinPattern.test(s.isin || '') && s.isin) ||
+                        (isinPattern.test(s.symbol || '') && s.symbol) ||
+                        (isinPattern.test(s.company || '') && s.company);
+        if (rawIsin) {
+          const info = typeof getIsinMapping === 'function' ? getIsinMapping(rawIsin.toUpperCase().trim()) : null;
+          if (info && info.symbol) {
+            return {
+              ...s,
+              symbol: info.symbol,
+              company: info.company,
+              category: info.category || s.category,
+              isin: rawIsin.toUpperCase().trim()
+            };
+          }
+        }
+        return s;
+      });
+
+      return ensureIds(cleanList, "stk");
     })(),
     fd: ensureIds(data.fd || [], "fd"),
     epf: ensureIds(data.epf || [], "epf"),
@@ -2231,6 +2251,8 @@ const MASTER_ISIN_MAP = {
   "INE101D01020": { symbol: "GRANULES", company: "Granules India Ltd", category: "Stock" },
   "INE034A01011": { symbol: "ARVIND", company: "Arvind Ltd", category: "Stock" },
   "INE763I01026": { symbol: "TRIL", company: "Transformers & Rectifiers India Ltd", category: "Stock" },
+  "INE068V01023": { symbol: "GLAND", company: "Gland Pharma Ltd", category: "Stock" },
+  "INE386D01027": { symbol: "SBCL", company: "Shivalik Bimetal Controls Ltd", category: "Stock" },
 
   // ── INDmoney (Wife) ──
   "INF109KB15Y7": { symbol: "BHARAT22", company: "ICICI Prudential Bharat 22 ETF", category: "ETF" },
@@ -2314,8 +2336,44 @@ const MASTER_ISIN_MAP = {
   "INE121A01024": { symbol: "CHOLAFIN", company: "Cholamandalam Investment & Finance Company Ltd", category: "Stock" },
   "INE721A01013": { symbol: "SHRIRAMFIN", company: "Shriram Finance Ltd", category: "Stock" },
   "INF204KB14H4": { symbol: "JUNIORBEES", company: "Nippon India ETF Nifty Next 50 Junior BeES", category: "ETF" },
-  "INF582M01014": { symbol: "CPSEETF", company: "CPSE ETF", category: "ETF" }
+  "INF582M01014": { symbol: "CPSEETF", company: "CPSE ETF", category: "ETF" },
+  "INE079A01024": { symbol: "AMBUJACEM", company: "Ambuja Cements Ltd", category: "Stock" },
+  "INE012A01025": { symbol: "ACC", company: "ACC Ltd", category: "Stock" },
+  "INE117A01022": { symbol: "ABB", company: "ABB India Ltd", category: "Stock" },
+  "INE013A01015": { symbol: "SIEMENS", company: "Siemens Ltd", category: "Stock" },
+  "INE347G01014": { symbol: "CUMMINSIND", company: "Cummins India Ltd", category: "Stock" },
+  "INE123W01016": { symbol: "IREDA", company: "Indian Renewable Energy Development Agency Ltd", category: "Stock" },
+  "INE376G01013": { symbol: "BIOCON", company: "Biocon Ltd", category: "Stock" },
+  "INE854D01024": { symbol: "OBEROIRLTY", company: "Oberoi Realty Ltd", category: "Stock" },
+  "INE152A01029": { symbol: "VOLTAS", company: "Voltas Ltd", category: "Stock" },
+  "INE470A01017": { symbol: "TATACHEM", company: "Tata Chemicals Ltd", category: "Stock" },
+  "INE670A01012": { symbol: "TATAELXSI", company: "Tata Elxsi Ltd", category: "Stock" },
+  "INE095A01012": { symbol: "TATAINVEST", company: "Tata Investment Corp Ltd", category: "Stock" },
+  "INE009N01054": { symbol: "NYKAA", company: "FSN E-Commerce Ventures Ltd (Nykaa)", category: "Stock" },
+  "INE646L01027": { symbol: "POLICYBZR", company: "PB Fintech Ltd (Policybazaar)", category: "Stock" },
+  "INE048G01026": { symbol: "DELHIVERY", company: "Delhivery Ltd", category: "Stock" },
+  "INE663F01024": { symbol: "NAUKRI", company: "Info Edge (India) Ltd", category: "Stock" },
+  "INE437A01024": { symbol: "APOLLOHOSP", company: "Apollo Hospitals Enterprise Ltd", category: "Stock" },
+  "INE121J01017": { symbol: "BHARTIHEXA", company: "Bharti Hexacom Ltd", category: "Stock" },
+  "INE751F01017": { symbol: "IDEA", company: "Vodafone Idea Ltd", category: "Stock" },
+  "INE256A01028": { symbol: "ZEEL", company: "Zee Entertainment Enterprises Ltd", category: "Stock" }
 };
+
+// ─── Exchange Ticker Aliasing ───────────────────────────────────────────────
+// Bridges differences between broker portfolio display tickers and live exchange symbols.
+// Example: ICICI Prudential Bharat 22 ETF is traded as ICICIB22 on NSE / Google Finance / Yahoo Finance.
+const STOCK_EXCHANGE_TICKER_MAP = {
+  "BHARAT22": "ICICIB22",
+  "NETFSILVER": "SILVERBEES",
+  "BAJAJCORP": "BAJAJCON",
+  "GOLD1": "GOLDBEES"
+};
+
+function getExchangeTicker(symbol) {
+  if (!symbol) return symbol;
+  const sym = String(symbol).toUpperCase().replace(/\s*-EQ$/i, '').trim();
+  return STOCK_EXCHANGE_TICKER_MAP[sym] || sym;
+}
 
 /**
  * Look up stock information from ISIN code using static dictionary or local cache.
@@ -2421,13 +2479,23 @@ function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
       if (sym === "SBI") return "SBIN";
       if (sym === "BAJAJCORP") return "BAJAJCON";
       if (sym === "ICICIB22") return "BHARAT22";
+      if (sym === "GOLD1") return "GOLDBEES";
       return sym;
     }
   }
 
   if (!nameUpper) return "STOCK";
 
+  // Check if name contains any ISIN code
+  const isinInName = nameUpper.match(/\b(IN[EF0-9][A-Z0-9]{7,})\b/i);
+  if (isinInName) {
+    const isinInfo = getIsinMapping(isinInName[1]);
+    if (isinInfo) return isinInfo.symbol;
+  }
+
   // Name regex matches
+  if (/GLAND/i.test(nameUpper)) return "GLAND";
+  if (/SHIVALIK|SBCL/i.test(nameUpper)) return "SBCL";
   if (/AEGIS LOGISTICS/i.test(nameUpper)) return "AEGISLOG";
   if (/BAJAJ CONSUMER/i.test(nameUpper)) return "BAJAJCON";
   if (/GE VERNOVA/i.test(nameUpper)) return "GEVERNOVA";
@@ -2907,15 +2975,15 @@ function parseMasterHoldingsWorkbook(buffer) {
 
         const symbol = resolveNseSymbol(rawSymbol, cleanName, effectiveIsin);
 
-        const isinInfo = getIsinMapping(effectiveIsin);
+        const isinInfo = getIsinMapping(effectiveIsin) || (isinPattern.test(symbol) ? getIsinMapping(symbol) : null);
         let companyName = cleanName;
         // If name is blank, is an ISIN code, or looks like a raw ticker that matches symbol → resolve from ISIN map
         if (!companyName || isinPattern.test(companyName) || companyName.toUpperCase() === effectiveIsin) {
-          companyName = isinInfo ? isinInfo.company : (symbol !== effectiveIsin ? symbol : cleanName);
+          companyName = isinInfo ? isinInfo.company : (symbol && !isinPattern.test(symbol) ? symbol : cleanName);
         }
         // Final fallback: if companyName still looks like an ISIN, use symbol as display name
         if (isinPattern.test(companyName)) {
-          companyName = isinInfo ? isinInfo.company : symbol;
+          companyName = isinInfo ? isinInfo.company : (symbol && !isinPattern.test(symbol) ? symbol : 'Indian Stock');
         }
 
         const category = isinInfo ? isinInfo.category : (/BEES|ETF|GOLD|SILVER|NIFTY|LIQUID|INDEX/i.test(symbol + " " + companyName) ? "ETF" : "Stock");
@@ -5534,7 +5602,8 @@ function isStockPriceStale(cached) {
 
 async function fetchStockPriceSingleSymbolFast(symbol, isUS = false) {
   const cleanSym = String(symbol).toUpperCase().replace(/\s*-EQ$/i, '').trim();
-  const yahooSymbol = isUS ? cleanSym : (cleanSym.endsWith('.NS') || cleanSym.endsWith('.BO') ? cleanSym : `${cleanSym}.NS`);
+  const exchangeSym = isUS ? cleanSym : getExchangeTicker(cleanSym);
+  const yahooSymbol = isUS ? cleanSym : (exchangeSym.endsWith('.NS') || exchangeSym.endsWith('.BO') ? exchangeSym : `${exchangeSym}.NS`);
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
 
   const endpoints = [
@@ -5562,6 +5631,7 @@ async function fetchStockPriceSingleSymbolFast(symbol, isUS = false) {
           currentPrice: meta.regularMarketPrice,
           prevClose: meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice,
           source: 'fast-api',
+          exchangeSymbol: exchangeSym
         };
       }
     } catch {
@@ -5611,7 +5681,7 @@ async function refreshStockPrices(force = false) {
 
   const cache = getStockPriceCache();
   const now = Date.now();
-  const needsFetch = force || uniqueSymbols.some(s => isStockPriceStale(cache[s]));
+  const needsFetch = force || uniqueSymbols.some(s => isStockPriceStale(cache[s]) || isStockPriceStale(cache[getExchangeTicker(s)]));
   if (!needsFetch) {
     updateStocksFromCache();
     renderStockHoldingsPanel();
@@ -5619,8 +5689,22 @@ async function refreshStockPrices(force = false) {
     return;
   }
 
+  // Build query symbols mapping exchange tickers and aliases
+  const querySet = new Set();
+  const aliasMap = {}; // exchangeTicker -> Set of original symbols
+  uniqueSymbols.forEach(sym => {
+    const exSym = getExchangeTicker(sym);
+    querySet.add(exSym);
+    querySet.add(sym);
+    if (!aliasMap[exSym]) aliasMap[exSym] = new Set();
+    aliasMap[exSym].add(sym);
+    if (!aliasMap[sym]) aliasMap[sym] = new Set();
+    aliasMap[sym].add(exSym);
+  });
+  const symbolsToQuery = Array.from(querySet);
+
   if (force) {
-    uniqueSymbols.forEach(sym => {
+    symbolsToQuery.forEach(sym => {
       if (cache[sym]) cache[sym].timestamp = 0;
     });
     saveStockPriceCache(cache);
@@ -5630,31 +5714,44 @@ async function refreshStockPrices(force = false) {
   let updatedCount = 0;
   let failedSymbols = [...uniqueSymbols];
 
+  // Helper to store price data in cache under all aliases
+  function setCacheItem(symKey, priceData, source) {
+    const cleanKey = symKey.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    const exKey = getExchangeTicker(cleanKey);
+    const targetKeys = new Set([cleanKey, exKey, ...(aliasMap[cleanKey] || []), ...(aliasMap[exKey] || [])]);
+    const cacheEntry = {
+      price: toNumber(priceData.price || priceData.currentPrice),
+      prevClose: toNumber(priceData.prevClose) || toNumber(priceData.price || priceData.currentPrice),
+      change: toNumber(priceData.change),
+      changePct: toNumber(priceData.changePct),
+      timestamp: now,
+      date: priceData.date || new Date().toLocaleDateString('en-IN'),
+      source: source || priceData.source || 'proxy',
+    };
+    targetKeys.forEach(k => {
+      cache[k] = cacheEntry;
+    });
+  }
+
   // Strategy 1: Google Apps Script Proxy URL (with generous 25s timeout)
   if (proxyUrl) {
     try {
-      const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}`;
+      const url = `${proxyUrl}?symbols=${encodeURIComponent(symbolsToQuery.join(','))}`;
       const response = await fetch(url, { signal: AbortSignal.timeout(25000) });
       if (response.ok) {
         const data = await response.json();
-        failedSymbols = [];
         for (const [symbol, priceData] of Object.entries(data)) {
           const sym = symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
           if (!priceData || priceData.error || !priceData.price || toNumber(priceData.price) <= 0) {
-            failedSymbols.push(sym);
             continue;
           }
-          cache[sym] = {
-            price: toNumber(priceData.price),
-            prevClose: toNumber(priceData.prevClose) || toNumber(priceData.price),
-            change: toNumber(priceData.change),
-            changePct: toNumber(priceData.changePct),
-            timestamp: now,
-            date: priceData.date || new Date().toLocaleDateString('en-IN'),
-            source: 'proxy',
-          };
+          setCacheItem(sym, priceData, 'proxy');
           updatedCount++;
         }
+        failedSymbols = uniqueSymbols.filter(s => {
+          const ex = getExchangeTicker(s);
+          return (!cache[s] || !cache[s].price) && (!cache[ex] || !cache[ex].price);
+        });
       } else {
         console.warn(`[Stock Prices] Custom proxy returned ${response.status}. Falling back to Yahoo Finance...`);
       }
@@ -5676,15 +5773,14 @@ async function refreshStockPrices(force = false) {
         const prevClose = res.prevClose || res.currentPrice;
         const change = res.currentPrice - prevClose;
         const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-        cache[sym] = {
+        setCacheItem(sym, {
           price: res.currentPrice,
           prevClose: prevClose,
           change: change,
           changePct: changePct,
-          timestamp: now,
           date: new Date().toLocaleDateString('en-IN'),
           source: res.source || 'fast-api',
-        };
+        }, res.source || 'fast-api');
         updatedCount++;
         failedSymbols = failedSymbols.filter(s => s !== sym);
       }
@@ -5696,7 +5792,8 @@ async function refreshStockPrices(force = false) {
     state.stocks.forEach(s => {
       if (!s.symbol) return;
       const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
-      const cached = cache[sym];
+      const exSym = getExchangeTicker(sym);
+      const cached = cache[sym] || cache[exSym];
       if (cached && cached.price) {
         s.currentPrice = cached.price;
         s.prevClose = cached.prevClose;
@@ -5731,7 +5828,8 @@ function updateStocksFromCache() {
         sym = info.symbol;
       }
     }
-    const cached = cache[sym];
+    const exSym = getExchangeTicker(sym);
+    const cached = cache[sym] || cache[exSym] || cache[s.symbol];
     if (cached && cached.price) {
       s.currentPrice = cached.price;
       s.prevClose = cached.prevClose;
@@ -5776,12 +5874,12 @@ function renderStockHoldingsPanel() {
     let comp = item.company || sym || "Stock";
     let cat = item.category || "Stock";
 
-    if (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp)) {
-      const isinCode = /^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) ? sym : comp;
+    if (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(item.isin || '')) {
+      const isinCode = (item.isin && /^IN[EF0-9][A-Z0-9]{7,}$/i.test(item.isin)) ? item.isin : (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) ? sym : comp);
       const isinInfo = getIsinMapping(isinCode);
       if (isinInfo) {
         sym = isinInfo.symbol;
-        if (!comp || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp) || comp === item.symbol) {
+        if (!comp || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp) || comp === item.symbol || comp === "Stock") {
           comp = isinInfo.company;
         }
         cat = isinInfo.category || cat;
@@ -5790,15 +5888,17 @@ function renderStockHoldingsPanel() {
 
     const qty = toNumber(item.quantity);
     const avgPrice = toNumber(item.avgPrice);
-    const cachedItem = cache[sym] || cache[item.symbol];
+    const exchangeSym = getExchangeTicker(sym);
+    const cachedItem = cache[sym] || cache[exchangeSym] || cache[item.symbol];
     const currentPrice = toNumber(item.currentPrice || cachedItem?.price || item.avgPrice);
     const invested = toNumber(item.invested || (qty * avgPrice));
     const currentValue = (qty > 0 && currentPrice > 0) ? (qty * currentPrice) : toNumber(item.currentValue || invested);
     const gain = currentValue - invested;
     const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
     const prevClose = item.prevClose ? toNumber(item.prevClose) : (cachedItem?.prevClose ? toNumber(cachedItem.prevClose) : null);
-    const dayChange = prevClose ? qty * (currentPrice - prevClose) : null;
-    const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+    const directChange = (cachedItem?.change !== undefined && cachedItem?.change !== null) ? toNumber(cachedItem.change) : null;
+    const dayChange = prevClose ? qty * (currentPrice - prevClose) : (directChange !== null ? qty * directChange : null);
+    const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : (cachedItem?.changePct !== undefined ? toNumber(cachedItem.changePct) : null);
 
     if (qty > 0) {
       totalInvested += invested;
@@ -11681,6 +11781,8 @@ if (typeof module !== 'undefined' && module.exports) {
     addSystemLog,
     matchHoldingsOwner,
     MASTER_ISIN_MAP,
+    STOCK_EXCHANGE_TICKER_MAP,
+    getExchangeTicker,
     getIsinMapping,
     resolveIsinOnline,
     resolveNseSymbol,
