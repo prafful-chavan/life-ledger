@@ -181,12 +181,43 @@
       `  - ${s.topic}: ${s.confidence || 0}% confidence, ${s.hours || 0}/${s.targetHours || 20}h, status: ${s.status || "Planned"}`
     ).join("\n") || "  No topics.";
 
-    // ── Workouts ──
-    const recentWorkouts = recentItems(state.workouts, 7);
-    const todayWorkedOut = (state.workouts || []).some(w => w.date === now.toISOString().split("T")[0]);
-    const workoutsText = recentWorkouts.map(w =>
-      `  - ${w.date}: ${w.type || "Workout"} — ${w.minutes || 0} min (${w.intensity || "—"})`
-    ).join("\n") || "  No workouts logged.";
+    // ── Workouts & Activities (Steps, Cycling, Workouts) ──
+    const allActs = [
+      ...(state.activities || []).map(a => ({
+        date: a.date,
+        type: a.type,
+        title: a.title || a.type,
+        steps: a.steps,
+        distanceKm: a.distanceKm,
+        minutes: a.durationMin || a.minutes,
+        calories: a.caloriesBurned,
+        intensity: a.intensity
+      })),
+      ...(state.workouts || []).map(w => ({
+        date: w.date,
+        type: "workout",
+        title: w.type || "Workout",
+        minutes: w.minutes,
+        intensity: w.intensity
+      }))
+    ].sort((a, b) => new Date(b.date || '1970-01-01') - new Date(a.date || '1970-01-01'));
+
+    const recentWorkouts = allActs.slice(0, 10);
+    const todayStr = now.toISOString().split("T")[0];
+    const todayActs = allActs.filter(a => a.date === todayStr);
+    const todaySteps = todayActs.reduce((s, a) => s + (toNum(a.steps) || 0), 0);
+    const todayCal = todayActs.reduce((s, a) => s + (toNum(a.calories) || 0), 0);
+    const todayMin = todayActs.reduce((s, a) => s + (toNum(a.minutes) || 0), 0);
+    const goals = state.fitnessGoals || { dailySteps: 10000, activeCalories: 500, activeMinutes: 45, weeklyCyclingKm: 50 };
+
+    const workoutsText = recentWorkouts.map(w => {
+      let parts = [];
+      if (w.steps) parts.push(`${toNum(w.steps).toLocaleString()} steps`);
+      if (w.distanceKm) parts.push(`${w.distanceKm} km`);
+      if (w.minutes) parts.push(`${w.minutes} min`);
+      if (w.calories) parts.push(`${w.calories} kcal`);
+      return `  - ${w.date}: [${(w.type || 'activity').toUpperCase()}] "${w.title}" (${parts.join(', ') || w.intensity || '—'})`;
+    }).join("\n") || "  No activities logged.";
 
     // ── Liabilities ──
     const liabilitiesText = (state.liabilities || []).map(l =>
@@ -279,8 +310,9 @@ ${tasksText}
 🔥 HABITS
 ${habitsText}
 
-🏃 WORKOUTS (last 7)
-  Today: ${todayWorkedOut ? "✅ exercised" : "❌ not yet"}
+🏃 FITNESS, EXERCISE & ACTIVITIES (Recent)
+  Today's Movement: ${todayActs.length > 0 ? "✅ active" : "❌ not logged yet"} (Steps: ${todaySteps.toLocaleString()}/${goals.dailySteps.toLocaleString()}, Calories: ${todayCal}/${goals.activeCalories} kcal, Time: ${todayMin}/${goals.activeMinutes} min)
+  Goals: ${goals.dailySteps.toLocaleString()} steps/day • ${goals.activeCalories} kcal/day • ${goals.activeMinutes} min/day • ${goals.weeklyCyclingKm} km cycling/week
 ${workoutsText}
 
 🚀 CAREER — PRAFFUL (SRE/DevOps, 8 years experience)
@@ -292,7 +324,7 @@ ${studiesText("ETL", wifeStudies)}
 📊 ALL-TIME TOTALS
   Total income entries: ${state.income?.length || 0}, total: ${formatINR(totalIncome)}
   Total expense entries: ${state.expenses?.length || 0}, total: ${formatINR(totalExpenses)}
-  Total workouts: ${state.workouts?.length || 0}
+  Total activities & workouts: ${allActs.length}
 `.trim();
   }
 

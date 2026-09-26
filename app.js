@@ -29,6 +29,8 @@ const defaultData = {
   tasks: [],
   studies: [],
   workouts: [],
+  activities: [],
+  fitnessGoals: { dailySteps: 10000, activeCalories: 500, activeMinutes: 45, weeklyCyclingKm: 50 },
   habits: [],
   chat: [],
   mfMonthlyTarget: { me: 100000, wife: 100000 },
@@ -205,6 +207,13 @@ const demoData = {
     { id: "work-2", date: daysAgoISO(1), type: "Strength", minutes: 45, intensity: "Medium" },
     { id: "work-3", date: daysAgoISO(3), type: "Yoga", minutes: 25, intensity: "Easy" },
   ],
+  activities: [
+    { id: "act-1", date: todayISO(), type: "steps", title: "Daily Steps", steps: 8450, distanceKm: 6.3, durationMin: 55, caloriesBurned: 338, notes: "Morning walk & office commute" },
+    { id: "act-2", date: daysAgoISO(1), type: "cycling", title: "Evening Highway Ride", distanceKm: 22.5, durationMin: 55, avgSpeedKmh: 24.5, caloriesBurned: 480, elevationMeters: 95, avgHeartRate: 142, intensity: "Moderate", notes: "Smooth cadence, nice weather" },
+    { id: "act-3", date: daysAgoISO(2), type: "workout", title: "Push Day Strength", durationMin: 45, intensity: "High", caloriesBurned: 290, notes: "Chest, Shoulders & Triceps", exercises: [{ name: "Bench Press", sets: [{ weight: 60, reps: 10 }, { weight: 65, reps: 8 }] }, { name: "Overhead Press", sets: [{ weight: 35, reps: 10 }] }] },
+    { id: "act-4", date: daysAgoISO(3), type: "running", title: "Morning 5K Jog", distanceKm: 5.0, durationMin: 28, avgPace: "5:36 /km", caloriesBurned: 345, avgHeartRate: 156, intensity: "High", notes: "Lakeside trail" }
+  ],
+  fitnessGoals: { dailySteps: 10000, activeCalories: 500, activeMinutes: 45, weeklyCyclingKm: 50 },
   habits: [
     { id: "habit-1", name: "Read 10 pages", frequency: "Daily", owner: "Me", streak: 5 },
     { id: "habit-2", name: "Morning 30m Walk", frequency: "Daily", owner: "Wife", streak: 8 },
@@ -760,6 +769,17 @@ function normalizeData(data) {
       return { ...s, owner: "Me" };
     }),
     workouts: ensureIds(data.workouts || [], "work"),
+    activities: (() => {
+      const raw = Array.isArray(data.activities) ? data.activities : [];
+      return ensureIds(raw, "act");
+    })(),
+    fitnessGoals: {
+      dailySteps: 10000,
+      activeCalories: 500,
+      activeMinutes: 45,
+      weeklyCyclingKm: 50,
+      ...(data.fitnessGoals || {})
+    },
     bodyMetrics: (() => {
       const raw = Array.isArray(data.bodyMetrics) ? data.bodyMetrics : [];
       const hasRich = raw.some(b => b.weight || b.bmi);
@@ -3690,6 +3710,10 @@ function mergeImportedData(imported) {
   appendArray(state.tasks, normalized.tasks);
   appendArray(state.studies, normalized.studies);
   appendArray(state.workouts, normalized.workouts);
+  appendArray(state.activities, normalized.activities);
+  if (normalized.fitnessGoals) {
+    state.fitnessGoals = { ...state.fitnessGoals, ...normalized.fitnessGoals };
+  }
   appendArray(state.habits, normalized.habits);
   
   // Merge simple asset types
@@ -4356,37 +4380,46 @@ function renderDashboardAnalysis() {
     }
   }
 
-  // 3. Exercise consistency
+  // 3. Exercise consistency & activity summary
   const workoutContainer = document.getElementById("dashboardWorkoutAnalysis");
   if (workoutContainer) {
     workoutContainer.innerHTML = "";
-    const thisMonthWorkouts = state.workouts.filter(w => isTargetDashboardMonth(w.date));
-    const totalMinutes = thisMonthWorkouts.reduce((sum, w) => sum + (toNumber(w.minutes) || 0), 0);
-    const totalSessions = thisMonthWorkouts.length;
+    const allActs = typeof getAllUnifiedActivities === "function" ? getAllUnifiedActivities() : (state.workouts || []);
+    const thisMonthActs = allActs.filter((w) => isTargetDashboardMonth(w.date));
+    const totalMinutes = thisMonthActs.reduce((sum, w) => sum + (toNumber(w.durationMin || w.minutes) || 0), 0);
+    const totalCalories = thisMonthActs.reduce((sum, w) => sum + (toNumber(w.caloriesBurned) || 0), 0);
+    const totalSessions = thisMonthActs.length;
 
     const summary = document.createElement("div");
     summary.style.marginBottom = "12px";
     summary.innerHTML = `
-      <div style="font-size:13px; margin-bottom:4px;"><strong>This Month:</strong> ${totalMinutes} mins over ${totalSessions} sessions</div>
+      <div style="font-size:13px; margin-bottom:4px;"><strong>This Month:</strong> ${totalMinutes} mins • 🔥 ${totalCalories.toLocaleString()} kcal (${totalSessions} sessions)</div>
     `;
     workoutContainer.append(summary);
 
-    if (state.workouts.length === 0) {
+    if (allActs.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.textContent = "No exercise logged yet.";
+      empty.textContent = "No exercise or activities logged yet.";
       workoutContainer.append(empty);
     } else {
-      state.workouts.slice(0, 2).forEach((w) => {
+      allActs.slice(0, 3).forEach((w) => {
         const row = document.createElement("div");
         row.className = "stack-row";
         row.style.padding = "6px 8px";
         row.style.fontSize = "12px";
         row.style.marginBottom = "4px";
+
+        let details = [];
+        if (w.steps) details.push(`🚶 ${w.steps.toLocaleString()}`);
+        if (w.distanceKm) details.push(`📍 ${w.distanceKm}km`);
+        if (w.durationMin || w.minutes) details.push(`⏱️ ${w.durationMin || w.minutes}m`);
+        if (w.caloriesBurned) details.push(`🔥 ${w.caloriesBurned} kcal`);
+
         row.innerHTML = `
-          <div style="display:flex; justify-content:space-between;">
-            <span><strong>${escapeHTML(w.type)}</strong> (${escapeHTML(w.intensity)})</span>
-            <span>${w.minutes} mins</span>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span><strong>${escapeHTML(w.title || w.type)}</strong></span>
+            <span style="font-weight:600; color:var(--primary); font-size:11px;">${details.join(" • ") || (w.minutes + " mins")}</span>
           </div>
           <div class="stack-meta" style="font-size:10px;">${formatDate(w.date)}</div>
         `;
@@ -5212,6 +5245,9 @@ const defaultUsStockHoldings = [
 
 let activeExerciseYear = new Date().getFullYear();
 let activeExerciseMonth = new Date().getMonth();
+let activeActivityFilter = "all";
+let selectedChartMetric = "calories";
+let editActivityId = null;
 
 const defaultBodyMetrics = [
   { id: "bm-1",  date: "2026-08-01", time: "09:37", weight: 84.50, bmi: 29.2, bodyFat: 24.60, subcutaneousFat: 21.20, visceralFat: 11.8, bodyWater: 54.40, skeletalMuscle: 48.70, muscleMass: 60.50, boneMass: 3.20, protein: 17.20, bmr: 1745, bodyAge: 34 },
@@ -7587,12 +7623,364 @@ function addChecklistInputRow(text = "", done = false) {
   row.querySelector('input[type="text"]').focus();
 }
 
+function openActivityLoggerModal(type = "steps", editEntry = null) {
+  const modal = document.getElementById("activityLoggerModal");
+  if (!modal) return;
+
+  const f = document.getElementById("activityLoggerForm");
+  if (f) f.reset();
+
+  const titleEl = document.getElementById("actLoggerTitle");
+  const idInput = document.getElementById("actLogId");
+  const typeInput = document.getElementById("actLogSelectedType");
+  const dateInput = document.getElementById("actLogDate");
+  const nameInput = document.getElementById("actLogTitle");
+  const durationInput = document.getElementById("actLogDuration");
+  const stepsInput = document.getElementById("actLogSteps");
+  const distInput = document.getElementById("actLogDistance");
+  const calInput = document.getElementById("actLogCalories");
+  const intensityInput = document.getElementById("actLogIntensity");
+  const elevInput = document.getElementById("actLogElevation");
+  const hrInput = document.getElementById("actLogHeartRate");
+  const notesInput = document.getElementById("actLogNotes");
+
+  editActivityId = editEntry ? editEntry.id : null;
+  if (idInput) idInput.value = editActivityId || "";
+
+  const selType = editEntry ? (editEntry.type || "steps") : type;
+  if (typeInput) typeInput.value = selType;
+
+  if (titleEl) titleEl.textContent = editEntry ? "Edit Activity" : "Log Activity";
+  if (dateInput) dateInput.value = editEntry?.date || todayISO();
+  if (nameInput) {
+    nameInput.value = editEntry?.title || "";
+    nameInput.dataset.autoGenerated = editEntry ? "false" : "true";
+  }
+  if (durationInput) durationInput.value = editEntry?.durationMin || (selType === "steps" ? 45 : selType === "cycling" ? 60 : 30);
+  if (stepsInput) stepsInput.value = editEntry?.steps || (selType === "steps" ? 8000 : "");
+  if (distInput) distInput.value = editEntry?.distanceKm || (selType === "cycling" ? 20 : selType === "running" ? 5 : "");
+  if (calInput) {
+    calInput.value = editEntry?.caloriesBurned || "";
+    calInput.dataset.manual = editEntry?.caloriesBurned ? "true" : "false";
+  }
+  if (intensityInput) intensityInput.value = editEntry?.intensity || "Moderate";
+  if (elevInput) elevInput.value = editEntry?.elevationMeters || "";
+  if (hrInput) hrInput.value = editEntry?.avgHeartRate || "";
+  if (notesInput) notesInput.value = editEntry?.notes || "";
+
+  // Set active tab button
+  document.querySelectorAll("#actTypeTabs .act-tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.actType === selType);
+  });
+
+  updateActivityModalFields(selType);
+  recalculateActivityModalLive();
+
+  openModal("activityLoggerModal");
+}
+
+function updateActivityModalFields(type) {
+  const stepsGroup = document.getElementById("groupStepsFields");
+  const distGroup = document.getElementById("groupDistanceFields");
+  const elevGroup = document.getElementById("groupElevationField");
+  const hrGroup = document.getElementById("groupHeartRateField");
+  const nameInput = document.getElementById("actLogTitle");
+
+  if (stepsGroup) stepsGroup.style.display = (type === "steps" || type === "other") ? "block" : "none";
+  if (distGroup) distGroup.style.display = (type === "cycling" || type === "running" || type === "steps" || type === "other") ? "block" : "none";
+  if (elevGroup) elevGroup.style.display = (type === "cycling" || type === "running") ? "block" : "none";
+  if (hrGroup) hrGroup.style.display = (type === "cycling" || type === "running" || type === "workout") ? "block" : "none";
+
+  if (nameInput && (!nameInput.value || nameInput.dataset.autoGenerated === "true")) {
+    if (type === "steps") nameInput.value = "Daily Steps & Walk";
+    else if (type === "cycling") nameInput.value = "Cycling Ride";
+    else if (type === "running") nameInput.value = "Cardio Run";
+    else if (type === "workout") nameInput.value = "Gym Workout";
+    else nameInput.value = "Activity Session";
+    nameInput.dataset.autoGenerated = "true";
+  }
+}
+
+function recalculateActivityModalLive() {
+  const type = document.getElementById("actLogSelectedType")?.value || "steps";
+  const steps = toNumber(document.getElementById("actLogSteps")?.value) || 0;
+  const dist = toNumber(document.getElementById("actLogDistance")?.value) || 0;
+  const dur = toNumber(document.getElementById("actLogDuration")?.value) || 0;
+  const intensity = document.getElementById("actLogIntensity")?.value || "Moderate";
+
+  const speedBadge = document.getElementById("actCalcSpeed");
+  const paceBadge = document.getElementById("actCalcPace");
+  const calBadge = document.getElementById("actCalcCaloriesBadge");
+  const calInput = document.getElementById("actLogCalories");
+
+  // Speed
+  if (dist > 0 && dur > 0) {
+    const spd = calcCyclingSpeed(dist, dur);
+    if (speedBadge) speedBadge.textContent = spd ? `${spd} km/h` : "—";
+    const pace = calcRunningPace(dist, dur);
+    if (paceBadge) paceBadge.textContent = pace || "—";
+  } else {
+    if (speedBadge) speedBadge.textContent = "—";
+    if (paceBadge) paceBadge.textContent = "—";
+  }
+
+  // Calories
+  const estCalories = calcCaloriesBurned(type, dur, dist, steps, intensity);
+  if (calBadge) calBadge.textContent = `${estCalories} kcal`;
+  if (calInput && (!calInput.value || calInput.dataset.manual !== "true")) {
+    calInput.value = estCalories;
+  }
+}
+
 function bindExerciseEvents() {
   const btnLogWorkout = document.getElementById("btnLogWorkoutManual");
   const btnTemplates = document.getElementById("btnWorkoutTemplates");
   const btnAddEx = document.getElementById("btnWorkoutAddExercise");
   const workoutForm = document.getElementById("workoutLoggerForm");
-  
+
+  // 1. Quick Action Strip & Open Activity Logger
+  document.getElementById("btnOpenActivityModal")?.addEventListener("click", () => openActivityLoggerModal("steps"));
+  document.getElementById("quickLogStepsBtn")?.addEventListener("click", () => openActivityLoggerModal("steps"));
+  document.getElementById("quickLogCyclingBtn")?.addEventListener("click", () => openActivityLoggerModal("cycling"));
+  document.getElementById("quickLogRunningBtn")?.addEventListener("click", () => openActivityLoggerModal("running"));
+
+  // 2. Activity Type Tabs in Logger Modal
+  document.querySelectorAll("#actTypeTabs .act-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#actTypeTabs .act-tab-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const selType = btn.dataset.actType;
+      const typeInput = document.getElementById("actLogSelectedType");
+      if (typeInput) typeInput.value = selType;
+      updateActivityModalFields(selType);
+      recalculateActivityModalLive();
+    });
+  });
+
+  // 3. Quick Increments (+1000 steps, +5km, +15m)
+  document.querySelectorAll(".quick-inc-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("actLogSteps");
+      if (!input) return;
+      const add = toNumber(btn.dataset.addSteps) || 0;
+      input.value = (toNumber(input.value) || 0) + add;
+      recalculateActivityModalLive();
+    });
+  });
+
+  document.querySelectorAll(".quick-inc-dist").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("actLogDistance");
+      if (!input) return;
+      const add = toNumber(btn.dataset.addDist) || 0;
+      input.value = (toNumber(input.value) || 0) + add;
+      recalculateActivityModalLive();
+    });
+  });
+
+  document.querySelectorAll(".quick-inc-time").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("actLogDuration");
+      if (!input) return;
+      const add = toNumber(btn.dataset.addTime) || 0;
+      input.value = (toNumber(input.value) || 0) + add;
+      recalculateActivityModalLive();
+    });
+  });
+
+  // 4. Live calculations on input
+  ["actLogSteps", "actLogDistance", "actLogDuration", "actLogIntensity"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      recalculateActivityModalLive();
+    });
+  });
+
+  document.getElementById("actLogCalories")?.addEventListener("input", (e) => {
+    e.target.dataset.manual = "true";
+  });
+
+  // 5. Activity Logger Form Submit
+  const actForm = document.getElementById("activityLoggerForm");
+  if (actForm) {
+    actForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const idVal = document.getElementById("actLogId")?.value;
+      const typeVal = document.getElementById("actLogSelectedType")?.value || "steps";
+      const dateVal = document.getElementById("actLogDate")?.value || todayISO();
+      const titleVal = document.getElementById("actLogTitle")?.value.trim() || (typeVal.charAt(0).toUpperCase() + typeVal.slice(1));
+      const durationVal = toNumber(document.getElementById("actLogDuration")?.value) || 0;
+      const stepsVal = toNumber(document.getElementById("actLogSteps")?.value) || 0;
+      const distVal = toNumber(document.getElementById("actLogDistance")?.value) || 0;
+      const calVal = toNumber(document.getElementById("actLogCalories")?.value) || calcCaloriesBurned(typeVal, durationVal, distVal, stepsVal);
+      const intensityVal = document.getElementById("actLogIntensity")?.value || "Moderate";
+      const elevVal = toNumber(document.getElementById("actLogElevation")?.value) || 0;
+      const hrVal = toNumber(document.getElementById("actLogHeartRate")?.value) || 0;
+      const notesVal = document.getElementById("actLogNotes")?.value.trim() || "";
+
+      let avgSpeed = null;
+      let avgPace = null;
+      if (typeVal === "cycling" && distVal > 0 && durationVal > 0) {
+        avgSpeed = toNumber(calcCyclingSpeed(distVal, durationVal));
+      }
+      if ((typeVal === "running" || typeVal === "steps") && distVal > 0 && durationVal > 0) {
+        avgPace = calcRunningPace(distVal, durationVal);
+      }
+
+      state.activities = state.activities || [];
+
+      if (idVal) {
+        const act = state.activities.find((a) => a.id === idVal);
+        if (act) {
+          act.type = typeVal;
+          act.date = dateVal;
+          act.title = titleVal;
+          act.durationMin = durationVal;
+          act.steps = stepsVal > 0 ? stepsVal : undefined;
+          act.distanceKm = distVal > 0 ? distVal : undefined;
+          act.caloriesBurned = calVal > 0 ? calVal : undefined;
+          act.intensity = intensityVal;
+          act.elevationMeters = elevVal > 0 ? elevVal : undefined;
+          act.avgHeartRate = hrVal > 0 ? hrVal : undefined;
+          act.avgSpeedKmh = avgSpeed || undefined;
+          act.avgPace = avgPace || undefined;
+          act.notes = notesVal;
+        }
+      } else {
+        const newAct = {
+          id: `act-${generateUUID()}`,
+          date: dateVal,
+          type: typeVal,
+          title: titleVal,
+          durationMin: durationVal,
+          steps: stepsVal > 0 ? stepsVal : undefined,
+          distanceKm: distVal > 0 ? distVal : undefined,
+          caloriesBurned: calVal > 0 ? calVal : undefined,
+          intensity: intensityVal,
+          elevationMeters: elevVal > 0 ? elevVal : undefined,
+          avgHeartRate: hrVal > 0 ? hrVal : undefined,
+          avgSpeedKmh: avgSpeed || undefined,
+          avgPace: avgPace || undefined,
+          notes: notesVal,
+        };
+        state.activities.push(newAct);
+      }
+
+      closeModal(document.getElementById("activityLoggerModal"));
+      renderExerciseOnly();
+      renderDashboardOnly();
+      toast(idVal ? "Activity updated." : "Activity logged successfully.");
+      await saveData(true, "exercise");
+    });
+  }
+
+  // 6. Filter Chips
+  document.querySelectorAll("#activityFilterChips .filter-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll("#activityFilterChips .filter-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      activeActivityFilter = chip.dataset.filter || "all";
+      renderUnifiedActivityFeed(activeActivityFilter);
+    });
+  });
+
+  // 7. 7-Day Chart Metric Toggle
+  document.querySelectorAll("#activityMetricToggle [data-chart-metric]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll("#activityMetricToggle [data-chart-metric]").forEach((c) => c.classList.remove("active-metric-chip"));
+      chip.classList.add("active-metric-chip");
+      selectedChartMetric = chip.dataset.chartMetric || "calories";
+      renderExercise7DayChart(selectedChartMetric);
+    });
+  });
+
+  // 8. Fitness Goals Modal
+  document.getElementById("btnFitnessGoals")?.addEventListener("click", () => {
+    const goals = state.fitnessGoals || { dailySteps: 10000, activeCalories: 500, activeMinutes: 45, weeklyCyclingKm: 50 };
+    const stepsInput = document.getElementById("goalDailySteps");
+    const calInput = document.getElementById("goalActiveCalories");
+    const minInput = document.getElementById("goalActiveMinutes");
+    const cyclingInput = document.getElementById("goalWeeklyCyclingKm");
+    if (stepsInput) stepsInput.value = goals.dailySteps || 10000;
+    if (calInput) calInput.value = goals.activeCalories || 500;
+    if (minInput) minInput.value = goals.activeMinutes || 45;
+    if (cyclingInput) cyclingInput.value = goals.weeklyCyclingKm || 50;
+    openModal("fitnessGoalsModal");
+  });
+
+  document.getElementById("fitnessGoalsForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    state.fitnessGoals = {
+      dailySteps: toNumber(document.getElementById("goalDailySteps")?.value) || 10000,
+      activeCalories: toNumber(document.getElementById("goalActiveCalories")?.value) || 500,
+      activeMinutes: toNumber(document.getElementById("goalActiveMinutes")?.value) || 45,
+      weeklyCyclingKm: toNumber(document.getElementById("goalWeeklyCyclingKm")?.value) || 50,
+    };
+    closeModal(document.getElementById("fitnessGoalsModal"));
+    renderActivityRings();
+    toast("✅ Fitness goals updated!");
+    await saveData(true, "exercise");
+  });
+
+  // 9. AI Fitness Coach Modal & LLM Prompt Generator
+  const updateAiCoachPrompt = () => {
+    const mode = document.getElementById("aiFitnessPromptMode")?.value || "comprehensive";
+    const timeframe = document.getElementById("aiFitnessTimeframe")?.value || "30";
+    const promptTextEl = document.getElementById("aiFitnessPromptText");
+    const labelEl = document.getElementById("aiPromptStatsLabel");
+    if (promptTextEl) {
+      promptTextEl.value = buildFitnessLlmSummary(mode, timeframe);
+    }
+    if (labelEl) {
+      labelEl.textContent = `${timeframe === "all" ? "All-time" : timeframe + "-day"} summary (${mode})`;
+    }
+  };
+
+  document.getElementById("btnAiFitnessCoach")?.addEventListener("click", () => {
+    updateAiCoachPrompt();
+    openModal("aiFitnessCoachModal");
+  });
+
+  document.getElementById("aiFitnessPromptMode")?.addEventListener("change", updateAiCoachPrompt);
+  document.getElementById("aiFitnessTimeframe")?.addEventListener("change", updateAiCoachPrompt);
+
+  document.getElementById("btnCopyFitnessPrompt")?.addEventListener("click", () => {
+    const text = document.getElementById("aiFitnessPromptText")?.value;
+    if (text) {
+      navigator.clipboard.writeText(text).then(() => {
+        toast("📋 LLM prompt copied to clipboard!");
+      }).catch(() => {
+        toast("Prompt copied!");
+      });
+    }
+  });
+
+  document.getElementById("btnDownloadFitnessJson")?.addEventListener("click", () => {
+    const timeframe = document.getElementById("aiFitnessTimeframe")?.value || "30";
+    const jsonStr = buildFitnessLlmSummary("rawjson", timeframe);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `fitness-data-${todayISO()}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    toast("📥 Fitness JSON downloaded.");
+  });
+
+  document.getElementById("btnLaunchInAppAssistant")?.addEventListener("click", async () => {
+    const prompt = document.getElementById("aiFitnessPromptText")?.value;
+    closeModal(document.getElementById("aiFitnessCoachModal"));
+    switchView("assistant");
+    const chatInput = document.getElementById("chatInput");
+    if (chatInput && prompt) {
+      const summaryRequest = "Coach, analyze my recent fitness, steps, cycling, and workout performance data and give me your strategic assessment:\n\n" + prompt.slice(0, 1500) + "...";
+      chatInput.value = summaryRequest;
+      chatInput.focus();
+      const chatForm = document.getElementById("chatForm");
+      chatForm?.dispatchEvent(new Event("submit"));
+    }
+  });
+
+  // 10. Existing Legacy Workout Logging & Templates
   if (!btnLogWorkout || !workoutForm) return;
 
   btnLogWorkout.addEventListener("click", () => {
@@ -7604,7 +7992,7 @@ function bindExerciseEvents() {
     openModal("workoutLoggerModal");
   });
 
-  btnTemplates.addEventListener("click", () => {
+  btnTemplates?.addEventListener("click", () => {
     openModal("workoutTemplatesModal");
   });
 
@@ -7660,7 +8048,7 @@ function bindExerciseEvents() {
     });
   });
 
-  btnAddEx.addEventListener("click", () => {
+  btnAddEx?.addEventListener("click", () => {
     addExerciseLogBlock();
   });
 
@@ -8056,120 +8444,726 @@ function renderTodoView() {
   }
 }
 
+function getLatestBodyWeightKg() {
+  if (state.bodyMetrics && state.bodyMetrics.length > 0) {
+    const sorted = [...state.bodyMetrics]
+      .filter((b) => toNumber(b.weight) > 0)
+      .sort((a, b) => new Date((b.date || "1970-01-01") + "T" + (b.time || "00:00")) - new Date((a.date || "1970-01-01") + "T" + (a.time || "00:00")));
+    if (sorted.length > 0 && toNumber(sorted[0].weight) > 0) {
+      return toNumber(sorted[0].weight);
+    }
+  }
+  return 75; // Default 75 kg
+}
+
+function calcCaloriesBurned(type, durationMin = 0, distanceKm = 0, steps = 0, intensity = "Moderate", customWeight = null) {
+  const weight = customWeight || getLatestBodyWeightKg();
+  const durHours = (toNumber(durationMin) || 0) / 60;
+  const dist = toNumber(distanceKm) || 0;
+  const st = toNumber(steps) || 0;
+  const normType = String(type || "").toLowerCase();
+
+  // 1. Steps-focused
+  if (normType === "steps" || normType.includes("walk") || (st > 0 && !normType.includes("cycl") && !normType.includes("run"))) {
+    const kcalPerStep = (weight / 75) * 0.04;
+    const fromSteps = Math.round(st * kcalPerStep);
+    if (fromSteps > 0) return fromSteps;
+    if (dist > 0) return Math.round(dist * 50 * (weight / 75));
+    if (durHours > 0) return Math.round(3.5 * weight * durHours);
+  }
+
+  // 2. Cycling
+  if (normType.includes("cycl") || normType.includes("bike") || normType.includes("ride")) {
+    let speed = 0;
+    if (dist > 0 && durHours > 0) speed = dist / durHours;
+    let met = 6.0;
+    if (speed > 0) {
+      if (speed < 16) met = 4.0;
+      else if (speed < 19) met = 6.0;
+      else if (speed < 22) met = 8.0;
+      else if (speed < 26) met = 10.0;
+      else met = 12.0;
+    } else {
+      if (intensity === "High") met = 9.0;
+      else if (intensity === "Low") met = 4.5;
+      else met = 6.8;
+    }
+    if (durHours > 0) return Math.round(met * weight * durHours);
+    if (dist > 0) return Math.round(dist * 30 * (weight / 75));
+  }
+
+  // 3. Running / Jogging
+  if (normType.includes("run") || normType.includes("jog")) {
+    if (dist > 0) return Math.round(dist * weight * 1.036);
+    const met = intensity === "High" ? 11.5 : (intensity === "Low" ? 7.0 : 9.5);
+    return Math.round(met * weight * Math.max(durHours, 0.25));
+  }
+
+  // 4. Strength / Gym / Weights
+  if (normType.includes("strength") || normType.includes("gym") || normType.includes("workout") || normType.includes("weight")) {
+    const met = intensity === "High" ? 6.0 : (intensity === "Low" ? 3.8 : 5.0);
+    return Math.round(met * weight * (durHours || 0.75));
+  }
+
+  // 5. Yoga / Flexibility
+  if (normType.includes("yoga") || normType.includes("stretch")) {
+    return Math.round(3.0 * weight * (durHours || 0.5));
+  }
+
+  // Default general cardio
+  const met = intensity === "High" ? 7.5 : (intensity === "Low" ? 4.0 : 5.5);
+  return Math.round(met * weight * (durHours || 0.5));
+}
+
+function calcCyclingSpeed(distanceKm, durationMin) {
+  const dist = toNumber(distanceKm);
+  const dur = toNumber(durationMin);
+  if (dist > 0 && dur > 0) {
+    return (dist / (dur / 60)).toFixed(1);
+  }
+  return null;
+}
+
+function calcRunningPace(distanceKm, durationMin) {
+  const dist = toNumber(distanceKm);
+  const dur = toNumber(durationMin);
+  if (dist > 0 && dur > 0) {
+    const paceMinTotal = dur / dist;
+    const mins = Math.floor(paceMinTotal);
+    const secs = Math.round((paceMinTotal - mins) * 60);
+    return `${mins}:${String(secs).padStart(2, "0")} /km`;
+  }
+  return null;
+}
+
+function getAllUnifiedActivities(year = null, month = null) {
+  const list = [];
+  const existingWorkIds = new Set();
+
+  // 1. From state.activities
+  (state.activities || []).forEach((act) => {
+    existingWorkIds.add(act.id);
+    list.push({
+      ...act,
+      source: "activity",
+      date: act.date || todayISO(),
+      type: act.type || "other",
+      title: act.title || (act.type ? act.type.charAt(0).toUpperCase() + act.type.slice(1) : "Activity"),
+      durationMin: toNumber(act.durationMin || act.minutes) || 0,
+      caloriesBurned: toNumber(act.caloriesBurned) || calcCaloriesBurned(act.type, act.durationMin, act.distanceKm, act.steps, act.intensity),
+    });
+  });
+
+  // 2. From legacy state.workouts (if not already represented in activities)
+  (state.workouts || []).forEach((w) => {
+    if (!existingWorkIds.has(w.id)) {
+      const typeLower = String(w.type || "").toLowerCase();
+      let actType = "workout";
+      if (typeLower.includes("cycl") || typeLower.includes("bike")) actType = "cycling";
+      else if (typeLower.includes("run") || typeLower.includes("cardio")) actType = "running";
+      else if (typeLower.includes("walk") || typeLower.includes("step")) actType = "steps";
+
+      list.push({
+        id: w.id,
+        date: w.date || todayISO(),
+        type: actType,
+        title: w.type || "Workout",
+        durationMin: toNumber(w.minutes) || 0,
+        intensity: w.intensity || "Medium",
+        notes: w.notes || "",
+        exercises: w.exercises,
+        source: "workout",
+        caloriesBurned: calcCaloriesBurned(w.type, w.minutes, 0, 0, w.intensity),
+      });
+    }
+  });
+
+  // Filter by year & month if provided
+  if (year !== null && month !== null) {
+    return list.filter((item) => {
+      const d = parseCalendarDate(item.date);
+      return d && d.getFullYear() === year && d.getMonth() === month;
+    }).sort(sortByDateDesc);
+  }
+
+  return list.sort(sortByDateDesc);
+}
+
+function getTodayFitnessMetrics() {
+  const today = todayISO();
+  const allToday = getAllUnifiedActivities().filter((a) => sameDay(a.date, today));
+  const goals = state.fitnessGoals || { dailySteps: 10000, activeCalories: 500, activeMinutes: 45, weeklyCyclingKm: 50 };
+
+  let todaySteps = 0;
+  let todayCalories = 0;
+  let todayMinutes = 0;
+  let todayCyclingKm = 0;
+
+  allToday.forEach((a) => {
+    todaySteps += toNumber(a.steps) || 0;
+    todayCalories += toNumber(a.caloriesBurned) || 0;
+    todayMinutes += toNumber(a.durationMin) || 0;
+    if (a.type === "cycling") {
+      todayCyclingKm += toNumber(a.distanceKm) || 0;
+    }
+  });
+
+  // Calculate rolling 7-day cycling km
+  const now = new Date();
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = dateToISODate(sevenDaysAgo);
+
+  let weeklyCyclingKm = 0;
+  getAllUnifiedActivities().forEach((a) => {
+    if (a.type === "cycling" && a.date >= sevenDaysAgoStr && a.date <= today) {
+      weeklyCyclingKm += toNumber(a.distanceKm) || 0;
+    }
+  });
+
+  return {
+    todaySteps,
+    todayCalories,
+    todayMinutes,
+    todayCyclingKm,
+    weeklyCyclingKm,
+    goals,
+    pctCalories: goals.activeCalories > 0 ? (todayCalories / goals.activeCalories) * 100 : 0,
+    pctSteps: goals.dailySteps > 0 ? (todaySteps / goals.dailySteps) * 100 : 0,
+    pctMinutes: goals.activeMinutes > 0 ? (todayMinutes / goals.activeMinutes) * 100 : 0,
+    pctCycling: goals.weeklyCyclingKm > 0 ? (weeklyCyclingKm / goals.weeklyCyclingKm) * 100 : 0,
+  };
+}
+
 function renderExerciseView() {
   const historyFeed = document.getElementById("exerciseHistoryFeed");
-  const sessionsEl = document.getElementById("workoutTotalSessions");
-  const minutesEl = document.getElementById("workoutTotalMinutes");
-  const avgEl = document.getElementById("workoutAvgDuration");
-
   if (!historyFeed) return;
 
-  // Update month nav label
+  // Month navigation label
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const navLabel = document.getElementById("exerciseMonthNavLabel");
   if (navLabel) navLabel.textContent = `${MONTH_NAMES[activeExerciseMonth]} ${activeExerciseYear}`;
 
-  const thisMonthWorkouts = state.workouts.filter((w) => {
-    const wDate = parseCalendarDate(w.date);
-    return wDate && wDate.getFullYear() === activeExerciseYear && wDate.getMonth() === activeExerciseMonth;
+  // Pull all unified activities for the active month
+  const monthActivities = getAllUnifiedActivities(activeExerciseYear, activeExerciseMonth);
+
+  // Compute monthly totals
+  let totalSteps = 0;
+  let totalCyclingKm = 0;
+  let cyclingRidesCount = 0;
+  let cyclingDurationMin = 0;
+  let totalCalories = 0;
+  let totalMinutes = 0;
+  let totalSessions = monthActivities.length;
+
+  monthActivities.forEach((act) => {
+    totalSteps += toNumber(act.steps) || 0;
+    totalCalories += toNumber(act.caloriesBurned) || 0;
+    totalMinutes += toNumber(act.durationMin) || 0;
+    if (act.type === "cycling") {
+      totalCyclingKm += toNumber(act.distanceKm) || 0;
+      cyclingDurationMin += toNumber(act.durationMin) || 0;
+      cyclingRidesCount++;
+    }
   });
 
-  const totalSessions = thisMonthWorkouts.length;
-  let totalMinutes = 0;
-  thisMonthWorkouts.forEach((w) => { totalMinutes += w.minutes || 0; });
+  // Days in month
+  const daysInMonth = new Date(activeExerciseYear, activeExerciseMonth + 1, 0).getDate();
+  const avgDailySteps = Math.round(totalSteps / daysInMonth);
+  const avgDailyCalories = Math.round(totalCalories / daysInMonth);
+  const avgCyclingSpeed = cyclingDurationMin > 0 ? (totalCyclingKm / (cyclingDurationMin / 60)).toFixed(1) : "0";
+  const stepKmApprox = (totalSteps * 0.00075).toFixed(1);
 
-  if (sessionsEl) sessionsEl.textContent = totalSessions;
-  if (minutesEl) minutesEl.textContent = `${totalMinutes} min`;
-  if (avgEl) avgEl.textContent = totalSessions > 0 ? `${Math.round(totalMinutes / totalSessions)} min` : "0 min";
+  // Update Monthly Cards
+  const elSteps = document.getElementById("monthTotalSteps");
+  const elStepsSub = document.getElementById("monthStepsSub");
+  if (elSteps) elSteps.textContent = totalSteps.toLocaleString();
+  if (elStepsSub) elStepsSub.textContent = `${stepKmApprox} km • ~${avgDailySteps.toLocaleString()} /day`;
 
+  const elCycling = document.getElementById("monthTotalCycling");
+  const elCyclingSub = document.getElementById("monthCyclingSub");
+  if (elCycling) elCycling.textContent = `${totalCyclingKm.toFixed(1)} km`;
+  if (elCyclingSub) elCyclingSub.textContent = `${cyclingRidesCount} rides • ${avgCyclingSpeed} km/h avg`;
+
+  const elCalories = document.getElementById("monthTotalCalories");
+  const elCaloriesSub = document.getElementById("monthCaloriesSub");
+  if (elCalories) elCalories.textContent = `${totalCalories.toLocaleString()} kcal`;
+  if (elCaloriesSub) elCaloriesSub.textContent = `~${avgDailyCalories} kcal daily avg`;
+
+  const elMinutes = document.getElementById("workoutTotalMinutes");
+  const elSessions = document.getElementById("workoutTotalSessions");
+  const elAvgDuration = document.getElementById("workoutAvgDuration");
+  if (elMinutes) elMinutes.textContent = `${totalMinutes} min`;
+  if (elSessions) elSessions.textContent = `${totalSessions} sessions`;
+  if (elAvgDuration) elAvgDuration.textContent = totalSessions > 0 ? `${Math.round(totalMinutes / totalSessions)} min avg` : "0 min avg";
+
+  // Sub-renderers
+  renderActivityRings();
   renderStreakCalendar(activeExerciseYear, activeExerciseMonth);
+  renderExercise7DayChart(selectedChartMetric);
   renderPersonalRecords();
   renderWorkoutConsistencyChart();
   renderBodyCompositionPanel();
   renderWorkoutYearHeatmap();
+  renderUnifiedActivityFeed(activeActivityFilter);
+}
 
-  historyFeed.innerHTML = "";
-  // Show all workouts for the selected month
-  const filteredWorkouts = [...state.workouts]
-    .filter(w => {
-      const wDate = parseCalendarDate(w.date);
-      return wDate && wDate.getFullYear() === activeExerciseYear && wDate.getMonth() === activeExerciseMonth;
-    })
-    .sort(sortByDateDesc);
+function renderActivityRings() {
+  const svg = document.getElementById("activityRingsSvg");
+  if (!svg) return;
 
-  if (filteredWorkouts.length === 0) {
-    historyFeed.innerHTML = `<div class="empty-state" style="padding: 40px; text-align: center; color: var(--muted);">No workouts logged for ${MONTH_NAMES[activeExerciseMonth]} ${activeExerciseYear}. Log a session or navigate to another month!</div>`;
-  } else {
-    filteredWorkouts.forEach((workout) => {
-      const card = document.createElement("div");
-      card.className = "stack-row";
-      card.style.flexDirection = "column";
-      card.style.alignItems = "stretch";
-      card.style.gap = "8px";
+  const metrics = getTodayFitnessMetrics();
+  const centerKcal = document.getElementById("ringsCenterKcal");
+  if (centerKcal) centerKcal.textContent = Math.round(metrics.todayCalories);
 
-      let exercisesHtml = "";
-      if (workout.exercises && workout.exercises.length > 0) {
-        exercisesHtml = `<div class="workout-history-details">`;
-        workout.exercises.forEach((ex) => {
-          const setsList = ex.sets ? ex.sets.map((s, idx) => `<span class="history-set-badge">S${idx + 1}: ${s.reps} × ${s.weight}kg</span>`).join("") : "";
-          exercisesHtml += `
-            <div class="history-exercise-row">
-              <span class="history-exercise-name">${escapeHTML(ex.name)}</span>
-              <div class="history-sets-list">${setsList}</div>
-            </div>
-          `;
-        });
-        exercisesHtml += `</div>`;
-      }
+  // Targets text & progress bars
+  const calTargetEl = document.getElementById("ringCaloriesTarget");
+  const calBar = document.getElementById("ringCaloriesBar");
+  if (calTargetEl) calTargetEl.textContent = `${Math.round(metrics.todayCalories)} / ${metrics.goals.activeCalories} kcal (${Math.round(metrics.pctCalories)}%)`;
+  if (calBar) calBar.style.width = `${Math.min(100, Math.round(metrics.pctCalories))}%`;
 
-      card.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-          <div>
-            <div class="stack-title" style="font-weight: 700;">${escapeHTML(workout.type)}</div>
-            <div class="stack-meta">${formatDate(workout.date)} • <span class="badge-priority ${workout.intensity === "High" ? "high" : workout.intensity === "Low" ? "low" : "medium"}" style="font-size: 8px; padding: 1px 4px; vertical-align: middle;">${workout.intensity || "Medium"}</span></div>
+  const stepsTargetEl = document.getElementById("ringStepsTarget");
+  const stepsBar = document.getElementById("ringStepsBar");
+  if (stepsTargetEl) stepsTargetEl.textContent = `${metrics.todaySteps.toLocaleString()} / ${metrics.goals.dailySteps.toLocaleString()} steps (${Math.round(metrics.pctSteps)}%)`;
+  if (stepsBar) stepsBar.style.width = `${Math.min(100, Math.round(metrics.pctSteps))}%`;
+
+  const minTargetEl = document.getElementById("ringMinutesTarget");
+  const minBar = document.getElementById("ringMinutesBar");
+  if (minTargetEl) minTargetEl.textContent = `${Math.round(metrics.todayMinutes)} / ${metrics.goals.activeMinutes} min (${Math.round(metrics.pctMinutes)}%)`;
+  if (minBar) minBar.style.width = `${Math.min(100, Math.round(metrics.pctMinutes))}%`;
+
+  const cyclingTargetEl = document.getElementById("ringCyclingTarget");
+  const cyclingBar = document.getElementById("ringCyclingBar");
+  if (cyclingTargetEl) cyclingTargetEl.textContent = `${metrics.weeklyCyclingKm.toFixed(1)} / ${metrics.goals.weeklyCyclingKm} km (${Math.round(metrics.pctCycling)}%)`;
+  if (cyclingBar) cyclingBar.style.width = `${Math.min(100, Math.round(metrics.pctCycling))}%`;
+
+  // Draw 3 concentric rings in SVG
+  svg.innerHTML = "";
+  const cx = 110;
+  const cy = 110;
+  const strokeWidth = 14;
+
+  const rings = [
+    { radius: 85, color: "#f97316", bg: "rgba(249, 115, 22, 0.2)", pct: metrics.pctCalories },
+    { radius: 67, color: "#06b6d4", bg: "rgba(6, 182, 212, 0.2)", pct: metrics.pctSteps },
+    { radius: 49, color: "#10b981", bg: "rgba(16, 185, 129, 0.2)", pct: metrics.pctMinutes },
+  ];
+
+  rings.forEach((r) => {
+    const circumference = 2 * Math.PI * r.radius;
+    // Background track
+    const bgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    bgCircle.setAttribute("cx", cx);
+    bgCircle.setAttribute("cy", cy);
+    bgCircle.setAttribute("r", r.radius);
+    bgCircle.setAttribute("fill", "none");
+    bgCircle.setAttribute("stroke", r.bg);
+    bgCircle.setAttribute("stroke-width", strokeWidth);
+    svg.append(bgCircle);
+
+    // Active progress arc
+    if (r.pct > 0) {
+      const fillPct = Math.min(r.pct, 100);
+      const dashoffset = circumference - (circumference * fillPct) / 100;
+      const fgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      fgCircle.setAttribute("cx", cx);
+      fgCircle.setAttribute("cy", cy);
+      fgCircle.setAttribute("r", r.radius);
+      fgCircle.setAttribute("fill", "none");
+      fgCircle.setAttribute("stroke", r.color);
+      fgCircle.setAttribute("stroke-width", strokeWidth);
+      fgCircle.setAttribute("stroke-linecap", "round");
+      fgCircle.setAttribute("stroke-dasharray", circumference);
+      fgCircle.setAttribute("stroke-dashoffset", dashoffset);
+      fgCircle.style.transition = "stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1)";
+      svg.append(fgCircle);
+    }
+  });
+}
+
+function renderExercise7DayChart(metric = "calories") {
+  const svg = document.getElementById("exercise7DayChartSvg");
+  if (!svg) return;
+  svg.innerHTML = "";
+
+  const days = [];
+  const now = new Date();
+  const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    days.push({
+      dateStr: dateToISODate(d),
+      dayLabel: i === 0 ? "Today" : weekdayNames[d.getDay()],
+      dayNum: d.getDate(),
+      value: 0,
+    });
+  }
+
+  // Aggregate by day
+  const allActs = getAllUnifiedActivities();
+  days.forEach((day) => {
+    const matching = allActs.filter((a) => sameDay(a.date, day.dateStr));
+    matching.forEach((a) => {
+      if (metric === "calories") day.value += toNumber(a.caloriesBurned) || 0;
+      else if (metric === "steps") day.value += toNumber(a.steps) || 0;
+      else if (metric === "cycling") {
+        if (a.type === "cycling") day.value += toNumber(a.distanceKm) || 0;
+      } else if (metric === "minutes") day.value += toNumber(a.durationMin) || 0;
+    });
+  });
+
+  const width = svg.clientWidth || 340;
+  const height = svg.clientHeight || 160;
+  const paddingLeft = 24;
+  const paddingRight = 16;
+  const paddingTop = 20;
+  const paddingBottom = 26;
+
+  const chartW = width - paddingLeft - paddingRight;
+  const chartH = height - paddingTop - paddingBottom;
+  const maxVal = Math.max(...days.map((d) => d.value), metric === "steps" ? 5000 : metric === "cycling" ? 15 : 200);
+
+  const colW = chartW / 7;
+  const barW = Math.max(12, Math.min(32, colW * 0.55));
+
+  const metricColors = {
+    calories: "#f97316",
+    steps: "#06b6d4",
+    cycling: "#8b5cf6",
+    minutes: "#10b981",
+  };
+  const fillColor = metricColors[metric] || "var(--primary)";
+
+  days.forEach((day, idx) => {
+    const x = paddingLeft + idx * colW + (colW - barW) / 2;
+    const barHeight = maxVal > 0 ? (day.value / maxVal) * chartH : 0;
+    const y = height - paddingBottom - barHeight;
+
+    // Background slot bar
+    const bgBar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bgBar.setAttribute("x", x);
+    bgBar.setAttribute("y", paddingTop);
+    bgBar.setAttribute("width", barW);
+    bgBar.setAttribute("height", chartH);
+    bgBar.setAttribute("rx", 4);
+    bgBar.setAttribute("fill", "var(--panel-soft, rgba(255,255,255,0.03))");
+    svg.append(bgBar);
+
+    // Active value bar
+    if (day.value > 0) {
+      const fgBar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      fgBar.setAttribute("x", x);
+      fgBar.setAttribute("y", y);
+      fgBar.setAttribute("width", barW);
+      fgBar.setAttribute("height", barHeight);
+      fgBar.setAttribute("rx", 4);
+      fgBar.setAttribute("fill", fillColor);
+      svg.append(fgBar);
+
+      // Value label on top
+      const valText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      valText.setAttribute("x", x + barW / 2);
+      valText.setAttribute("y", y - 5);
+      valText.setAttribute("text-anchor", "middle");
+      valText.setAttribute("fill", "var(--text)");
+      valText.setAttribute("font-size", "10px");
+      valText.setAttribute("font-weight", "700");
+      let displayVal = Math.round(day.value);
+      if (metric === "steps" && day.value >= 1000) displayVal = (day.value / 1000).toFixed(1) + "k";
+      else if (metric === "cycling") displayVal = day.value.toFixed(1);
+      valText.textContent = displayVal;
+      svg.append(valText);
+    }
+
+    // X-axis label
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("x", x + barW / 2);
+    label.setAttribute("y", height - 8);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("fill", idx === 6 ? "var(--text)" : "var(--muted)");
+    label.setAttribute("font-size", "10px");
+    label.setAttribute("font-weight", idx === 6 ? "700" : "500");
+    label.textContent = day.dayLabel;
+    svg.append(label);
+  });
+}
+
+function renderUnifiedActivityFeed(filter = "all") {
+  const feed = document.getElementById("exerciseHistoryFeed");
+  if (!feed) return;
+  feed.innerHTML = "";
+
+  const monthActivities = getAllUnifiedActivities(activeExerciseYear, activeExerciseMonth);
+
+  const filtered = monthActivities.filter((act) => {
+    if (filter === "all") return true;
+    if (filter === "steps") return act.type === "steps" || (toNumber(act.steps) > 0);
+    if (filter === "cycling") return act.type === "cycling";
+    if (filter === "running") return act.type === "running" || act.type === "cardio";
+    if (filter === "workout") return act.type === "workout" || act.source === "workout";
+    return true;
+  });
+
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  if (filtered.length === 0) {
+    feed.innerHTML = `<div class="empty-state" style="padding: 40px 20px; text-align: center; color: var(--muted);">No activities found for ${MONTH_NAMES[activeExerciseMonth]} ${activeExerciseYear} with filter "${filter}". Tap "+ Log Activity" to add one!</div>`;
+    return;
+  }
+
+  filtered.forEach((act) => {
+    const card = document.createElement("div");
+    card.className = "activity-feed-card";
+
+    // Icon & color by type
+    let icon = "✨";
+    let pillClass = "pill-other";
+    if (act.type === "steps") { icon = "🚶"; pillClass = "pill-steps"; }
+    else if (act.type === "cycling") { icon = "🚴"; pillClass = "pill-cycling"; }
+    else if (act.type === "running" || act.type === "cardio") { icon = "🏃"; pillClass = "pill-running"; }
+    else if (act.type === "workout") { icon = "🏋️"; pillClass = "pill-workout"; }
+
+    // Metric tags
+    let tagsHtml = "";
+    if (act.caloriesBurned) {
+      tagsHtml += `<span class="act-metric-tag tag-cal">🔥 ${act.caloriesBurned} kcal</span>`;
+    }
+    if (act.steps) {
+      tagsHtml += `<span class="act-metric-tag">🚶 ${act.steps.toLocaleString()} steps</span>`;
+    }
+    if (act.distanceKm) {
+      tagsHtml += `<span class="act-metric-tag tag-dist">📍 ${act.distanceKm} km</span>`;
+    }
+    if (act.durationMin) {
+      tagsHtml += `<span class="act-metric-tag">⏱️ ${act.durationMin} min</span>`;
+    }
+    if (act.avgSpeedKmh) {
+      tagsHtml += `<span class="act-metric-tag tag-speed">⚡ ${act.avgSpeedKmh} km/h</span>`;
+    }
+    if (act.avgPace) {
+      tagsHtml += `<span class="act-metric-tag tag-speed">⏱️ ${escapeHTML(act.avgPace)}</span>`;
+    }
+    if (act.elevationMeters) {
+      tagsHtml += `<span class="act-metric-tag">⛰️ +${act.elevationMeters}m</span>`;
+    }
+    if (act.avgHeartRate) {
+      tagsHtml += `<span class="act-metric-tag">❤️ ${act.avgHeartRate} bpm</span>`;
+    }
+    if (act.intensity) {
+      tagsHtml += `<span class="act-metric-tag" style="opacity:0.8;">Intensity: ${escapeHTML(act.intensity)}</span>`;
+    }
+
+    // Exercise details if gym workout
+    let exercisesHtml = "";
+    if (act.exercises && act.exercises.length > 0) {
+      exercisesHtml = `<div class="workout-history-details">`;
+      act.exercises.forEach((ex) => {
+        const setsList = ex.sets ? ex.sets.map((s, idx) => `<span class="history-set-badge">S${idx + 1}: ${s.reps} × ${s.weight}kg</span>`).join("") : "";
+        exercisesHtml += `
+          <div class="history-exercise-row">
+            <span class="history-exercise-name">${escapeHTML(ex.name)}</span>
+            <div class="history-sets-list">${setsList}</div>
           </div>
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div class="stack-value" style="font-weight: 700;">${workout.minutes || 0} min</div>
-            <div class="actions-wrapper">
-              <button class="action-btn edit-btn btn-edit-workout" type="button" title="Edit workout">✏️</button>
-              <button class="action-btn delete-btn btn-delete-workout" type="button" title="Delete workout">🗑️</button>
-            </div>
+        `;
+      });
+      exercisesHtml += `</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="activity-card-header">
+        <div class="activity-card-title-row">
+          <div class="activity-type-icon-pill ${pillClass}">${icon}</div>
+          <div>
+            <div style="font-weight: 700; font-size: 14px; color: var(--text);">${escapeHTML(act.title)}</div>
+            <div style="font-size: 11px; color: var(--muted); margin-top: 2px;">${formatDate(act.date)}</div>
           </div>
         </div>
-        ${workout.notes ? `<div style="font-size: 11.5px; opacity: 0.8; font-style: italic; color: var(--muted); margin-top: 2px;">Note: ${escapeHTML(workout.notes)}</div>` : ""}
-        ${exercisesHtml}
-      `;
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="action-btn edit-btn btn-edit-activity" type="button" title="Edit activity">✏️</button>
+          <button class="action-btn delete-btn btn-delete-activity" type="button" title="Delete activity">🗑️</button>
+        </div>
+      </div>
+      <div class="activity-metrics-pills">${tagsHtml}</div>
+      ${act.notes ? `<div style="font-size: 12px; color: var(--muted); font-style: italic;">Note: ${escapeHTML(act.notes)}</div>` : ""}
+      ${exercisesHtml}
+    `;
 
-      card.querySelector(".btn-edit-workout").addEventListener("click", () => {
-        editWorkoutId = workout.id;
-        document.getElementById("workoutLogDate").value = workout.date || todayISO();
-        document.getElementById("workoutLogType").value = workout.type || "Strength Training";
-        document.getElementById("workoutLogMinutes").value = workout.minutes || 30;
-        document.getElementById("workoutLogIntensity").value = workout.intensity || "Medium";
-        document.getElementById("workoutLogNotes").value = workout.notes || "";
+    // Edit handler
+    card.querySelector(".btn-edit-activity").addEventListener("click", () => {
+      if (act.source === "workout") {
+        // Edit via legacy workout modal
+        editWorkoutId = act.id;
+        document.getElementById("workoutLogDate").value = act.date || todayISO();
+        document.getElementById("workoutLogType").value = act.title || "Strength Training";
+        document.getElementById("workoutLogMinutes").value = act.durationMin || 30;
+        document.getElementById("workoutLogIntensity").value = act.intensity || "Medium";
+        document.getElementById("workoutLogNotes").value = act.notes || "";
         const container = document.getElementById("workoutLogExercisesContainer");
         container.innerHTML = "";
-        if (workout.exercises && workout.exercises.length > 0) {
-          workout.exercises.forEach((ex) => addExerciseLogBlock(ex.name, ex.sets));
+        if (act.exercises && act.exercises.length > 0) {
+          act.exercises.forEach((ex) => addExerciseLogBlock(ex.name, ex.sets));
         } else {
           addExerciseLogBlock();
         }
         openModal("workoutLoggerModal");
-      });
-
-      card.querySelector(".btn-delete-workout").addEventListener("click", async () => {
-        if (confirm("Delete this workout entry?")) {
-          state.workouts = state.workouts.filter((w) => w.id !== workout.id);
-          renderExerciseOnly();
-          renderDashboardOnly();
-          toast("Workout deleted.");
-          await saveData(true, "workout");
-        }
-      });
-
-      historyFeed.append(card);
+      } else {
+        // Edit via unified activity modal
+        openActivityLoggerModal(act.type || "steps", act);
+      }
     });
+
+    // Delete handler
+    card.querySelector(".btn-delete-activity").addEventListener("click", async () => {
+      if (confirm(`Delete this "${act.title}" activity entry?`)) {
+        if (act.source === "workout") {
+          state.workouts = state.workouts.filter((w) => w.id !== act.id);
+        } else {
+          state.activities = (state.activities || []).filter((a) => a.id !== act.id);
+        }
+        renderExerciseOnly();
+        renderDashboardOnly();
+        toast("Activity deleted.");
+        await saveData(true, "exercise");
+      }
+    });
+
+    feed.append(card);
+  });
+}
+
+function buildFitnessLlmSummary(mode = "comprehensive", timeframe = "30") {
+  const allActs = getAllUnifiedActivities();
+  const now = new Date();
+  let filterDateStr = "";
+
+  if (timeframe === "7") {
+    const d = new Date(now); d.setDate(d.getDate() - 7);
+    filterDateStr = dateToISODate(d);
+  } else if (timeframe === "30") {
+    const d = new Date(now); d.setDate(d.getDate() - 30);
+    filterDateStr = dateToISODate(d);
+  } else if (timeframe === "90") {
+    const d = new Date(now); d.setDate(d.getDate() - 90);
+    filterDateStr = dateToISODate(d);
   }
+
+  const filtered = filterDateStr ? allActs.filter((a) => a.date >= filterDateStr) : allActs;
+  const latestWeight = getLatestBodyWeightKg();
+  const goals = state.fitnessGoals || { dailySteps: 10000, activeCalories: 500, activeMinutes: 45, weeklyCyclingKm: 50 };
+
+  // Aggregate stats
+  let totalSteps = 0;
+  let stepDaysCount = 0;
+  let totalCyclingKm = 0;
+  let cyclingRidesCount = 0;
+  let totalCyclingMin = 0;
+  let totalCalories = 0;
+  let totalWorkoutSessions = 0;
+  let totalWorkoutMin = 0;
+
+  filtered.forEach((a) => {
+    totalCalories += toNumber(a.caloriesBurned) || 0;
+    if (a.steps) { totalSteps += toNumber(a.steps); stepDaysCount++; }
+    if (a.type === "cycling") {
+      totalCyclingKm += toNumber(a.distanceKm) || 0;
+      totalCyclingMin += toNumber(a.durationMin) || 0;
+      cyclingRidesCount++;
+    }
+    if (a.type === "workout" || a.source === "workout") {
+      totalWorkoutSessions++;
+      totalWorkoutMin += toNumber(a.durationMin) || 0;
+    }
+  });
+
+  const daysNum = timeframe === "7" ? 7 : timeframe === "30" ? 30 : timeframe === "90" ? 90 : 365;
+  const avgDailySteps = Math.round(totalSteps / (stepDaysCount || 1));
+  const avgDailyCalories = Math.round(totalCalories / daysNum);
+  const avgCyclingSpeed = totalCyclingMin > 0 ? ((totalCyclingKm / (totalCyclingMin / 60))).toFixed(1) : "0";
+
+  // Body composition latest
+  const latestBm = state.bodyMetrics && state.bodyMetrics.length > 0 ? state.bodyMetrics[0] : null;
+
+  // Raw JSON payload mode
+  if (mode === "rawjson") {
+    return JSON.stringify({
+      user: "Prafful Chavan",
+      reportDate: todayISO(),
+      timeframe: `${timeframe} days`,
+      bodyProfile: {
+        weightKg: latestWeight,
+        bmi: latestBm?.bmi || null,
+        bodyFatPct: latestBm?.bodyFat || null,
+        skeletalMusclePct: latestBm?.skeletalMuscle || null,
+        bmrKcal: latestBm?.bmr || null,
+      },
+      goals,
+      aggregateTotals: {
+        totalCaloriesBurned: totalCalories,
+        avgDailyCalories,
+        totalSteps,
+        avgDailySteps,
+        totalCyclingKm: Number(totalCyclingKm.toFixed(1)),
+        cyclingRidesCount,
+        avgCyclingSpeedKmh: Number(avgCyclingSpeed),
+        totalWorkoutSessions,
+        totalWorkoutMinutes: totalWorkoutMin,
+      },
+      recentActivities: filtered.slice(0, 30),
+    }, null, 2);
+  }
+
+  // Markdown Prompt Builder
+  let promptHeader = `=== FITNESS & HEALTH PERFORMANCE AUDIT ===\n` +
+    `User: Prafful Chavan | Date: ${todayISO()} | Analysis Window: Last ${timeframe} Days\n` +
+    `Current Weight: ${latestWeight} kg` +
+    (latestBm ? ` | Body Fat: ${latestBm.bodyFat || "—"}% | Skeletal Muscle: ${latestBm.skeletalMuscle || "—"}% | BMR: ${latestBm.bmr || "—"} kcal` : "") +
+    `\nFitness Goals: ${goals.dailySteps.toLocaleString()} steps/day • ${goals.activeCalories} kcal/day • ${goals.activeMinutes} min/day • ${goals.weeklyCyclingKm} km cycling/wk\n\n` +
+    `=== AGGREGATE ACTIVITY TOTALS (${timeframe} DAYS) ===\n` +
+    `• 🔥 Total Active Calories Burned: ${totalCalories.toLocaleString()} kcal (Avg: ${avgDailyCalories} kcal/day)\n` +
+    `• 🚶 Total Steps Walked: ${totalSteps.toLocaleString()} steps (Avg on walking days: ${avgDailySteps.toLocaleString()} steps/day)\n` +
+    `• 🚴 Cycling Volume: ${totalCyclingKm.toFixed(1)} km across ${cyclingRidesCount} rides (Avg speed: ${avgCyclingSpeed} km/h, Total time: ${totalCyclingMin} mins)\n` +
+    `• 🏋️ Strength Workouts: ${totalWorkoutSessions} gym sessions (Total time: ${totalWorkoutMin} mins)\n\n` +
+    `=== RECENT SESSIONS LOG ===\n` +
+    filtered.slice(0, 15).map((a) => `• ${formatDate(a.date)}: [${a.type.toUpperCase()}] "${a.title}" — ` +
+      (a.steps ? `${a.steps.toLocaleString()} steps, ` : "") +
+      (a.distanceKm ? `${a.distanceKm} km, ` : "") +
+      (a.durationMin ? `${a.durationMin} mins, ` : "") +
+      (a.caloriesBurned ? `${a.caloriesBurned} kcal` : "") +
+      (a.notes ? ` (${a.notes})` : "")
+    ).join("\n") + "\n\n";
+
+  let promptInstruction = "";
+  if (mode === "comprehensive") {
+    promptInstruction = `=== COACHING PROMPT OBJECTIVE ===\n` +
+      `As an elite sports scientist and personal health coach, provide a deep, actionable review of my training volume, recovery, and daily movement consistency.\n` +
+      `1. Evaluate my cardiovascular endurance vs strength balance based on my cycling, walking, and gym logs.\n` +
+      `2. Analyze my calorie expenditure consistency against my body weight and BMR.\n` +
+      `3. Give me 3 concrete, prioritized recommendations for next week to accelerate progress without overtraining.\n` +
+      `Tone: Encouraging, data-driven, and high-performance.`;
+  } else if (mode === "fatloss") {
+    promptInstruction = `=== COACHING PROMPT OBJECTIVE ===\n` +
+      `Provide a targeted fat-loss and energy-balance audit.\n` +
+      `1. Review my active daily calorie expenditure (${avgDailyCalories} kcal/day) and daily step count.\n` +
+      `2. Suggest an optimal daily calorie deficit intake target (based on my estimated TDEE with BMR ~${latestBm?.bmr || 1750} kcal).\n` +
+      `3. Recommend how to optimize zone-2 cardio (cycling & walking) to maximize fat oxidation while preserving skeletal muscle mass.\n` +
+      `Tone: Clear, scientifically rigorous, and realistic.`;
+  } else if (mode === "cycling") {
+    promptInstruction = `=== COACHING PROMPT OBJECTIVE ===\n` +
+      `Analyze my cycling performance, pacing, and endurance progress.\n` +
+      `1. Evaluate my total distance (${totalCyclingKm.toFixed(1)} km) and speed (${avgCyclingSpeed} km/h).\n` +
+      `2. Suggest a structured 4-week progressive cycling plan (interval days, tempo rides, and endurance long rides) to build VO2 max and reach 75+ km/week comfortably.\n` +
+      `3. Recommend optimal cadence, on-bike hydration/fueling, and post-ride recovery strategies.`;
+  } else if (mode === "strength") {
+    promptInstruction = `=== COACHING PROMPT OBJECTIVE ===\n` +
+      `Audit my strength training volume and progressive overload consistency.\n` +
+      `1. Review my gym frequency (${totalWorkoutSessions} sessions in ${timeframe} days).\n` +
+      `2. Advise how to structure Push/Pull/Legs splits around my cycling and walking to avoid leg fatigue interference.\n` +
+      `3. Recommend optimal set/rep ranges and deload protocols for strength milestones and hypertrophy.`;
+  }
+
+  return promptHeader + promptInstruction;
 }
 
 function renderStreakCalendar(year, month) {
@@ -8194,7 +9188,7 @@ function renderStreakCalendar(year, month) {
   }
   
   const activeDays = new Set();
-  state.workouts.forEach((w) => {
+  getAllUnifiedActivities().forEach((w) => {
     const wDate = parseCalendarDate(w.date);
     if (wDate && wDate.getFullYear() === year && wDate.getMonth() === month) {
       activeDays.add(wDate.getDate());
@@ -8221,9 +9215,10 @@ function renderStreakCalendar(year, month) {
 }
 
 function calculateStreak() {
-  if (state.workouts.length === 0) return 0;
+  const allActs = getAllUnifiedActivities();
+  if (allActs.length === 0) return 0;
   
-  const dates = [...new Set(state.workouts.map((w) => calendarDateToISO(w.date)))]
+  const dates = [...new Set(allActs.map((w) => calendarDateToISO(w.date)))]
     .filter(Boolean)
     .sort()
     .reverse();
@@ -8269,7 +9264,8 @@ function renderPersonalRecords() {
   prListEl.innerHTML = "";
   
   const prs = {};
-  state.workouts.forEach((w) => {
+  const allActs = getAllUnifiedActivities();
+  allActs.forEach((w) => {
     if (w.exercises) {
       w.exercises.forEach((ex) => {
         const name = (ex.name || "").trim();
@@ -8726,9 +9722,10 @@ function renderWorkoutYearHeatmap() {
   const startDate = new Date(now);
   startDate.setDate(startDate.getDate() - days + 1);
 
-  // Build workout day map
+  // Build activity day map
   const workoutDayMap = {};
-  state.workouts.forEach(w => {
+  const allActs = getAllUnifiedActivities();
+  allActs.forEach(w => {
     const d = parseCalendarDate(w.date);
     if (!d) return;
     const key = dateToISODate(d);
@@ -8750,7 +9747,7 @@ function renderWorkoutYearHeatmap() {
       const count = workoutDayMap[key] || 0;
       const opacity = count === 0 ? '0.12' : count === 1 ? '0.45' : count === 2 ? '0.72' : '1';
       const dateStr = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-      const title = `${dateStr}: ${count > 0 ? count + ' workout' + (count > 1 ? 's' : '') : 'Rest day'}`;
+      const title = `${dateStr}: ${count > 0 ? count + ' activity' + (count > 1 ? 'ies' : '') : 'Rest day'}`;
       html += `<div title="${title}" style="width:11px;height:11px;border-radius:2px;background:var(--primary,#6366f1);opacity:${opacity};cursor:default;"></div>`;
     }
     html += `</div>`;
@@ -8758,11 +9755,11 @@ function renderWorkoutYearHeatmap() {
   html += `</div>`;
 
   const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const totalWorkouts = state.workouts.length;
+  const totalActs = allActs.length;
   const activeDays = Object.values(workoutDayMap).filter(v => v > 0).length;
   html += `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:6px;">
     <span>${MONTH_NAMES[startDate.getMonth()]} ${startDate.getFullYear()}</span>
-    <span style="font-weight:600;">${totalWorkouts} workouts · ${activeDays} active days</span>
+    <span style="font-weight:600;">${totalActs} activities · ${activeDays} active days</span>
     <span>${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}</span>
   </div>`;
 
@@ -9378,15 +10375,24 @@ function answerQuestion(question) {
     return `**Habit Tracker** 🔥\n\n**Prafful's habits:**\n${myLines || "• None yet"}\n\n**Wife's habits:**\n${wifeLines || "• None yet"}\n\nTotal: **${state.habits.length}** habits tracked`;
   }
 
-  // ─── EXERCISE / WORKOUTS ────────────────────────────────────────────────────
-  if (/exercise|workout|gym|walk\b|run\b|yoga|fitness|active|health/.test(q)) {
-    if (!state.workouts.length) return "No workouts logged yet. Add exercises via the Exercise tab.";
-    const sorted = [...state.workouts].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const recent = sorted.slice(0, 7);
-    const totalMin = recent.reduce((s, w) => s + toNumber(w.minutes), 0);
-    const todayWorked = state.workouts.some((w) => sameDay(w.date, todayISO()));
-    const lines = recent.map((w) => `• ${formatDate(w.date)}: **${w.type || "Workout"}** — ${w.minutes || 0} min (${w.intensity || "—"})`).join("\n");
-    return `**Exercise Log** 🏃\n${lines}\n\n• Last 7 sessions: **${totalMin} min** total\n• All-time workouts: **${state.workouts.length}**\n• Today: ${todayWorked ? "✅ Done" : "⚠️ Not yet — go for a walk!"}`;
+  // ─── EXERCISE / WORKOUTS / CYCLING / STEPS ────────────────────────────────
+  if (/exercise|workout|gym|walk\b|step|cycl|bike|ride|run\b|jog|calorie|fitness|active|health/.test(q)) {
+    const allActs = typeof getAllUnifiedActivities === "function" ? getAllUnifiedActivities() : (state.workouts || []);
+    if (!allActs.length) return "No exercise or activities logged yet. Tap + Log Activity in the Exercise tab.";
+    const recent = allActs.slice(0, 7);
+    const todayMetrics = typeof getTodayFitnessMetrics === "function" ? getTodayFitnessMetrics() : { todaySteps: 0, todayCalories: 0, todayMinutes: 0 };
+    const totalMin = recent.reduce((s, w) => s + (toNumber(w.durationMin || w.minutes) || 0), 0);
+    const totalCal = recent.reduce((s, w) => s + (toNumber(w.caloriesBurned) || 0), 0);
+    const streakDays = typeof calculateStreak === "function" ? calculateStreak() : 0;
+    const lines = recent.map((w) => {
+      let extra = [];
+      if (w.steps) extra.push(`${w.steps.toLocaleString()} steps`);
+      if (w.distanceKm) extra.push(`${w.distanceKm} km`);
+      if (w.durationMin || w.minutes) extra.push(`${w.durationMin || w.minutes}m`);
+      if (w.caloriesBurned) extra.push(`🔥 ${w.caloriesBurned} kcal`);
+      return `• ${formatDate(w.date)}: **${w.title || w.type}** (${extra.join(" • ") || w.intensity || "—"})`;
+    }).join("\n");
+    return `**Exercise & Activity Log** 🏃🚴\n${lines}\n\n• Today: **${todayMetrics.todaySteps.toLocaleString()} steps** • **${todayMetrics.todayCalories} kcal** • **${todayMetrics.todayMinutes} mins** (Streak: 🔥 **${streakDays} days**)\n• Last 7 activities: **${totalMin} min** • **🔥 ${totalCal.toLocaleString()} kcal** burned\n• Total activities logged: **${allActs.length}**`;
   }
 
   // ─── DEVOPS / SRE ───────────────────────────────────────────────────────────
@@ -11904,7 +12910,19 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveIsinOnline,
     resolveNseSymbol,
     autoResolveUnknownIsinStocks,
-    saveResolvedIsin
+    saveResolvedIsin,
+    calcCaloriesBurned,
+    calcCyclingSpeed,
+    calcRunningPace,
+    getAllUnifiedActivities,
+    getTodayFitnessMetrics,
+    buildFitnessLlmSummary,
+    calculateStreak,
+    getLatestBodyWeightKg,
+    normalizeData,
+    state,
+    defaultData,
+    demoData
   };
 }
 

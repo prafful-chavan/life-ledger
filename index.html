@@ -1363,52 +1363,230 @@
           <!-- ── Section Header ── -->
           <div class="section-heading">
             <div>
-              <h2 id="exerciseTitle">Exercise &amp; Body Tracker</h2>
-              <p>Log sessions, track body composition, and view your fitness journey.</p>
+              <h2 id="exerciseTitle">🏃 Activity &amp; Fitness Tracker</h2>
+              <p>Track daily steps, cycling, calories burned, strength workouts, and body composition.</p>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="secondary-button" type="button" id="btnAiFitnessCoach">🤖 AI Coach &amp; LLM</button>
+              <button class="secondary-button" type="button" id="btnFitnessGoals">⚙️ Goals</button>
               <button class="secondary-button" type="button" id="btnImportBodyMetricsCSV">📥 Import Body CSV</button>
               <button class="secondary-button" type="button" id="btnLogBodyMetrics">⚖️ Log Body Metrics</button>
               <button class="secondary-button" type="button" id="btnWorkoutTemplates">Templates</button>
-              <button class="primary-button" type="button" id="btnLogWorkoutManual">Log Workout</button>
+              <button class="primary-button" type="button" id="btnOpenActivityModal">+ Log Activity</button>
+            </div>
+          </div>
+
+          <!-- ── Quick Log Action Strip (iOS Mobile & Desktop Touch Friendly) ── -->
+          <div class="exercise-quick-actions" style="margin-bottom: 20px;">
+            <button type="button" class="quick-act-btn quick-act-steps" id="quickLogStepsBtn">
+              <span class="quick-act-icon">🚶</span>
+              <span class="quick-act-text"><strong>Log Steps</strong><small>Daily walk &amp; steps</small></span>
+            </button>
+            <button type="button" class="quick-act-btn quick-act-cycling" id="quickLogCyclingBtn">
+              <span class="quick-act-icon">🚴</span>
+              <span class="quick-act-text"><strong>Log Cycling</strong><small>Distance, speed &amp; kcal</small></span>
+            </button>
+            <button type="button" class="quick-act-btn quick-act-running" id="quickLogRunningBtn">
+              <span class="quick-act-icon">🏃</span>
+              <span class="quick-act-text"><strong>Log Cardio</strong><small>Run, jog &amp; pace</small></span>
+            </button>
+            <button type="button" class="quick-act-btn quick-act-gym" id="btnLogWorkoutManual">
+              <span class="quick-act-icon">🏋️</span>
+              <span class="quick-act-text"><strong>Log Gym Workout</strong><small>Sets, reps &amp; weights</small></span>
+            </button>
+          </div>
+
+          <!-- ── Today's Activity Rings & Target Hero Card ── -->
+          <div class="panel fitness-rings-hero" style="margin-bottom: 20px; padding: 20px;">
+            <div class="rings-hero-layout">
+              <!-- Apple Fitness Style SVG Rings -->
+              <div class="rings-wrapper">
+                <svg id="activityRingsSvg" viewBox="0 0 220 220" width="180" height="180" class="activity-rings-svg"></svg>
+                <div class="rings-center-stat" id="ringsCenterStat">
+                  <span class="rings-center-val" id="ringsCenterKcal">0</span>
+                  <span class="rings-center-lbl">ACTIVE KCAL</span>
+                </div>
+              </div>
+
+              <!-- Today's Metric Breakdown & Progress Bars -->
+              <div class="rings-metrics-list">
+                <div class="ring-metric-row ring-row-calories">
+                  <div class="ring-dot ring-dot-cal"></div>
+                  <div class="ring-info">
+                    <div class="ring-header">
+                      <span class="ring-name">Active Calories Today</span>
+                      <span class="ring-val-target" id="ringCaloriesTarget">0 / 500 kcal</span>
+                    </div>
+                    <div class="ring-bar-bg"><div class="ring-bar-fill fill-cal" id="ringCaloriesBar" style="width: 0%;"></div></div>
+                  </div>
+                </div>
+
+                <div class="ring-metric-row ring-row-steps">
+                  <div class="ring-dot ring-dot-steps"></div>
+                  <div class="ring-info">
+                    <div class="ring-header">
+                      <span class="ring-name">Daily Steps</span>
+                      <span class="ring-val-target" id="ringStepsTarget">0 / 10,000 steps</span>
+                    </div>
+                    <div class="ring-bar-bg"><div class="ring-bar-fill fill-steps" id="ringStepsBar" style="width: 0%;"></div></div>
+                  </div>
+                </div>
+
+                <div class="ring-metric-row ring-row-minutes">
+                  <div class="ring-dot ring-dot-min"></div>
+                  <div class="ring-info">
+                    <div class="ring-header">
+                      <span class="ring-name">Active Exercise</span>
+                      <span class="ring-val-target" id="ringMinutesTarget">0 / 45 min</span>
+                    </div>
+                    <div class="ring-bar-bg"><div class="ring-bar-fill fill-min" id="ringMinutesBar" style="width: 0%;"></div></div>
+                  </div>
+                </div>
+
+                <div class="ring-metric-row ring-row-cycling">
+                  <div class="ring-dot ring-dot-cycling"></div>
+                  <div class="ring-info">
+                    <div class="ring-header">
+                      <span class="ring-name">Weekly Cycling</span>
+                      <span class="ring-val-target" id="ringCyclingTarget">0 / 50 km</span>
+                    </div>
+                    <div class="ring-bar-bg"><div class="ring-bar-fill fill-cycling" id="ringCyclingBar" style="width: 0%;"></div></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- ── Month Navigator ── -->
           <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:20px;padding:12px 16px;background:var(--card);border-radius:12px;border:1px solid var(--line);">
             <button class="secondary-button" id="prevExerciseMonthBtn" type="button" style="padding:6px 14px;min-width:36px;">‹</button>
-            <span id="exerciseMonthNavLabel" style="font-weight:700;font-size:15px;min-width:160px;text-align:center;color:var(--text);">August 2026</span>
+            <span id="exerciseMonthNavLabel" style="font-weight:700;font-size:15px;min-width:160px;text-align:center;color:var(--text);">September 2026</span>
             <button class="secondary-button" id="nextExerciseMonthBtn" type="button" style="padding:6px 14px;min-width:36px;">›</button>
           </div>
 
-          <!-- ── Monthly Stats Grid ── -->
-          <div class="metric-grid" style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
-            <div class="metric-card" style="grid-column: span 2; display: flex; flex-direction: column; justify-content: space-between;">
-              <p class="eyebrow" style="margin-bottom: 6px;">Monthly Streak ⚡</p>
-              <div class="streak-calendar-wrapper">
-                <div id="streakCalendarHeader" class="streak-cal-header" style="display: flex; justify-content: space-between; font-weight: 700; font-size: 12px; color: var(--muted); margin-bottom: 4px;"></div>
-                <div id="streakCalendarGrid" class="streak-cal-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;"></div>
-              </div>
+          <!-- ── Monthly Stats Grid (4 Cards) ── -->
+          <div class="metric-grid exercise-stats-grid" style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+            <div class="metric-card">
+              <p class="eyebrow">🚶 Total Steps</p>
+              <div class="metric-value" id="monthTotalSteps">0</div>
+              <p class="muted-small" id="monthStepsSub">0 km • 0 avg/day</p>
             </div>
             <div class="metric-card">
-              <p class="eyebrow">Sessions This Month</p>
-              <div class="metric-value" id="workoutTotalSessions">0</div>
-              <p class="muted-small" id="workoutTotalSessionsSub">Selected month</p>
+              <p class="eyebrow">🚴 Cycling Distance</p>
+              <div class="metric-value" id="monthTotalCycling">0 km</div>
+              <p class="muted-small" id="monthCyclingSub">0 rides • 0 km/h avg</p>
+            </div>
+            <div class="metric-card">
+              <p class="eyebrow">🔥 Calories Burned</p>
+              <div class="metric-value" id="monthTotalCalories">0 kcal</div>
+              <p class="muted-small" id="monthCaloriesSub">0 kcal daily avg</p>
             </div>
             <div class="metric-card" style="display: flex; flex-direction: column; justify-content: space-between;">
               <div>
-                <p class="eyebrow">Workout Time</p>
+                <p class="eyebrow">⏱️ Active Time</p>
                 <div class="metric-value" id="workoutTotalMinutes">0 min</div>
               </div>
               <div style="margin-top: 10px;">
-                <p class="eyebrow" style="font-size: 11px; margin-bottom: 2px;">Avg Duration</p>
-                <div class="small-value" id="workoutAvgDuration" style="font-size: 14px; font-weight: 700; color: var(--text);">0 min</div>
+                <p class="eyebrow" style="font-size: 11px; margin-bottom: 2px;">Sessions &amp; Avg</p>
+                <div class="small-value" id="workoutTotalSessions" style="font-size: 14px; font-weight: 700; color: var(--text);">0 sessions</div>
+                <p class="muted-small" id="workoutAvgDuration">0 min avg</p>
               </div>
             </div>
           </div>
 
+          <!-- ── Monthly Activity Streak ── -->
+          <div class="panel" style="margin-bottom: 20px;">
+            <div class="panel-header">
+              <div>
+                <h3>Monthly Activity Streak ⚡</h3>
+                <p>Days you logged steps, cycling, or workouts this month.</p>
+              </div>
+            </div>
+            <div class="streak-calendar-wrapper" style="margin-top: 12px;">
+              <div id="streakCalendarHeader" class="streak-cal-header" style="display: flex; justify-content: space-between; font-weight: 700; font-size: 12px; color: var(--muted); margin-bottom: 4px;"></div>
+              <div id="streakCalendarGrid" class="streak-cal-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;"></div>
+            </div>
+          </div>
+
+          <!-- ── 7-Day Trend Chart & Metric Toggles ── -->
+          <div class="panel" style="margin-bottom: 20px;">
+            <div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h3>7-Day Activity Trends 📊</h3>
+                <p>Daily volume for active calories, steps, cycling, and workout time.</p>
+              </div>
+              <div class="activity-metric-toggle" id="activityMetricToggle" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="chip active-metric-chip" data-chart-metric="calories">🔥 Calories</button>
+                <button type="button" class="chip" data-chart-metric="steps">🚶 Steps</button>
+                <button type="button" class="chip" data-chart-metric="cycling">🚴 Cycling (km)</button>
+                <button type="button" class="chip" data-chart-metric="minutes">⏱️ Minutes</button>
+              </div>
+            </div>
+            <div id="exercise7DayChartWrapper" style="height: 180px; position: relative; margin-top: 12px;">
+              <svg id="exercise7DayChartSvg" style="width: 100%; height: 100%; min-height: 160px; overflow: visible;"></svg>
+            </div>
+          </div>
+
+          <!-- ── Split: PRs / Heatmap | Activity Feed ── -->
+          <div class="split-grid">
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+              <!-- PRs -->
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Personal Records (PRs) 🏆</h3>
+                    <p>Strength milestones &amp; peak performance.</p>
+                  </div>
+                </div>
+                <div id="workoutPRList" class="pr-list" style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;"></div>
+              </section>
+
+              <!-- 8-Week Frequency Chart -->
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Workout Consistency (Last 8 Weeks)</h3>
+                    <p>Sessions frequency per week.</p>
+                  </div>
+                </div>
+                <div id="workoutChartContainer" class="workout-chart-wrapper" style="height: 140px; position: relative; margin-top: 12px;">
+                  <svg id="workoutConsistencyChart" style="width: 100%; height: 100%; min-height: 120px; overflow: visible;"></svg>
+                </div>
+              </section>
+
+              <!-- Year Activity Heatmap -->
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Activity Heatmap — Last 52 Weeks 🗓️</h3>
+                    <p>Your movement frequency across the year.</p>
+                  </div>
+                </div>
+                <div id="workoutYearHeatmap" style="margin-top:12px;overflow-x:auto;"></div>
+              </section>
+            </div>
+
+            <!-- Right Column: Unified Activity Feed -->
+            <section class="panel">
+              <div class="panel-header" style="flex-wrap: wrap; gap: 10px;">
+                <div>
+                  <h3>Activity Feed</h3>
+                  <p>Detailed log for selected month.</p>
+                </div>
+                <div class="activity-filter-chips" id="activityFilterChips">
+                  <button type="button" class="filter-chip active" data-filter="all">All</button>
+                  <button type="button" class="filter-chip" data-filter="steps">🚶 Steps</button>
+                  <button type="button" class="filter-chip" data-filter="cycling">🚴 Cycling</button>
+                  <button type="button" class="filter-chip" data-filter="running">🏃 Cardio</button>
+                  <button type="button" class="filter-chip" data-filter="workout">🏋️ Strength</button>
+                </div>
+              </div>
+              <div id="exerciseHistoryFeed" class="stack-list" style="margin-top: 12px;"></div>
+            </section>
+          </div>
+
           <!-- ── Body Composition Dashboard ── -->
-          <section class="panel" style="margin-bottom:20px;">
+          <section class="panel" style="margin-top:20px;">
             <div class="panel-header">
               <div>
                 <h3>Body Composition</h3>
@@ -1417,51 +1595,6 @@
             </div>
             <div id="bodyCompositionPanel" style="margin-top:12px;"></div>
           </section>
-
-          <!-- ── Year Activity Heatmap ── -->
-          <section class="panel" style="margin-bottom:20px;">
-            <div class="panel-header">
-              <div>
-                <h3>Activity Heatmap — Last 52 Weeks 🗓️</h3>
-                <p>Your workout frequency across the year.</p>
-              </div>
-            </div>
-            <div id="workoutYearHeatmap" style="margin-top:12px;overflow-x:auto;"></div>
-          </section>
-
-          <!-- ── Split: PRs / Chart | Workout Feed ── -->
-          <div class="split-grid">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <h3>Personal Bests &amp; Frequency</h3>
-                  <p>Strength milestones and consistency graph.</p>
-                </div>
-              </div>
-              
-              <div class="pr-section" style="margin-top: 12px;">
-                <h4 style="font-size: 13px; color: var(--text); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Personal Records (PRs) 🏆</h4>
-                <div id="workoutPRList" class="pr-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
-              </div>
-
-              <div class="chart-section" style="margin-top: 24px;">
-                <h4 style="font-size: 13px; color: var(--text); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Workout History (Last 8 Weeks)</h4>
-                <div id="workoutChartContainer" class="workout-chart-wrapper" style="height: 140px; position: relative;">
-                  <svg id="workoutConsistencyChart" style="width: 100%; height: 100%; min-height: 120px; overflow: visible;"></svg>
-                </div>
-              </div>
-            </section>
-
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <h3>Workout Feed</h3>
-                  <p>Sessions for the selected month.</p>
-                </div>
-              </div>
-              <div id="exerciseHistoryFeed" class="stack-list"></div>
-            </section>
-          </div>
         </section>
 
         <!-- ── Body Metrics Modal ── -->
@@ -1989,6 +2122,235 @@
             <button class="primary-button" type="submit">Save Session</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- ── Unified Activity Logger Modal (Steps, Cycling, Running, Strength) ── -->
+    <div class="modal" id="activityLoggerModal" role="dialog" aria-modal="true" aria-labelledby="actLoggerTitle" hidden>
+      <div class="modal-card" style="max-width: 620px; width: 92%; max-height: 88vh; overflow-y: auto;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" id="actLoggerEyebrow">Movement &amp; Health</p>
+            <h2 id="actLoggerTitle">Log Activity</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+
+        <!-- Activity Type Tabs (iOS Pill Switcher) -->
+        <div class="activity-type-tabs" id="actTypeTabs" style="display: flex; gap: 6px; padding: 4px; background: var(--panel-soft, rgba(255,255,255,0.04)); border-radius: 10px; margin-bottom: 16px; overflow-x: auto;">
+          <button type="button" class="act-tab-btn active" data-act-type="steps">🚶 Steps</button>
+          <button type="button" class="act-tab-btn" data-act-type="cycling">🚴 Cycling</button>
+          <button type="button" class="act-tab-btn" data-act-type="running">🏃 Running</button>
+          <button type="button" class="act-tab-btn" data-act-type="workout">🏋️ Strength</button>
+          <button type="button" class="act-tab-btn" data-act-type="other">✨ Other</button>
+        </div>
+
+        <form id="activityLoggerForm" class="quick-form">
+          <input type="hidden" id="actLogId" value="" />
+          <input type="hidden" id="actLogSelectedType" value="steps" />
+
+          <!-- Date & Title -->
+          <label>
+            Date
+            <input type="date" id="actLogDate" required />
+          </label>
+          <label>
+            Activity Name / Title
+            <input type="text" id="actLogTitle" placeholder="e.g. Morning Walk, Highway Ride" />
+          </label>
+
+          <!-- Steps Specific Section -->
+          <div class="full-span act-field-group" id="groupStepsFields">
+            <label style="display: block; margin-bottom: 6px;">
+              Step Count
+              <input type="number" id="actLogSteps" min="0" step="50" inputmode="numeric" placeholder="e.g. 8450" />
+            </label>
+            <div class="quick-chip-strip" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+              <button type="button" class="chip quick-inc-btn" data-add-steps="1000">+1,000</button>
+              <button type="button" class="chip quick-inc-btn" data-add-steps="2500">+2,500</button>
+              <button type="button" class="chip quick-inc-btn" data-add-steps="5000">+5,000</button>
+              <button type="button" class="chip quick-inc-btn" data-add-steps="10000">+10,000</button>
+            </div>
+          </div>
+
+          <!-- Distance (for cycling, running, walking) -->
+          <div class="full-span act-field-group" id="groupDistanceFields">
+            <label style="display: block; margin-bottom: 6px;">
+              Distance (km)
+              <input type="number" id="actLogDistance" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 22.5" />
+            </label>
+            <div class="quick-chip-strip" id="distanceQuickChips" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+              <button type="button" class="chip quick-inc-dist" data-add-dist="5">+5 km</button>
+              <button type="button" class="chip quick-inc-dist" data-add-dist="10">+10 km</button>
+              <button type="button" class="chip quick-inc-dist" data-add-dist="20">+20 km</button>
+            </div>
+          </div>
+
+          <!-- Duration (minutes) -->
+          <div class="full-span">
+            <label style="display: block; margin-bottom: 6px;">
+              Duration (minutes)
+              <input type="number" id="actLogDuration" min="1" step="1" inputmode="numeric" placeholder="e.g. 45" required />
+            </label>
+            <div class="quick-chip-strip" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+              <button type="button" class="chip quick-inc-time" data-add-time="15">+15m</button>
+              <button type="button" class="chip quick-inc-time" data-add-time="30">+30m</button>
+              <button type="button" class="chip quick-inc-time" data-add-time="45">+45m</button>
+              <button type="button" class="chip quick-inc-time" data-add-time="60">+60m</button>
+            </div>
+          </div>
+
+          <!-- Real-Time Metric Calcs Banner (Speed, Pace, Calories) -->
+          <div class="full-span" style="background: var(--panel, #1e293b); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
+            <div>
+              <div style="font-size: 10px; text-transform: uppercase; color: var(--muted); font-weight: 700;">Speed</div>
+              <div style="font-size: 15px; font-weight: 800; color: var(--primary);" id="actCalcSpeed">—</div>
+            </div>
+            <div>
+              <div style="font-size: 10px; text-transform: uppercase; color: var(--muted); font-weight: 700;">Pace</div>
+              <div style="font-size: 15px; font-weight: 800; color: var(--text);" id="actCalcPace">—</div>
+            </div>
+            <div>
+              <div style="font-size: 10px; text-transform: uppercase; color: var(--muted); font-weight: 700;">Active Burn</div>
+              <div style="font-size: 15px; font-weight: 800; color: #f97316;" id="actCalcCaloriesBadge">0 kcal</div>
+            </div>
+          </div>
+
+          <!-- Calories Burned (Manual override or auto-calc) -->
+          <label>
+            Calories Burned (kcal)
+            <input type="number" id="actLogCalories" min="0" step="1" inputmode="numeric" placeholder="Auto-calculated" />
+          </label>
+
+          <!-- Intensity -->
+          <label>
+            Intensity
+            <select id="actLogIntensity">
+              <option value="Low">Low (Zone 1-2 • Easy)</option>
+              <option value="Moderate" selected>Moderate (Zone 3 • Steady)</option>
+              <option value="High">High (Zone 4-5 • Vigorous)</option>
+            </select>
+          </label>
+
+          <!-- Extra Optional Metrics: Elevation & Heart Rate -->
+          <label id="groupElevationField">
+            Elevation Gain (m)
+            <input type="number" id="actLogElevation" min="0" step="1" inputmode="numeric" placeholder="e.g. 110" />
+          </label>
+          <label id="groupHeartRateField">
+            Avg Heart Rate (bpm)
+            <input type="number" id="actLogHeartRate" min="40" max="220" inputmode="numeric" placeholder="e.g. 142" />
+          </label>
+
+          <!-- Notes -->
+          <label class="full-span">
+            Notes / Route Details
+            <input type="text" id="actLogNotes" placeholder="e.g. Outdoor trail, felt energetic, cadence 82rpm" />
+          </label>
+
+          <div class="modal-actions full-span" style="border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px;">
+            <button class="secondary-button" type="button" data-close-modal>Cancel</button>
+            <button class="primary-button" type="submit" id="btnSaveActivity">Save Activity</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Fitness Goals Modal ── -->
+    <div class="modal" id="fitnessGoalsModal" role="dialog" aria-modal="true" aria-labelledby="fitnessGoalsTitle" hidden>
+      <div class="modal-card" style="max-width: 480px; width: 92%;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Personal Targets</p>
+            <h2 id="fitnessGoalsTitle">⚙️ Fitness Goals</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <form id="fitnessGoalsForm" class="quick-form">
+          <label class="full-span">
+            Daily Steps Target
+            <input type="number" id="goalDailySteps" min="1000" step="500" inputmode="numeric" value="10000" required />
+            <small style="color: var(--muted); font-size: 11px;">Recommended: 8,000 - 10,000 steps/day</small>
+          </label>
+          <label class="full-span">
+            Daily Active Calories (kcal)
+            <input type="number" id="goalActiveCalories" min="100" step="50" inputmode="numeric" value="500" required />
+            <small style="color: var(--muted); font-size: 11px;">Target active movement burn per day</small>
+          </label>
+          <label class="full-span">
+            Daily Active Exercise (minutes)
+            <input type="number" id="goalActiveMinutes" min="10" step="5" inputmode="numeric" value="45" required />
+            <small style="color: var(--muted); font-size: 11px;">WHO recommendation: >= 30-45 mins/day</small>
+          </label>
+          <label class="full-span">
+            Weekly Cycling Target (km)
+            <input type="number" id="goalWeeklyCyclingKm" min="0" step="5" inputmode="numeric" value="50" required />
+            <small style="color: var(--muted); font-size: 11px;">Target distance per rolling week</small>
+          </label>
+          <div class="modal-actions full-span" style="border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px;">
+            <button class="secondary-button" type="button" data-close-modal>Cancel</button>
+            <button class="primary-button" type="submit">Save Goals</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── AI Fitness Coach & LLM Connect Modal ── -->
+    <div class="modal" id="aiFitnessCoachModal" role="dialog" aria-modal="true" aria-labelledby="aiFitnessCoachTitle" hidden>
+      <div class="modal-card" style="max-width: 720px; width: 92%; max-height: 88vh; overflow-y: auto;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">LLM Intelligence &amp; Analysis</p>
+            <h2 id="aiFitnessCoachTitle">🤖 AI Fitness Coach</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <p style="font-size: 13px; color: var(--muted);">
+            Analyze your step volume, cycling endurance, calorie expenditure, and gym progression with advanced LLMs (Gemini, Claude, or ChatGPT).
+          </p>
+
+          <!-- Select Analysis Mode -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <label style="font-size: 12px; font-weight: 700; color: var(--text);">
+              Analysis Objective
+              <select id="aiFitnessPromptMode" class="form-input" style="width: 100%; margin-top: 4px;">
+                <option value="comprehensive">Comprehensive Fitness &amp; Health Review</option>
+                <option value="fatloss">Fat Loss &amp; Calorie Deficit Strategy</option>
+                <option value="cycling">Cycling Endurance &amp; Speed Progression</option>
+                <option value="strength">Strength Hypertrophy &amp; Progressive Overload</option>
+                <option value="rawjson">Raw JSON Payload (Data Science / LLM)</option>
+              </select>
+            </label>
+
+            <label style="font-size: 12px; font-weight: 700; color: var(--text);">
+              Timeframe
+              <select id="aiFitnessTimeframe" class="form-input" style="width: 100%; margin-top: 4px;">
+                <option value="7">Last 7 Days</option>
+                <option value="30" selected>Last 30 Days (Recommended)</option>
+                <option value="90">Last 90 Days</option>
+                <option value="all">All-Time History</option>
+              </select>
+            </label>
+          </div>
+
+          <!-- Generated Prompt Preview -->
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted);">LLM Prompt Preview</span>
+              <span style="font-size: 11px; color: var(--primary);" id="aiPromptStatsLabel">30-day fitness summary</span>
+            </div>
+            <textarea id="aiFitnessPromptText" readonly style="width: 100%; height: 260px; font-family: monospace; font-size: 12px; background: var(--panel, #0f172a); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 12px; line-height: 1.5; resize: vertical;"></textarea>
+          </div>
+
+          <!-- Actions -->
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; border-top: 1px solid var(--line); padding-top: 14px;">
+            <button class="secondary-button" type="button" id="btnCopyFitnessPrompt">📋 Copy LLM Prompt</button>
+            <button class="secondary-button" type="button" id="btnDownloadFitnessJson">📥 Download JSON</button>
+            <button class="primary-button" type="button" id="btnLaunchInAppAssistant">🤖 Ask Life-Ledger AI</button>
+          </div>
+        </div>
       </div>
     </div>
 

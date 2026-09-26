@@ -2913,6 +2913,308 @@ body[data-theme="dark"] .goal-time-left {
   border-bottom-color: var(--line) !important;
 }
 
+/* ─── Exercise & Activity Tracker Modern Styles ─────────────────── */
+.exercise-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.quick-act-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+  min-height: 58px;
+  touch-action: manipulation;
+  color: var(--text);
+}
+.quick-act-btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+.quick-act-btn:active {
+  transform: scale(0.98);
+}
+.quick-act-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--panel-soft, rgba(255,255,255,0.05));
+}
+.quick-act-text {
+  display: flex;
+  flex-direction: column;
+}
+.quick-act-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.quick-act-text small {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.2;
+  margin-top: 2px;
+}
+.quick-act-steps .quick-act-icon { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.quick-act-cycling .quick-act-icon { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.quick-act-running .quick-act-icon { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+.quick-act-gym .quick-act-icon { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+
+/* Activity Rings & Target Hero */
+.fitness-rings-hero {
+  background: linear-gradient(135deg, var(--card) 0%, rgba(20, 24, 38, 0.95) 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  position: relative;
+  overflow: hidden;
+}
+.rings-hero-layout {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.rings-wrapper {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+.activity-rings-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.rings-center-stat {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.rings-center-val {
+  font-size: 26px;
+  font-weight: 900;
+  color: #f97316;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+.rings-center-lbl {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+.rings-metrics-list {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ring-metric-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ring-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ring-dot-cal { background: #f97316; box-shadow: 0 0 8px rgba(249, 115, 22, 0.6); }
+.ring-dot-steps { background: #06b6d4; box-shadow: 0 0 8px rgba(6, 182, 212, 0.6); }
+.ring-dot-min { background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }
+.ring-dot-cycling { background: #8b5cf6; box-shadow: 0 0 8px rgba(139, 92, 246, 0.6); }
+.ring-info {
+  flex: 1;
+}
+.ring-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+.ring-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ring-val-target {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.ring-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: var(--panel-soft, rgba(255,255,255,0.06));
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ring-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fill-cal { background: linear-gradient(90deg, #ea580c, #f97316); }
+.fill-steps { background: linear-gradient(90deg, #0284c7, #06b6d4); }
+.fill-min { background: linear-gradient(90deg, #059669, #10b981); }
+.fill-cycling { background: linear-gradient(90deg, #7c3aed, #a855f7); }
+
+/* Activity Filter Chips */
+.activity-filter-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 2px;
+}
+.activity-filter-chips::-webkit-scrollbar { display: none; }
+.filter-chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft, rgba(255,255,255,0.04));
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  transition: all 0.15s ease;
+  min-height: 36px;
+}
+.filter-chip:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+.filter-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* Modal Activity Type Tabs */
+.act-tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  min-height: 40px;
+}
+.act-tab-btn:hover {
+  color: var(--text);
+}
+.act-tab-btn.active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Active metric toggles */
+.active-metric-chip {
+  background: var(--primary) !important;
+  color: #fff !important;
+  border-color: var(--primary) !important;
+}
+
+/* Activity Feed Card Styles */
+.activity-feed-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: all 0.2s;
+}
+.activity-feed-card:hover {
+  border-color: rgba(255,255,255,0.18);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+}
+.activity-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.activity-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.activity-type-icon-pill {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.pill-steps { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.pill-cycling { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.pill-running { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+.pill-workout { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.pill-other { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+
+.activity-metrics-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.act-metric-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel-soft, rgba(255,255,255,0.04));
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.act-metric-tag.tag-cal { color: #f97316; border-color: rgba(249, 115, 22, 0.3); }
+.act-metric-tag.tag-dist { color: #06b6d4; border-color: rgba(6, 182, 212, 0.3); }
+.act-metric-tag.tag-speed { color: #8b5cf6; border-color: rgba(139, 92, 246, 0.3); }
+
 /* Exercise Tracker: Streak Calendar styles */
 .streak-calendar-wrapper {
   background: var(--panel);
@@ -3879,6 +4181,35 @@ body[data-theme="dark"] .sortable-th:hover {
   .modal-actions button {
     width: 100%;
     min-height: 44px;
+  }
+
+  /* Mobile Exercise & Activity Tracker */
+  .exercise-quick-actions {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .quick-act-btn {
+    min-height: 52px !important;
+    padding: 10px 12px !important;
+  }
+  .quick-act-icon {
+    width: 34px !important;
+    height: 34px !important;
+    font-size: 20px !important;
+  }
+  .rings-hero-layout {
+    flex-direction: column !important;
+    gap: 20px !important;
+    align-items: center !important;
+    text-align: center;
+  }
+  .rings-metrics-list {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .exercise-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
   }
 }
 
