@@ -2376,21 +2376,42 @@ function getExchangeTicker(symbol) {
 }
 
 /**
+ * Saves a resolved ISIN mapping into memory dictionary and localStorage cache.
+ */
+function saveResolvedIsin(isin, result) {
+  if (!isin || !result || !result.symbol) return;
+  const cleanIsin = String(isin).trim().toUpperCase();
+  MASTER_ISIN_MAP[cleanIsin] = result;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const cached = JSON.parse(localStorage.getItem('lifeLedgerIsinCache:v1') || '{}');
+      cached[cleanIsin] = result;
+      localStorage.setItem('lifeLedgerIsinCache:v1', JSON.stringify(cached));
+    } catch (e) {}
+  }
+}
+
+/**
  * Look up stock information from ISIN code using static dictionary or local cache.
  */
 function getIsinMapping(isin) {
   if (!isin) return null;
   const clean = String(isin).trim().toUpperCase();
   if (MASTER_ISIN_MAP[clean]) return MASTER_ISIN_MAP[clean];
-  try {
-    const cached = JSON.parse(localStorage.getItem('lifeLedgerIsinCache:v1') || '{}');
-    if (cached[clean]) return cached[clean];
-  } catch (e) {}
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const cached = JSON.parse(localStorage.getItem('lifeLedgerIsinCache:v1') || '{}');
+      if (cached[clean]) return cached[clean];
+    } catch (e) {}
+  }
   return null;
 }
 
 /**
- * Resolve an unknown ISIN code dynamically using Yahoo Finance search API with CORS fallbacks.
+ * Resolve an unknown ISIN code dynamically:
+ * Priority 1: User's Google Apps Script proxy (Server-side on Google Cloud, Zero CORS, instant)
+ * Priority 2: Groww Search API (Contains all Indian stocks, ETFs, SGBs)
+ * Priority 3: Yahoo Finance Search API (Broad international/Indian coverage)
  */
 async function resolveIsinOnline(isin) {
   if (!isin) return null;
@@ -2398,8 +2419,68 @@ async function resolveIsinOnline(isin) {
   const existing = getIsinMapping(cleanIsin);
   if (existing) return existing;
 
+  const proxyUrl = typeof localStorage !== 'undefined' ? localStorage.getItem(STOCK_PROXY_URL_KEY) : null;
+
+  // 1. Primary: Google Apps Script Proxy URL (server-side, zero CORS, instant)
+  if (proxyUrl) {
+    try {
+      const url = `${proxyUrl}?resolveIsin=${encodeURIComponent(cleanIsin)}`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.symbol && !data.error) {
+          const result = {
+            symbol: String(data.symbol).toUpperCase().replace(/\s*-EQ$/i, '').trim(),
+            company: data.company || data.symbol,
+            category: data.category || (/BEES|ETF|GOLD|SILVER|NIFTY/i.test(data.symbol) ? 'ETF' : 'Stock')
+          };
+          saveResolvedIsin(cleanIsin, result);
+          return result;
+        }
+      }
+    } catch (e) {
+      console.warn(`[ISIN Resolver] Proxy lookup failed for ${cleanIsin}:`, e.message);
+    }
+  }
+
+  // 2. Secondary: Groww Search API (Master database for Indian securities)
+  const growwSearchUrl = `https://groww.in/v1/api/search/v1/entity?app=false&page=0&q=${encodeURIComponent(cleanIsin)}&size=5`;
+  const growwEndpoints = [
+    growwSearchUrl,
+    `https://corsproxy.io/?${encodeURIComponent(growwSearchUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(growwSearchUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(growwSearchUrl)}`
+  ];
+
+  for (const url of growwEndpoints) {
+    try {
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) });
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      const jsonStart = text.indexOf('{');
+      if (jsonStart < 0) continue;
+      const data = JSON.parse(text.slice(jsonStart));
+      const items = data && data.content ? data.content : [];
+      let item = items.find(x => x.isin && x.isin.toUpperCase() === cleanIsin) || items[0];
+      if (item) {
+        const symbol = String(item.nse_scrip_code || item.bse_scrip_code || item.symbol || '').toUpperCase().trim();
+        if (symbol) {
+          const company = item.title || item.company_short_name || symbol;
+          const entityType = String(item.entity_type || '').toUpperCase();
+          const category = (entityType === 'ETF' || /ETF|BEES/i.test(symbol + ' ' + company))
+            ? 'ETF'
+            : (/SGB|GOLD.*BOND/i.test(symbol + ' ' + company) ? 'Bond' : 'Stock');
+          const result = { symbol, company, category };
+          saveResolvedIsin(cleanIsin, result);
+          return result;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 3. Tertiary: Yahoo Finance Search API
   const yahooSearchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(cleanIsin)}`;
-  const endpoints = [
+  const yahooEndpoints = [
     yahooSearchUrl,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooSearchUrl)}`,
     `https://corsproxy.io/?${encodeURIComponent(yahooSearchUrl)}`,
@@ -2407,7 +2488,7 @@ async function resolveIsinOnline(isin) {
     `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(cleanIsin)}`
   ];
 
-  for (const url of endpoints) {
+  for (const url of yahooEndpoints) {
     try {
       const resp = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(6000) });
       if (!resp.ok) continue;
@@ -2422,18 +2503,12 @@ async function resolveIsinOnline(isin) {
         const company = q.longname || q.shortname || symbol;
         const category = q.quoteType === 'ETF' || /ETF|BEES/i.test(symbol + ' ' + company) ? 'ETF' : 'Stock';
         const result = { symbol, company, category };
-
-        MASTER_ISIN_MAP[cleanIsin] = result;
-        try {
-          const cached = JSON.parse(localStorage.getItem('lifeLedgerIsinCache:v1') || '{}');
-          cached[cleanIsin] = result;
-          localStorage.setItem('lifeLedgerIsinCache:v1', JSON.stringify(cached));
-        } catch (e) {}
-
+        saveResolvedIsin(cleanIsin, result);
         return result;
       }
     } catch (e) {}
   }
+
   return null;
 }
 
@@ -2551,9 +2626,10 @@ function deriveStockSymbol(name) {
  * Scans state.stocks and automatically repairs any stock entries that currently display
  * raw ISIN codes instead of human-readable company names and proper NSE symbols.
  */
-async function autoResolveUnknownIsinStocks() {
+async function autoResolveUnknownIsinStocks(stocksList) {
   const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
-  const isinStocks = (state.stocks || []).filter(s => 
+  const list = stocksList || (typeof state !== 'undefined' && state && state.stocks ? state.stocks : []) || [];
+  const isinStocks = list.filter(s => 
     isinPattern.test(s.symbol || '') || isinPattern.test(s.company || '') || isinPattern.test(s.isin || '')
   );
   if (isinStocks.length === 0) return false;
@@ -2578,8 +2654,8 @@ async function autoResolveUnknownIsinStocks() {
     }
   }
   if (changed) {
-    await saveData(true);
-    renderStockHoldingsPanel();
+    if (typeof window !== 'undefined' && typeof saveData === 'function') await saveData(true);
+    if (typeof window !== 'undefined' && typeof renderStockHoldingsPanel === 'function') renderStockHoldingsPanel();
   }
   return changed;
 }
@@ -5747,6 +5823,21 @@ async function refreshStockPrices(force = false) {
           }
           setCacheItem(sym, priceData, 'proxy');
           updatedCount++;
+
+          // Dynamic ISIN metadata caching from proxy response
+          const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
+          const cleanIsin = priceData.isin || (isinPattern.test(sym) ? sym : null);
+          if (cleanIsin && priceData.symbol && priceData.company) {
+            const res = {
+              symbol: priceData.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim(),
+              company: priceData.company,
+              category: priceData.category || (/BEES|ETF|GOLD|SILVER|NIFTY/i.test(priceData.symbol) ? 'ETF' : 'Stock')
+            };
+            saveResolvedIsin(cleanIsin, res);
+            if (res.symbol !== sym) {
+              setCacheItem(res.symbol, priceData, 'proxy');
+            }
+          }
         }
         failedSymbols = uniqueSymbols.filter(s => {
           const ex = getExchangeTicker(s);
@@ -5789,11 +5880,32 @@ async function refreshStockPrices(force = false) {
 
   if (updatedCount > 0) {
     saveStockPriceCache(cache);
+    const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
     state.stocks.forEach(s => {
+      const rawSym = String(s.symbol || '').toUpperCase().trim();
+      const rawComp = String(s.company || '').toUpperCase().trim();
+      const rawIsin = String(s.isin || '').toUpperCase().trim();
+
+      // Check if stock has raw ISIN as symbol or company
+      if (isinPattern.test(rawSym) || isinPattern.test(rawComp) || isinPattern.test(rawIsin)) {
+        const isinCode = (isinPattern.test(rawIsin) && rawIsin) ||
+                         (isinPattern.test(rawSym) && rawSym) ||
+                         (isinPattern.test(rawComp) && rawComp);
+        const info = getIsinMapping(isinCode);
+        if (info && info.symbol) {
+          s.symbol = info.symbol;
+          if (!s.company || isinPattern.test(s.company)) {
+            s.company = info.company;
+          }
+          s.category = info.category || s.category;
+          s.isin = isinCode;
+        }
+      }
+
       if (!s.symbol) return;
       const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
       const exSym = getExchangeTicker(sym);
-      const cached = cache[sym] || cache[exSym];
+      const cached = cache[sym] || cache[exSym] || (s.isin ? cache[s.isin] : null);
       if (cached && cached.price) {
         s.currentPrice = cached.price;
         s.prevClose = cached.prevClose;
@@ -5813,23 +5925,28 @@ async function refreshStockPrices(force = false) {
 function updateStocksFromCache() {
   const cache = getStockPriceCache();
   if (Object.keys(cache).length === 0) return;
+  const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
   (state.stocks || []).forEach(s => {
     if (!s.symbol && !s.company) return;
     let sym = String(s.symbol || s.company).toUpperCase().replace(/\s*-EQ$/i, '').trim();
     // If symbol or company still looks like an ISIN code, resolve it
-    if (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(s.company || '')) {
-      const isinToResolve = /^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) ? sym : s.company;
+    if (isinPattern.test(sym) || isinPattern.test(s.company || '') || isinPattern.test(s.isin || '')) {
+      const isinToResolve = (isinPattern.test(s.isin || '') && s.isin) ||
+                            (isinPattern.test(sym) && sym) ||
+                            (isinPattern.test(s.company || '') && s.company);
       const info = getIsinMapping(isinToResolve);
       if (info && info.symbol) {
         s.symbol = info.symbol;
-        if (!s.company || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(s.company)) {
+        if (!s.company || isinPattern.test(s.company)) {
           s.company = info.company;
         }
+        s.category = info.category || s.category;
+        s.isin = isinToResolve;
         sym = info.symbol;
       }
     }
     const exSym = getExchangeTicker(sym);
-    const cached = cache[sym] || cache[exSym] || cache[s.symbol];
+    const cached = cache[sym] || cache[exSym] || cache[s.symbol] || (s.isin ? cache[s.isin] : null);
     if (cached && cached.price) {
       s.currentPrice = cached.price;
       s.prevClose = cached.prevClose;
@@ -11786,7 +11903,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getIsinMapping,
     resolveIsinOnline,
     resolveNseSymbol,
-    autoResolveUnknownIsinStocks
+    autoResolveUnknownIsinStocks,
+    saveResolvedIsin
   };
 }
 

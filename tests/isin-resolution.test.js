@@ -12,17 +12,10 @@ const app = require('../app.js');
 
 let passedTests = 0;
 let failedTests = 0;
+const testQueue = [];
 
 function runTest(name, fn) {
-  try {
-    fn();
-    console.log(`  ✅ PASS: ${name}`);
-    passedTests++;
-  } catch (err) {
-    console.error(`  ❌ FAIL: ${name}`);
-    console.error(err);
-    failedTests++;
-  }
+  testQueue.push({ name, fn });
 }
 
 console.log('==========================================');
@@ -320,12 +313,215 @@ runTest('Stock price cache and alias mapping correctly computes CMP and 1-day ch
   assert.strictEqual(cachedSbcl.change, 20.00);
 });
 
-console.log('==========================================');
-console.log(`📊 TEST RESULTS: ${passedTests} PASSED, ${failedTests} FAILED`);
-console.log('==========================================');
+// Test 16: saveResolvedIsin updates MASTER_ISIN_MAP and getIsinMapping
+runTest('saveResolvedIsin updates memory map and getIsinMapping dynamically for future stocks', () => {
+  const dynamicIsin = 'INE999Z01099';
+  assert.strictEqual(app.getIsinMapping(dynamicIsin), null, 'Must be unmapped initially');
 
-if (failedTests > 0) {
-  process.exit(1);
-} else {
-  console.log('🎉 ALL ISIN RESOLUTION TESTS PASSED!');
-}
+  app.saveResolvedIsin(dynamicIsin, {
+    symbol: 'FUTURETECH',
+    company: 'Future Technologies Ltd',
+    category: 'Stock'
+  });
+
+  const resolved = app.getIsinMapping(dynamicIsin);
+  assert.ok(resolved, 'Must be resolved after saveResolvedIsin');
+  assert.strictEqual(resolved.symbol, 'FUTURETECH');
+  assert.strictEqual(resolved.company, 'Future Technologies Ltd');
+  assert.strictEqual(resolved.category, 'Stock');
+});
+
+// Test 17: resolveIsinOnline dynamically resolves unknown ISIN with proxy / API mock
+runTest('resolveIsinOnline dynamically resolves unknown ISIN and caches result', async () => {
+  const testIsin = 'INE343H01029'; // Solar Industries India Ltd
+  // Ensure it is not pre-mapped
+  delete app.MASTER_ISIN_MAP[testIsin];
+
+  // Mock global fetch to simulate proxy response for resolveIsin
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('resolveIsin') || String(url).includes('groww.in')) {
+      return {
+        ok: true,
+        json: async () => ({
+          content: [{
+            isin: testIsin,
+            nse_scrip_code: 'SOLARINDS',
+            bse_scrip_code: '532725',
+            title: 'Solar Industries India Ltd.',
+            entity_type: 'Stocks'
+          }]
+        }),
+        text: async () => JSON.stringify({
+          content: [{
+            isin: testIsin,
+            nse_scrip_code: 'SOLARINDS',
+            bse_scrip_code: '532725',
+            title: 'Solar Industries India Ltd.',
+            entity_type: 'Stocks'
+          }]
+        })
+      };
+    }
+    return originalFetch(url);
+  };
+
+  try {
+    const result = await app.resolveIsinOnline(testIsin);
+    assert.ok(result, 'resolveIsinOnline must return result');
+    assert.strictEqual(result.symbol, 'SOLARINDS');
+    assert.strictEqual(result.company, 'Solar Industries India Ltd.');
+    assert.strictEqual(result.category, 'Stock');
+
+    // Verify it was cached in MASTER_ISIN_MAP
+    const cached = app.getIsinMapping(testIsin);
+    assert.ok(cached, 'Must be cached in getIsinMapping');
+    assert.strictEqual(cached.symbol, 'SOLARINDS');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+// Test 18: autoResolveUnknownIsinStocks updates state stocks with newly resolved data
+runTest('autoResolveUnknownIsinStocks dynamically resolves and repairs stocks with arbitrary new ISINs', async () => {
+  const kaynesIsin = 'INE918Z01012'; // Kaynes Technology
+  delete app.MASTER_ISIN_MAP[kaynesIsin];
+
+  const mockStocks = [
+    { id: 'stk-new-1', symbol: kaynesIsin, company: kaynesIsin, isin: kaynesIsin, quantity: 15, avgPrice: 4200 }
+  ];
+
+  // Mock fetch to simulate dynamic resolution
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    return {
+      ok: true,
+      json: async () => ({
+        content: [{
+          isin: kaynesIsin,
+          nse_scrip_code: 'KAYNES',
+          title: 'Kaynes Technology India Ltd.',
+          entity_type: 'Stocks'
+        }]
+      }),
+      text: async () => JSON.stringify({
+        content: [{
+          isin: kaynesIsin,
+          nse_scrip_code: 'KAYNES',
+          title: 'Kaynes Technology India Ltd.',
+          entity_type: 'Stocks'
+        }]
+      })
+    };
+  };
+
+  try {
+    const changed = await app.autoResolveUnknownIsinStocks(mockStocks);
+    assert.strictEqual(changed, true, 'autoResolveUnknownIsinStocks should report changed=true');
+    const updated = mockStocks[0];
+    assert.strictEqual(updated.symbol, 'KAYNES');
+    assert.strictEqual(updated.company, 'Kaynes Technology India Ltd.');
+    assert.strictEqual(updated.isin, kaynesIsin);
+    assert.strictEqual(updated.category, 'Stock');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+// Test 19: Full dynamic workflow: unknown ISIN sheet import + proxy metadata enrichment
+runTest('Full dynamic workflow: arbitrary new ISIN in sheet resolves symbol, company, and CMP with 1-day change', () => {
+  const wb = XLSX.utils.book_new();
+  const solarIsin = 'INE343H01029';
+  const data = [
+    { "ISIN": solarIsin, "Qty": 20, "AVG": 9500.00 }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "My_Zerodha");
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  // 1. Initial parse creates holding
+  const result = app.parseMasterHoldingsWorkbook(buffer);
+  assert.strictEqual(result.stocks.length, 1);
+  const holding = result.stocks[0];
+  assert.strictEqual(holding.isin, solarIsin);
+
+  // 2. Simulate proxy returning price data with dynamic ISIN metadata
+  const mockProxyResponse = {
+    "SOLARINDS": {
+      symbol: "SOLARINDS",
+      company: "Solar Industries India Ltd.",
+      category: "Stock",
+      isin: solarIsin,
+      price: 10450.50,
+      prevClose: 10200.00,
+      change: 250.50,
+      changePct: 2.46,
+      date: "26 Sep 2026",
+      source: "proxy"
+    },
+    [solarIsin]: {
+      symbol: "SOLARINDS",
+      company: "Solar Industries India Ltd.",
+      category: "Stock",
+      isin: solarIsin,
+      price: 10450.50,
+      prevClose: 10200.00,
+      change: 250.50,
+      changePct: 2.46,
+      date: "26 Sep 2026",
+      source: "proxy"
+    }
+  };
+
+  // Cache resolved ISIN metadata
+  app.saveResolvedIsin(solarIsin, {
+    symbol: mockProxyResponse[solarIsin].symbol,
+    company: mockProxyResponse[solarIsin].company,
+    category: mockProxyResponse[solarIsin].category
+  });
+
+  // 3. Verify stock can resolve and compute full metrics
+  const isinInfo = app.getIsinMapping(solarIsin);
+  assert.ok(isinInfo);
+  holding.symbol = isinInfo.symbol;
+  holding.company = isinInfo.company;
+  holding.category = isinInfo.category;
+
+  const priceItem = mockProxyResponse[holding.symbol];
+  holding.currentPrice = priceItem.price;
+  holding.prevClose = priceItem.prevClose;
+  holding.currentValue = holding.quantity * priceItem.price;
+  const pnl = holding.currentValue - (holding.quantity * holding.avgPrice);
+  const oneDayChange = holding.quantity * (priceItem.price - priceItem.prevClose);
+
+  assert.strictEqual(holding.symbol, 'SOLARINDS');
+  assert.strictEqual(holding.company, 'Solar Industries India Ltd.');
+  assert.strictEqual(holding.currentPrice, 10450.50);
+  assert.strictEqual(holding.currentValue, 209010.00);
+  assert.strictEqual(pnl, 19010.00);
+  assert.strictEqual(oneDayChange, 5010.00);
+  assert.ok(oneDayChange > 0, '1-day change must be accurately calculated and not 0');
+});
+
+(async () => {
+  for (const t of testQueue) {
+    try {
+      await t.fn();
+      console.log(`  ✅ PASS: ${t.name}`);
+      passedTests++;
+    } catch (err) {
+      console.error(`  ❌ FAIL: ${t.name}`);
+      console.error(err);
+      failedTests++;
+    }
+  }
+
+  console.log('==========================================');
+  console.log(`📊 TEST RESULTS: ${passedTests} PASSED, ${failedTests} FAILED`);
+  console.log('==========================================');
+
+  if (failedTests > 0) {
+    process.exit(1);
+  } else {
+    console.log('🎉 ALL ISIN RESOLUTION TESTS PASSED!');
+  }
+})();

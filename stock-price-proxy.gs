@@ -1,7 +1,11 @@
 /**
- * Life Ledger — Stock Price Proxy (Google Apps Script) v3
+ * Life Ledger — Stock Price Proxy (Google Apps Script) v4
  * 
  * Supports BOTH Indian (NSE/BSE) and US (NASDAQ/NYSE/NYSEARCA) stocks.
+ * Features 100% Dynamic ISIN Resolution:
+ * Any future Indian stock, ETF, or SGB added to the user's sheet with ONLY an ISIN
+ * is dynamically identified (company name, canonical exchange ticker, asset type)
+ * via Groww and Yahoo Search APIs with zero hardcoding needed.
  * Uses GOOGLEFINANCE formulas with smart exchange detection,
  * Yahoo Finance Chart API fallback (no CORS on Google servers), and
  * Google Finance HTML scrape fallback for 100% data reliability.
@@ -12,7 +16,7 @@
  * 3. Replace all code in Code.gs with this complete file
  * 4. Click "Deploy" (top right) → "New deployment"
  * 5. Select type: "Web app"
- * 6. Set Description: "Stock Price Proxy v3 (ISIN, Yahoo fallback, Ticker aliases)"
+ * 6. Set Description: "Stock Price Proxy v4 (Dynamic ISIN resolution, Zero hardcoding)"
  * 7. Set Execute as: "Me"
  * 8. Set Who has access: "Anyone"
  * 9. Click "Deploy", authorize access, and copy the Web App URL
@@ -184,7 +188,120 @@ function isLikelyUS(symbol) {
   return !!US_EXCHANGES[sym];
 }
 
+/**
+ * Dynamically resolves an Indian ISIN (INE/INF/IN00) to an exchange ticker,
+ * company name, and asset category using Groww and Yahoo Search APIs.
+ * Runs server-side on Google Cloud with zero CORS limits.
+ */
+function resolveIsinOnline(isin) {
+  if (!isin) return null;
+  var cleanIsin = String(isin).trim().toUpperCase();
+
+  // Fast path: Check static mapping dictionary first
+  if (ISIN_TO_TICKER[cleanIsin]) {
+    var mappedSym = ISIN_TO_TICKER[cleanIsin];
+    return {
+      isin: cleanIsin,
+      symbol: mappedSym,
+      company: mappedSym,
+      category: /BEES|ETF/i.test(mappedSym) ? "ETF" : "Stock"
+    };
+  }
+
+  // 1. Primary: Groww Search API (contains all NSE/BSE stocks, ETFs, SGBs)
+  try {
+    var growwUrl = "https://groww.in/v1/api/search/v1/entity?app=false&page=0&q=" + encodeURIComponent(cleanIsin) + "&size=5";
+    var resp = UrlFetchApp.fetch(growwUrl, {
+      muteHttpExceptions: true,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+    });
+    if (resp.getResponseCode() === 200) {
+      var data = JSON.parse(resp.getContentText());
+      var items = data && data.content ? data.content : [];
+      var item = null;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].isin && items[i].isin.toUpperCase() === cleanIsin) {
+          item = items[i];
+          break;
+        }
+      }
+      if (!item && items.length > 0) item = items[0];
+
+      if (item) {
+        var symbol = item.nse_scrip_code || item.bse_scrip_code || item.symbol;
+        if (symbol) {
+          symbol = symbol.toUpperCase().trim();
+          var company = item.title || item.company_short_name || symbol;
+          var entityType = (item.entity_type || "").toUpperCase();
+          var category = (entityType === "ETF" || /ETF|BEES/i.test(symbol + " " + company))
+            ? "ETF"
+            : (/SGB|GOLD.*BOND/i.test(symbol + " " + company) ? "Bond" : "Stock");
+
+          ISIN_TO_TICKER[cleanIsin] = symbol;
+          return {
+            isin: cleanIsin,
+            symbol: symbol,
+            company: company,
+            category: category
+          };
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("Groww ISIN search error for " + cleanIsin + ": " + err);
+  }
+
+  // 2. Secondary: Yahoo Finance Search API
+  try {
+    var yahooUrl = "https://query1.finance.yahoo.com/v1/finance/search?q=" + encodeURIComponent(cleanIsin);
+    var yResp = UrlFetchApp.fetch(yahooUrl, {
+      muteHttpExceptions: true,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+    });
+    if (yResp.getResponseCode() === 200) {
+      var yData = JSON.parse(yResp.getContentText());
+      var quotes = yData && yData.quotes ? yData.quotes : [];
+      var q = null;
+      for (var k = 0; k < quotes.length; k++) {
+        if (quotes[k].symbol && (quotes[k].symbol.endsWith(".NS") || quotes[k].symbol.endsWith(".BO"))) {
+          q = quotes[k];
+          break;
+        }
+      }
+      if (!q && quotes.length > 0) q = quotes[0];
+
+      if (q && q.symbol) {
+        var ySymbol = q.symbol.toUpperCase().replace(/\.(NS|BO)$/i, "").trim();
+        var yCompany = q.longname || q.shortname || ySymbol;
+        var yCat = (q.quoteType === "ETF" || /ETF|BEES/i.test(ySymbol + " " + yCompany)) ? "ETF" : "Stock";
+
+        ISIN_TO_TICKER[cleanIsin] = ySymbol;
+        return {
+          isin: cleanIsin,
+          symbol: ySymbol,
+          company: yCompany,
+          category: yCat
+        };
+      }
+    }
+  } catch (yErr) {
+    Logger.log("Yahoo ISIN search error for " + cleanIsin + ": " + yErr);
+  }
+
+  return null;
+}
+
 function doGet(e) {
+  // Support standalone dynamic ISIN resolution: ?resolveIsin=INE343H01029
+  if (e && e.parameter && e.parameter.resolveIsin) {
+    var isinToResolve = e.parameter.resolveIsin.trim().toUpperCase();
+    var resolved = resolveIsinOnline(isinToResolve);
+    if (resolved) {
+      return createJsonResponse(resolved);
+    }
+    return createJsonResponse({ error: "Could not resolve ISIN: " + isinToResolve, isin: isinToResolve });
+  }
+
   var symbolsStr = (e && e.parameter && e.parameter.symbols) ? e.parameter.symbols : "";
   var rawSymbols = symbolsStr.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   var marketParam = (e && e.parameter && e.parameter.market) ? e.parameter.market.toUpperCase() : "";
@@ -192,15 +309,29 @@ function doGet(e) {
   var results = {};
   
   if (rawSymbols.length === 0) {
-    return createJsonResponse({ error: "No symbols provided. Pass ?symbols=AAPL,RELIANCE,VOO" });
+    return createJsonResponse({ error: "No symbols provided. Pass ?symbols=AAPL,RELIANCE,VOO or ?resolveIsin=INE..." });
   }
 
   // Map ISINs and aliases to canonical exchange tickers
   var symbols = [];
   var isinOrigMap = {};
+  var isinMetaMap = {};
+  var isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
+
   for (var m = 0; m < rawSymbols.length; m++) {
     var rawSym = rawSymbols[m].toUpperCase().replace(/\s*-EQ$/i, "").trim();
     var resolvedSym = ISIN_TO_TICKER[rawSym] || rawSym;
+
+    // Dynamically resolve unknown ISINs on the fly
+    if (isinPattern.test(rawSym)) {
+      var info = resolveIsinOnline(rawSym);
+      if (info && info.symbol) {
+        resolvedSym = info.symbol;
+        isinMetaMap[resolvedSym] = info;
+        isinMetaMap[rawSym] = info;
+      }
+    }
+
     symbols.push(resolvedSym);
     isinOrigMap[resolvedSym] = rawSym;
   }
@@ -297,6 +428,13 @@ function doGet(e) {
         }
       }
 
+      var meta = isinMetaMap[s] || isinMetaMap[rawOrig];
+      if (meta && resItem) {
+        resItem.company = meta.company;
+        resItem.isin = meta.isin || (isinPattern.test(rawOrig) ? rawOrig : null);
+        resItem.category = meta.category;
+      }
+
       assignResultsWithAliases(results, s, rawOrig, resItem);
     }
 
@@ -308,6 +446,12 @@ function doGet(e) {
       if (!results[sym2] || !results[sym2].price) {
         var yRes = fetchViaYahooFinance(sym2, marketParam === "US" || isLikelyUS(sym2));
         var fbItem = (yRes && yRes.price > 0) ? yRes : fetchViaScrape(sym2);
+        var meta2 = isinMetaMap[sym2] || isinMetaMap[rawOrig2];
+        if (meta2 && fbItem) {
+          fbItem.company = meta2.company;
+          fbItem.isin = meta2.isin || (isinPattern.test(rawOrig2) ? rawOrig2 : null);
+          fbItem.category = meta2.category;
+        }
         assignResultsWithAliases(results, sym2, rawOrig2, fbItem);
       }
     }
@@ -330,6 +474,9 @@ function assignResultsWithAliases(results, canonicalSym, rawOrig, item) {
   results[canonicalSym] = item;
   if (rawOrig && rawOrig !== canonicalSym) {
     results[rawOrig] = item;
+  }
+  if (item.isin && item.isin !== canonicalSym && item.isin !== rawOrig) {
+    results[item.isin] = item;
   }
   if (canonicalSym === "ICICIB22") results["BHARAT22"] = item;
   if (canonicalSym === "BHARAT22") results["ICICIB22"] = item;
