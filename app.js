@@ -34,6 +34,7 @@ const defaultData = {
   habits: [],
   chat: [],
   mfMonthlyTarget: { me: 100000, wife: 100000 },
+  interviewTrackerEntries: [],
 };
 
 const EXPENSE_PAGE_SIZE = 80;
@@ -790,6 +791,7 @@ function normalizeData(data) {
     chat: ensureIds(data.chat || [], "chat"),
     mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
     interviewPrep: data.interviewPrep || { mastered: [], flagged: [], customProjects: [] },
+    interviewTrackerEntries: ensureIds(data.interviewTrackerEntries || [], "itv"),
   };
 }
 
@@ -1271,7 +1273,13 @@ function bindCareerTabs() {
       
       const addBtn = document.getElementById("careerAddBtn");
       if (addBtn) {
-        addBtn.style.display = activeCareerTab === "interview" ? "none" : "";
+        addBtn.style.display = (activeCareerTab === "interview" || activeCareerTab === "ittracker") ? "none" : "";
+      }
+
+      // Bind & render Interview Tracker on first switch
+      if (activeCareerTab === "ittracker") {
+        bindInterviewTracker();
+        renderInterviewTracker();
       }
       
       renderCareer();
@@ -6946,6 +6954,398 @@ function renderInterviewQuestions() {
     });
 
     grid.appendChild(card);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTERVIEW TRACKER — Data, Render, Modal, CRUD
+// ═══════════════════════════════════════════════════════════════════════════
+
+let itvSearchQuery = "";
+let itvFeedbackFilter = "";
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function itvFeedbackClass(feedback) {
+  if (!feedback) return "pending";
+  const f = feedback.toLowerCase();
+  if (f.includes("positive") || f.includes("offer")) return "positive";
+  if (f.includes("negative") || f.includes("reject")) return "negative";
+  if (f.includes("hold") || f.includes("progress")) return "hold";
+  return "pending";
+}
+
+function itvFeedbackEmoji(feedback) {
+  const cls = itvFeedbackClass(feedback);
+  if (cls === "positive") return "✅";
+  if (cls === "negative") return "❌";
+  if (cls === "hold") return "⏳";
+  return "🔔";
+}
+
+function itvFormatDate(dateStr) {
+  if (!dateStr) return "—";
+  try {
+    return new Date(dateStr).toLocaleDateString("en-IN", {
+      day: "numeric", month: "short", year: "numeric"
+    });
+  } catch (e) { return dateStr; }
+}
+
+function itvCompanyInitials(name) {
+  if (!name) return "?";
+  return name.trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase() || name[0].toUpperCase();
+}
+
+function itvVal(v) {
+  return (v || "").trim();
+}
+
+// ── Render Stats ─────────────────────────────────────────────────────────
+
+function renderItvStats() {
+  const entries = state.interviewTrackerEntries || [];
+  const total = entries.length;
+  const positive = entries.filter(e => itvFeedbackClass(e.feedback) === "positive").length;
+  const hold = entries.filter(e => itvFeedbackClass(e.feedback) === "hold").length;
+  const negative = entries.filter(e => itvFeedbackClass(e.feedback) === "negative").length;
+
+  document.getElementById("itvStatTotal")?.textContent && (document.getElementById("itvStatTotal").textContent = total);
+  document.getElementById("itvStatPositive")?.textContent && (document.getElementById("itvStatPositive").textContent = positive);
+  document.getElementById("itvStatHold")?.textContent && (document.getElementById("itvStatHold").textContent = hold);
+  document.getElementById("itvStatNegative")?.textContent && (document.getElementById("itvStatNegative").textContent = negative);
+
+  const setNum = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  setNum("itvStatTotal", total);
+  setNum("itvStatPositive", positive);
+  setNum("itvStatHold", hold);
+  setNum("itvStatNegative", negative);
+}
+
+// ── Render Entry Cards ───────────────────────────────────────────────────
+
+function renderInterviewTracker() {
+  renderItvStats();
+
+  const list = document.getElementById("itvEntriesList");
+  const emptyState = document.getElementById("itvEmptyState");
+  if (!list) return;
+
+  const allEntries = [...(state.interviewTrackerEntries || [])];
+
+  // Sort by date descending (latest first)
+  allEntries.sort((a, b) => {
+    const da = a.date ? new Date(a.date) : new Date(0);
+    const db = b.date ? new Date(b.date) : new Date(0);
+    return db - da;
+  });
+
+  // Apply filters
+  const q = itvSearchQuery.toLowerCase().trim();
+  const ff = itvFeedbackFilter.trim();
+
+  const filtered = allEntries.filter(e => {
+    const matchQ = !q ||
+      (e.company || "").toLowerCase().includes(q) ||
+      (e.recruiter || "").toLowerCase().includes(q) ||
+      (e.role || "").toLowerCase().includes(q) ||
+      (e.interviewer || "").toLowerCase().includes(q) ||
+      (e.emailSubject || "").toLowerCase().includes(q) ||
+      (e.notes || "").toLowerCase().includes(q);
+    const matchF = !ff || (e.feedback || "") === ff;
+    return matchQ && matchF;
+  });
+
+  list.innerHTML = "";
+
+  if (filtered.length === 0) {
+    if (emptyState) emptyState.style.display = "";
+  } else {
+    if (emptyState) emptyState.style.display = "none";
+    filtered.forEach(entry => {
+      list.appendChild(buildItvCard(entry));
+    });
+  }
+}
+
+function buildItvCard(entry) {
+  const feedbackCls = itvFeedbackClass(entry.feedback);
+  const card = document.createElement("div");
+  card.className = `itv-entry-card feedback-${feedbackCls}`;
+  card.dataset.itvId = entry.id;
+
+  const initials = itvCompanyInitials(entry.company);
+  const dateStr = itvFormatDate(entry.date);
+  const rolePart = itvVal(entry.role) ? `<span class="itv-dot"></span><span class="itv-role-tag">${escapeHtml(entry.role)}</span>` : "";
+  const roundPart = itvVal(entry.round) ? `<span class="itv-dot"></span><span class="itv-round-tag">${escapeHtml(entry.round)}</span>` : "";
+  const pillLabel = `${itvFeedbackEmoji(entry.feedback)} ${entry.feedback || "Pending"}`;
+
+  // Questions formatted as list
+  const questionsHtml = itvVal(entry.questions)
+    ? `<div class="itv-detail-item itv-full-width" style="margin-bottom:16px;">
+         <div class="itv-section-heading">❓ Questions Asked</div>
+         <div class="itv-questions-block">${escapeHtml(entry.questions)}</div>
+       </div>`
+    : "";
+
+  const notesHtml = itvVal(entry.notes)
+    ? `<div class="itv-detail-item itv-full-width" style="margin-bottom:16px;">
+         <div class="itv-section-heading">📝 Notes & Observations</div>
+         <div class="itv-notes-block">${escapeHtml(entry.notes)}</div>
+       </div>`
+    : "";
+
+  const linkedinHtml = itvVal(entry.linkedin)
+    ? `<a href="${escapeAttr(entry.linkedin)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.linkedin.replace(/^https?:\/\/(www\.)?/i, ""))}</a>`
+    : `<span class="empty-val">—</span>`;
+
+  card.innerHTML = `
+    <div class="itv-card-header" aria-expanded="false" role="button" tabindex="0">
+      <div class="itv-card-header-left">
+        <div class="itv-company-logo">${escapeHtml(initials)}</div>
+        <div class="itv-header-text">
+          <div class="itv-company-name">${escapeHtml(entry.company || "Unknown Company")}</div>
+          <div class="itv-meta-row">
+            <span class="itv-date-badge">📅 ${dateStr}</span>
+            ${rolePart}
+            ${roundPart}
+          </div>
+        </div>
+      </div>
+      <div class="itv-header-right">
+        <span class="itv-feedback-pill ${feedbackCls}">${pillLabel}</span>
+        <span class="itv-chevron">▼</span>
+      </div>
+    </div>
+    <div class="itv-card-body">
+      <div class="itv-detail-grid">
+        <div class="itv-detail-item">
+          <div class="itv-detail-label">📧 Email Subject</div>
+          <div class="itv-detail-value">${itvVal(entry.emailSubject) ? escapeHtml(entry.emailSubject) : '<span class="empty-val">—</span>'}</div>
+        </div>
+        <div class="itv-detail-item">
+          <div class="itv-detail-label">👤 Recruiter</div>
+          <div class="itv-detail-value">${itvVal(entry.recruiter) ? escapeHtml(entry.recruiter) : '<span class="empty-val">—</span>'}</div>
+        </div>
+        <div class="itv-detail-item">
+          <div class="itv-detail-label">📞 HR Contact</div>
+          <div class="itv-detail-value">${itvVal(entry.hrContact) ? escapeHtml(entry.hrContact) : '<span class="empty-val">—</span>'}</div>
+        </div>
+        <div class="itv-detail-item">
+          <div class="itv-detail-label">🧑‍💻 Interviewer</div>
+          <div class="itv-detail-value">${itvVal(entry.interviewer) ? escapeHtml(entry.interviewer) : '<span class="empty-val">—</span>'}</div>
+        </div>
+        <div class="itv-detail-item">
+          <div class="itv-detail-label">🔗 LinkedIn</div>
+          <div class="itv-detail-value">${linkedinHtml}</div>
+        </div>
+        <div class="itv-detail-item">
+          <div class="itv-detail-label">🏷️ Outcome</div>
+          <div class="itv-detail-value">${escapeHtml(entry.feedback || "Pending")}</div>
+        </div>
+      </div>
+      ${questionsHtml}
+      ${notesHtml}
+      <div class="itv-card-actions">
+        <button class="itv-edit-btn" data-itv-edit="${escapeAttr(entry.id)}">✏️ Edit</button>
+        <button class="itv-delete-btn" data-itv-delete="${escapeAttr(entry.id)}">🗑️ Delete</button>
+      </div>
+    </div>
+  `;
+
+  // Toggle expand on header click / keyboard
+  const header = card.querySelector(".itv-card-header");
+  const expand = () => {
+    const expanded = card.classList.toggle("expanded");
+    header.setAttribute("aria-expanded", expanded);
+  };
+
+  header.addEventListener("click", expand);
+  header.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); expand(); } });
+
+  // Edit
+  card.querySelector("[data-itv-edit]")?.addEventListener("click", e => {
+    e.stopPropagation();
+    openItvModal(entry.id);
+  });
+
+  // Delete
+  card.querySelector("[data-itv-delete]")?.addEventListener("click", e => {
+    e.stopPropagation();
+    if (!confirm(`Delete the interview entry for "${entry.company}"? This cannot be undone.`)) return;
+    state.interviewTrackerEntries = (state.interviewTrackerEntries || []).filter(en => en.id !== entry.id);
+    saveData();
+    renderInterviewTracker();
+    toast("Interview entry deleted.");
+  });
+
+  return card;
+}
+
+// ── HTML Escape helpers ───────────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
+function escapeAttr(str) {
+  return String(str || "").replace(/"/g, "&quot;");
+}
+
+// ── Modal open / prefill ─────────────────────────────────────────────────
+
+function openItvModal(editId = null) {
+  const modal = document.getElementById("itvModal");
+  const title = document.getElementById("itvModalTitle");
+  if (!modal) return;
+
+  // Reset form
+  document.getElementById("itvFieldDate").value = "";
+  document.getElementById("itvFieldCompany").value = "";
+  document.getElementById("itvFieldRole").value = "";
+  document.getElementById("itvFieldFeedback").value = "";
+  document.getElementById("itvFieldRound").value = "";
+  document.getElementById("itvFieldEmailSubject").value = "";
+  document.getElementById("itvFieldRecruiter").value = "";
+  document.getElementById("itvFieldHRContact").value = "";
+  document.getElementById("itvFieldInterviewer").value = "";
+  document.getElementById("itvFieldLinkedIn").value = "";
+  document.getElementById("itvFieldQuestions").value = "";
+  document.getElementById("itvFieldNotes").value = "";
+  document.getElementById("itvFieldEditId").value = "";
+
+  if (editId) {
+    const entry = (state.interviewTrackerEntries || []).find(e => e.id === editId);
+    if (entry) {
+      document.getElementById("itvFieldDate").value = entry.date || "";
+      document.getElementById("itvFieldCompany").value = entry.company || "";
+      document.getElementById("itvFieldRole").value = entry.role || "";
+      document.getElementById("itvFieldFeedback").value = entry.feedback || "";
+      document.getElementById("itvFieldRound").value = entry.round || "";
+      document.getElementById("itvFieldEmailSubject").value = entry.emailSubject || "";
+      document.getElementById("itvFieldRecruiter").value = entry.recruiter || "";
+      document.getElementById("itvFieldHRContact").value = entry.hrContact || "";
+      document.getElementById("itvFieldInterviewer").value = entry.interviewer || "";
+      document.getElementById("itvFieldLinkedIn").value = entry.linkedin || "";
+      document.getElementById("itvFieldQuestions").value = entry.questions || "";
+      document.getElementById("itvFieldNotes").value = entry.notes || "";
+      document.getElementById("itvFieldEditId").value = editId;
+      if (title) title.textContent = `Edit Interview — ${entry.company || ""}`;
+    }
+  } else {
+    // Default date to today
+    document.getElementById("itvFieldDate").value = new Date().toISOString().slice(0, 10);
+    if (title) title.textContent = "Add Interview Entry";
+  }
+
+  modal.style.display = "flex";
+  modal.style.alignItems = "center";
+  modal.style.justifyContent = "center";
+  document.body.style.overflow = "hidden";
+
+  setTimeout(() => {
+    document.getElementById("itvFieldCompany")?.focus();
+  }, 60);
+}
+
+function closeItvModal() {
+  const modal = document.getElementById("itvModal");
+  if (modal) modal.style.display = "none";
+  document.body.style.overflow = "";
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────
+
+function saveItvEntry() {
+  const dateVal = document.getElementById("itvFieldDate")?.value?.trim();
+  const company = document.getElementById("itvFieldCompany")?.value?.trim();
+  const feedback = document.getElementById("itvFieldFeedback")?.value?.trim();
+
+  if (!dateVal) { toast("⚠️ Please enter an interview date."); return; }
+  if (!company) { toast("⚠️ Please enter the company name."); return; }
+  if (!feedback) { toast("⚠️ Please select an outcome/feedback."); return; }
+
+  const editId = document.getElementById("itvFieldEditId")?.value?.trim();
+
+  const newEntry = {
+    date: dateVal,
+    company,
+    role: document.getElementById("itvFieldRole")?.value?.trim() || "",
+    feedback,
+    round: document.getElementById("itvFieldRound")?.value?.trim() || "",
+    emailSubject: document.getElementById("itvFieldEmailSubject")?.value?.trim() || "",
+    recruiter: document.getElementById("itvFieldRecruiter")?.value?.trim() || "",
+    hrContact: document.getElementById("itvFieldHRContact")?.value?.trim() || "",
+    interviewer: document.getElementById("itvFieldInterviewer")?.value?.trim() || "",
+    linkedin: document.getElementById("itvFieldLinkedIn")?.value?.trim() || "",
+    questions: document.getElementById("itvFieldQuestions")?.value?.trim() || "",
+    notes: document.getElementById("itvFieldNotes")?.value?.trim() || "",
+  };
+
+  if (editId) {
+    const idx = (state.interviewTrackerEntries || []).findIndex(e => e.id === editId);
+    if (idx >= 0) {
+      state.interviewTrackerEntries[idx] = { ...state.interviewTrackerEntries[idx], ...newEntry };
+      toast("✅ Interview entry updated!");
+    }
+  } else {
+    newEntry.id = `itv-${generateUUID()}`;
+    if (!state.interviewTrackerEntries) state.interviewTrackerEntries = [];
+    state.interviewTrackerEntries.push(newEntry);
+    toast("✅ Interview entry added!");
+  }
+
+  saveData();
+  closeItvModal();
+  renderInterviewTracker();
+}
+
+// ── Bind Interview Tracker Controls ──────────────────────────────────────
+
+let isItvBound = false;
+function bindInterviewTracker() {
+  if (isItvBound) return;
+  isItvBound = true;
+
+  // Add button
+  document.getElementById("itvAddBtn")?.addEventListener("click", () => openItvModal());
+
+  // Modal close
+  document.getElementById("itvModalClose")?.addEventListener("click", closeItvModal);
+  document.getElementById("itvModalCancel")?.addEventListener("click", closeItvModal);
+
+  // Save button
+  document.getElementById("itvModalSave")?.addEventListener("click", saveItvEntry);
+
+  // Backdrop click closes modal
+  document.getElementById("itvModal")?.addEventListener("click", e => {
+    if (e.target === e.currentTarget) closeItvModal();
+  });
+
+  // ESC key closes modal
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && document.getElementById("itvModal")?.style.display !== "none") {
+      closeItvModal();
+    }
+  });
+
+  // Search
+  document.getElementById("itvSearchInput")?.addEventListener("input", e => {
+    itvSearchQuery = e.target.value;
+    renderInterviewTracker();
+  });
+
+  // Feedback filter
+  document.getElementById("itvFeedbackFilter")?.addEventListener("change", e => {
+    itvFeedbackFilter = e.target.value;
+    renderInterviewTracker();
   });
 }
 

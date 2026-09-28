@@ -1000,6 +1000,7 @@
             <button class="tab-button active" type="button" data-career-tab="devops">DevOps &amp; SRE</button>
             <button class="tab-button" type="button" data-career-tab="dataeng">Data Engineering</button>
             <button class="tab-button" type="button" data-career-tab="interview">Interview Prep</button>
+            <button class="tab-button" type="button" data-career-tab="ittracker">🗓️ Interview Tracker</button>
           </div>
 
           <div class="career-tab active" id="career-devops">
@@ -1204,7 +1205,177 @@
               </div>
             </div>
           </div>
+
+          <!-- ─── Interview Tracker Tab ─────────────────────────────────────── -->
+          <div class="career-tab" id="career-ittracker" hidden>
+            <!-- Stats Row -->
+            <div class="itv-stats-row" id="itvStatsRow">
+              <div class="itv-stat-card">
+                <div class="itv-stat-icon">📨</div>
+                <div class="itv-stat-body">
+                  <div class="itv-stat-val" id="itvStatTotal">0</div>
+                  <div class="itv-stat-lbl">Total Interviews</div>
+                </div>
+              </div>
+              <div class="itv-stat-card">
+                <div class="itv-stat-icon">✅</div>
+                <div class="itv-stat-body">
+                  <div class="itv-stat-val" id="itvStatPositive">0</div>
+                  <div class="itv-stat-lbl">Positive / Offer</div>
+                </div>
+              </div>
+              <div class="itv-stat-card">
+                <div class="itv-stat-icon">⏳</div>
+                <div class="itv-stat-body">
+                  <div class="itv-stat-val" id="itvStatHold">0</div>
+                  <div class="itv-stat-lbl">Hold / In Progress</div>
+                </div>
+              </div>
+              <div class="itv-stat-card">
+                <div class="itv-stat-icon">❌</div>
+                <div class="itv-stat-body">
+                  <div class="itv-stat-val" id="itvStatNegative">0</div>
+                  <div class="itv-stat-lbl">Negative / Rejected</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="itv-action-bar">
+              <input type="text" id="itvSearchInput" placeholder="🔍  Search company, recruiter, role…" class="itv-search" autocomplete="off" />
+              <div class="itv-filter-wrap">
+                <select id="itvFeedbackFilter" class="itv-select">
+                  <option value="">All Feedback</option>
+                  <option value="Positive">✅ Positive / Offer</option>
+                  <option value="Hold">⏳ Hold</option>
+                  <option value="Negative">❌ Negative / Rejected</option>
+                  <option value="Pending">🔔 Pending</option>
+                </select>
+              </div>
+              <button class="primary-button" type="button" id="itvAddBtn">
+                + Add Interview
+              </button>
+            </div>
+
+            <!-- Entries List (rendered by JS) -->
+            <div id="itvEntriesList" class="itv-entries-list">
+              <!-- Filled by renderInterviewTracker() -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="itvEmptyState" class="itv-empty-state" style="display:none;">
+              <div class="itv-empty-icon">🎯</div>
+              <h3>No interview entries yet</h3>
+              <p>Start tracking your job applications and interview rounds. Click <strong>+ Add Interview</strong> to add your first entry.</p>
+            </div>
+          </div>
         </section>
+
+        <!-- ═══ Interview Tracker Form Modal ════════════════════════════════ -->
+        <div class="modal-overlay" id="itvModal" role="dialog" aria-modal="true" aria-labelledby="itvModalTitle" style="display:none;">
+          <div class="modal-card itv-modal-card">
+            <div class="modal-header">
+              <h3 id="itvModalTitle">Add Interview Entry</h3>
+              <button type="button" class="modal-close" id="itvModalClose" aria-label="Close">✕</button>
+            </div>
+            <div class="modal-body itv-form-body">
+              <form id="itvForm" novalidate>
+                <!-- Row 1: Date + Company -->
+                <div class="itv-form-row">
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldDate">📅 Interview Date <span class="req">*</span></label>
+                    <input type="date" id="itvFieldDate" class="itv-input" required />
+                  </div>
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldCompany">🏢 Company Name <span class="req">*</span></label>
+                    <input type="text" id="itvFieldCompany" class="itv-input" placeholder="e.g. Google, Infosys…" required autocomplete="off" />
+                  </div>
+                </div>
+
+                <!-- Row 2: Role + Feedback -->
+                <div class="itv-form-row">
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldRole">💼 Role / Position</label>
+                    <input type="text" id="itvFieldRole" class="itv-input" placeholder="e.g. Senior SRE, DevOps Lead…" autocomplete="off" />
+                  </div>
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldFeedback">🏷️ Outcome / Feedback <span class="req">*</span></label>
+                    <select id="itvFieldFeedback" class="itv-input" required>
+                      <option value="">— Select —</option>
+                      <option value="Positive">✅ Positive / Offer</option>
+                      <option value="Hold">⏳ Hold / In Progress</option>
+                      <option value="Negative">❌ Negative / Rejected</option>
+                      <option value="Pending">🔔 Pending Response</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Row 3: Email Subject + Round -->
+                <div class="itv-form-row">
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldEmailSubject">📧 Email Subject Line</label>
+                    <input type="text" id="itvFieldEmailSubject" class="itv-input" placeholder="e.g. Interview Schedule for SRE Role…" autocomplete="off" />
+                  </div>
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldRound">🔁 Round / Stage</label>
+                    <select id="itvFieldRound" class="itv-input">
+                      <option value="">— Select Round —</option>
+                      <option value="Screening">Screening Call</option>
+                      <option value="HR Round">HR Round</option>
+                      <option value="Technical Round 1">Technical Round 1</option>
+                      <option value="Technical Round 2">Technical Round 2</option>
+                      <option value="Managerial Round">Managerial Round</option>
+                      <option value="Final Round">Final Round</option>
+                      <option value="Offer Discussion">Offer Discussion</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Row 4: Recruiter Name + HR Contact -->
+                <div class="itv-form-row">
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldRecruiter">👤 Recruiter Name</label>
+                    <input type="text" id="itvFieldRecruiter" class="itv-input" placeholder="e.g. Neha Sharma" autocomplete="off" />
+                  </div>
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldHRContact">📞 HR Contact Number</label>
+                    <input type="tel" id="itvFieldHRContact" class="itv-input" placeholder="e.g. +91 9876543210" autocomplete="off" />
+                  </div>
+                </div>
+
+                <!-- Row 5: Interviewer Name + LinkedIn -->
+                <div class="itv-form-row">
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldInterviewer">🧑‍💻 Interviewer Name</label>
+                    <input type="text" id="itvFieldInterviewer" class="itv-input" placeholder="e.g. Rahul Verma" autocomplete="off" />
+                  </div>
+                  <div class="itv-form-group">
+                    <label class="itv-label" for="itvFieldLinkedIn">🔗 Interviewer LinkedIn</label>
+                    <input type="url" id="itvFieldLinkedIn" class="itv-input" placeholder="https://linkedin.com/in/…" autocomplete="off" />
+                  </div>
+                </div>
+
+                <!-- Questions Asked -->
+                <div class="itv-form-group itv-full-width">
+                  <label class="itv-label" for="itvFieldQuestions">❓ Questions Asked</label>
+                  <textarea id="itvFieldQuestions" class="itv-input itv-textarea" rows="4" placeholder="Describe the questions asked during the interview. One per line or separated by bullet points…"></textarea>
+                </div>
+
+                <!-- Notes -->
+                <div class="itv-form-group itv-full-width">
+                  <label class="itv-label" for="itvFieldNotes">📝 Additional Notes / Observations</label>
+                  <textarea id="itvFieldNotes" class="itv-input itv-textarea" rows="3" placeholder="Any additional observations, red flags, salary discussed, next steps, etc.…"></textarea>
+                </div>
+
+                <input type="hidden" id="itvFieldEditId" value="" />
+              </form>
+            </div>
+            <div class="modal-footer itv-modal-footer">
+              <button type="button" class="secondary-button" id="itvModalCancel">Cancel</button>
+              <button type="button" class="primary-button" id="itvModalSave">💾 Save Entry</button>
+            </div>
+          </div>
+        </div>
 
         <section class="view" id="goals" aria-labelledby="goalsTitle">
           <div class="section-heading">
