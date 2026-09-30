@@ -1130,11 +1130,26 @@ body[data-theme="dark"] .chat-message.assistant strong {
   -webkit-backdrop-filter: blur(8px);
 }
 
-.modal[hidden] {
+/* modal-overlay is used by bodyMetricsModal and similar — same behaviour */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--modal-backdrop);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.modal[hidden],
+.modal-overlay[hidden] {
   display: none;
 }
 
-.modal-card {
+.modal-card,
+.modal-container {
   width: min(720px, 100%);
   max-height: calc(100dvh - 40px);
   overflow: auto;
@@ -4662,12 +4677,31 @@ body[data-theme="dark"] .sortable-th:hover {
 
 /* ── Modal Form Styles ───────────────────────────────────────────────────── */
 .itv-modal-card {
-  max-width: 720px !important;
+  /* Override .modal-card defaults with proper flex layout */
+  max-width: 760px;
   width: 100%;
-  max-height: 92dvh;
-  overflow-y: auto;
+  max-height: min(88dvh, 900px);
+  /* Flex column so header/footer stick and body scrolls */
+  display: flex;
+  flex-direction: column;
+  padding: 0;            /* padding is on sub-elements */
+  overflow: hidden;       /* clip corners cleanly */
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+.itv-modal-card .modal-header {
+  flex-shrink: 0;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0;
+}
+
+.itv-modal-card .modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .itv-form-body {

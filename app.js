@@ -7245,10 +7245,7 @@ function openItvModal(editId = null) {
     if (title) title.textContent = "Add Interview Entry";
   }
 
-  modal.style.display = "flex";
-  modal.style.alignItems = "center";
-  modal.style.justifyContent = "center";
-  document.body.style.overflow = "hidden";
+  openModal("itvModal");
 
   setTimeout(() => {
     document.getElementById("itvFieldCompany")?.focus();
@@ -7257,8 +7254,7 @@ function openItvModal(editId = null) {
 
 function closeItvModal() {
   const modal = document.getElementById("itvModal");
-  if (modal) modal.style.display = "none";
-  document.body.style.overflow = "";
+  if (modal) closeModal(modal);
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────
@@ -7329,9 +7325,9 @@ function bindInterviewTracker() {
     if (e.target === e.currentTarget) closeItvModal();
   });
 
-  // ESC key closes modal
+  // ESC key closes modal (handled by global modal handler, but also local guard)
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape" && document.getElementById("itvModal")?.style.display !== "none") {
+    if (e.key === "Escape" && !document.getElementById("itvModal")?.hidden) {
       closeItvModal();
     }
   });
