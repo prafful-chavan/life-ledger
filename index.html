@@ -1049,7 +1049,7 @@
             </div>
           </div>
 
-          <div class="career-tab" id="career-interview" hidden>
+          <div class="career-tab" id="career-interview">
             <div class="interview-layout">
               <!-- Sidebar Stats and Selection -->
               <div class="interview-sidebar">
@@ -1207,7 +1207,7 @@
           </div>
 
           <!-- ─── Interview Tracker Tab ─────────────────────────────────────── -->
-          <div class="career-tab" id="career-ittracker" hidden>
+          <div class="career-tab" id="career-ittracker">
             <!-- Stats Row -->
             <div class="itv-stats-row" id="itvStatsRow">
               <div class="itv-stat-card">
@@ -1424,7 +1424,7 @@
           </div>
         </section>
 
-        <section class="view" id="exercise" aria-labelledby="exerciseTitle" hidden>
+        <section class="view" id="exercise" aria-labelledby="exerciseTitle">
           <!-- ── Section Header ── -->
           <div class="section-heading">
             <div>
@@ -1662,89 +1662,7 @@
           </section>
         </section>
 
-        <!-- ── Body Metrics Modal ── -->
-        <div id="bodyMetricsModal" class="modal-overlay" hidden aria-hidden="true" aria-modal="true" role="dialog" aria-labelledby="bodyMetricsModalTitle">
-          <div class="modal-container" style="max-width:540px;">
-            <div class="modal-header">
-              <h3 id="bodyMetricsModalTitle">⚖️ Log Body Metrics</h3>
-              <button class="modal-close" id="bodyMetricsModalClose" type="button" aria-label="Close">✕</button>
-            </div>
-            <form id="bodyMetricsForm" class="modal-body" style="display:flex;flex-direction:column;gap:10px;">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div>
-                  <label class="form-label" for="bmDate">Date</label>
-                  <input class="form-input" type="date" id="bmDate" name="bmDate" required />
-                </div>
-                <div>
-                  <label class="form-label" for="bmTime">Time</label>
-                  <input class="form-input" type="time" id="bmTime" name="bmTime" />
-                </div>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                <div>
-                  <label class="form-label" for="bmWeight">Weight (kg)</label>
-                  <input class="form-input" type="number" id="bmWeight" name="bmWeight" step="0.01" placeholder="84.5" required />
-                </div>
-                <div>
-                  <label class="form-label" for="bmBmi">BMI</label>
-                  <input class="form-input" type="number" id="bmBmi" name="bmBmi" step="0.1" placeholder="29.2" />
-                </div>
-                <div>
-                  <label class="form-label" for="bmBodyAge">Body Age</label>
-                  <input class="form-input" type="number" id="bmBodyAge" name="bmBodyAge" step="1" placeholder="34" />
-                </div>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                <div>
-                  <label class="form-label" for="bmBodyFat">Body Fat (%)</label>
-                  <input class="form-input" type="number" id="bmBodyFat" name="bmBodyFat" step="0.1" placeholder="24.6" />
-                </div>
-                <div>
-                  <label class="form-label" for="bmSubcutFat">Subcutaneous Fat (%)</label>
-                  <input class="form-input" type="number" id="bmSubcutFat" name="bmSubcutFat" step="0.1" placeholder="21.2" />
-                </div>
-                <div>
-                  <label class="form-label" for="bmVisceralFat">Visceral Fat</label>
-                  <input class="form-input" type="number" id="bmVisceralFat" name="bmVisceralFat" step="0.1" placeholder="11.8" />
-                </div>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                <div>
-                  <label class="form-label" for="bmBodyWater">Body Water (%)</label>
-                  <input class="form-input" type="number" id="bmBodyWater" name="bmBodyWater" step="0.1" placeholder="54.4" />
-                </div>
-                <div>
-                  <label class="form-label" for="bmSkeletalMuscle">Skeletal Muscle (%)</label>
-                  <input class="form-input" type="number" id="bmSkeletalMuscle" name="bmSkeletalMuscle" step="0.1" placeholder="48.7" />
-                </div>
-                <div>
-                  <label class="form-label" for="bmMuscleMass">Muscle Mass (kg)</label>
-                  <input class="form-input" type="number" id="bmMuscleMass" name="bmMuscleMass" step="0.01" placeholder="60.5" />
-                </div>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                <div>
-                  <label class="form-label" for="bmBoneMass">Bone Mass (kg)</label>
-                  <input class="form-input" type="number" id="bmBoneMass" name="bmBoneMass" step="0.01" placeholder="3.2" />
-                </div>
-                <div>
-                  <label class="form-label" for="bmProtein">Protein (%)</label>
-                  <input class="form-input" type="number" id="bmProtein" name="bmProtein" step="0.1" placeholder="17.2" />
-                </div>
-                <div>
-                  <label class="form-label" for="bmBmr">BMR (kcal)</label>
-                  <input class="form-input" type="number" id="bmBmr" name="bmBmr" step="1" placeholder="1745" />
-                </div>
-              </div>
-              <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
-                <button class="secondary-button" type="button" id="bodyMetricsModalClose2" onclick="document.getElementById('bodyMetricsModal').hidden=true;">Cancel</button>
-                <button class="primary-button" type="submit">Save Metrics</button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <section class="view" id="habits" aria-labelledby="habitsTitle" hidden>
+        <section class="view" id="habits" aria-labelledby="habitsTitle">
           <div class="section-heading">
             <div>
               <h2 id="habitsTitle">Habit Tracker</h2>
@@ -2599,6 +2517,88 @@
         <div class="modal-actions" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px;">
           <button class="secondary-button" type="button" data-close-modal>Close</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Body Metrics Modal ── -->
+    <div class="modal" id="bodyMetricsModal" role="dialog" aria-modal="true" aria-labelledby="bodyMetricsModalTitle" hidden>
+      <div class="modal-card" style="max-width: 560px;">
+        <div class="modal-header">
+          <h3 id="bodyMetricsModalTitle">⚖️ Log Body Metrics</h3>
+          <button class="modal-close" id="bodyMetricsModalClose" type="button" aria-label="Close">✕</button>
+        </div>
+        <form id="bodyMetricsForm" class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label class="form-label" for="bmDate">Date</label>
+              <input class="form-input" type="date" id="bmDate" name="bmDate" required />
+            </div>
+            <div>
+              <label class="form-label" for="bmTime">Time</label>
+              <input class="form-input" type="time" id="bmTime" name="bmTime" />
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label class="form-label" for="bmWeight">Weight (kg)</label>
+              <input class="form-input" type="number" id="bmWeight" name="bmWeight" step="0.01" placeholder="84.5" required />
+            </div>
+            <div>
+              <label class="form-label" for="bmBmi">BMI</label>
+              <input class="form-input" type="number" id="bmBmi" name="bmBmi" step="0.1" placeholder="29.2" />
+            </div>
+            <div>
+              <label class="form-label" for="bmBodyAge">Body Age</label>
+              <input class="form-input" type="number" id="bmBodyAge" name="bmBodyAge" step="1" placeholder="34" />
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label class="form-label" for="bmBodyFat">Body Fat (%)</label>
+              <input class="form-input" type="number" id="bmBodyFat" name="bmBodyFat" step="0.1" placeholder="24.6" />
+            </div>
+            <div>
+              <label class="form-label" for="bmSubcutFat">Subcutaneous Fat (%)</label>
+              <input class="form-input" type="number" id="bmSubcutFat" name="bmSubcutFat" step="0.1" placeholder="21.2" />
+            </div>
+            <div>
+              <label class="form-label" for="bmVisceralFat">Visceral Fat</label>
+              <input class="form-input" type="number" id="bmVisceralFat" name="bmVisceralFat" step="0.1" placeholder="11.8" />
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label class="form-label" for="bmBodyWater">Body Water (%)</label>
+              <input class="form-input" type="number" id="bmBodyWater" name="bmBodyWater" step="0.1" placeholder="54.4" />
+            </div>
+            <div>
+              <label class="form-label" for="bmSkeletalMuscle">Skeletal Muscle (%)</label>
+              <input class="form-input" type="number" id="bmSkeletalMuscle" name="bmSkeletalMuscle" step="0.1" placeholder="48.7" />
+            </div>
+            <div>
+              <label class="form-label" for="bmMuscleMass">Muscle Mass (kg)</label>
+              <input class="form-input" type="number" id="bmMuscleMass" name="bmMuscleMass" step="0.01" placeholder="60.5" />
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label class="form-label" for="bmBoneMass">Bone Mass (kg)</label>
+              <input class="form-input" type="number" id="bmBoneMass" name="bmBoneMass" step="0.01" placeholder="3.2" />
+            </div>
+            <div>
+              <label class="form-label" for="bmProtein">Protein (%)</label>
+              <input class="form-input" type="number" id="bmProtein" name="bmProtein" step="0.1" placeholder="17.2" />
+            </div>
+            <div>
+              <label class="form-label" for="bmBmr">BMR (kcal)</label>
+              <input class="form-input" type="number" id="bmBmr" name="bmBmr" step="1" placeholder="1745" />
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
+            <button class="secondary-button" type="button" id="bodyMetricsModalClose2" onclick="document.getElementById('bodyMetricsModal').hidden=true;">Cancel</button>
+            <button class="primary-button" type="submit">Save Metrics</button>
+          </div>
+        </form>
       </div>
     </div>
 

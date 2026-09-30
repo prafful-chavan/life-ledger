@@ -823,8 +823,15 @@ function bindNavigation() {
       activeView = button.dataset.view;
       document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
-      document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
-      document.getElementById(activeView).classList.add("active");
+      document.querySelectorAll(".view").forEach((view) => {
+        view.classList.remove("active");
+        view.hidden = true;
+      });
+      const targetView = document.getElementById(activeView);
+      if (targetView) {
+        targetView.classList.add("active");
+        targetView.hidden = false;
+      }
       document.getElementById("todayTitle").textContent = viewTitle(activeView);
     });
   });
@@ -851,10 +858,19 @@ function bindModals() {
     button.addEventListener("click", () => closeModal(button.closest(".modal")));
   });
 
-  document.querySelectorAll(".modal").forEach((modal) => {
+  document.querySelectorAll(".modal, .modal-overlay").forEach((modal) => {
     modal.addEventListener("click", (event) => {
       if (event.target === modal) closeModal(modal);
     });
+  });
+
+  // Global Escape key listener: closes any open modal seamlessly across all platforms
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      document.querySelectorAll(".modal:not([hidden]), .modal-overlay:not([hidden])").forEach((modal) => {
+        closeModal(modal);
+      });
+    }
   });
 }
 
@@ -1268,15 +1284,22 @@ function bindCareerTabs() {
       activeCareerTab = button.dataset.careerTab;
       document.querySelectorAll("[data-career-tab]").forEach((tab) => tab.classList.remove("active"));
       button.classList.add("active");
-      document.querySelectorAll(".career-tab").forEach((tab) => tab.classList.remove("active"));
-      document.getElementById(`career-${activeCareerTab}`)?.classList.add("active");
+      document.querySelectorAll(".career-tab").forEach((tab) => {
+        tab.classList.remove("active");
+        tab.hidden = true;
+      });
+      const activeTabEl = document.getElementById(`career-${activeCareerTab}`);
+      if (activeTabEl) {
+        activeTabEl.classList.add("active");
+        activeTabEl.hidden = false;
+      }
       
       const addBtn = document.getElementById("careerAddBtn");
       if (addBtn) {
         addBtn.style.display = (activeCareerTab === "interview" || activeCareerTab === "ittracker") ? "none" : "";
       }
 
-      // Bind & render Interview Tracker on first switch
+      // Bind & render Interview Tracker on switch
       if (activeCareerTab === "ittracker") {
         bindInterviewTracker();
         renderInterviewTracker();
