@@ -2341,15 +2341,16 @@
 
         <div class="settings-section">
           <h4>📈 Stock Prices (Live Proxy)</h4>
-          <p class="muted-small" style="margin-bottom: 12px;">Fetch live NSE/BSE stock prices via your free Google Apps Script web app proxy (no API key/billing required).</p>
+          <p class="muted-small" style="margin-bottom: 12px;">Fetch live NSE/BSE &amp; US stock prices via your free Google Apps Script web app proxy (no API key/billing required).</p>
           <div class="settings-row" style="margin-top: 8px;">
             <span>Proxy Web App URL:</span>
             <input type="text" id="settingsStockProxyUrl" placeholder="https://script.google.com/macros/s/.../exec" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
           </div>
           <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="secondary-button" type="button" id="settingsSaveStockProxy" style="flex: 1;">💾 Save Proxy URL</button>
+            <button class="secondary-button" type="button" id="settingsTestStockProxy" style="flex: 1;">🧪 Test Proxy</button>
           </div>
-          <p class="muted-small" style="margin-top: 8px;">See <code>stock-price-proxy.gs</code> for 1-minute setup instructions.</p>
+          <p class="muted-small" style="margin-top: 8px;">Supports Indian stocks (NSE/BSE), US stocks (NASDAQ/NYSE/NYSEARCA), and dynamic ISIN resolution. See <code>stock-price-proxy.gs</code> for 1-minute setup instructions.</p>
         </div>
 
         <div class="settings-divider"></div>

@@ -494,10 +494,15 @@ function bootstrapApp(initialState) {
   }
   renderAll();
   recordDailyNetWorthSnapshot({ source: "startup" });
-  refreshMutualFundNAVs(false);
-  refreshStockPrices(false);
-  refreshUsStockPrices(false);
-  fetchLiveGoldPrice(false);
+  Promise.allSettled([
+    refreshMutualFundNAVs(false),
+    refreshStockPrices(false, true),
+    refreshUsStockPrices(false, true),
+    fetchLiveGoldPrice(false)
+  ]).then(() => {
+    recordDailyNetWorthSnapshot({ source: "startup-refresh" });
+    if (typeof renderNetWorthHistory === 'function') renderNetWorthHistory();
+  }).catch(() => {});
   initBrokerAutoRefresh();
 
   // Load AI insights in background (non-blocking)
@@ -1862,15 +1867,46 @@ function bindAiSettings() {
   // Stock Price Proxy setting
   const stockProxyInput = document.getElementById('settingsStockProxyUrl');
   const stockProxySaveBtn = document.getElementById('settingsSaveStockProxy');
+  const stockProxyTestBtn = document.getElementById('settingsTestStockProxy');
   if (stockProxyInput) stockProxyInput.value = localStorage.getItem(STOCK_PROXY_URL_KEY) || '';
   stockProxySaveBtn?.addEventListener('click', () => {
-    const url = stockProxyInput?.value?.trim();
-    if (url) {
-      localStorage.setItem(STOCK_PROXY_URL_KEY, url);
+    const rawVal = stockProxyInput?.value?.trim() || '';
+    const cleanUrl = rawVal.replace(/^["']|["']$/g, '').trim();
+    if (cleanUrl) {
+      localStorage.setItem(STOCK_PROXY_URL_KEY, cleanUrl);
+      if (stockProxyInput) stockProxyInput.value = cleanUrl;
       toast('✅ Stock price proxy URL saved.');
     } else {
       localStorage.removeItem(STOCK_PROXY_URL_KEY);
       toast('Stock proxy URL cleared.');
+    }
+  });
+
+  stockProxyTestBtn?.addEventListener('click', async () => {
+    const rawVal = stockProxyInput?.value?.trim() || (typeof localStorage !== 'undefined' ? localStorage.getItem(STOCK_PROXY_URL_KEY) : '') || '';
+    const cleanUrl = rawVal.replace(/^["']|["']$/g, '').replace(/\?+$/, '').trim();
+    if (!cleanUrl) {
+      toast('⚠️ Please enter a Proxy URL first.');
+      return;
+    }
+    toast('🔄 Testing proxy connection…');
+    try {
+      const sep = cleanUrl.includes('?') ? '&' : '?';
+      const testUrl = `${cleanUrl}${sep}symbols=AAPL,VOO,RELIANCE&symbol=AAPL,VOO,RELIANCE&market=US`;
+      const resp = await fetch(testUrl, { signal: AbortSignal.timeout(15000) });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const parsedAapl = parseStockProxyPrice(data, 'AAPL');
+      const parsedRel = parseStockProxyPrice(data, 'RELIANCE');
+      if (parsedAapl || parsedRel || (data && (data.status === 'ok' || data.version))) {
+        const aaplStr = parsedAapl ? ` AAPL: $${parsedAapl.price.toFixed(2)}` : '';
+        const relStr = parsedRel ? ` RELIANCE: ₹${parsedRel.price.toFixed(2)}` : '';
+        toast(`✅ Proxy connected successfully!${aaplStr}${relStr}`);
+      } else {
+        toast('⚠️ Proxy responded, but did not return prices. Check script deployment.');
+      }
+    } catch (e) {
+      toast(`⚠️ Proxy test failed: ${e.message}`);
     }
   });
 
@@ -6028,52 +6064,182 @@ function isStockPriceStale(cached) {
   return false;
 }
 
+// Helper to robustly extract price details from any Google Apps Script or Proxy response structure
+function parseStockProxyPrice(data, symbol) {
+  if (!data || !symbol) return null;
+  const sym = String(symbol).toUpperCase().replace(/\s*-EQ$/i, '').trim();
+  const lowerSym = sym.toLowerCase();
+
+  let entry = null;
+
+  // 1. Unwrap data if nested inside data/result/quotes/items
+  const container = (data && typeof data === 'object') ? (data.data || data.result || data.quotes || data.items || data) : data;
+
+  // 2. Direct object key match
+  if (container && typeof container === 'object' && !Array.isArray(container)) {
+    const candidates = [
+      sym,
+      lowerSym,
+      symbol,
+      `NASDAQ:${sym}`,
+      `NYSE:${sym}`,
+      `NYSEARCA:${sym}`,
+      `NSE:${sym}`,
+      `BOM:${sym}`,
+      `${sym}.NS`,
+      `${sym}.BO`
+    ];
+    for (const key of candidates) {
+      if (container[key] !== undefined && container[key] !== null) {
+        entry = container[key];
+        break;
+      }
+    }
+    // Case-insensitive key search if candidate not found directly
+    if (entry === null || entry === undefined) {
+      for (const [k, v] of Object.entries(container)) {
+        const cleanK = String(k).toUpperCase().replace(/^(NASDAQ|NYSE|NYSEARCA|NSE|BOM):/, '').replace(/\.(NS|BO)$/i, '').trim();
+        if (cleanK === sym) {
+          entry = v;
+          break;
+        }
+      }
+    }
+  } else if (Array.isArray(container)) {
+    // 3. Array of objects match
+    entry = container.find(item => {
+      const itemSym = String(item?.symbol || item?.ticker || item?.scrip || item?.name || '').toUpperCase().replace(/^(NASDAQ|NYSE|NYSEARCA|NSE|BOM):/, '').replace(/\.(NS|BO)$/i, '').trim();
+      return itemSym === sym;
+    });
+  }
+
+  if (entry === null || entry === undefined) return null;
+
+  // 4. Extract price value and associated metadata
+  let price = 0;
+  let prevClose = 0;
+  let change = 0;
+  let changePct = 0;
+  let source = 'proxy';
+  let dateStr = new Date().toLocaleDateString('en-US');
+
+  if (typeof entry === 'number') {
+    price = entry;
+    prevClose = entry;
+  } else if (typeof entry === 'string') {
+    price = toNumber(entry);
+    prevClose = price;
+  } else if (typeof entry === 'object') {
+    if (entry.error && (!entry.price || toNumber(entry.price) <= 0)) {
+      return null;
+    }
+    const rawPrice = entry.price ?? entry.regularMarketPrice ?? entry.currentPrice ?? entry.lastSalePrice ?? entry.lastPrice ?? entry.close ?? entry.l ?? entry.c ?? entry.value;
+    price = toNumber(rawPrice);
+    if (price <= 0) return null;
+
+    change = toNumber(entry.change ?? entry.netChange ?? entry.d);
+
+    const rawPrev = entry.prevClose ?? entry.previousClose ?? entry.closeyest ?? entry.chartPreviousClose ?? entry.pc;
+    if (rawPrev !== undefined && rawPrev !== null && toNumber(rawPrev) > 0) {
+      prevClose = toNumber(rawPrev);
+      if (!change) change = price - prevClose;
+    } else if (change) {
+      prevClose = Number((price - change).toFixed(4));
+    } else {
+      prevClose = price;
+    }
+
+    changePct = toNumber(entry.changePct ?? entry.percentageChange ?? entry.changepct ?? entry.dp) || (prevClose > 0 ? Number((((price - prevClose) / prevClose) * 100).toFixed(4)) : 0);
+    source = entry.source || 'proxy';
+    dateStr = entry.date || entry.lastTradeTimestamp || dateStr;
+  }
+
+  if (price <= 0) return null;
+
+  return {
+    price,
+    prevClose,
+    change,
+    changePct,
+    source,
+    date: dateStr,
+    company: entry?.company || null,
+    isin: entry?.isin || null,
+    category: entry?.category || null
+  };
+}
+
 async function fetchStockPriceSingleSymbolFast(symbol, isUS = false) {
   const cleanSym = String(symbol).toUpperCase().replace(/\s*-EQ$/i, '').trim();
   const exchangeSym = isUS ? cleanSym : getExchangeTicker(cleanSym);
   const yahooSymbol = isUS ? cleanSym : (exchangeSym.endsWith('.NS') || exchangeSym.endsWith('.BO') ? exchangeSym : `${exchangeSym}.NS`);
-  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
 
-  const endpoints = [
+  // 1. If proxy URL is configured in settings, query proxy for single symbol first
+  const rawProxy = typeof localStorage !== 'undefined' ? localStorage.getItem(STOCK_PROXY_URL_KEY) : null;
+  const proxyUrl = rawProxy ? rawProxy.trim().replace(/^["']|["']$/g, '').replace(/\?+$/, '') : null;
+  if (proxyUrl) {
+    try {
+      const sep = proxyUrl.includes('?') ? '&' : '?';
+      const mkt = isUS ? '&market=US' : '';
+      const url = `${proxyUrl}${sep}symbols=${encodeURIComponent(cleanSym)}&symbol=${encodeURIComponent(cleanSym)}${mkt}`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (resp.ok) {
+        const data = await resp.json();
+        const parsed = parseStockProxyPrice(data, cleanSym);
+        if (parsed && parsed.price > 0) {
+          return {
+            currentPrice: parsed.price,
+            prevClose: parsed.prevClose,
+            source: parsed.source || 'proxy',
+            exchangeSymbol: exchangeSym
+          };
+        }
+      }
+    } catch {}
+  }
+
+  // 2. High-speed Yahoo Chart fetch via resilient public CORS gateways
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
+  const gateways = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-    `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`,
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`
   ];
 
-  const fetchPromises = endpoints.map(async (url) => {
+  for (const url of gateways) {
     try {
       const resp = await fetch(url, {
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(4500)
       });
-      if (!resp.ok) return null;
+      if (!resp.ok) continue;
       const text = await resp.text();
       const jsonStart = text.indexOf('{');
-      if (jsonStart < 0) return null;
+      if (jsonStart < 0) continue;
       const data = JSON.parse(text.slice(jsonStart));
       const meta = data?.chart?.result?.[0]?.meta;
       if (meta && meta.regularMarketPrice > 0) {
         return {
-          currentPrice: meta.regularMarketPrice,
-          prevClose: meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice,
+          currentPrice: Number(meta.regularMarketPrice),
+          prevClose: Number(meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice),
           source: 'fast-api',
           exchangeSymbol: exchangeSym
         };
       }
-    } catch {
-      return null;
-    }
-    return null;
-  });
-
-  const results = await Promise.allSettled(fetchPromises);
-  for (const res of results) {
-    if (res.status === 'fulfilled' && res.value && res.value.currentPrice > 0) {
-      return res.value;
-    }
+    } catch {}
   }
+
+  // 3. Fallback: check cached prices if available
+  const cache = getStockPriceCache();
+  const cached = cache[cleanSym] || cache[exchangeSym];
+  if (cached && cached.price > 0) {
+    return {
+      currentPrice: cached.price,
+      prevClose: cached.prevClose || cached.price,
+      source: 'cache-fallback',
+      exchangeSymbol: exchangeSym
+    };
+  }
+
   return null;
 }
 
@@ -6081,11 +6247,12 @@ async function fetchIndianStockPriceFallback(symbol) {
   return fetchStockPriceSingleSymbolFast(symbol, false);
 }
 
-async function refreshStockPrices(force = false) {
+async function refreshStockPrices(force = false, silent = false) {
   // First ensure all stocks with raw ISIN codes are resolved to proper symbols and company names
   await autoResolveUnknownIsinStocks().catch(e => console.warn('[Stock Prices] Auto-resolve error:', e));
 
-  const proxyUrl = localStorage.getItem(STOCK_PROXY_URL_KEY);
+  const rawProxy = typeof localStorage !== 'undefined' ? localStorage.getItem(STOCK_PROXY_URL_KEY) : null;
+  const proxyUrl = rawProxy ? rawProxy.trim().replace(/^["']|["']$/g, '').replace(/\?+$/, '') : null;
   const symbolGroups = {};
   (state.stocks || []).forEach(s => {
     if (!s.symbol && !s.company) return;
@@ -6105,7 +6272,10 @@ async function refreshStockPrices(force = false) {
   const uniqueSymbols = Object.entries(symbolGroups)
     .filter(([, items]) => items.some(s => toNumber(s.quantity) > 0))
     .map(([sym]) => sym);
-  if (uniqueSymbols.length === 0) { toast('No stock symbols to refresh.'); return; }
+  if (uniqueSymbols.length === 0) {
+    if (!silent) toast('No stock symbols to refresh.');
+    return;
+  }
 
   const cache = getStockPriceCache();
   const now = Date.now();
@@ -6113,7 +6283,7 @@ async function refreshStockPrices(force = false) {
   if (!needsFetch) {
     updateStocksFromCache();
     renderStockHoldingsPanel();
-    toast('Stock prices are up to date.');
+    if (!silent) toast('Stock prices are up to date.');
     return;
   }
 
@@ -6138,7 +6308,7 @@ async function refreshStockPrices(force = false) {
     saveStockPriceCache(cache);
   }
 
-  toast('🔄 Refreshing stock prices via Google Proxy…');
+  if (!silent) toast('🔄 Refreshing stock prices via Google Proxy…');
   let updatedCount = 0;
   let failedSymbols = [...uniqueSymbols];
 
@@ -6161,33 +6331,35 @@ async function refreshStockPrices(force = false) {
     });
   }
 
-  // Strategy 1: Google Apps Script Proxy URL (with generous 25s timeout)
+  // Strategy 1: Google Apps Script Proxy URL (with generous 20s timeout)
   if (proxyUrl) {
     try {
-      const url = `${proxyUrl}?symbols=${encodeURIComponent(symbolsToQuery.join(','))}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(25000) });
+      const sep = proxyUrl.includes('?') ? '&' : '?';
+      const symList = encodeURIComponent(symbolsToQuery.join(','));
+      const url = `${proxyUrl}${sep}symbols=${symList}&symbol=${symList}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
       if (response.ok) {
         const data = await response.json();
-        for (const [symbol, priceData] of Object.entries(data)) {
-          const sym = symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
-          if (!priceData || priceData.error || !priceData.price || toNumber(priceData.price) <= 0) {
-            continue;
-          }
-          setCacheItem(sym, priceData, 'proxy');
+        for (const symQuery of symbolsToQuery) {
+          const sym = symQuery.toUpperCase().replace(/\s*-EQ$/i, '').trim();
+          const parsed = parseStockProxyPrice(data, sym);
+          if (!parsed || parsed.price <= 0) continue;
+
+          setCacheItem(sym, parsed, parsed.source || 'proxy');
           updatedCount++;
 
           // Dynamic ISIN metadata caching from proxy response
           const isinPattern = /^IN[EF0-9][A-Z0-9]{7,}$/i;
-          const cleanIsin = priceData.isin || (isinPattern.test(sym) ? sym : null);
-          if (cleanIsin && priceData.symbol && priceData.company) {
+          const cleanIsin = parsed.isin || (isinPattern.test(sym) ? sym : null);
+          if (cleanIsin && parsed.symbol && parsed.company) {
             const res = {
-              symbol: priceData.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim(),
-              company: priceData.company,
-              category: priceData.category || (/BEES|ETF|GOLD|SILVER|NIFTY/i.test(priceData.symbol) ? 'ETF' : 'Stock')
+              symbol: parsed.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim(),
+              company: parsed.company,
+              category: parsed.category || (/BEES|ETF|GOLD|SILVER|NIFTY/i.test(parsed.symbol) ? 'ETF' : 'Stock')
             };
             saveResolvedIsin(cleanIsin, res);
             if (res.symbol !== sym) {
-              setCacheItem(res.symbol, priceData, 'proxy');
+              setCacheItem(res.symbol, parsed, parsed.source || 'proxy');
             }
           }
         }
@@ -6196,7 +6368,7 @@ async function refreshStockPrices(force = false) {
           return (!cache[s] || !cache[s].price) && (!cache[ex] || !cache[ex].price);
         });
       } else {
-        console.warn(`[Stock Prices] Custom proxy returned ${response.status}. Falling back to Yahoo Finance...`);
+        console.warn(`[Stock Prices] Custom proxy returned ${response.status}. Falling back...`);
       }
     } catch (err) {
       console.warn('[Stock Prices] Custom proxy fetch failed:', err.message);
@@ -6205,7 +6377,7 @@ async function refreshStockPrices(force = false) {
 
   // Strategy 2: Parallel High-Speed Fallback for failed / un-fetched symbols
   if (failedSymbols.length > 0) {
-    console.log(`[Stock Prices] Fetching via parallel fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
+    console.log(`[Stock Prices] Fetching via fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
     const fallbackResults = await Promise.allSettled(
       failedSymbols.map(sym => fetchStockPriceSingleSymbolFast(sym, false).then(res => ({ sym, res })))
     );
@@ -6268,9 +6440,18 @@ async function refreshStockPrices(force = false) {
     });
     await saveData(true);
     renderStockHoldingsPanel();
-    toast(`✅ Updated prices for ${updatedCount} stocks`);
+    if (!silent) toast(`✅ Updated prices for ${updatedCount} stocks`);
   } else {
-    toast('⚠️ Price refresh could not reach stock API. Check network connection.');
+    updateStocksFromCache();
+    renderStockHoldingsPanel();
+    const hasCached = uniqueSymbols.some(s => cache[s]?.price > 0 || cache[getExchangeTicker(s)]?.price > 0);
+    if (!silent) {
+      if (hasCached) {
+        toast('ℹ️ Using latest cached stock prices (live feed unreachable).');
+      } else {
+        toast('⚠️ Price refresh could not reach stock API. Check network connection.');
+      }
+    }
   }
 }
 
@@ -6480,8 +6661,9 @@ function formatUSD(num) {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-async function refreshUsStockPrices(force = false) {
-  const proxyUrl = localStorage.getItem(STOCK_PROXY_URL_KEY);
+async function refreshUsStockPrices(force = false, silent = false) {
+  const rawProxy = typeof localStorage !== 'undefined' ? localStorage.getItem(STOCK_PROXY_URL_KEY) : null;
+  const proxyUrl = rawProxy ? rawProxy.trim().replace(/^["']|["']$/g, '').replace(/\?+$/, '') : null;
   const allStocks = state.usstocks || [];
   // Group by symbol and apply FIFO to only refresh prices for positions we still hold
   const usSymbolGroups = {};
@@ -6495,7 +6677,7 @@ async function refreshUsStockPrices(force = false) {
     .filter(([, items]) => items.some(s => toNumber(s.quantity) > 0))
     .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) {
-    toast('No US stocks found to refresh.');
+    if (!silent) toast('No US stocks found to refresh.');
     return;
   }
   const cache = getStockPriceCache();
@@ -6516,37 +6698,42 @@ async function refreshUsStockPrices(force = false) {
     saveStockPriceCache(cache);
   }
 
-  toast('🔄 Refreshing US stock prices…');
+  if (!silent) toast('🔄 Refreshing US stock prices…');
   let updatedCount = 0;
   let failedSymbols = [...uniqueSymbols];
 
   // ─── Strategy 1: Google Apps Script proxy with market=US hint ───────────
   if (proxyUrl) {
     try {
-      const url = `${proxyUrl}?symbols=${encodeURIComponent(uniqueSymbols.join(','))}&market=US`;
+      const sep = proxyUrl.includes('?') ? '&' : '?';
+      const symList = encodeURIComponent(uniqueSymbols.join(','));
+      const url = `${proxyUrl}${sep}symbols=${symList}&symbol=${symList}&market=US`;
       console.log('[US Stocks] Fetching from proxy:', url);
-      const response = await fetch(url, { signal: AbortSignal.timeout(25000) });
-      if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
-      const data = await response.json();
-      console.log('[US Stocks] Proxy response:', JSON.stringify(data).slice(0, 1000));
+      const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[US Stocks] Proxy response:', JSON.stringify(data).slice(0, 1000));
 
-      failedSymbols = [];
-      for (const sym of uniqueSymbols) {
-        const priceData = data[sym] || data[sym.toUpperCase()];
-        if (!priceData || priceData.error || !priceData.price || toNumber(priceData.price) <= 0) {
-          failedSymbols.push(sym);
-          continue;
+        failedSymbols = [];
+        for (const sym of uniqueSymbols) {
+          const parsed = parseStockProxyPrice(data, sym);
+          if (!parsed || parsed.price <= 0) {
+            failedSymbols.push(sym);
+            continue;
+          }
+          cache[sym] = {
+            price: parsed.price,
+            prevClose: parsed.prevClose,
+            change: parsed.change,
+            changePct: parsed.changePct,
+            timestamp: now,
+            date: parsed.date,
+            source: parsed.source || 'proxy',
+          };
+          updatedCount++;
         }
-        cache[sym] = {
-          price: toNumber(priceData.price),
-          prevClose: toNumber(priceData.prevClose) || toNumber(priceData.price),
-          change: toNumber(priceData.change),
-          changePct: toNumber(priceData.changePct),
-          timestamp: now,
-          date: priceData.date || new Date().toLocaleDateString('en-US'),
-          source: priceData.source || 'proxy',
-        };
-        updatedCount++;
+      } else {
+        console.warn(`[US Stocks] Proxy returned status ${response.status}`);
       }
     } catch (err) {
       console.warn('[US Stocks] Proxy failed:', err.message);
@@ -6556,7 +6743,7 @@ async function refreshUsStockPrices(force = false) {
 
   // ─── Strategy 2: Parallel High-Speed Fallback for failed symbols ─────────
   if (failedSymbols.length > 0) {
-    console.log(`[US Stocks] Fetching via parallel fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
+    console.log(`[US Stocks] Fetching via fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
     const fallbackResults = await Promise.allSettled(
       failedSymbols.map(sym => fetchStockPriceSingleSymbolFast(sym, true).then(res => ({ sym, res })))
     );
@@ -6593,7 +6780,8 @@ async function refreshUsStockPrices(force = false) {
         s.currentPrice = cached.price;
         s.prevClose = cached.prevClose;
         s.priceDate = cached.date;
-        s.currentValue = toNumber(s.quantity) * cached.price;
+        const isSell = ['SELL', 'S', 'SOLD'].includes(String(s.transactionType || '').toUpperCase());
+        s.currentValue = isSell ? 0 : (toNumber(s.quantity) * cached.price);
       }
     });
     await saveData(true);
@@ -6601,9 +6789,18 @@ async function refreshUsStockPrices(force = false) {
     const priceDate = cache[uniqueSymbols[0]]?.date || 'now';
     const source = cache[uniqueSymbols[0]]?.source || 'proxy';
     const failMsg = failedSymbols.length > 0 ? ` (${failedSymbols.join(', ')} failed)` : '';
-    toast(`✅ Updated ${updatedCount}/${uniqueSymbols.length} US stocks (${priceDate}, via ${source})${failMsg}`);
+    if (!silent) toast(`✅ Updated ${updatedCount}/${uniqueSymbols.length} US stocks (${priceDate}, via ${source})${failMsg}`);
   } else {
-    toast('⚠️ Could not fetch US stock prices. Check proxy URL in Settings or try again later.');
+    updateUsStocksFromCache();
+    renderUsStockHoldingsPanel();
+    const hasCached = uniqueSymbols.some(sym => cache[sym]?.price > 0);
+    if (!silent) {
+      if (hasCached) {
+        toast('ℹ️ Using latest cached US stock prices (live feed unreachable).');
+      } else {
+        toast('⚠️ Could not fetch US stock prices. Check proxy URL in Settings or try again later.');
+      }
+    }
   }
 }
 
@@ -6770,10 +6967,10 @@ async function refreshAllLivePrices(force = true) {
     promises.push(refreshMutualFundNAVs(force).catch(e => console.warn('[Refresh All] MF NAV error:', e)));
   }
   if (typeof refreshStockPrices === 'function') {
-    promises.push(refreshStockPrices(force).catch(e => console.warn('[Refresh All] Indian Stock price error:', e)));
+    promises.push(refreshStockPrices(force, true).catch(e => console.warn('[Refresh All] Indian Stock price error:', e)));
   }
   if (typeof refreshUsStockPrices === 'function') {
-    promises.push(refreshUsStockPrices(force).catch(e => console.warn('[Refresh All] US Stock price error:', e)));
+    promises.push(refreshUsStockPrices(force, true).catch(e => console.warn('[Refresh All] US Stock price error:', e)));
   }
   if (typeof fetchLiveGoldPrice === 'function') {
     promises.push(fetchLiveGoldPrice(force).catch(e => console.warn('[Refresh All] Gold price error:', e)));
@@ -14611,6 +14808,8 @@ if (typeof module !== 'undefined' && module.exports) {
     calculateStreak,
     getLatestBodyWeightKg,
     normalizeData,
+    parseStockProxyPrice,
+    STOCK_PROXY_URL_KEY,
     state,
     defaultData,
     demoData
