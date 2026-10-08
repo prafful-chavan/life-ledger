@@ -57,14 +57,41 @@ function estimateHistoricalGoldRate(dateStr, carat = "24K") {
   return Math.round(rate24k * getCaratMultiplier(carat));
 }
 
-function calcGoldItemValues(item, currentPrice24k = 7850) {
+function getCaratGoldRate(carat = "22K", goldPriceState = null) {
+  const c = String(carat || "").toUpperCase().trim();
+  const p22 = typeof goldPriceState === "object" && goldPriceState !== null ? Number(goldPriceState.price22k) : 0;
+  const p24 = typeof goldPriceState === "object" && goldPriceState !== null
+    ? Number(goldPriceState.price24k)
+    : (typeof goldPriceState === "number" ? goldPriceState : 0);
+
+  if (c.includes("24")) {
+    if (p24 && p24 > 0) return p24;
+    if (p22 && p22 > 0) return Number((p22 / (22 / 24)).toFixed(2));
+    return 14955.27;
+  }
+  if (c.includes("18")) {
+    const base24 = p24 && p24 > 0 ? p24 : (p22 && p22 > 0 ? p22 / (22 / 24) : 14955.27);
+    return Number((base24 * (18 / 24)).toFixed(2));
+  }
+  // Default 22K
+  if (p22 && p22 > 0) return p22;
+  if (p24 && p24 > 0) return Number((p24 * (22 / 24)).toFixed(2));
+  return 13709.00;
+}
+
+function calcGoldItemValues(item, priceOrState = 7850) {
   const mult = getCaratMultiplier(item.carat);
-  const currentRate = Math.round(currentPrice24k * mult);
+  const isLegacyNum = typeof priceOrState === "number";
+  const currentRate = isLegacyNum ? Math.round(priceOrState * mult) : getCaratGoldRate(item.carat, priceOrState);
   const weight = Number(item.weightGrams) || 0;
   const buyPrice = Number(item.purchasePricePerGram) || estimateHistoricalGoldRate(item.date, item.carat);
-  const invested = Math.round(weight * buyPrice);
-  const currentValue = Math.round(weight * currentRate);
-  const pl = currentValue - invested;
+  const invested = isLegacyNum && Number.isInteger(buyPrice) && Number.isInteger(weight)
+    ? Math.round(weight * buyPrice)
+    : Number((weight * buyPrice).toFixed(2));
+  const currentValue = isLegacyNum && Number.isInteger(currentRate) && Number.isInteger(weight)
+    ? Math.round(weight * currentRate)
+    : Number((weight * currentRate).toFixed(2));
+  const pl = Number((currentValue - invested).toFixed(2));
   const plPct = invested > 0 ? Number(((pl / invested) * 100).toFixed(2)) : 0;
   return { currentRate, invested, currentValue, pl, plPct };
 }
@@ -189,6 +216,101 @@ test("Portfolio Aggregation and Owner Segregation", () => {
   assert.strictEqual(totalCurrentValue, (10 * rate24k) + (25 * rate22k));
   assert.strictEqual(meValue, (10 * rate24k) + (5 * rate22k));
   assert.strictEqual(wifeValue, (20 * rate22k) + (5 * rate22k));
+});
+
+test("INDmoney Reference Asset: 29.88g 22K Kada exact valuation match", () => {
+  const goldPriceState = {
+    price22k: 13709.00,
+    price24k: 14955.27
+  };
+
+  const kada = {
+    name: "Gold hand kada",
+    category: "Other",
+    carat: "22K",
+    weightGrams: 29.88,
+    date: "2025-10-18",
+    purchasePricePerGram: 7731.04
+  };
+
+  const val = calcGoldItemValues(kada, goldPriceState);
+
+  // 1. Current 22K Rate must be ₹13,709.00/g
+  assert.strictEqual(val.currentRate, 13709.00);
+
+  // 2. Invested Amount: 29.88 * 7731.04 = ₹2,31,003.48
+  assert.strictEqual(val.invested, 231003.48);
+
+  // 3. Current Value: 29.88 * 13709.00 = ₹4,09,624.92
+  assert.strictEqual(val.currentValue, 409624.92);
+
+  // 4. Returns / P&L: 409624.92 - 231003.48 = +₹1,78,621.44
+  assert.strictEqual(val.pl, 178621.44);
+
+  // 5. P&L Percentage: +77.32%
+  assert.strictEqual(val.plPct, 77.32);
+});
+
+test("Consistent valuation across Table, Stats Grid, and Net Worth sync", () => {
+  const goldPriceState = {
+    price22k: 13709.00,
+    price24k: 14955.27
+  };
+
+  const holdings = [
+    {
+      id: "gold-kada",
+      name: "Gold hand kada",
+      category: "Jewellery",
+      carat: "22K",
+      weightGrams: 29.88,
+      date: "2025-10-18",
+      purchasePricePerGram: 7731.04,
+      owner: "Me"
+    }
+  ];
+
+  // Table row calculations
+  const tableVal = calcGoldItemValues(holdings[0], goldPriceState);
+
+  // Stats grid total
+  const statsTotalVal = holdings.reduce((sum, item) => sum + calcGoldItemValues(item, goldPriceState).currentValue, 0);
+
+  // Net worth gold contribution
+  const netWorthGoldContribution = holdings.reduce((sum, item) => sum + calcGoldItemValues(item, goldPriceState).currentValue, 0);
+
+  assert.strictEqual(tableVal.currentValue, 409624.92);
+  assert.strictEqual(statsTotalVal, 409624.92);
+  assert.strictEqual(netWorthGoldContribution, 409624.92);
+  assert.strictEqual(tableVal.invested, 231003.48);
+  assert.strictEqual(tableVal.pl, 178621.44);
+});
+
+test("Historical rate estimation does not overwrite today's Current Value", () => {
+  const goldPriceState = {
+    price22k: 13709.00,
+    price24k: 14955.27
+  };
+
+  const kada = {
+    name: "Gold hand kada",
+    category: "Other",
+    carat: "22K",
+    weightGrams: 29.88,
+    date: "2025-10-18",
+    purchasePricePerGram: 7731.04
+  };
+
+  // Historical estimate for 2025:
+  const histRate2025_22k = estimateHistoricalGoldRate("2025-10-18", "22K");
+  assert.strictEqual(histRate2025_22k, Math.round(7550 * (22 / 24))); // ~6921
+
+  const val = calcGoldItemValues(kada, goldPriceState);
+
+  // Verify that historical rate did NOT displace the latest 22K market rate
+  assert.notStrictEqual(val.currentRate, histRate2025_22k);
+  assert.strictEqual(val.currentRate, 13709.00);
+  assert.strictEqual(val.currentValue, 409624.92);
 });
 
 console.log("==========================================");

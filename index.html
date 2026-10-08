@@ -741,11 +741,12 @@
             <!-- Live Price Banner -->
             <div class="gold-price-banner" id="goldPriceBanner">
               <div class="gold-price-info">
-                <span class="gold-price-label">🪙 Live Gold Price (24K per gram)</span>
+                <span class="gold-price-label">🪙 Live Gold Market Price</span>
                 <span class="gold-price-value" id="goldLivePriceDisplay">—</span>
                 <span class="gold-price-sub" id="goldPriceTimestamp">Not fetched yet</span>
               </div>
-              <div class="gold-price-actions">
+              <div class="gold-price-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="ghost-button" type="button" id="goldEditRateBtn" title="Manually update current market gold rate">✏️ Set Rate</button>
                 <button class="ghost-button" type="button" id="goldRefreshPriceBtn" title="Refresh gold price">🔄 Refresh Price</button>
               </div>
             </div>
@@ -1943,7 +1944,7 @@
               </div>
               <div class="itv-form-group">
                 <label class="itv-label" for="goldFieldWeight">⚖️ Weight (grams) <span class="req">*</span></label>
-                <input type="number" id="goldFieldWeight" class="itv-input" placeholder="e.g. 10.5" step="0.001" min="0.001" required />
+                <input type="number" id="goldFieldWeight" class="itv-input" placeholder="e.g. 29.88" step="any" min="0.001" required />
               </div>
             </div>
 
@@ -1970,7 +1971,7 @@
                   <label class="itv-label" for="goldFieldBuyPrice" style="margin-bottom:0;">💰 Purchase Price / gram (₹)</label>
                   <button type="button" class="link-btn" id="goldAutoFillHistRateBtn" style="font-size:11px; color:var(--brand); background:none; border:none; cursor:pointer; text-decoration:underline;">⚡ Estimate rate on date</button>
                 </div>
-                <input type="number" id="goldFieldBuyPrice" class="itv-input" placeholder="e.g. 5800 (leave 0 if gift or unknown)" step="1" min="0" />
+                <input type="number" id="goldFieldBuyPrice" class="itv-input" placeholder="e.g. 7731.04 (leave 0 if gift or unknown)" step="any" min="0" />
                 <span style="font-size:11px; color:var(--muted); display:block; margin-top:3px;">Leave blank or click estimate to auto-calculate from historical rates.</span>
               </div>
             </div>
@@ -2288,6 +2289,24 @@
             <button class="secondary-button" type="button" id="settingsSaveStockProxy" style="flex: 1;">💾 Save Proxy URL</button>
           </div>
           <p class="muted-small" style="margin-top: 8px;">See <code>stock-price-proxy.gs</code> for 1-minute setup instructions.</p>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section">
+          <h4>🪙 Gold Market Rate &amp; Live API</h4>
+          <p class="muted-small" style="margin-bottom: 12px;">Configure latest 22K/24K market benchmark gold price or dedicated gold price API/proxy URL.</p>
+          <div class="settings-row" style="margin-top: 8px;">
+            <span>Current 22K Gold Rate (₹/g):</span>
+            <input type="number" id="settingsGoldRate22k" step="0.01" min="0" placeholder="e.g. 13709.00" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
+          </div>
+          <div class="settings-row" style="margin-top: 8px;">
+            <span>Gold API / Proxy URL:</span>
+            <input type="text" id="settingsGoldApiUrl" placeholder="https://script.google.com/macros/s/.../exec or gold API" style="flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 0.85rem;" />
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button class="secondary-button" type="button" id="settingsSaveGoldSettings" style="flex: 1;">💾 Save Gold Settings</button>
+          </div>
         </div>
 
         <div class="settings-divider"></div>
