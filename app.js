@@ -35,6 +35,7 @@ const defaultData = {
   chat: [],
   mfMonthlyTarget: { me: 100000, wife: 100000 },
   interviewTrackerEntries: [],
+  goldPrice: { price24k: 7850, lastFetched: null, source: "default" },
 };
 
 const EXPENSE_PAGE_SIZE = 80;
@@ -486,12 +487,14 @@ function bootstrapApp(initialState) {
     bindTodoAndKeepEvents();
     bindExerciseEvents();
     bindHabitsEvents();
+    bindGoldEvents();
     isAppInitialized = true;
   }
   renderAll();
   refreshMutualFundNAVs(false);
   refreshStockPrices(false);
   refreshUsStockPrices(false);
+  fetchLiveGoldPrice(false);
   initBrokerAutoRefresh();
 
   // Load AI insights in background (non-blocking)
@@ -695,6 +698,84 @@ function applyTheme(theme) {
   });
 }
 
+const defaultGoldHoldings = [
+  {
+    id: "gold-1",
+    name: "Bridal Gold Necklace & Jhumkas",
+    category: "Jewellery",
+    carat: "22K",
+    weightGrams: 32.5,
+    date: "2023-04-18",
+    purchasePricePerGram: 5600,
+    invested: 182000,
+    owner: "Wife",
+    value: 233865,
+    note: "Tanishq Hallmarked 22K Wedding jewellery"
+  },
+  {
+    id: "gold-2",
+    name: "MMTC-PAMP 24K Gold Bar",
+    category: "Bar",
+    carat: "24K",
+    weightGrams: 10.0,
+    date: "2022-10-24",
+    purchasePricePerGram: 5120,
+    invested: 51200,
+    owner: "Me",
+    value: 78500,
+    note: "Diwali 24K 999.9 pure investment bar"
+  },
+  {
+    id: "gold-3",
+    name: "Kundan Solitaire Gold Ring",
+    category: "Jewellery",
+    carat: "22K",
+    weightGrams: 6.2,
+    date: "2024-02-14",
+    purchasePricePerGram: 6350,
+    invested: 39370,
+    owner: "Wife",
+    value: 44614,
+    note: "Gift from family"
+  }
+];
+
+function getCaratMultiplier(carat) {
+  if (!carat) return 22 / 24;
+  const c = String(carat).toUpperCase().trim();
+  if (c.includes("24")) return 1.0;
+  if (c.includes("22")) return 22 / 24;
+  if (c.includes("18")) return 18 / 24;
+  return 22 / 24;
+}
+
+function normalizeGoldHolding(item) {
+  const carat = item.carat || "22K";
+  const weightGrams = toNumber(item.weightGrams || item.weight) || (item.value ? Math.round((item.value / 7200) * 100) / 100 : 10);
+  const purchasePricePerGram = toNumber(item.purchasePricePerGram) || (item.invested && weightGrams ? Math.round(item.invested / weightGrams) : (item.value && weightGrams ? Math.round(item.value / weightGrams) : 5600));
+  const invested = toNumber(item.invested) || Math.round(weightGrams * purchasePricePerGram);
+  const name = item.name || item.assetName || item.note || "Gold Asset";
+  const category = item.category || "Jewellery";
+  const owner = item.owner || item.paidBy || "Wife";
+  const date = item.date || item.investmentDate || todayISO();
+  const caratMult = getCaratMultiplier(carat);
+  const currentRate = (typeof state !== "undefined" && state?.goldPrice?.price24k ? state.goldPrice.price24k : 7850) * caratMult;
+  const value = Math.round(weightGrams * currentRate);
+  return {
+    ...item,
+    name,
+    category,
+    carat,
+    weightGrams,
+    purchasePricePerGram,
+    invested,
+    owner,
+    date,
+    value,
+    note: item.note || "",
+  };
+}
+
 function normalizeData(data) {
   return {
     ...clone(defaultData),
@@ -749,7 +830,12 @@ function normalizeData(data) {
     epf: ensureIds(data.epf || [], "epf"),
     bonds: ensureIds(data.bonds || [], "bond"),
     ppf: ensureIds(data.ppf || [], "ppf"),
-    gold: ensureIds(data.gold || [], "gold"),
+    gold: (() => {
+      const rawGold = Array.isArray(data.gold) ? data.gold : [];
+      const list = rawGold.length > 0 ? rawGold : defaultGoldHoldings;
+      return ensureIds(list, "gold").map(normalizeGoldHolding);
+    })(),
+    goldPrice: data.goldPrice || { price24k: 7850, lastFetched: null, source: "default" },
     silver: ensureIds(data.silver || [], "slv"),
     crypto: ensureIds(data.crypto || [], "crp"),
     usstocks: (() => {
@@ -840,6 +926,10 @@ function bindNavigation() {
 function bindModals() {
   document.querySelectorAll("[data-open-modal]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.kind === "gold") {
+        openGoldModal();
+        return;
+      }
       if (button.dataset.kind) {
         quickAddKind = button.dataset.kind;
         buildQuickAddForm(quickAddKind);
@@ -883,6 +973,7 @@ function bindFinanceTabs() {
       document.querySelectorAll(".finance-tab").forEach((tab) => tab.classList.remove("active"));
       document.getElementById(`finance-${activeFinanceTab}`)?.classList.add("active");
       if (activeFinanceTab === "expenses") renderExpenseExplorer();
+      if (activeFinanceTab === "gold") renderGold();
     });
   });
 
@@ -4937,6 +5028,7 @@ function renderHoldingsTabs() {
   renderStockHoldingsPanel();
   renderUsStockHoldingsPanel();
   renderSimpleAssets();
+  renderGold();
   if (activeMfView === "insights") {
     renderMfInsightsPanel();
   }
@@ -6564,7 +6656,7 @@ function renderUsStockHoldingsPanel() {
 }
 
 async function refreshAllLivePrices(force = true) {
-  toast('🔄 Refreshing all live prices (Mutual Funds + Stocks + US Stocks)…');
+  toast('🔄 Refreshing all live prices (Mutual Funds + Stocks + US Stocks + Gold)…');
   const promises = [];
   if (typeof refreshMutualFundNAVs === 'function') {
     promises.push(refreshMutualFundNAVs(force).catch(e => console.warn('[Refresh All] MF NAV error:', e)));
@@ -6575,9 +6667,12 @@ async function refreshAllLivePrices(force = true) {
   if (typeof refreshUsStockPrices === 'function') {
     promises.push(refreshUsStockPrices(force).catch(e => console.warn('[Refresh All] US Stock price error:', e)));
   }
+  if (typeof fetchLiveGoldPrice === 'function') {
+    promises.push(fetchLiveGoldPrice(force).catch(e => console.warn('[Refresh All] Gold price error:', e)));
+  }
   await Promise.allSettled(promises);
   renderAll();
-  toast('✅ All live prices refreshed! (Mutual Funds, Indian Stocks & US Stocks updated)');
+  toast('✅ All live prices refreshed! (Mutual Funds, Indian Stocks, US Stocks & Gold updated)');
 }
 
 const SIMPLE_ASSET_TABS = [
@@ -6585,7 +6680,6 @@ const SIMPLE_ASSET_TABS = [
   { kind: "epf", stateKey: "epf", summaryId: "epfOwnerSummary", tableId: "epfTable", label: "EPF" },
   { kind: "bonds", stateKey: "bonds", summaryId: "bondsOwnerSummary", tableId: "bondsTable", label: "Bond" },
   { kind: "ppf", stateKey: "ppf", summaryId: "ppfOwnerSummary", tableId: "ppfTable", label: "PPF" },
-  { kind: "gold", stateKey: "gold", summaryId: "goldOwnerSummary", tableId: "goldTable", label: "Gold" },
   { kind: "silver", stateKey: "silver", summaryId: "silverOwnerSummary", tableId: "silverTable", label: "Silver" },
   { kind: "crypto", stateKey: "crypto", summaryId: "cryptoOwnerSummary", tableId: "cryptoTable", label: "Crypto" },
   { kind: "banksaving", stateKey: "banksaving", summaryId: "banksavingOwnerSummary", tableId: "banksavingTable", label: "Bank Saving" },
@@ -6663,6 +6757,10 @@ function calcStockTotalValue(stockList) {
   }, 0);
 }
 
+function calcGoldTotalValue() {
+  return (state.gold || []).reduce((total, item) => total + (toNumber(item.value) || 0), 0);
+}
+
 function investmentHoldingsTotal() {
   const mfByFund = {};
   (state.mutualFunds || []).forEach((t) => {
@@ -6682,7 +6780,8 @@ function investmentHoldingsTotal() {
   const simpleAssetsTotal = SIMPLE_ASSET_TABS.reduce((total, { stateKey }) => {
     return total + sum(state[stateKey] || [], "value");
   }, 0);
-  return mutualFunds + stocksTotal + usStocksTotal + simpleAssetsTotal;
+  const goldTotal = calcGoldTotalValue();
+  return mutualFunds + stocksTotal + usStocksTotal + simpleAssetsTotal + goldTotal;
 }
 
 function renderLiabilities() {
@@ -6722,6 +6821,591 @@ function renderLiabilities() {
     `No liabilities found for ${activeHoldingsOwner}.`,
     5
   );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   GOLD TRACKER LOGIC (Cross-Platform, Live Price Fetch, Net Worth Sync)
+   ══════════════════════════════════════════════════════════════════════ */
+
+let activeGoldOwner = "All";
+
+const HISTORICAL_24K_GOLD_RATES_INR = {
+  2026: 7850,
+  2025: 7550,
+  2024: 6850,
+  2023: 5950,
+  2022: 5200,
+  2021: 4800,
+  2020: 4850,
+  2019: 3500,
+  2018: 3150,
+  2017: 2950,
+  2016: 2850,
+  2015: 2600,
+  2014: 2800,
+  2013: 2950,
+  2012: 3100,
+  2011: 2600,
+  2010: 1850,
+  2005: 700,
+  2000: 440,
+};
+
+function formatRelativeTime(isoStr) {
+  if (!isoStr) return "";
+  const d = new Date(isoStr);
+  const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+function estimateHistoricalGoldRate(dateStr, carat = "24K") {
+  if (!dateStr) return Math.round(7850 * getCaratMultiplier(carat));
+  const year = parseInt(String(dateStr).slice(0, 4), 10);
+  if (isNaN(year)) return Math.round(7850 * getCaratMultiplier(carat));
+
+  let rate24k = 7850;
+  if (HISTORICAL_24K_GOLD_RATES_INR[year]) {
+    rate24k = HISTORICAL_24K_GOLD_RATES_INR[year];
+  } else {
+    const years = Object.keys(HISTORICAL_24K_GOLD_RATES_INR).map(Number).sort((a, b) => a - b);
+    if (year <= years[0]) rate24k = HISTORICAL_24K_GOLD_RATES_INR[years[0]];
+    else if (year >= years[years.length - 1]) rate24k = HISTORICAL_24K_GOLD_RATES_INR[years[years.length - 1]];
+    else {
+      for (let i = 0; i < years.length - 1; i++) {
+        if (year >= years[i] && year <= years[i + 1]) {
+          const ratio = (year - years[i]) / (years[i + 1] - years[i]);
+          rate24k = Math.round(HISTORICAL_24K_GOLD_RATES_INR[years[i]] + ratio * (HISTORICAL_24K_GOLD_RATES_INR[years[i + 1]] - HISTORICAL_24K_GOLD_RATES_INR[years[i]]));
+          break;
+        }
+      }
+    }
+  }
+  return Math.round(rate24k * getCaratMultiplier(carat));
+}
+
+function recalculateGoldHoldingsValues() {
+  const price24k = state.goldPrice?.price24k || 7850;
+  (state.gold || []).forEach(item => {
+    const mult = getCaratMultiplier(item.carat);
+    const rate = price24k * mult;
+    const weight = toNumber(item.weightGrams) || 0;
+    item.value = Math.round(weight * rate);
+    if (!item.invested && item.purchasePricePerGram) {
+      item.invested = Math.round(weight * toNumber(item.purchasePricePerGram));
+    }
+  });
+}
+
+async function fetchLiveGoldPrice(force = false) {
+  // If fetched within 10 minutes and not forced, reuse cached price
+  if (!force && state.goldPrice?.lastFetched) {
+    const elapsed = Date.now() - new Date(state.goldPrice.lastFetched).getTime();
+    if (elapsed < 10 * 60 * 1000 && state.goldPrice.price24k > 0) {
+      return state.goldPrice.price24k;
+    }
+  }
+
+  // 1. Primary endpoint: data-asg.goldprice.org (Direct INR spot rate per troy oz)
+  try {
+    const res = await fetch("https://data-asg.goldprice.org/dbXRates/INR", {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const xauPrice = data?.items?.[0]?.xauPrice;
+      if (xauPrice && xauPrice > 0) {
+        const pricePerGram = Math.round(xauPrice / 31.1034768);
+        if (pricePerGram > 2000 && pricePerGram < 30000) {
+          state.goldPrice = {
+            price24k: pricePerGram,
+            lastFetched: new Date().toISOString(),
+            source: "goldprice.org"
+          };
+          recalculateGoldHoldingsValues();
+          persist();
+          renderGold();
+          return pricePerGram;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[Gold API] goldprice.org attempt failed:", e);
+  }
+
+  // 2. Secondary endpoint: api.gold-api.com (USD spot converted to INR)
+  try {
+    const res = await fetch("https://api.gold-api.com/price/XAU", {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const usdPrice = data?.price;
+      if (usdPrice && usdPrice > 0) {
+        const estUsdInr = 84.5;
+        const pricePerGram = Math.round((usdPrice * estUsdInr) / 31.1034768);
+        if (pricePerGram > 2000 && pricePerGram < 30000) {
+          state.goldPrice = {
+            price24k: pricePerGram,
+            lastFetched: new Date().toISOString(),
+            source: "gold-api.com"
+          };
+          recalculateGoldHoldingsValues();
+          persist();
+          renderGold();
+          return pricePerGram;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[Gold API] gold-api.com attempt failed:", e);
+  }
+
+  // 3. Fallback: Yahoo Finance GOLDBEES ETF proxy
+  try {
+    const yahooSymbol = "GOLDBEES.NS";
+    const endpoints = [
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`)}`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`
+    ];
+    for (const url of endpoints) {
+      try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        if (resp.ok) {
+          const text = await resp.text();
+          const jsonStart = text.indexOf("{");
+          if (jsonStart >= 0) {
+            const data = JSON.parse(text.slice(jsonStart));
+            const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+            if (price > 0) {
+              const estRate = Math.round(price * 100);
+              if (estRate > 3000 && estRate < 25000) {
+                state.goldPrice = {
+                  price24k: estRate,
+                  lastFetched: new Date().toISOString(),
+                  source: "GOLDBEES.NS"
+                };
+                recalculateGoldHoldingsValues();
+                persist();
+                renderGold();
+                return estRate;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch (e) {
+    console.warn("[Gold API] GOLDBEES fallback failed:", e);
+  }
+
+  // 4. Default benchmark if network unavailable
+  if (!state.goldPrice || !state.goldPrice.price24k) {
+    state.goldPrice = {
+      price24k: 7850,
+      lastFetched: new Date().toISOString(),
+      source: "benchmark"
+    };
+  }
+  recalculateGoldHoldingsValues();
+  renderGold();
+  return state.goldPrice.price24k;
+}
+
+function getGoldCategoryEmoji(category) {
+  const cat = String(category || "").toLowerCase();
+  if (cat.includes("jewel")) return "💍";
+  if (cat.includes("bar") || cat.includes("ingot")) return "🪙";
+  if (cat.includes("digital")) return "📱";
+  if (cat.includes("coin")) return "🟡";
+  return "📦";
+}
+
+function renderGold() {
+  const table = document.getElementById("goldHoldingsTable");
+  if (!table) return;
+
+  const currentPrice24k = state.goldPrice?.price24k || 7850;
+  const currentPrice22k = Math.round(currentPrice24k * (22 / 24));
+  const currentPrice18k = Math.round(currentPrice24k * (18 / 24));
+
+  // 1. Live Price Banner
+  const livePriceDisplay = document.getElementById("goldLivePriceDisplay");
+  if (livePriceDisplay) {
+    livePriceDisplay.innerHTML = `${formatINR(currentPrice24k)} <span style="font-size:0.85rem; font-weight:500; color:var(--muted);">(24K)</span> &nbsp;•&nbsp; ${formatINR(currentPrice22k)} <span style="font-size:0.85rem; font-weight:500; color:var(--muted);">(22K)</span> &nbsp;•&nbsp; ${formatINR(currentPrice18k)} <span style="font-size:0.85rem; font-weight:500; color:var(--muted);">(18K)</span>`;
+  }
+  const timestampEl = document.getElementById("goldPriceTimestamp");
+  if (timestampEl) {
+    const fetched = state.goldPrice?.lastFetched;
+    timestampEl.textContent = fetched ? `Live Rate • Updated ${formatRelativeTime(fetched)}` : "Live Rate • Indian Benchmark";
+  }
+
+  // 2. Filter rows by active owner
+  const allGold = state.gold || [];
+  const filteredRows = allGold
+    .filter((item) => {
+      if (activeGoldOwner === "All") return true;
+      if (activeGoldOwner === "Me") return item.owner === "Me" || item.owner === "Both";
+      if (activeGoldOwner === "Wife") return item.owner === "Wife" || item.owner === "Both";
+      return true;
+    })
+    .sort((a, b) => new Date(b.date || "1970-01-01") - new Date(a.date || "1970-01-01"));
+
+  // 3. Stats Grid
+  const statsGrid = document.getElementById("goldStatsGrid");
+  if (statsGrid) {
+    let totalInvested = 0;
+    let totalCurrentVal = 0;
+    let totalWeight = 0;
+    let weight24k = 0;
+    let weight22k = 0;
+    let weight18k = 0;
+    let meVal = 0;
+    let wifeVal = 0;
+
+    filteredRows.forEach((item) => {
+      const weight = toNumber(item.weightGrams) || 0;
+      const rate = currentPrice24k * getCaratMultiplier(item.carat);
+      const curVal = Math.round(weight * rate);
+      const inv = toNumber(item.invested) || Math.round(weight * toNumber(item.purchasePricePerGram));
+
+      totalWeight += weight;
+      totalCurrentVal += curVal;
+      totalInvested += inv;
+
+      const c = String(item.carat || "").toUpperCase();
+      if (c.includes("24")) weight24k += weight;
+      else if (c.includes("18")) weight18k += weight;
+      else weight22k += weight;
+
+      if (item.owner === "Me") meVal += curVal;
+      else if (item.owner === "Wife") wifeVal += curVal;
+      else { meVal += curVal / 2; wifeVal += curVal / 2; }
+    });
+
+    const totalPL = totalCurrentVal - totalInvested;
+    const totalPLPct = totalInvested > 0 ? ((totalPL / totalInvested) * 100).toFixed(1) : 0;
+    const plColor = totalPL >= 0 ? "var(--positive, #16a34a)" : "var(--negative, #dc2626)";
+    const plSign = totalPL >= 0 ? "+" : "";
+
+    statsGrid.innerHTML = `
+      <article class="metric-card">
+        <div class="label">Current Gold Value (${activeGoldOwner})</div>
+        <div class="value" style="color:var(--brand);">${formatINR(totalCurrentVal)}</div>
+        <div class="hint">Me: ${formatINR(meVal)} • Wife: ${formatINR(wifeVal)}</div>
+      </article>
+      <article class="metric-card">
+        <div class="label">Total Invested Cost</div>
+        <div class="value">${formatINR(totalInvested)}</div>
+        <div class="hint">Across ${filteredRows.length} asset${filteredRows.length === 1 ? "" : "s"}</div>
+      </article>
+      <article class="metric-card">
+        <div class="label">Total Returns / P&amp;L</div>
+        <div class="value" style="color:${plColor};">${plSign}${formatINR(totalPL)}</div>
+        <div class="hint" style="color:${plColor}; font-weight:600;">${plSign}${totalPLPct}% overall gain</div>
+      </article>
+      <article class="metric-card">
+        <div class="label">Total Gold Weight</div>
+        <div class="value">${totalWeight.toFixed(2)} g</div>
+        <div class="hint">24K: ${weight24k.toFixed(1)}g • 22K: ${weight22k.toFixed(1)}g • 18K: ${weight18k.toFixed(1)}g</div>
+      </article>
+    `;
+  }
+
+  // 4. Owner toggle pills active state
+  document.querySelectorAll("#goldOwnerToggle .owner-pill").forEach((pill) => {
+    pill.classList.toggle("active", pill.dataset.goldOwner === activeGoldOwner);
+  });
+
+  // 5. Empty State
+  const emptyEl = document.getElementById("goldHoldingsEmpty");
+  if (emptyEl) {
+    emptyEl.hidden = filteredRows.length > 0;
+  }
+
+  // 6. Render Table Rows
+  renderRows(
+    table,
+    filteredRows,
+    (item) => {
+      const weight = toNumber(item.weightGrams) || 0;
+      const ratePerGram = Math.round(currentPrice24k * getCaratMultiplier(item.carat));
+      const curVal = Math.round(weight * ratePerGram);
+      const inv = toNumber(item.invested) || Math.round(weight * toNumber(item.purchasePricePerGram));
+      const pl = curVal - inv;
+      const plPct = inv > 0 ? ((pl / inv) * 100).toFixed(1) : 0;
+      const plClass = pl >= 0 ? "gold-pl-positive" : "gold-pl-negative";
+      const plSign = pl >= 0 ? "+" : "";
+
+      const caratBadgeClass = String(item.carat || "").includes("24")
+        ? "gold-carat-24k"
+        : String(item.carat || "").includes("18")
+        ? "gold-carat-18k"
+        : "gold-carat-22k";
+
+      const emoji = getGoldCategoryEmoji(item.category);
+
+      return [
+        `<div>
+          <span class="gold-cat-badge">${emoji} <strong>${escapeHTML(item.name || "Gold Item")}</strong></span>
+          ${item.note ? `<div style="font-size:0.75rem; color:var(--muted); margin-top:2px;">${escapeHTML(item.note)}</div>` : ""}
+        </div>`,
+        `<span class="badge">${escapeHTML(item.category || "Jewellery")}</span>`,
+        `<span class="gold-carat-badge ${caratBadgeClass}">${escapeHTML(item.carat || "22K")}</span>`,
+        `<strong>${weight.toFixed(3).replace(/\\.?0+$/, "")} g</strong>`,
+        `<span class="owner-pill ${item.owner === "Me" ? "me" : item.owner === "Wife" ? "wife" : "both"}">${escapeHTML(item.owner || "Wife")}</span>`,
+        `${item.date ? formatDate(item.date) : "—"}`,
+        `${formatINR(item.purchasePricePerGram || 0)}`,
+        `<strong>${formatINR(inv)}</strong>`,
+        `${formatINR(ratePerGram)}`,
+        `<strong style="color:var(--brand);">${formatINR(curVal)}</strong>`,
+        `<span class="${plClass}">${plSign}${formatINR(pl)}<br><small>(${plSign}${plPct}%)</small></span>`,
+        `<div class="actions-wrapper">
+          <button class="action-btn edit-btn edit-gold-btn" data-id="${item.id}" title="Edit gold asset">✏️</button>
+          <button class="action-btn delete-btn delete-gold-btn" data-id="${item.id}" title="Delete gold asset">🗑️</button>
+        </div>`
+      ];
+    },
+    `No gold holdings found for ${activeGoldOwner}.`,
+    12
+  );
+}
+
+function updateGoldModalCalcPreview() {
+  const weight = parseFloat(document.getElementById("goldFieldWeight")?.value) || 0;
+  const carat = document.getElementById("goldFieldCarat")?.value || "22K";
+  const buyPrice = parseFloat(document.getElementById("goldFieldBuyPrice")?.value) || 0;
+  const current24k = state.goldPrice?.price24k || 7850;
+  const curRate = Math.round(current24k * getCaratMultiplier(carat));
+
+  const invested = Math.round(weight * buyPrice);
+  const currentVal = Math.round(weight * curRate);
+  const pl = currentVal - invested;
+  const plPct = invested > 0 ? ((pl / invested) * 100).toFixed(1) : 0;
+  const plSign = pl >= 0 ? "+" : "";
+
+  const previewInvested = document.getElementById("previewInvested");
+  const previewCurrent = document.getElementById("previewCurrent");
+  const previewPL = document.getElementById("previewPL");
+
+  if (previewInvested) previewInvested.textContent = formatINR(invested);
+  if (previewCurrent) previewCurrent.textContent = formatINR(currentVal);
+  if (previewPL) {
+    previewPL.textContent = `${plSign}${formatINR(pl)} (${plSign}${plPct}%)`;
+    previewPL.style.color = pl >= 0 ? "var(--positive, #16a34a)" : "var(--negative, #dc2626)";
+  }
+}
+
+function openGoldModal(editId = null) {
+  const form = document.getElementById("goldForm");
+  if (!form) return;
+  form.reset();
+
+  const titleEl = document.getElementById("goldModalTitle");
+  const editIdEl = document.getElementById("goldFieldEditId");
+
+  if (editId) {
+    const item = (state.gold || []).find((g) => g.id === editId);
+    if (!item) return;
+    if (titleEl) titleEl.textContent = "Edit Gold Asset";
+    if (editIdEl) editIdEl.value = editId;
+
+    document.getElementById("goldFieldName").value = item.name || "";
+    document.getElementById("goldFieldCategory").value = item.category || "Jewellery";
+    document.getElementById("goldFieldCarat").value = item.carat || "22K";
+    document.getElementById("goldFieldWeight").value = item.weightGrams || "";
+    document.getElementById("goldFieldDate").value = item.date || "";
+    document.getElementById("goldFieldOwner").value = item.owner || "Wife";
+    document.getElementById("goldFieldBuyPrice").value = item.purchasePricePerGram || "";
+    document.getElementById("goldFieldNotes").value = item.note || "";
+  } else {
+    if (titleEl) titleEl.textContent = "Add Gold Asset";
+    if (editIdEl) editIdEl.value = "";
+    document.getElementById("goldFieldDate").value = todayISO();
+    document.getElementById("goldFieldOwner").value = "Wife";
+    document.getElementById("goldFieldCarat").value = "22K";
+    document.getElementById("goldFieldCategory").value = "Jewellery";
+  }
+
+  updateGoldModalCalcPreview();
+  openModal("goldModal");
+}
+
+function closeGoldModal() {
+  const modal = document.getElementById("goldModal");
+  if (modal) closeModal(modal);
+}
+
+function saveGoldHolding() {
+  const name = document.getElementById("goldFieldName")?.value?.trim();
+  const category = document.getElementById("goldFieldCategory")?.value || "Jewellery";
+  const carat = document.getElementById("goldFieldCarat")?.value || "22K";
+  const weight = parseFloat(document.getElementById("goldFieldWeight")?.value);
+  const date = document.getElementById("goldFieldDate")?.value || todayISO();
+  const owner = document.getElementById("goldFieldOwner")?.value || "Wife";
+  let buyPrice = parseFloat(document.getElementById("goldFieldBuyPrice")?.value) || 0;
+  const notes = document.getElementById("goldFieldNotes")?.value?.trim() || "";
+  const editId = document.getElementById("goldFieldEditId")?.value;
+
+  if (!name) {
+    toast("⚠️ Please enter an asset name (e.g. Bridal Necklace).");
+    document.getElementById("goldFieldName")?.focus();
+    return;
+  }
+  if (!weight || weight <= 0) {
+    toast("⚠️ Please enter a valid weight in grams (> 0).");
+    document.getElementById("goldFieldWeight")?.focus();
+    return;
+  }
+
+  // If buyPrice not entered, estimate based on date
+  if (buyPrice <= 0) {
+    buyPrice = estimateHistoricalGoldRate(date, carat);
+  }
+
+  const current24k = state.goldPrice?.price24k || 7850;
+  const curRate = Math.round(current24k * getCaratMultiplier(carat));
+  const invested = Math.round(weight * buyPrice);
+  const value = Math.round(weight * curRate);
+
+  if (editId) {
+    const idx = (state.gold || []).findIndex((g) => g.id === editId);
+    if (idx >= 0) {
+      state.gold[idx] = {
+        ...state.gold[idx],
+        name,
+        category,
+        carat,
+        weightGrams: weight,
+        date,
+        owner,
+        purchasePricePerGram: buyPrice,
+        invested,
+        value,
+        note: notes,
+      };
+      toast("✅ Gold asset updated successfully!");
+    }
+  } else {
+    const newHolding = {
+      id: `gold-${generateUUID()}`,
+      name,
+      category,
+      carat,
+      weightGrams: weight,
+      date,
+      owner,
+      purchasePricePerGram: buyPrice,
+      invested,
+      value,
+      note: notes,
+    };
+    if (!state.gold) state.gold = [];
+    state.gold.unshift(newHolding);
+    toast("✅ Gold asset added to portfolio!");
+  }
+
+  persist();
+  closeGoldModal();
+  renderGold();
+  renderMetrics();
+  renderNetWorth();
+  renderDashboardAnalysis();
+}
+
+function deleteGoldHolding(id) {
+  const item = (state.gold || []).find((g) => g.id === id);
+  if (!item) return;
+  if (!confirm(`Are you sure you want to delete "${item.name}" (${item.weightGrams}g ${item.carat})?`)) {
+    return;
+  }
+  state.gold = (state.gold || []).filter((g) => g.id !== id);
+  persist();
+  renderGold();
+  renderMetrics();
+  renderNetWorth();
+  renderDashboardAnalysis();
+  toast("🗑️ Gold asset deleted.");
+}
+
+function bindGoldEvents() {
+  // Add gold buttons
+  document.getElementById("addGoldBtn")?.addEventListener("click", () => openGoldModal());
+  document.getElementById("addGoldBtnEmpty")?.addEventListener("click", () => openGoldModal());
+
+  // Refresh price buttons
+  const handleRefresh = async () => {
+    const btn = document.getElementById("goldRefreshPriceBtn");
+    const btn2 = document.getElementById("goldRefreshPriceBtn2");
+    if (btn) btn.textContent = "🔄 Fetching…";
+    if (btn2) btn2.textContent = "🔄 Fetching…";
+    toast("🔄 Fetching latest 24K gold rates…");
+    await fetchLiveGoldPrice(true);
+    if (btn) btn.textContent = "🔄 Refresh Price";
+    if (btn2) btn2.textContent = "🔄 Prices";
+    toast("✅ Live gold prices updated!");
+    renderGold();
+    renderMetrics();
+    renderNetWorth();
+  };
+  document.getElementById("goldRefreshPriceBtn")?.addEventListener("click", handleRefresh);
+  document.getElementById("goldRefreshPriceBtn2")?.addEventListener("click", handleRefresh);
+
+  // Owner filter toggle
+  document.getElementById("goldOwnerToggle")?.addEventListener("click", (e) => {
+    const pill = e.target.closest(".owner-pill");
+    if (pill && pill.dataset.goldOwner) {
+      activeGoldOwner = pill.dataset.goldOwner;
+      renderGold();
+    }
+  });
+
+  // Table edit & delete delegation
+  document.getElementById("goldHoldingsTable")?.addEventListener("click", (e) => {
+    const editBtn = e.target.closest(".edit-gold-btn");
+    const delBtn = e.target.closest(".delete-gold-btn");
+    if (editBtn) {
+      const id = editBtn.dataset.id;
+      openGoldModal(id);
+    } else if (delBtn) {
+      const id = delBtn.dataset.id;
+      deleteGoldHolding(id);
+    }
+  });
+
+  // Modal close / cancel
+  document.getElementById("goldModalClose")?.addEventListener("click", closeGoldModal);
+  document.getElementById("goldModalCancel")?.addEventListener("click", closeGoldModal);
+
+  // Modal live preview calculation
+  ["goldFieldWeight", "goldFieldCarat", "goldFieldBuyPrice"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", updateGoldModalCalcPreview);
+    document.getElementById(id)?.addEventListener("change", updateGoldModalCalcPreview);
+  });
+
+  // Auto-fill historical rate button
+  document.getElementById("goldAutoFillHistRateBtn")?.addEventListener("click", () => {
+    const date = document.getElementById("goldFieldDate")?.value || todayISO();
+    const carat = document.getElementById("goldFieldCarat")?.value || "22K";
+    const estRate = estimateHistoricalGoldRate(date, carat);
+    const buyPriceInput = document.getElementById("goldFieldBuyPrice");
+    if (buyPriceInput) {
+      buyPriceInput.value = estRate;
+      updateGoldModalCalcPreview();
+      toast(`⚡ Auto-filled estimated ${carat} gold rate for ${date.slice(0, 4)}: ₹${estRate}/g`);
+    }
+  });
+
+  // Modal Save button
+  document.getElementById("goldModalSave")?.addEventListener("click", saveGoldHolding);
+  document.getElementById("goldForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveGoldHolding();
+  });
 }
 
 let activeCareerTab = "devops";

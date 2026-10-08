@@ -4922,5 +4922,174 @@ body[data-theme="dark"] .sortable-th:hover {
   .itv-edit-btn, .itv-delete-btn { flex: 1; text-align: center; }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   GOLD TRACKER STYLES (Responsive, Touch-Ready, Cross-Platform)
+   ══════════════════════════════════════════════════════════════════════ */
+.gold-price-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.08), rgba(245, 158, 11, 0.15));
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  margin-bottom: 16px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.gold-price-info {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gold-price-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gold-price-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #d97706;
+  letter-spacing: -0.02em;
+}
+
+[data-theme="dark"] .gold-price-value {
+  color: #fbbf24;
+}
+
+.gold-price-sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.gold-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.gold-modal-card {
+  max-width: 620px;
+  width: 95%;
+  margin: auto;
+}
+
+.gold-calc-preview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: var(--input-bg, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-top: 10px;
+}
+
+.preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preview-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.preview-val {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.gold-carat-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.gold-carat-24k {
+  background: rgba(217, 119, 6, 0.15);
+  color: #b45309;
+  border: 1px solid rgba(217, 119, 6, 0.3);
+}
+
+[data-theme="dark"] .gold-carat-24k {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.gold-carat-22k {
+  background: rgba(234, 179, 8, 0.15);
+  color: #a16207;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+[data-theme="dark"] .gold-carat-22k {
+  background: rgba(250, 204, 21, 0.2);
+  color: #fde047;
+  border-color: rgba(250, 204, 21, 0.4);
+}
+
+.gold-carat-18k {
+  background: rgba(202, 138, 4, 0.12);
+  color: #854d0e;
+  border: 1px solid rgba(202, 138, 4, 0.25);
+}
+
+[data-theme="dark"] .gold-carat-18k {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fef08a;
+  border-color: rgba(234, 179, 8, 0.3);
+}
+
+.gold-cat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.gold-pl-positive {
+  color: var(--positive, #16a34a);
+  font-weight: 600;
+}
+
+.gold-pl-negative {
+  color: var(--negative, #dc2626);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .gold-price-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .gold-calc-preview {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+
 
 

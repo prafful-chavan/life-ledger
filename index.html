@@ -738,33 +738,64 @@
           </div>
 
           <div class="finance-tab" id="finance-gold">
+            <!-- Live Price Banner -->
+            <div class="gold-price-banner" id="goldPriceBanner">
+              <div class="gold-price-info">
+                <span class="gold-price-label">🪙 Live Gold Price (24K per gram)</span>
+                <span class="gold-price-value" id="goldLivePriceDisplay">—</span>
+                <span class="gold-price-sub" id="goldPriceTimestamp">Not fetched yet</span>
+              </div>
+              <div class="gold-price-actions">
+                <button class="ghost-button" type="button" id="goldRefreshPriceBtn" title="Refresh gold price">🔄 Refresh Price</button>
+              </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="metric-grid gold-stats-grid" id="goldStatsGrid"></div>
+
+            <!-- Holdings Panel -->
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <h3>Gold</h3>
-                  <p>Track gold investments — Me and Wife.</p>
+                  <h3>Gold Holdings</h3>
+                  <p>Jewellery, bars, digital gold &amp; SGBs — Me &amp; Wife.</p>
                 </div>
-                <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="gold">Add gold</button>
+                <div class="topbar-actions" style="gap:8px;">
+                  <button class="ghost-button" type="button" id="goldRefreshPriceBtn2" title="Refresh gold price">🔄 Prices</button>
+                  <button class="primary-button" type="button" id="addGoldBtn">＋ Add Gold</button>
+                </div>
               </div>
-              <div class="owner-toggle" role="tablist">
-                <button class="owner-pill active" type="button" data-holdings-owner="Me">Me</button>
-                <button class="owner-pill" type="button" data-holdings-owner="Wife">Wife</button>
-                <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
+              <div class="owner-toggle" role="tablist" id="goldOwnerToggle">
+                <button class="owner-pill active" type="button" data-gold-owner="All">All</button>
+                <button class="owner-pill" type="button" data-gold-owner="Me">Me</button>
+                <button class="owner-pill" type="button" data-gold-owner="Wife">Wife</button>
               </div>
-              <div class="metric-grid compact" id="goldOwnerSummary"></div>
+
               <div class="table-wrap tall-table">
-                <table>
+                <table class="gold-table">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Paid by</th>
+                      <th>Asset Name</th>
+                      <th>Category</th>
+                      <th>Carat</th>
+                      <th>Weight (g)</th>
+                      <th>Owner</th>
+                      <th>Purchase Date</th>
+                      <th>Buy Price/g</th>
+                      <th>Invested</th>
+                      <th>Current/g</th>
                       <th>Current Value</th>
-                      <th>Note</th>
-                      <th>Action</th>
+                      <th>P&amp;L</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
-                  <tbody id="goldTable"></tbody>
+                  <tbody id="goldHoldingsTable"></tbody>
                 </table>
+              </div>
+              <div id="goldHoldingsEmpty" class="empty-state" hidden>
+                <div class="empty-icon">🪙</div>
+                <p>No gold holdings yet.<br>Add jewellery, bars, digital gold or SGBs to track your gold wealth.</p>
+                <button class="primary-button" type="button" id="addGoldBtnEmpty">＋ Add First Gold Asset</button>
               </div>
             </section>
           </div>
@@ -1866,6 +1897,112 @@
         <div class="modal-footer itv-modal-footer">
           <button type="button" class="secondary-button" id="itvModalCancel">Cancel</button>
           <button type="button" class="primary-button" id="itvModalSave">💾 Save Entry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Gold Asset Form Modal ════════════════════════════════════ -->
+    <div class="modal" id="goldModal" role="dialog" aria-modal="true" aria-labelledby="goldModalTitle" hidden>
+      <div class="modal-card gold-modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Precious Metals</p>
+            <h3 id="goldModalTitle">Add Gold Asset</h3>
+          </div>
+          <button type="button" class="modal-close" id="goldModalClose" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body gold-form-body">
+          <form id="goldForm" novalidate>
+            <!-- Row 1: Asset Name + Category -->
+            <div class="itv-form-row">
+              <div class="itv-form-group">
+                <label class="itv-label" for="goldFieldName">🪙 Asset Name <span class="req">*</span></label>
+                <input type="text" id="goldFieldName" class="itv-input" placeholder="e.g. Bridal Necklace, 24K MMTC Bar, Tanishq Ring…" required autocomplete="off" />
+              </div>
+              <div class="itv-form-group">
+                <label class="itv-label" for="goldFieldCategory">🏷️ Category <span class="req">*</span></label>
+                <select id="goldFieldCategory" class="itv-input" required>
+                  <option value="Jewellery">💍 Jewellery</option>
+                  <option value="Bar">🪙 Bar / Ingot</option>
+                  <option value="Digital">📱 Digital Gold</option>
+                  <option value="Coin">🟡 Gold Coin</option>
+                  <option value="Other">📦 Other</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Row 2: Carat + Weight -->
+            <div class="itv-form-row">
+              <div class="itv-form-group">
+                <label class="itv-label" for="goldFieldCarat">✨ Carat Purity <span class="req">*</span></label>
+                <select id="goldFieldCarat" class="itv-input" required>
+                  <option value="24K">24K (99.9% - Pure / Bars / Coins / Digital)</option>
+                  <option value="22K" selected>22K (91.6% - Standard Jewellery / Hallmark)</option>
+                  <option value="18K">18K (75.0% - Diamond / Studded Jewellery)</option>
+                </select>
+              </div>
+              <div class="itv-form-group">
+                <label class="itv-label" for="goldFieldWeight">⚖️ Weight (grams) <span class="req">*</span></label>
+                <input type="number" id="goldFieldWeight" class="itv-input" placeholder="e.g. 10.5" step="0.001" min="0.001" required />
+              </div>
+            </div>
+
+            <!-- Row 3: Investment Date + Owner -->
+            <div class="itv-form-row">
+              <div class="itv-form-group">
+                <label class="itv-label" for="goldFieldDate">📅 Date of Investment <span class="req">*</span></label>
+                <input type="date" id="goldFieldDate" class="itv-input" required />
+              </div>
+              <div class="itv-form-group">
+                <label class="itv-label" for="goldFieldOwner">👤 Owner <span class="req">*</span></label>
+                <select id="goldFieldOwner" class="itv-input" required>
+                  <option value="Me">Me (Prafful)</option>
+                  <option value="Wife" selected>Wife</option>
+                  <option value="Both">Both</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Row 4: Purchase Price per Gram + Quick auto-fill button -->
+            <div class="itv-form-row">
+              <div class="itv-form-group" style="flex:1;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <label class="itv-label" for="goldFieldBuyPrice" style="margin-bottom:0;">💰 Purchase Price / gram (₹)</label>
+                  <button type="button" class="link-btn" id="goldAutoFillHistRateBtn" style="font-size:11px; color:var(--brand); background:none; border:none; cursor:pointer; text-decoration:underline;">⚡ Estimate rate on date</button>
+                </div>
+                <input type="number" id="goldFieldBuyPrice" class="itv-input" placeholder="e.g. 5800 (leave 0 if gift or unknown)" step="1" min="0" />
+                <span style="font-size:11px; color:var(--muted); display:block; margin-top:3px;">Leave blank or click estimate to auto-calculate from historical rates.</span>
+              </div>
+            </div>
+
+            <!-- Live Calculation Preview Card -->
+            <div class="gold-calc-preview" id="goldCalcPreview">
+              <div class="preview-item">
+                <span class="preview-label">Invested Cost</span>
+                <span class="preview-val" id="previewInvested">₹0</span>
+              </div>
+              <div class="preview-item">
+                <span class="preview-label">Current Value (Est.)</span>
+                <span class="preview-val" id="previewCurrent">₹0</span>
+              </div>
+              <div class="preview-item">
+                <span class="preview-label">Est. Gain / Return</span>
+                <span class="preview-val" id="previewPL">₹0 (+0%)</span>
+              </div>
+            </div>
+
+            <!-- Notes -->
+            <div class="itv-form-group" style="margin-top:12px;">
+              <label class="itv-label" for="goldFieldNotes">📝 Notes / Jeweller / Invoice details</label>
+              <textarea id="goldFieldNotes" class="itv-input itv-textarea" rows="2" placeholder="e.g. Bought from Tanishq, bill #1234, gifted on anniversary…"></textarea>
+            </div>
+
+            <input type="hidden" id="goldFieldEditId" value="" />
+          </form>
+        </div>
+        <div class="modal-footer itv-modal-footer">
+          <button type="button" class="secondary-button" id="goldModalCancel">Cancel</button>
+          <button type="button" class="primary-button" id="goldModalSave">💾 Save Gold Asset</button>
         </div>
       </div>
     </div>
