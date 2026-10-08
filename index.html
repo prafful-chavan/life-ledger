@@ -290,6 +290,7 @@
 
           <div class="tabs" role="tablist" aria-label="Finance tabs">
             <button class="tab-button active" type="button" data-finance-tab="overview">Overview</button>
+            <button class="tab-button" type="button" data-finance-tab="networthhistory">📈 Net Worth History</button>
             <button class="tab-button" type="button" data-finance-tab="income">Salary</button>
             <button class="tab-button" type="button" data-finance-tab="expenses">Expenses</button>
             <button class="tab-button" type="button" data-finance-tab="mutualfunds">Mutual funds</button>
@@ -372,6 +373,66 @@
                     <div id="budgetOptimizationList" class="stack-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
                   </section>
                 </div>
+              </div>
+            </section>
+          </div>
+ 
+          <div class="finance-tab" id="finance-networthhistory">
+            <!-- Net Worth History Banner -->
+            <div class="nwh-banner" id="networthHistoryBanner">
+              <div class="nwh-banner-info">
+                <span class="nwh-banner-label">📈 Day-Wise Net Worth Tracker</span>
+                <span class="nwh-banner-value" id="nwhLatestNetWorthDisplay">—</span>
+                <span class="nwh-banner-sub" id="nwh1DayChangeDisplay">Track daily portfolio gains, losses &amp; asset mix</span>
+              </div>
+              <div class="topbar-actions" style="gap: 8px; flex-wrap: wrap;">
+                <button class="ghost-button" type="button" id="nwhSnapshotBtn" title="Take a manual snapshot of today's net worth">📸 Snapshot Today</button>
+                <button class="secondary-button" type="button" id="nwhDownloadCsvBtn" title="Download historical net worth records with all assets &amp; liabilities as CSV">📥 Download CSV</button>
+                <button class="ghost-button" type="button" id="nwhRefreshPricesBtn" title="Refresh live prices and update today's snapshot">🔄 Refresh &amp; Update</button>
+              </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="metric-grid" id="nwhStatsGrid" style="margin-bottom: 20px;"></div>
+
+            <!-- Historical Table Panel -->
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Daily Net Worth Records</h3>
+                  <p>Historical day-wise snapshots with 1-day gain/loss, total assets, and liabilities breakdown.</p>
+                </div>
+                <div class="topbar-actions" style="gap:8px; flex-wrap: wrap;">
+                  <button class="ghost-button" type="button" id="nwhSnapshotBtn2" title="Take a snapshot of today's net worth">📸 Snapshot Today</button>
+                  <button class="secondary-button" type="button" id="nwhDownloadCsvBtn2" title="Download historical net worth records as CSV">📥 Download CSV</button>
+                </div>
+              </div>
+
+              <div class="table-wrap tall-table">
+                <table class="nwh-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Net Worth</th>
+                      <th>1-Day Change</th>
+                      <th>Total Assets</th>
+                      <th>Total Liabilities</th>
+                      <th>Mutual Funds</th>
+                      <th>Stocks (IN)</th>
+                      <th>US Stocks</th>
+                      <th>Gold</th>
+                      <th>Cash &amp; Others</th>
+                      <th>Snapshot Time</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="nwhTableBody"></tbody>
+                </table>
+              </div>
+              <div id="nwhEmptyState" class="empty-state" hidden>
+                <div class="empty-icon">📈</div>
+                <p>No net worth snapshots recorded yet.<br>Click below to capture your first net worth snapshot.</p>
+                <button class="primary-button" type="button" id="nwhSnapshotBtnEmpty">📸 Take First Snapshot</button>
               </div>
             </section>
           </div>

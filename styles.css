@@ -5090,6 +5090,110 @@ body[data-theme="dark"] .sortable-th:hover {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   NET WORTH HISTORY TRACKER STYLES
+   ══════════════════════════════════════════════════════════════════════ */
+.nwh-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-left: 4px solid var(--brand, #2563eb);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+
+[data-theme="dark"] .nwh-banner {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(16, 185, 129, 0.15) 100%);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.nwh-banner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nwh-banner-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nwh-banner-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+
+.nwh-banner-sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.nwh-change-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.nwh-change-badge.positive {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--positive, #16a34a);
+}
+
+.nwh-change-badge.negative {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--negative, #dc2626);
+}
+
+.nwh-change-badge.neutral {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--muted);
+}
+
+.nwh-table th {
+  white-space: nowrap;
+}
+
+.nwh-table td {
+  vertical-align: middle;
+}
+
+.nwh-today-pill {
+  display: inline-block;
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--brand, #2563eb);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-left: 6px;
+  text-transform: uppercase;
+}
+
+[data-theme="dark"] .nwh-today-pill {
+  background: rgba(96, 165, 250, 0.2);
+  color: #60a5fa;
+}
+
+@media (max-width: 640px) {
+  .nwh-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 
 
 

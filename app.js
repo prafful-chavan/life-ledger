@@ -36,6 +36,7 @@ const defaultData = {
   mfMonthlyTarget: { me: 100000, wife: 100000 },
   interviewTrackerEntries: [],
   goldPrice: { price24k: 14955.27, price22k: 13709.00, lastFetched: null, source: "reference" },
+  netWorthHistory: [],
 };
 
 const EXPENSE_PAGE_SIZE = 80;
@@ -488,9 +489,11 @@ function bootstrapApp(initialState) {
     bindExerciseEvents();
     bindHabitsEvents();
     bindGoldEvents();
+    bindNetWorthHistoryEvents();
     isAppInitialized = true;
   }
   renderAll();
+  recordDailyNetWorthSnapshot({ source: "startup" });
   refreshMutualFundNAVs(false);
   refreshStockPrices(false);
   refreshUsStockPrices(false);
@@ -782,6 +785,33 @@ function normalizeGoldHolding(item) {
   };
 }
 
+function normalizeNetWorthHistoryEntry(entry) {
+  return {
+    id: entry.id || `nwh-${generateUUID()}`,
+    date: entry.date || todayISO(),
+    timestamp: entry.timestamp || new Date().toISOString(),
+    netWorth: toNumber(entry.netWorth),
+    totalAssets: toNumber(entry.totalAssets),
+    totalLiabilities: toNumber(entry.totalLiabilities),
+    dayChange: toNumber(entry.dayChange),
+    dayChangePct: toNumber(entry.dayChangePct),
+    mutualFunds: toNumber(entry.mutualFunds),
+    stocks: toNumber(entry.stocks),
+    usStocks: toNumber(entry.usStocks),
+    gold: toNumber(entry.gold),
+    silver: toNumber(entry.silver),
+    crypto: toNumber(entry.crypto),
+    fd: toNumber(entry.fd),
+    epf: toNumber(entry.epf),
+    ppf: toNumber(entry.ppf),
+    bonds: toNumber(entry.bonds),
+    bankSaving: toNumber(entry.bankSaving),
+    others: toNumber(entry.others),
+    liabilities: toNumber(entry.liabilities),
+    source: entry.source || "snapshot"
+  };
+}
+
 function normalizeData(data) {
   return {
     ...clone(defaultData),
@@ -910,6 +940,7 @@ function normalizeData(data) {
     mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
     interviewPrep: data.interviewPrep || { mastered: [], flagged: [], customProjects: [] },
     interviewTrackerEntries: ensureIds(data.interviewTrackerEntries || [], "itv"),
+    netWorthHistory: ensureIds(data.netWorthHistory || [], "nwh").map(normalizeNetWorthHistoryEntry),
   };
 }
 
@@ -1006,6 +1037,7 @@ function bindFinanceTabs() {
       document.getElementById(`finance-${activeFinanceTab}`)?.classList.add("active");
       if (activeFinanceTab === "expenses") renderExpenseExplorer();
       if (activeFinanceTab === "gold") renderGold();
+      if (activeFinanceTab === "networthhistory") renderNetWorthHistory();
     });
   });
 
@@ -4752,6 +4784,7 @@ function renderFinance() {
   renderHoldingsTabs();
   renderLiabilities();
   renderExpensesAnalysis();
+  renderNetWorthHistory();
 }
 
 function renderSalaryCards() {
@@ -6747,6 +6780,12 @@ async function refreshAllLivePrices(force = true) {
   }
   await Promise.allSettled(promises);
   renderAll();
+  if (typeof recordDailyNetWorthSnapshot === 'function') {
+    recordDailyNetWorthSnapshot({ source: "auto-refresh" });
+  }
+  if (typeof renderNetWorthHistory === 'function') {
+    renderNetWorthHistory();
+  }
   toast('✅ All live prices refreshed! (Mutual Funds, Indian Stocks, US Stocks & Gold updated)');
 }
 
@@ -7537,6 +7576,338 @@ function bindGoldEvents() {
   document.getElementById("goldForm")?.addEventListener("submit", (e) => {
     e.preventDefault();
     saveGoldHolding();
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   NET WORTH HISTORY & DAILY TRACKER (Cross-Platform, CSV Export, Day Change)
+   ══════════════════════════════════════════════════════════════════════ */
+
+function captureCurrentNetWorthBreakdown() {
+  const mfByFund = {};
+  (state.mutualFunds || []).forEach((t) => {
+    const key = `${t.fundName || "Unknown"}|${t.owner || 'Me'}`;
+    if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0 };
+    mfByFund[key].txns.push(t);
+    if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
+  });
+  const mutualFunds = Number(Object.entries(mfByFund).reduce((total, [, fund]) => {
+    const netUnits = calcMfCostBasis(fund.txns).netUnits;
+    return total + Math.max(0, netUnits) * fund.latestNav;
+  }, 0).toFixed(2));
+
+  const stocks = Number(calcStockTotalValue(state.stocks).toFixed(2));
+  const usStocks = Number(calcStockTotalValue(state.usstocks).toFixed(2));
+  const gold = Number(calcGoldTotalValue().toFixed(2));
+  const silver = Number(sum(state.silver || [], "value").toFixed(2));
+  const crypto = Number(sum(state.crypto || [], "value").toFixed(2));
+  const fd = Number(sum(state.fd || [], "value").toFixed(2));
+  const epf = Number(sum(state.epf || [], "value").toFixed(2));
+  const ppf = Number(sum(state.ppf || [], "value").toFixed(2));
+  const bonds = Number(sum(state.bonds || [], "value").toFixed(2));
+  const bankSaving = Number(sum(state.banksaving || [], "value").toFixed(2));
+  const others = Number(sum(state.others || [], "value").toFixed(2));
+  const liabilities = Number(sum(state.liabilities || [], "value").toFixed(2));
+
+  const totalAssets = Number((mutualFunds + stocks + usStocks + gold + silver + crypto + fd + epf + ppf + bonds + bankSaving + others).toFixed(2));
+  const netWorth = Number((totalAssets - liabilities).toFixed(2));
+
+  return {
+    mutualFunds,
+    stocks,
+    usStocks,
+    gold,
+    silver,
+    crypto,
+    fd,
+    epf,
+    ppf,
+    bonds,
+    bankSaving,
+    others,
+    liabilities,
+    totalAssets,
+    netWorth,
+  };
+}
+
+function recordDailyNetWorthSnapshot(options = {}) {
+  if (!state.netWorthHistory) state.netWorthHistory = [];
+
+  const today = todayISO();
+  const breakdown = captureCurrentNetWorthBreakdown();
+  const dayChangeMetrics = calculatePortfolio1DayChange();
+
+  // Find if a record for today already exists
+  const existingIndex = state.netWorthHistory.findIndex(entry => entry.date === today);
+
+  // Find the most recent prior day record
+  const previousEntry = state.netWorthHistory
+    .filter(entry => entry.date < today)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
+  let dayChange = 0;
+  let dayChangePct = 0;
+
+  if (dayChangeMetrics.hasData && dayChangeMetrics.total1DayChangeINR !== 0) {
+    dayChange = Number(dayChangeMetrics.total1DayChangeINR.toFixed(2));
+    dayChangePct = Number(dayChangeMetrics.changePct.toFixed(2));
+  } else if (previousEntry && previousEntry.netWorth > 0) {
+    dayChange = Number((breakdown.netWorth - previousEntry.netWorth).toFixed(2));
+    dayChangePct = Number(((dayChange / previousEntry.netWorth) * 100).toFixed(2));
+  }
+
+  const snapshot = {
+    id: existingIndex >= 0 ? state.netWorthHistory[existingIndex].id : `nwh-${generateUUID()}`,
+    date: today,
+    timestamp: new Date().toISOString(),
+    netWorth: breakdown.netWorth,
+    totalAssets: breakdown.totalAssets,
+    totalLiabilities: breakdown.liabilities,
+    dayChange,
+    dayChangePct,
+    mutualFunds: breakdown.mutualFunds,
+    stocks: breakdown.stocks,
+    usStocks: breakdown.usStocks,
+    gold: breakdown.gold,
+    silver: breakdown.silver,
+    crypto: breakdown.crypto,
+    fd: breakdown.fd,
+    epf: breakdown.epf,
+    ppf: breakdown.ppf,
+    bonds: breakdown.bonds,
+    bankSaving: breakdown.bankSaving,
+    others: breakdown.others,
+    liabilities: breakdown.liabilities,
+    source: options.source || "daily"
+  };
+
+  if (existingIndex >= 0) {
+    state.netWorthHistory[existingIndex] = snapshot;
+  } else {
+    state.netWorthHistory.unshift(snapshot);
+  }
+
+  // Ensure descending sort by date
+  state.netWorthHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  persist();
+  if (activeFinanceTab === "networthhistory") {
+    renderNetWorthHistory();
+  }
+  return snapshot;
+}
+
+function renderNetWorthHistory() {
+  const tableBody = document.getElementById("nwhTableBody");
+  if (!tableBody) return;
+
+  const history = (state.netWorthHistory || [])
+    .slice()
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const latest = history[0] || captureCurrentNetWorthBreakdown();
+  const currentNetWorth = latest.netWorth ?? (latest.totalAssets - latest.totalLiabilities);
+  const currentDayChange = latest.dayChange ?? 0;
+  const currentDayChangePct = latest.dayChangePct ?? 0;
+
+  // 1. Banner
+  const nwDisplay = document.getElementById("nwhLatestNetWorthDisplay");
+  const changeDisplay = document.getElementById("nwh1DayChangeDisplay");
+  if (nwDisplay) {
+    nwDisplay.textContent = formatINR(currentNetWorth);
+  }
+  if (changeDisplay) {
+    const sign = currentDayChange >= 0 ? "+" : "";
+    const color = currentDayChange >= 0 ? "var(--positive, #16a34a)" : "var(--negative, #dc2626)";
+    const arrow = currentDayChange >= 0 ? "▲" : "▼";
+    changeDisplay.innerHTML = `<span style="color:${color}; font-weight:600;">${arrow} 1-Day: ${sign}${formatINR(Math.abs(currentDayChange))} (${sign}${currentDayChangePct}%)</span> &nbsp;•&nbsp; Total Assets: ${formatINR(latest.totalAssets || 0)} &nbsp;•&nbsp; Liabilities: ${formatINR(latest.totalLiabilities || 0)}`;
+  }
+
+  // 2. Stats Grid
+  const statsGrid = document.getElementById("nwhStatsGrid");
+  if (statsGrid) {
+    const peakNetWorth = history.length > 0 ? Math.max(...history.map(h => toNumber(h.netWorth))) : currentNetWorth;
+    const peakEntry = history.find(h => toNumber(h.netWorth) === peakNetWorth);
+    const dayColor = currentDayChange >= 0 ? "var(--positive, #16a34a)" : "var(--negative, #dc2626)";
+    const daySign = currentDayChange >= 0 ? "+" : "";
+
+    statsGrid.innerHTML = `
+      <article class="metric-card">
+        <div class="label">Current Net Worth</div>
+        <div class="value" style="color:var(--brand);">${formatINR(currentNetWorth)}</div>
+        <div class="hint">Total Assets: ${formatINR(latest.totalAssets || 0)}</div>
+      </article>
+      <article class="metric-card">
+        <div class="label">Today's 1-Day Change</div>
+        <div class="value" style="color:${dayColor};">${daySign}${formatINR(currentDayChange)}</div>
+        <div class="hint" style="color:${dayColor}; font-weight:600;">${daySign}${currentDayChangePct}% daily movement</div>
+      </article>
+      <article class="metric-card">
+        <div class="label">All-Time High (Peak)</div>
+        <div class="value">${formatINR(peakNetWorth)}</div>
+        <div class="hint">${peakEntry?.date ? `Achieved on ${formatDate(peakEntry.date)}` : "Current peak"}</div>
+      </article>
+      <article class="metric-card">
+        <div class="label">Historical Records</div>
+        <div class="value">${history.length} Days</div>
+        <div class="hint">Liabilities: ${formatINR(latest.totalLiabilities || 0)}</div>
+      </article>
+    `;
+  }
+
+  // 3. Empty State
+  const emptyEl = document.getElementById("nwhEmptyState");
+  if (emptyEl) {
+    emptyEl.hidden = history.length > 0;
+  }
+
+  // 4. Render Table Rows
+  const today = todayISO();
+  renderRows(
+    tableBody,
+    history,
+    (item) => {
+      const isToday = item.date === today;
+      const chg = toNumber(item.dayChange);
+      const chgPct = toNumber(item.dayChangePct);
+      const chgBadgeClass = chg > 0 ? "positive" : chg < 0 ? "negative" : "neutral";
+      const chgSign = chg >= 0 ? "+" : "";
+
+      const cashAndOthers = toNumber(item.fd) + toNumber(item.epf) + toNumber(item.ppf) +
+                            toNumber(item.bonds) + toNumber(item.bankSaving) + toNumber(item.others) +
+                            toNumber(item.silver) + toNumber(item.crypto);
+
+      return [
+        `<div>
+          <strong>${formatDate(item.date)}</strong>
+          ${isToday ? `<span class="nwh-today-pill">Today</span>` : ""}
+        </div>`,
+        `<strong style="color:var(--brand); font-size:1rem;">${formatINR(item.netWorth)}</strong>`,
+        `<span class="nwh-change-badge ${chgBadgeClass}">${chgSign}${formatINR(chg)} (${chgSign}${chgPct}%)</span>`,
+        `<strong>${formatINR(item.totalAssets)}</strong>`,
+        `${item.totalLiabilities > 0 ? `<span style="color:var(--negative, #dc2626);">${formatINR(item.totalLiabilities)}</span>` : "₹0.00"}`,
+        `${formatINR(item.mutualFunds || 0)}`,
+        `${formatINR(item.stocks || 0)}`,
+        `${formatINR(item.usStocks || 0)}`,
+        `${formatINR(item.gold || 0)}`,
+        `${formatINR(cashAndOthers)}`,
+        `<span style="font-size:0.75rem; color:var(--muted);">${item.timestamp ? formatRelativeTime(item.timestamp) : "—"}</span>`,
+        `<div class="actions-wrapper">
+          <button class="action-btn delete-btn delete-nwh-btn" data-id="${item.id}" title="Delete snapshot">🗑️</button>
+        </div>`
+      ];
+    },
+    "No net worth snapshots recorded yet.",
+    12
+  );
+}
+
+function downloadNetWorthHistoryCSV() {
+  const history = state.netWorthHistory || [];
+  if (history.length === 0) {
+    toast("⚠️ No net worth records to export. Take a snapshot first.");
+    return;
+  }
+
+  const headers = [
+    "Date",
+    "Net Worth (INR)",
+    "1-Day Change (INR)",
+    "1-Day Change (%)",
+    "Total Assets (INR)",
+    "Total Liabilities (INR)",
+    "Mutual Funds (INR)",
+    "Indian Stocks (INR)",
+    "US Stocks (INR)",
+    "Gold (INR)",
+    "Silver (INR)",
+    "Crypto (INR)",
+    "Fixed Deposits (INR)",
+    "EPF (INR)",
+    "PPF (INR)",
+    "Bonds (INR)",
+    "Bank Savings (INR)",
+    "Other Assets (INR)",
+    "Liabilities (INR)",
+    "Source",
+    "Timestamp"
+  ];
+
+  const rows = history.map(item => [
+    item.date,
+    (item.netWorth ?? 0).toFixed(2),
+    (item.dayChange ?? 0).toFixed(2),
+    (item.dayChangePct ?? 0).toFixed(2),
+    (item.totalAssets ?? 0).toFixed(2),
+    (item.totalLiabilities ?? 0).toFixed(2),
+    (item.mutualFunds ?? 0).toFixed(2),
+    (item.stocks ?? 0).toFixed(2),
+    (item.usStocks ?? 0).toFixed(2),
+    (item.gold ?? 0).toFixed(2),
+    (item.silver ?? 0).toFixed(2),
+    (item.crypto ?? 0).toFixed(2),
+    (item.fd ?? 0).toFixed(2),
+    (item.epf ?? 0).toFixed(2),
+    (item.ppf ?? 0).toFixed(2),
+    (item.bonds ?? 0).toFixed(2),
+    (item.bankSaving ?? 0).toFixed(2),
+    (item.others ?? 0).toFixed(2),
+    (item.liabilities ?? 0).toFixed(2),
+    item.source || "snapshot",
+    item.timestamp || ""
+  ]);
+
+  const csvContent = [
+    headers.join(","),
+    ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))
+  ].join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", `LifeLedger_NetWorth_History_${todayISO()}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  toast("📥 Net Worth History CSV downloaded successfully!");
+}
+
+function deleteNetWorthSnapshot(id) {
+  const item = (state.netWorthHistory || []).find(e => e.id === id);
+  if (!item) return;
+  if (!confirm(`Delete Net Worth record for ${formatDate(item.date)} (${formatINR(item.netWorth)})?`)) {
+    return;
+  }
+  state.netWorthHistory = (state.netWorthHistory || []).filter(e => e.id !== id);
+  persist();
+  renderNetWorthHistory();
+  toast(`🗑️ Net worth record for ${formatDate(item.date)} deleted.`);
+}
+
+function bindNetWorthHistoryEvents() {
+  const handleSnapshot = () => {
+    const snap = recordDailyNetWorthSnapshot({ source: "manual" });
+    renderNetWorthHistory();
+    toast(`📸 Net worth snapshot captured for ${formatDate(snap.date)}: ${formatINR(snap.netWorth)}`);
+  };
+
+  document.getElementById("nwhSnapshotBtn")?.addEventListener("click", handleSnapshot);
+  document.getElementById("nwhSnapshotBtn2")?.addEventListener("click", handleSnapshot);
+  document.getElementById("nwhSnapshotBtnEmpty")?.addEventListener("click", handleSnapshot);
+
+  document.getElementById("nwhDownloadCsvBtn")?.addEventListener("click", downloadNetWorthHistoryCSV);
+  document.getElementById("nwhDownloadCsvBtn2")?.addEventListener("click", downloadNetWorthHistoryCSV);
+
+  document.getElementById("nwhRefreshPricesBtn")?.addEventListener("click", () => refreshAllLivePrices(true));
+
+  document.getElementById("nwhTableBody")?.addEventListener("click", (e) => {
+    const delBtn = e.target.closest(".delete-nwh-btn");
+    if (delBtn && delBtn.dataset.id) {
+      deleteNetWorthSnapshot(delBtn.dataset.id);
+    }
   });
 }
 
