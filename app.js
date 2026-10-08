@@ -698,47 +698,7 @@ function applyTheme(theme) {
   });
 }
 
-const defaultGoldHoldings = [
-  {
-    id: "gold-1",
-    name: "Bridal Gold Necklace & Jhumkas",
-    category: "Jewellery",
-    carat: "22K",
-    weightGrams: 32.5,
-    date: "2023-04-18",
-    purchasePricePerGram: 5600,
-    invested: 182000,
-    owner: "Wife",
-    value: 233865,
-    note: "Tanishq Hallmarked 22K Wedding jewellery"
-  },
-  {
-    id: "gold-2",
-    name: "MMTC-PAMP 24K Gold Bar",
-    category: "Bar",
-    carat: "24K",
-    weightGrams: 10.0,
-    date: "2022-10-24",
-    purchasePricePerGram: 5120,
-    invested: 51200,
-    owner: "Me",
-    value: 78500,
-    note: "Diwali 24K 999.9 pure investment bar"
-  },
-  {
-    id: "gold-3",
-    name: "Kundan Solitaire Gold Ring",
-    category: "Jewellery",
-    carat: "22K",
-    weightGrams: 6.2,
-    date: "2024-02-14",
-    purchasePricePerGram: 6350,
-    invested: 39370,
-    owner: "Wife",
-    value: 44614,
-    note: "Gift from family"
-  }
-];
+const defaultGoldHoldings = [];
 
 function getCaratMultiplier(carat) {
   if (!carat) return 22 / 24;
@@ -832,8 +792,8 @@ function normalizeData(data) {
     ppf: ensureIds(data.ppf || [], "ppf"),
     gold: (() => {
       const rawGold = Array.isArray(data.gold) ? data.gold : [];
-      const list = rawGold.length > 0 ? rawGold : defaultGoldHoldings;
-      return ensureIds(list, "gold").map(normalizeGoldHolding);
+      const cleanGold = rawGold.filter(g => g.id !== "gold-1" && g.id !== "gold-2" && g.id !== "gold-3");
+      return ensureIds(cleanGold, "gold").map(normalizeGoldHolding);
     })(),
     goldPrice: data.goldPrice || { price24k: 7850, lastFetched: null, source: "default" },
     silver: ensureIds(data.silver || [], "slv"),
