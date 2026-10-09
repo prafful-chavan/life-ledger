@@ -493,22 +493,34 @@ function bootstrapApp(initialState) {
     isAppInitialized = true;
   }
   renderAll();
-  recordDailyNetWorthSnapshot({ source: "startup" });
+  try {
+    recordDailyNetWorthSnapshot({ source: "startup" });
+  } catch (err) {
+    console.warn("[Startup] Initial snapshot error:", err);
+  }
   Promise.allSettled([
-    refreshMutualFundNAVs(false),
+    refreshMutualFundNAVs(false, true),
     refreshStockPrices(false, true),
     refreshUsStockPrices(false, true),
     fetchLiveGoldPrice(false)
   ]).then(() => {
-    recordDailyNetWorthSnapshot({ source: "startup-refresh" });
+    recalculateGoldHoldingsValues();
+    renderAll();
+    try {
+      recordDailyNetWorthSnapshot({ source: "startup-refresh" });
+    } catch (e) {}
     if (typeof renderNetWorthHistory === 'function') renderNetWorthHistory();
-  }).catch(() => {});
+  }).catch((err) => {
+    console.warn("[Startup] Price refresh error:", err);
+  });
   initBrokerAutoRefresh();
 
   // Load AI insights in background (non-blocking)
   setTimeout(() => loadAiInsights(), 1500);
 }
 
+const AUTO_REFRESH_6H_KEY = 'lifeLedger_last6hRefreshTime';
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 let brokerAutoRefreshInterval = null;
 
 function initBrokerAutoRefresh() {
@@ -521,15 +533,42 @@ function initBrokerAutoRefresh() {
   brokerAutoRefreshInterval = setInterval(() => {
     checkAndRunAutoRefresh();
   }, 15 * 60 * 1000);
+
+  // Active tab listener: When returning to app after >= 6 hours, auto-refresh portfolio
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        const lastRun = parseInt(localStorage.getItem(AUTO_REFRESH_6H_KEY) || '0', 10);
+        if (Date.now() - lastRun >= SIX_HOURS_MS) {
+          console.log('[Auto-Refresh] Tab active after 6+ hours. Running scheduled 6h portfolio refresh…');
+          checkAndRunAutoRefresh(true);
+        }
+      }
+    });
+  }
 }
 
-async function checkAndRunAutoRefresh() {
+async function checkAndRunAutoRefresh(force6h = false) {
   const now = Date.now();
+  const last6hRun = parseInt(localStorage.getItem(AUTO_REFRESH_6H_KEY) || '0', 10);
+  const is6hDue = (now - last6hRun >= SIX_HOURS_MS);
+
+  // 1. Guaranteed 6-Hour Auto-Refresh across ALL platforms (MF, Stocks, US Stocks, Gold)
+  if (force6h || is6hDue) {
+    console.log('[Auto-Refresh] 6-hour periodic cycle triggered: Refreshing all asset prices…');
+    localStorage.setItem(AUTO_REFRESH_6H_KEY, String(now));
+    if (typeof refreshAllLivePrices === 'function') {
+      await refreshAllLivePrices(true).catch(e => console.warn('[Auto-Refresh] 6h cycle error:', e));
+    }
+    return;
+  }
+
+  // 2. Intra-day checks between 6-hour cycles:
   const cache = getStockPriceCache();
   const usStocks = state.usstocks || [];
   const stocks = state.stocks || [];
 
-  // 1. Auto-refresh Indian Stocks every 2 hours if any position is stale (> 2 hours old)
+  // Auto-refresh Indian Stocks every 2 hours if any position is stale (> 2 hours old)
   const needsStockRefresh = stocks.some(s => {
     if (!s.symbol || toNumber(s.quantity) <= 0) return false;
     const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
@@ -537,10 +576,10 @@ async function checkAndRunAutoRefresh() {
   });
   if (needsStockRefresh && typeof refreshStockPrices === 'function') {
     console.log('[Auto-Refresh] Fetching latest Indian stock prices (2h auto-refresh)…');
-    await refreshStockPrices(true).catch(e => console.warn('[Auto-Refresh] Stock error:', e));
+    await refreshStockPrices(true, true).catch(e => console.warn('[Auto-Refresh] Stock error:', e));
   }
 
-  // 2. Auto-refresh US Stocks every 2 hours if any position is stale (> 2 hours old)
+  // Auto-refresh US Stocks every 2 hours if any position is stale (> 2 hours old)
   const needsUsStockRefresh = usStocks.some(s => {
     if (!s.symbol || toNumber(s.quantity) <= 0) return false;
     const sym = s.symbol.toUpperCase().trim();
@@ -548,10 +587,10 @@ async function checkAndRunAutoRefresh() {
   });
   if (needsUsStockRefresh && typeof refreshUsStockPrices === 'function') {
     console.log('[Auto-Refresh] Fetching latest US stock prices (2h auto-refresh)…');
-    await refreshUsStockPrices(true).catch(e => console.warn('[Auto-Refresh] US Stock error:', e));
+    await refreshUsStockPrices(true, true).catch(e => console.warn('[Auto-Refresh] US Stock error:', e));
   }
 
-  // 3. Auto-refresh Mutual Fund NAVs daily after 8 PM IST
+  // Auto-refresh Mutual Fund NAVs daily after 8 PM IST
   const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   const currentHourIST = ist.getHours();
   const lastNavAutoFetchKey = 'lifeLedger_lastNavAutoFetchDate';
@@ -590,18 +629,27 @@ let isSaving = false;
 let currentSavePromise = null;
 let failedSaveRetryPending = false;
 
+function persist() {
+  if (typeof saveData === 'function') {
+    return saveData(true);
+  }
+  return Promise.resolve();
+}
+
 function saveData(immediate = false, kind = null) {
   if (!kind || kind === "expense" || kind === "expenses" || kind === "income") {
     invalidateExpenseCache();
   }
-  if (!window.LifeLedgerAuth?.isUnlocked()) return Promise.resolve();
+  if (typeof window === 'undefined' || !window.LifeLedgerAuth?.isUnlocked()) return Promise.resolve();
   clearTimeout(saveDataTimer);
 
   const saveAction = async () => {
     saveDataTimer = null;
     isSaving = true;
     try {
-      await window.LifeLedgerAuth.saveAppData(state);
+      if (typeof window !== 'undefined' && window.LifeLedgerAuth) {
+        await window.LifeLedgerAuth.saveAppData(state);
+      }
       failedSaveRetryPending = false;
     } catch (error) {
       console.warn(error);
@@ -889,10 +937,10 @@ function normalizeData(data) {
         }
       } catch {}
 
-      if (!price22k || price22k < 12000) {
+      if (!price22k || price22k < 3000) {
         price22k = GOLD_BENCHMARK_22K;
       }
-      if (!price24k || price24k < 13000) {
+      if (!price24k || price24k < 3000) {
         price24k = Number((price22k / (22 / 24)).toFixed(2));
       }
 
@@ -6274,7 +6322,7 @@ async function refreshStockPrices(force = false, silent = false) {
     .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) {
     if (!silent) toast('No stock symbols to refresh.');
-    return;
+    return 0;
   }
 
   const cache = getStockPriceCache();
@@ -6284,7 +6332,7 @@ async function refreshStockPrices(force = false, silent = false) {
     updateStocksFromCache();
     renderStockHoldingsPanel();
     if (!silent) toast('Stock prices are up to date.');
-    return;
+    return 0;
   }
 
   // Build query symbols mapping exchange tickers and aliases
@@ -6293,7 +6341,6 @@ async function refreshStockPrices(force = false, silent = false) {
   uniqueSymbols.forEach(sym => {
     const exSym = getExchangeTicker(sym);
     querySet.add(exSym);
-    querySet.add(sym);
     if (!aliasMap[exSym]) aliasMap[exSym] = new Set();
     aliasMap[exSym].add(sym);
     if (!aliasMap[sym]) aliasMap[sym] = new Set();
@@ -6331,13 +6378,13 @@ async function refreshStockPrices(force = false, silent = false) {
     });
   }
 
-  // Strategy 1: Google Apps Script Proxy URL (with generous 20s timeout)
+  // Strategy 1: Google Apps Script Proxy URL (with generous 30s timeout)
   if (proxyUrl) {
     try {
       const sep = proxyUrl.includes('?') ? '&' : '?';
       const symList = encodeURIComponent(symbolsToQuery.join(','));
       const url = `${proxyUrl}${sep}symbols=${symList}&symbol=${symList}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
       if (response.ok) {
         const data = await response.json();
         for (const symQuery of symbolsToQuery) {
@@ -6375,29 +6422,13 @@ async function refreshStockPrices(force = false, silent = false) {
     }
   }
 
-  // Strategy 2: Parallel High-Speed Fallback for failed / un-fetched symbols
+  // Strategy 2: Fast Cache Fallback for failed / un-fetched symbols
   if (failedSymbols.length > 0) {
-    console.log(`[Stock Prices] Fetching via fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
-    const fallbackResults = await Promise.allSettled(
-      failedSymbols.map(sym => fetchStockPriceSingleSymbolFast(sym, false).then(res => ({ sym, res })))
-    );
-
-    fallbackResults.forEach(r => {
-      if (r.status === 'fulfilled' && r.value && r.value.res && r.value.res.currentPrice > 0) {
-        const { sym, res } = r.value;
-        const prevClose = res.prevClose || res.currentPrice;
-        const change = res.currentPrice - prevClose;
-        const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-        setCacheItem(sym, {
-          price: res.currentPrice,
-          prevClose: prevClose,
-          change: change,
-          changePct: changePct,
-          date: new Date().toLocaleDateString('en-IN'),
-          source: res.source || 'fast-api',
-        }, res.source || 'fast-api');
-        updatedCount++;
-        failedSymbols = failedSymbols.filter(s => s !== sym);
+    failedSymbols.forEach(sym => {
+      const exSym = getExchangeTicker(sym);
+      const cached = cache[sym] || cache[exSym];
+      if (cached && cached.price > 0) {
+        setCacheItem(sym, cached, cached.source || 'cache');
       }
     });
   }
@@ -6441,6 +6472,7 @@ async function refreshStockPrices(force = false, silent = false) {
     await saveData(true);
     renderStockHoldingsPanel();
     if (!silent) toast(`✅ Updated prices for ${updatedCount} stocks`);
+    return updatedCount;
   } else {
     updateStocksFromCache();
     renderStockHoldingsPanel();
@@ -6452,6 +6484,7 @@ async function refreshStockPrices(force = false, silent = false) {
         toast('⚠️ Price refresh could not reach stock API. Check network connection.');
       }
     }
+    return 0;
   }
 }
 
@@ -6678,7 +6711,7 @@ async function refreshUsStockPrices(force = false, silent = false) {
     .map(([sym]) => sym);
   if (uniqueSymbols.length === 0) {
     if (!silent) toast('No US stocks found to refresh.');
-    return;
+    return 0;
   }
   const cache = getStockPriceCache();
   const now = Date.now();
@@ -6687,7 +6720,7 @@ async function refreshUsStockPrices(force = false, silent = false) {
   if (!force && uniqueSymbols.every(sym => cache[sym] && (now - cache[sym].timestamp < 3600000))) {
     updateUsStocksFromCache();
     renderUsStockHoldingsPanel();
-    return;
+    return 0;
   }
 
   // If force refresh, clear stale timestamps so we actually refetch
@@ -6709,7 +6742,7 @@ async function refreshUsStockPrices(force = false, silent = false) {
       const symList = encodeURIComponent(uniqueSymbols.join(','));
       const url = `${proxyUrl}${sep}symbols=${symList}&symbol=${symList}&market=US`;
       console.log('[US Stocks] Fetching from proxy:', url);
-      const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
       if (response.ok) {
         const data = await response.json();
         console.log('[US Stocks] Proxy response:', JSON.stringify(data).slice(0, 1000));
@@ -6741,30 +6774,12 @@ async function refreshUsStockPrices(force = false, silent = false) {
     }
   }
 
-  // ─── Strategy 2: Parallel High-Speed Fallback for failed symbols ─────────
+  // ─── Strategy 2: Fast Cache Fallback for failed symbols ─────────
   if (failedSymbols.length > 0) {
-    console.log(`[US Stocks] Fetching via fallback engine for ${failedSymbols.length} symbols:`, failedSymbols);
-    const fallbackResults = await Promise.allSettled(
-      failedSymbols.map(sym => fetchStockPriceSingleSymbolFast(sym, true).then(res => ({ sym, res })))
-    );
-
-    fallbackResults.forEach(r => {
-      if (r.status === 'fulfilled' && r.value && r.value.res && r.value.res.currentPrice > 0) {
-        const { sym, res } = r.value;
-        const prevClose = res.prevClose || res.currentPrice;
-        const change = res.currentPrice - prevClose;
-        const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-        cache[sym] = {
-          price: res.currentPrice,
-          prevClose: prevClose,
-          change: change,
-          changePct: changePct,
-          timestamp: now,
-          date: new Date().toLocaleDateString('en-US'),
-          source: res.source || 'fast-api',
-        };
-        updatedCount++;
-        failedSymbols = failedSymbols.filter(s => s !== sym);
+    failedSymbols.forEach(sym => {
+      const cached = cache[sym];
+      if (cached && cached.price > 0) {
+        // preserve existing cached price
       }
     });
   }
@@ -6790,6 +6805,7 @@ async function refreshUsStockPrices(force = false, silent = false) {
     const source = cache[uniqueSymbols[0]]?.source || 'proxy';
     const failMsg = failedSymbols.length > 0 ? ` (${failedSymbols.join(', ')} failed)` : '';
     if (!silent) toast(`✅ Updated ${updatedCount}/${uniqueSymbols.length} US stocks (${priceDate}, via ${source})${failMsg}`);
+    return updatedCount;
   } else {
     updateUsStocksFromCache();
     renderUsStockHoldingsPanel();
@@ -6801,6 +6817,7 @@ async function refreshUsStockPrices(force = false, silent = false) {
         toast('⚠️ Could not fetch US stock prices. Check proxy URL in Settings or try again later.');
       }
     }
+    return 0;
   }
 }
 
@@ -6961,29 +6978,49 @@ function renderUsStockHoldingsPanel() {
 }
 
 async function refreshAllLivePrices(force = true) {
-  toast('🔄 Refreshing all live prices (Mutual Funds + Stocks + US Stocks + Gold)…');
-  const promises = [];
-  if (typeof refreshMutualFundNAVs === 'function') {
-    promises.push(refreshMutualFundNAVs(force).catch(e => console.warn('[Refresh All] MF NAV error:', e)));
-  }
-  if (typeof refreshStockPrices === 'function') {
-    promises.push(refreshStockPrices(force, true).catch(e => console.warn('[Refresh All] Indian Stock price error:', e)));
-  }
-  if (typeof refreshUsStockPrices === 'function') {
-    promises.push(refreshUsStockPrices(force, true).catch(e => console.warn('[Refresh All] US Stock price error:', e)));
-  }
-  if (typeof fetchLiveGoldPrice === 'function') {
-    promises.push(fetchLiveGoldPrice(force).catch(e => console.warn('[Refresh All] Gold price error:', e)));
-  }
+  toast('🔄 Refreshing all live prices (Mutual Funds, Indian Stocks, US Stocks & Gold)…');
+  const results = { mf: 0, stocks: 0, usstocks: 0, gold: 0 };
+  
+  const promises = [
+    (async () => {
+      if (typeof refreshMutualFundNAVs === 'function') {
+        results.mf = await refreshMutualFundNAVs(force, true).catch(e => { console.warn('[Refresh All] MF NAV error:', e); return 0; });
+      }
+    })(),
+    (async () => {
+      if (typeof refreshStockPrices === 'function') {
+        results.stocks = await refreshStockPrices(force, true).catch(e => { console.warn('[Refresh All] Indian Stock price error:', e); return 0; });
+      }
+    })(),
+    (async () => {
+      if (typeof refreshUsStockPrices === 'function') {
+        results.usstocks = await refreshUsStockPrices(force, true).catch(e => { console.warn('[Refresh All] US Stock price error:', e); return 0; });
+      }
+    })(),
+    (async () => {
+      if (typeof fetchLiveGoldPrice === 'function') {
+        results.gold = await fetchLiveGoldPrice(force).catch(e => { console.warn('[Refresh All] Gold price error:', e); return 0; });
+      }
+    })()
+  ];
+
   await Promise.allSettled(promises);
+  recalculateGoldHoldingsValues();
   renderAll();
-  if (typeof recordDailyNetWorthSnapshot === 'function') {
-    recordDailyNetWorthSnapshot({ source: "auto-refresh" });
+  try {
+    if (typeof recordDailyNetWorthSnapshot === 'function') {
+      recordDailyNetWorthSnapshot({ source: "refresh-all" });
+    }
+  } catch (e) {
+    console.warn('[Refresh All] Snapshot error:', e);
   }
   if (typeof renderNetWorthHistory === 'function') {
     renderNetWorthHistory();
   }
-  toast('✅ All live prices refreshed! (Mutual Funds, Indian Stocks, US Stocks & Gold updated)');
+
+  const cur22k = getCaratGoldRate("22K");
+  toast(`✅ All prices refreshed! Portfolio updated across Mutual Funds, Stocks, US Stocks & Gold (22K: ₹${cur22k ? cur22k.toFixed(2) : '13709'}/g)`);
+  return results;
 }
 
 const SIMPLE_ASSET_TABS = [
@@ -7236,35 +7273,45 @@ async function fetchLiveGoldPrice(force = false) {
     }
   }
 
-  // 1. Configured custom Gold API / Proxy URL
+  // 1. Configured custom Gold API or Stock Proxy URL
   const customGoldUrl = typeof localStorage !== "undefined" ? localStorage.getItem(GOLD_API_URL_KEY)?.trim() : "";
-  if (customGoldUrl) {
+  const stockProxyUrl = typeof localStorage !== "undefined" ? localStorage.getItem(STOCK_PROXY_URL_KEY)?.trim()?.replace(/^["']|["']$/g, '').replace(/\?+$/, '') : "";
+  
+  const proxyEndpointsToTry = [];
+  if (customGoldUrl) proxyEndpointsToTry.push(customGoldUrl);
+  if (stockProxyUrl) {
+    const sep = stockProxyUrl.includes('?') ? '&' : '?';
+    proxyEndpointsToTry.push(`${stockProxyUrl}${sep}gold=1`);
+  }
+
+  for (const pUrl of proxyEndpointsToTry) {
     try {
-      const res = await fetch(customGoldUrl, {
+      const res = await fetch(pUrl, {
         headers: { "Accept": "application/json" },
         signal: AbortSignal.timeout(6000)
       });
       if (res.ok) {
         const data = await res.json();
-        const p22 = Number(data?.price22k || data?.rate22k || data?.gold22k || data?.gold_22k);
-        const p24 = Number(data?.price24k || data?.rate24k || data?.gold24k || data?.gold_24k || data?.price || data?.rate);
-        if (p22 > 3000 && p22 < 30000) {
+        const gData = data?.gold || data;
+        const p22 = Number(gData?.price22k || gData?.rate22k || gData?.gold22k || gData?.gold_22k);
+        const p24 = Number(gData?.price24k || gData?.rate24k || gData?.gold24k || gData?.gold_24k || gData?.price || gData?.rate);
+        if (p24 >= 5000 && p24 <= 35000) {
           state.goldPrice = {
-            price22k: p22,
-            price24k: p24 && p24 > p22 ? p24 : Number((p22 / (22 / 24)).toFixed(2)),
+            price24k: p24,
+            price22k: p22 && p22 > 0 ? p22 : Number((p24 * (22 / 24)).toFixed(2)),
             lastFetched: new Date().toISOString(),
-            source: "custom-api"
+            source: "proxy"
           };
           recalculateGoldHoldingsValues();
           persist();
           renderGold();
           return state.goldPrice.price24k;
-        } else if (p24 > 3000 && p24 < 30000) {
+        } else if (p22 >= 4500 && p22 <= 32000) {
           state.goldPrice = {
-            price24k: p24,
-            price22k: Number((p24 * (22 / 24)).toFixed(2)),
+            price22k: p22,
+            price24k: Number((p22 / (22 / 24)).toFixed(2)),
             lastFetched: new Date().toISOString(),
-            source: "custom-api"
+            source: "proxy"
           };
           recalculateGoldHoldingsValues();
           persist();
@@ -7273,40 +7320,11 @@ async function fetchLiveGoldPrice(force = false) {
         }
       }
     } catch (e) {
-      console.warn("[Gold API] Custom proxy fetch failed:", e);
+      console.warn("[Gold API] Proxy fetch failed for " + pUrl + ":", e.message);
     }
   }
 
-  // 2. Primary endpoint: data-asg.goldprice.org (Direct INR spot rate per troy oz)
-  try {
-    const res = await fetch("https://data-asg.goldprice.org/dbXRates/INR", {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(6000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const xauPrice = data?.items?.[0]?.xauPrice;
-      if (xauPrice && xauPrice > 0) {
-        const pricePerGram24k = Number((xauPrice / 31.1034768).toFixed(2));
-        if (pricePerGram24k >= 13000 && pricePerGram24k < 30000) {
-          state.goldPrice = {
-            price24k: pricePerGram24k,
-            price22k: Number((pricePerGram24k * (22 / 24)).toFixed(2)),
-            lastFetched: new Date().toISOString(),
-            source: "goldprice.org"
-          };
-          recalculateGoldHoldingsValues();
-          persist();
-          renderGold();
-          return pricePerGram24k;
-        }
-      }
-    }
-  } catch (e) {
-    console.warn("[Gold API] goldprice.org attempt failed:", e);
-  }
-
-  // 3. Secondary endpoint: api.gold-api.com (USD spot converted to INR)
+  // 2. Direct real-time endpoint: api.gold-api.com (LBMA spot converted using live USD/INR FX)
   try {
     const res = await fetch("https://api.gold-api.com/price/XAU", {
       headers: { "Accept": "application/json" },
@@ -7314,14 +7332,32 @@ async function fetchLiveGoldPrice(force = false) {
     });
     if (res.ok) {
       const data = await res.json();
-      const usdPrice = data?.price;
+      const usdPrice = Number(data?.price);
       if (usdPrice && usdPrice > 0) {
-        const estUsdInr = 87.5;
-        const pricePerGram24k = Number(((usdPrice * estUsdInr) / 31.1034768).toFixed(2));
-        if (pricePerGram24k >= 13000 && pricePerGram24k < 30000) {
+        // Fetch live USD/INR exchange rate with fallback
+        let usdInr = 96.0;
+        try {
+          const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=INR", {
+            headers: { "Accept": "application/json" },
+            signal: AbortSignal.timeout(3500)
+          });
+          if (fxRes.ok) {
+            const fxData = await fxRes.json();
+            if (fxData?.rates?.INR && Number(fxData.rates.INR) > 50) {
+              usdInr = Number(fxData.rates.INR);
+            }
+          }
+        } catch {}
+
+        const spotInrPerGram24k = (usdPrice * usdInr) / 31.1034768;
+        // Physical retail gold with customs (~6%) and GST (3%) in India (~10% total)
+        const pricePerGram24k = Number((spotInrPerGram24k * 1.10).toFixed(2));
+        const pricePerGram22k = Number((pricePerGram24k * (22 / 24)).toFixed(2));
+
+        if (pricePerGram24k >= 5000 && pricePerGram24k <= 35000) {
           state.goldPrice = {
             price24k: pricePerGram24k,
-            price22k: Number((pricePerGram24k * (22 / 24)).toFixed(2)),
+            price22k: pricePerGram22k,
             lastFetched: new Date().toISOString(),
             source: "gold-api.com"
           };
@@ -7336,8 +7372,8 @@ async function fetchLiveGoldPrice(force = false) {
     console.warn("[Gold API] gold-api.com attempt failed:", e);
   }
 
-  // 4. Fallback / Default Indian Benchmark Reference
-  if (!state.goldPrice || !state.goldPrice.price22k || state.goldPrice.price22k < 12000) {
+  // 3. Fallback / Default Indian Benchmark Reference
+  if (!state.goldPrice || !state.goldPrice.price22k || state.goldPrice.price22k < 3000) {
     state.goldPrice = {
       price24k: GOLD_BENCHMARK_24K,
       price22k: GOLD_BENCHMARK_22K,
@@ -13754,8 +13790,8 @@ function saveNavCache(cache) {
 }
 
 
-async function refreshMutualFundNAVs(force = false) {
-  if (!state.mutualFunds || state.mutualFunds.length === 0) return;
+async function refreshMutualFundNAVs(force = false, silent = false) {
+  if (!state.mutualFunds || state.mutualFunds.length === 0) return 0;
 
   const isinMap = {
     "INF194KB1AL4": 147946,
@@ -13803,7 +13839,7 @@ async function refreshMutualFundNAVs(force = false) {
     }
   });
 
-  if (schemeEntries.length === 0) return;
+  if (schemeEntries.length === 0) return 0;
 
   try {
     const navCache = getNavCache();
@@ -13811,7 +13847,7 @@ async function refreshMutualFundNAVs(force = false) {
     let updatedCount = 0;
 
     const needsFetch = force || schemeEntries.some(e => isNavStale(navCache[e.code]));
-    if (needsFetch) toast('Refreshing mutual fund NAVs from mfapi.in…');
+    if (needsFetch && !silent) toast('Refreshing mutual fund NAVs from mfapi.in…');
 
     const fetchPromises = schemeEntries.map(async ({ name, code }) => {
       const cached = navCache[code];
@@ -13845,7 +13881,7 @@ async function refreshMutualFundNAVs(force = false) {
 
     if (updatedCount > 0 || force) {
       saveNavCache(navCache);
-      if (needsFetch) {
+      if (needsFetch && !silent) {
         toast(updatedCount > 0 ? `✓ Updated ${updatedCount} NAV${updatedCount > 1 ? 's' : ''} from mfapi.in` : 'NAVs are already up to date.');
       }
 
@@ -13867,9 +13903,11 @@ async function refreshMutualFundNAVs(force = false) {
       await saveData(true);
       renderMutualFundsPanel();
     }
+    return updatedCount;
   } catch (err) {
     console.error('Failed to refresh mutual fund NAVs:', err);
-    toast('⚠ NAV refresh failed — showing cached values.');
+    if (!silent) toast('⚠ NAV refresh failed — showing cached values.');
+    return 0;
   }
 }
 
@@ -14810,6 +14848,16 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeData,
     parseStockProxyPrice,
     STOCK_PROXY_URL_KEY,
+    refreshAllLivePrices,
+    refreshStockPrices,
+    refreshUsStockPrices,
+    refreshMutualFundNAVs,
+    fetchLiveGoldPrice,
+    recalculateGoldHoldingsValues,
+    checkAndRunAutoRefresh,
+    initBrokerAutoRefresh,
+    persist,
+    recordDailyNetWorthSnapshot,
     state,
     defaultData,
     demoData
