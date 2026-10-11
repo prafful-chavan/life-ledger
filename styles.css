@@ -1484,7 +1484,6 @@ body[data-theme="dark"] .chat-message.assistant strong {
     display: none;
   }
 
-  .topbar-actions #themeToggle,
   .topbar-actions button[data-open-modal="resetModal"] {
     display: none !important;
   }
@@ -2372,7 +2371,7 @@ body[data-theme="dark"] .metric-card.compact-metric .value {
 /* Goals Grid and Visual Cards */
 .goals-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 20px;
 }
 
@@ -2687,7 +2686,7 @@ body[data-theme="dark"] .goal-time-left {
 
 .insights-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 16px;
   padding: 12px 0;
 }
@@ -3656,7 +3655,7 @@ body[data-theme="dark"] .goal-time-left {
 
 .interview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 16px;
 }
 
@@ -4233,10 +4232,16 @@ body[data-theme="dark"] .sortable-th:hover {
 
 /* 4. Mobile Phones (iPhone, Android, Foldables <= 680px) */
 @media (max-width: 680px) {
-  /* Prevent horizontal screen shake / body overflow */
-  html, body {
-    overflow-x: hidden;
+  /* Prevent horizontal screen shake while preserving position:sticky on iOS Safari */
+  html {
+    overflow-x: clip;
+  }
+  body {
+    overflow-x: clip;
+    min-width: 320px;
     touch-action: manipulation;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
   }
 
   .app-shell {
@@ -5194,6 +5199,763 @@ body[data-theme="dark"] .sortable-th:hover {
   }
 }
 
+/* ==========================================================================
+   CROSS-DEVICE RESPONSIVE ARCHITECTURE & DESIGN SYSTEM EXTENSIONS
+   (iPhone, iPad, MacBook, Big Monitors / 4K, Chrome, Safari, Firefox)
+   ========================================================================== */
 
+/* ─── 1. Form Controls & iOS Safari Auto-Zoom Prevention ─────────────────── */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea,
+  .period-pill-select,
+  .keep-add-controls select,
+  .keep-add-controls input,
+  .checklist-item-editor input,
+  .log-set-row input,
+  .sip-target-input,
+  .field-input,
+  .gold-field-input,
+  .inline-filter-input {
+    font-size: 16px !important;
+  }
+}
 
+/* ─── 2. Apple HIG 44px Touch Ergonomics (Coarse Pointer Devices) ─────────── */
+@media (pointer: coarse) {
+  .action-btn,
+  .btn-icon,
+  .tab-btn,
+  .subtab-btn,
+  .period-pill,
+  .quick-chip,
+  .quick-inc-btn,
+  .quick-inc-dist,
+  .quick-inc-time,
+  .btn-add-set,
+  .btn-remove-set,
+  .delete-gold-btn,
+  .edit-gold-btn,
+  .btn-checkin-today,
+  .btn-pin-card,
+  .pagination button,
+  .topbar-actions > button,
+  .activity-type-tabs button {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+  }
 
+  /* Expand table row actions tap area */
+  .gold-table td .action-btn,
+  .holdings-table td .action-btn,
+  .nwh-table td .action-btn {
+    padding: 8px 12px;
+  }
+}
+
+/* ─── 3. Ultrawide Monitors & 4K Displays (>= 1920px) ─────────────────────── */
+@media (min-width: 1920px) {
+  .app-shell {
+    max-width: 1800px;
+    margin: 0 auto;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.08);
+  }
+
+  .dashboard-grid,
+  .stats-grid,
+  .portfolio-stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+
+  .interview-main,
+  .interview-simulator-container,
+  .article-container {
+    max-width: 1100px;
+  }
+}
+
+/* ─── 4. iPad & Tablets (768px – 1024px) ─────────────────────────────────── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .app-shell {
+    grid-template-columns: 220px 1fr;
+  }
+
+  .sidebar {
+    width: 220px;
+    padding: 16px 12px;
+  }
+
+  .content-area {
+    padding: 16px;
+  }
+
+  .stats-grid,
+  .portfolio-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .interview-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── 5. Mobile Ergonomics & Bottom Sheet Modals (<= 680px) ──────────────── */
+@media (max-width: 680px) {
+  .modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .modal-window,
+  .modal-card,
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 90dvh !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-top-left-radius: 20px !important;
+    border-top-right-radius: 20px !important;
+    margin: 0 !important;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 12px)) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    animation: slideUpBottomSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes slideUpBottomSheet {
+    from {
+      transform: translateY(100%);
+      opacity: 0.8;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: inherit;
+    padding-top: 14px;
+    padding-bottom: 12px;
+  }
+
+  .table-responsive,
+  .table-wrap,
+  .holdings-table-wrap,
+  .gold-table-wrap,
+  .nwh-table-wrap {
+    margin: 0 -12px;
+    padding: 0 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ─── 6. Panels & Layout Primitives ──────────────────────────────────────── */
+.panel-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 680px) {
+  .panel-body {
+    padding: 14px 12px;
+    gap: 12px;
+  }
+}
+
+/* ─── 7. Gold Tracker UI Components ──────────────────────────────────────── */
+.gold-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.gold-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  background: var(--panel);
+}
+
+.gold-table th {
+  background: var(--panel-header, rgba(0, 0, 0, 0.02));
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.gold-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.gold-table tr:last-child td {
+  border-bottom: none;
+}
+
+.gold-table tr:hover {
+  background: rgba(0, 0, 0, 0.015);
+}
+
+[data-theme="dark"] .gold-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gold-price-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gold-form-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  padding: 16px 0;
+}
+
+.gold-calc-preview {
+  background: var(--surface, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.delete-gold-btn,
+.edit-gold-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.delete-gold-btn:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.edit-gold-btn:hover {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--brand, #2563eb);
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+/* ─── 8. Exercise & Fitness Tracker Components ───────────────────────────── */
+.act-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.act-field-group label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.activity-type-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
+  scrollbar-width: none;
+}
+
+.activity-type-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.activity-type-tabs button {
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}
+
+.activity-type-tabs button.active,
+.activity-type-tabs button[aria-selected="true"] {
+  background: var(--brand, #2563eb);
+  color: #ffffff;
+  border-color: var(--brand, #2563eb);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.activity-metric-toggle {
+  display: inline-flex;
+  background: var(--surface, rgba(0, 0, 0, 0.04));
+  border-radius: 8px;
+  padding: 2px;
+  border: 1px solid var(--line);
+}
+
+.quick-chip-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
+  scrollbar-width: none;
+}
+
+.quick-chip-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-inc-btn,
+.quick-inc-dist,
+.quick-inc-time {
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.quick-inc-btn:hover,
+.quick-inc-dist:hover,
+.quick-inc-time:hover {
+  border-color: var(--brand, #2563eb);
+  color: var(--brand, #2563eb);
+}
+
+.ring-row-calories,
+.ring-row-cycling,
+.ring-row-minutes,
+.ring-row-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--line);
+}
+
+.workout-chart-wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 220px;
+  max-height: 340px;
+}
+
+.workout-exercises-container,
+.workout-exercises-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  gap: 10px;
+}
+
+.template-btn-item {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.template-btn-item:hover {
+  border-color: var(--brand, #2563eb);
+  transform: translateY(-1px);
+}
+
+.streak-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.streak-cal-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.btn-add-set,
+.btn-remove-set,
+.btn-checkin-today {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-add-set:hover,
+.btn-checkin-today:hover {
+  background: var(--brand, #2563eb);
+  color: #ffffff;
+  border-color: var(--brand, #2563eb);
+}
+
+.btn-remove-set:hover {
+  color: #dc2626;
+  border-color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* ─── 9. Interview & Career Simulator Layout ─────────────────────────────── */
+.interview-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-right: 1px solid var(--line);
+  padding-right: 18px;
+}
+
+@media (max-width: 1024px) {
+  .interview-sidebar {
+    border-right: none;
+    padding-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 16px;
+  }
+}
+
+.interview-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+}
+
+.interview-view-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.simulator-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-overall,
+.progress-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.pagination button {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.84rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.pagination button.active {
+  background: var(--brand, #2563eb);
+  color: #fff;
+  border-color: var(--brand, #2563eb);
+}
+
+/* ─── 10. Google Keep Notes UI ───────────────────────────────────────────── */
+.keep-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.keep-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.keep-section-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.control-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-palette-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.color-palette-popover {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+}
+
+.todo-filters {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.btn-pin-card {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.btn-pin-card:hover,
+.btn-pin-card.pinned {
+  color: var(--brand, #2563eb);
+}
+
+/* ─── 11. Header, Sync, Badges & Micro-Interactions ───────────────────────── */
+.open-sync-log-btn,
+.refresh-all-prices-btn,
+.sync-holdings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.refresh-all-prices-btn:hover,
+.sync-holdings-btn:hover {
+  border-color: var(--brand, #2563eb);
+  color: var(--brand, #2563eb);
+}
+
+.sync-log-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--brand, #2563eb);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.sync-text {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-wrapper input {
+  width: 100%;
+  padding-left: 32px;
+}
+
+.search-wrapper .search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.empty-icon {
+  font-size: 2.2rem;
+  color: var(--muted);
+  opacity: 0.5;
+  margin-bottom: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--surface, rgba(0, 0, 0, 0.06));
+  color: var(--muted);
+}
+
+.badge.badge-success {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.badge.badge-danger {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.badge.badge-brand {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--brand, #2563eb);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--brand, #2563eb);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.small-value {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.us-stock-view-toggle {
+  display: inline-flex;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.trend-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stock-import-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-btn:hover {
+  background: var(--surface, rgba(0, 0, 0, 0.04));
+  border-color: var(--muted);
+}

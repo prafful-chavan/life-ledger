@@ -1121,6 +1121,9 @@ function bindFinanceTabs() {
       activeFinanceTab = button.dataset.financeTab;
       document.querySelectorAll("[data-finance-tab]").forEach((tab) => tab.classList.remove("active"));
       button.classList.add("active");
+      try {
+        button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      } catch (_) {}
       document.querySelectorAll(".finance-tab").forEach((tab) => tab.classList.remove("active"));
       document.getElementById(`finance-${activeFinanceTab}`)?.classList.add("active");
       if (activeFinanceTab === "expenses") renderExpenseExplorer();
@@ -1527,6 +1530,9 @@ function bindCareerTabs() {
       activeCareerTab = button.dataset.careerTab;
       document.querySelectorAll("[data-career-tab]").forEach((tab) => tab.classList.remove("active"));
       button.classList.add("active");
+      try {
+        button.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      } catch (_) {}
       document.querySelectorAll(".career-tab").forEach((tab) => {
         tab.classList.remove("active");
         tab.hidden = true;
