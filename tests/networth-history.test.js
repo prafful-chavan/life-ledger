@@ -351,6 +351,86 @@ test("Normalization safely sanitizes missing and invalid fields", () => {
   assert.strictEqual(typeof normalized.id, "string");
 });
 
+test("Gold is included in calculatePortfolio1DayChange alongside MF, Indian Stocks, and US Stocks", () => {
+  const { calculatePortfolio1DayChange, state } = require("../app.js");
+
+  state.mutualFunds = [
+    { fundName: "Test Fund", owner: "Me", latestNav: 110, prevNav: 100, units: 100, isin: "INF123" }
+  ];
+  state.stocks = [
+    { symbol: "TCS", quantity: 10, currentPrice: 3500, prevClose: 3450 }
+  ];
+  state.usstocks = [
+    { symbol: "AAPL", quantity: 5, currentPrice: 200, prevClose: 190 }
+  ];
+  state.goldPrice = {
+    price24k: 15000,
+    price22k: 13750,
+    prevClose24k: 14800,
+    prevClose22k: 13600
+  };
+  state.gold = [
+    { weightGrams: 10, carat: "22K" },
+    { weightGrams: 5, carat: "24K" }
+  ];
+
+  const result = calculatePortfolio1DayChange();
+  assert.ok(result.hasData, "hasData should be true");
+  assert.ok(result.totalPortfolioValueINR > 0);
+  assert.ok(result.total1DayChangeINR > 0);
+
+  // MF day change: 100 * (110 - 100) = 1,000 INR
+  // Indian Stocks day change: 10 * (3500 - 3450) = 500 INR
+  // US Stocks day change: 5 * (200 - 190) * 84.50 = 4,225 INR
+  // Gold 22K day change: 10 * (13750 - 13600) = 1,500 INR
+  // Gold 24K day change: 5 * (15000 - 14800) = 1,000 INR
+  // Expected Total Day Change: 1000 + 500 + 4225 + 1500 + 1000 = 8,225 INR
+  const expectedTotalChange = 1000 + 500 + 4225 + 1500 + 1000;
+  assert.strictEqual(Math.round(result.total1DayChangeINR), expectedTotalChange);
+});
+
+test("Gold intraday price movement correctly calculates day change for 24K, 22K, and 18K assets", () => {
+  const { calculatePortfolio1DayChange, state } = require("../app.js");
+
+  state.mutualFunds = [];
+  state.stocks = [];
+  state.usstocks = [];
+  state.goldPrice = {
+    price24k: 15000,
+    price22k: 13750,
+    prevClose24k: 14800,
+    prevClose22k: 13600
+  };
+  state.gold = [
+    { weightGrams: 20, carat: "22K" }
+  ];
+
+  const result = calculatePortfolio1DayChange();
+  assert.ok(result.hasData);
+  // 20g * (13750 - 13600) = 3,000 INR
+  assert.strictEqual(Math.round(result.total1DayChangeINR), 3000);
+  assert.strictEqual(Math.round(result.totalPortfolioValueINR), 20 * 13750);
+});
+
+test("Wipe all previous snapshots and initialize fresh snapshot for today", () => {
+  const { recordDailyNetWorthSnapshot, state } = require("../app.js");
+
+  state.netWorthHistory = [
+    { id: "nwh-old-1", date: "2026-10-01", netWorth: 1000000 },
+    { id: "nwh-old-2", date: "2026-10-02", netWorth: 1050000 }
+  ];
+
+  // User requested: wipe previous snapshots and start fresh today
+  state.netWorthHistory = [];
+  const freshSnap = recordDailyNetWorthSnapshot({ source: "fresh-today" });
+
+  assert.strictEqual(state.netWorthHistory.length, 1);
+  assert.strictEqual(state.netWorthHistory[0].source, "fresh-today");
+  assert.strictEqual(freshSnap.id, state.netWorthHistory[0].id);
+  assert.ok(freshSnap.totalAssets > 0);
+  assert.ok(freshSnap.gold !== undefined);
+});
+
 console.log("==========================================");
 console.log(`📊 NET WORTH HISTORY TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
 console.log("==========================================");

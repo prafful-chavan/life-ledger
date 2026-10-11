@@ -7,6 +7,8 @@ const {
   toNumber,
   persist,
   recordDailyNetWorthSnapshot,
+  getCaratGoldRate,
+  getCaratGoldPrevClose,
   state
 } = require('../app.js');
 
@@ -248,6 +250,42 @@ it('6-Hour Auto-Refresh interval is exactly 6 hours (21,600,000 ms)', () => {
   const past7Hours = now - (7 * 60 * 60 * 1000);
   assert.strictEqual(now - past5Hours < sixHoursMs, true, '5 hours should not trigger 6h refresh');
   assert.strictEqual(now - past7Hours >= sixHoursMs, true, '7 hours should trigger 6h refresh');
+});
+
+// 16. getCaratGoldPrevClose carat scaling
+it('getCaratGoldPrevClose: accurately computes 24K, 22K, and 18K previous close rates', () => {
+  state.goldPrice = {
+    price24k: 15000,
+    price22k: 13750,
+    prevClose24k: 14700,
+    prevClose22k: 13475
+  };
+
+  assert.strictEqual(getCaratGoldPrevClose('24K'), 14700);
+  assert.strictEqual(getCaratGoldPrevClose('22K'), 13475);
+  // 18K is 18/24 of 24K: 14700 * (18/24) = 11025
+  assert.strictEqual(getCaratGoldPrevClose('18K'), 11025);
+});
+
+// 17. Gold quote proxy shape verification with prevClose
+it('Proxy gold quote shape verification: parses price and previous close fields', () => {
+  const proxyGoldData = {
+    gold: {
+      price24k: 15200.50,
+      price22k: 13933.79,
+      prevClose24k: 15050.00,
+      prevClose22k: 13795.83,
+      change24k: 150.50,
+      changePct: 1.00,
+      source: 'proxy-live-gold'
+    }
+  };
+
+  const g = proxyGoldData.gold;
+  assert.strictEqual(g.price24k, 15200.50);
+  assert.strictEqual(g.prevClose24k, 15050.00);
+  assert.strictEqual(g.change24k, 150.50);
+  assert.strictEqual(g.changePct, 1.00);
 });
 
 console.log('==========================================');

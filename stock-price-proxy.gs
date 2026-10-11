@@ -742,9 +742,28 @@ function fetchLiveGold() {
         // Physical retail gold with customs (~6%) and GST (3%) in India (~10% total)
         var p24 = Number((spot24k * 1.10).toFixed(2));
         var p22 = Number((p24 * (22 / 24)).toFixed(2));
+        var pc24 = p24;
+        var pc22 = p22;
+        var ch = Number(data.ch || data.change || 0);
+        if (data.prev_close_price && Number(data.prev_close_price) > 0) {
+          var prevSpot24k = (Number(data.prev_close_price) * usdInr) / 31.1034768;
+          pc24 = Number((prevSpot24k * 1.10).toFixed(2));
+          pc22 = Number((pc24 * (22 / 24)).toFixed(2));
+        } else if (ch !== 0) {
+          var prevUsd = usdPrice - ch;
+          var prevSpot24k = (prevUsd * usdInr) / 31.1034768;
+          pc24 = Number((prevSpot24k * 1.10).toFixed(2));
+          pc22 = Number((pc24 * (22 / 24)).toFixed(2));
+        }
+        var ch24 = Number((p24 - pc24).toFixed(2));
+        var chPct = pc24 > 0 ? Number(((ch24 / pc24) * 100).toFixed(2)) : 0;
         return {
           price24k: p24,
           price22k: p22,
+          prevClose24k: pc24,
+          prevClose22k: pc22,
+          change24k: ch24,
+          changePct: chPct,
           gold24k: p24,
           gold22k: p22,
           currency: "INR",
@@ -763,15 +782,25 @@ function fetchLiveGold() {
   try {
     var sheet = getSharedPriceSheet();
     sheet.getRange(99, 1).setFormula('=IFERROR(GOOGLEFINANCE("NSE:GOLDBEES", "price"), 0)');
+    sheet.getRange(99, 2).setFormula('=IFERROR(GOOGLEFINANCE("NSE:GOLDBEES", "closeyest"), 0)');
     SpreadsheetApp.flush();
     var beesPrice = Number(sheet.getRange(99, 1).getValue()) || 0;
+    var beesCloseYest = Number(sheet.getRange(99, 2).getValue()) || 0;
     if (beesPrice > 50 && beesPrice < 250) {
       // 1 unit of GOLDBEES is ~0.01g gold, so beesPrice * 100 is price per gram 24K in INR
       var p24 = Number((beesPrice * 100).toFixed(2));
       var p22 = Number((p24 * (22 / 24)).toFixed(2));
+      var pc24 = beesCloseYest > 0 ? Number((beesCloseYest * 100).toFixed(2)) : p24;
+      var pc22 = Number((pc24 * (22 / 24)).toFixed(2));
+      var ch24 = Number((p24 - pc24).toFixed(2));
+      var chPct = pc24 > 0 ? Number(((ch24 / pc24) * 100).toFixed(2)) : 0;
       return {
         price24k: p24,
         price22k: p22,
+        prevClose24k: pc24,
+        prevClose22k: pc22,
+        change24k: ch24,
+        changePct: chPct,
         gold24k: p24,
         gold22k: p22,
         currency: "INR",

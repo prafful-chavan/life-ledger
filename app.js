@@ -35,7 +35,7 @@ const defaultData = {
   chat: [],
   mfMonthlyTarget: { me: 100000, wife: 100000 },
   interviewTrackerEntries: [],
-  goldPrice: { price24k: 14955.27, price22k: 13709.00, lastFetched: null, source: "reference" },
+  goldPrice: { price24k: 14955.27, price22k: 13709.00, prevClose24k: 14955.27, prevClose22k: 13709.00, lastFetched: null, source: "reference" },
   netWorthHistory: [],
 };
 
@@ -492,9 +492,20 @@ function bootstrapApp(initialState) {
     bindNetWorthHistoryEvents();
     isAppInitialized = true;
   }
+
+  // User requested: Delete all previously stored snapshots and start fresh today
+  const NWH_RESET_PREVIOUS_KEY = "lifeLedger_nwh_reset_to_today_v1";
+  if (typeof localStorage !== "undefined" && localStorage.getItem(NWH_RESET_PREVIOUS_KEY) !== "done") {
+    state.netWorthHistory = [];
+    try {
+      localStorage.setItem(NWH_RESET_PREVIOUS_KEY, "done");
+    } catch {}
+    persist();
+  }
+
   renderAll();
   try {
-    recordDailyNetWorthSnapshot({ source: "startup" });
+    recordDailyNetWorthSnapshot({ source: "fresh-today" });
   } catch (err) {
     console.warn("[Startup] Initial snapshot error:", err);
   }
@@ -797,6 +808,25 @@ function getCaratGoldRate(carat = "22K") {
   return GOLD_BENCHMARK_22K;
 }
 
+function getCaratGoldPrevClose(carat = "22K") {
+  const c = String(carat || "").toUpperCase().trim();
+  const pc22 = Number(state?.goldPrice?.prevClose22k);
+  const pc24 = Number(state?.goldPrice?.prevClose24k);
+  if (c.includes("24")) {
+    if (pc24 && pc24 > 0) return pc24;
+    if (pc22 && pc22 > 0) return Number((pc22 / (22 / 24)).toFixed(2));
+    return getCaratGoldRate("24K");
+  }
+  if (c.includes("18")) {
+    const base24 = pc24 && pc24 > 0 ? pc24 : (pc22 && pc22 > 0 ? pc22 / (22 / 24) : getCaratGoldRate("24K"));
+    return Number((base24 * (18 / 24)).toFixed(2));
+  }
+  // Default 22K:
+  if (pc22 && pc22 > 0) return pc22;
+  if (pc24 && pc24 > 0) return Number((pc24 * (22 / 24)).toFixed(2));
+  return getCaratGoldRate("22K");
+}
+
 function normalizeGoldHolding(item) {
   const carat = item.carat || "22K";
   let weightGrams = toNumber(item.weightGrams || item.weight);
@@ -944,9 +974,14 @@ function normalizeData(data) {
         price24k = Number((price22k / (22 / 24)).toFixed(2));
       }
 
+      const prevClose24k = toNumber(gp.prevClose24k) || price24k || GOLD_BENCHMARK_24K;
+      const prevClose22k = toNumber(gp.prevClose22k) || price22k || GOLD_BENCHMARK_22K;
+
       return {
         price24k: price24k || GOLD_BENCHMARK_24K,
         price22k: price22k || GOLD_BENCHMARK_22K,
+        prevClose24k,
+        prevClose22k,
         lastFetched: gp.lastFetched || null,
         source: gp.source || "reference"
       };
@@ -4335,6 +4370,54 @@ function calculatePortfolio1DayChange() {
     });
   });
 
+  // 4. Physical / Sovereign Gold Assets (24K, 22K, 18K)
+  let totalGoldValINR = 0;
+  let totalGoldDayChangeINR = 0;
+  let hasGoldDayChange = false;
+
+  (state.gold || []).forEach(item => {
+    const weight = toNumber(item.weightGrams || item.weight);
+    if (weight > 0) {
+      const carat = item.carat || "22K";
+      const curRate = getCaratGoldRate(carat);
+      const prevRate = getCaratGoldPrevClose(carat);
+      const curVal = weight * curRate;
+      totalGoldValINR += curVal;
+
+      if (prevRate > 0) {
+        const dayChange = weight * (curRate - prevRate);
+        totalGoldDayChangeINR += dayChange;
+        if (Math.abs(curRate - prevRate) > 0.001) {
+          hasGoldDayChange = true;
+        }
+      }
+    }
+  });
+
+  // Fallback: If live quote prevRate was identical to curRate, check yesterday's net worth history snapshot
+  if (!hasGoldDayChange && totalGoldValINR > 0) {
+    const today = todayISO();
+    const prevSnap = (state.netWorthHistory || [])
+      .filter(entry => entry.date < today && entry.gold !== undefined && entry.gold !== null)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    if (prevSnap && prevSnap.gold > 0) {
+      const histDiff = totalGoldValINR - Number(prevSnap.gold);
+      if (Math.abs(histDiff) > 0.01) {
+        totalGoldDayChangeINR = histDiff;
+        hasGoldDayChange = true;
+      }
+    }
+  }
+
+  if (totalGoldValINR > 0) {
+    totalPortfolioValueINR += totalGoldValINR;
+    const goldQuoteActive = (state.goldPrice && state.goldPrice.price24k > 0 && (hasGoldDayChange || state.goldPrice.prevClose24k > 0 || state.goldPrice.lastFetched));
+    if (goldQuoteActive) {
+      total1DayChangeINR += totalGoldDayChangeINR;
+      hasData = true;
+    }
+  }
+
   const prevValINR = totalPortfolioValueINR - total1DayChangeINR;
   const changePct = hasData && prevValINR > 0 ? (total1DayChangeINR / prevValINR) * 100 : 0;
 
@@ -4367,7 +4450,7 @@ function renderMetrics() {
         ? `<span style="color:${dayColor}">${dayArrow} ${formatINR(Math.abs(dayChangeMetrics.total1DayChangeINR))}</span>`
         : '—',
       hint: dayChangeMetrics.hasData
-        ? `<span style="color:${dayColor}">${dayChangeMetrics.total1DayChangeINR >= 0 ? '+' : ''}${dayChangeMetrics.changePct.toFixed(2)}% today (MF + Stocks + US)</span>`
+        ? `<span style="color:${dayColor}">${dayChangeMetrics.total1DayChangeINR >= 0 ? '+' : ''}${dayChangeMetrics.changePct.toFixed(2)}% today (MF, Stocks, US & Gold)</span>`
         : 'Refresh prices to calculate',
       isHTML: true,
       customBorder: `3px solid ${dayColor}`
@@ -7106,7 +7189,16 @@ function calcStockTotalValue(stockList) {
 }
 
 function calcGoldTotalValue() {
-  return (state.gold || []).reduce((total, item) => total + (toNumber(item.value) || 0), 0);
+  return (state.gold || []).reduce((total, item) => {
+    const val = toNumber(item.value);
+    if (val > 0) return total + val;
+    const weight = toNumber(item.weightGrams || item.weight);
+    if (weight > 0) {
+      const rate = getCaratGoldRate(item.carat);
+      return total + Number((weight * rate).toFixed(2));
+    }
+    return total;
+  }, 0);
 }
 
 function investmentHoldingsTotal() {
@@ -7253,9 +7345,12 @@ async function fetchLiveGoldPrice(force = false) {
   try {
     const manualRate = parseFloat(localStorage.getItem(GOLD_MANUAL_RATE_22K_KEY));
     if (manualRate > 0) {
+      const p24 = Number((manualRate / (22 / 24)).toFixed(2));
       state.goldPrice = {
         price22k: manualRate,
-        price24k: Number((manualRate / (22 / 24)).toFixed(2)),
+        price24k: p24,
+        prevClose22k: state.goldPrice?.prevClose22k || manualRate,
+        prevClose24k: state.goldPrice?.prevClose24k || p24,
         lastFetched: new Date().toISOString(),
         source: "manual"
       };
@@ -7295,23 +7390,36 @@ async function fetchLiveGoldPrice(force = false) {
         const gData = data?.gold || data;
         const p22 = Number(gData?.price22k || gData?.rate22k || gData?.gold22k || gData?.gold_22k);
         const p24 = Number(gData?.price24k || gData?.rate24k || gData?.gold24k || gData?.gold_24k || gData?.price || gData?.rate);
+        const pc24 = Number(gData?.prevClose24k || gData?.prev_close_24k || gData?.prevClose || gData?.prev_close);
+        const pc22 = Number(gData?.prevClose22k || gData?.prev_close_22k);
+
         if (p24 >= 5000 && p24 <= 35000) {
+          const final22k = p22 && p22 > 0 ? p22 : Number((p24 * (22 / 24)).toFixed(2));
+          const finalPc24 = pc24 && pc24 > 0 ? pc24 : (pc22 && pc22 > 0 ? Number((pc22 / (22 / 24)).toFixed(2)) : (state.goldPrice?.prevClose24k || p24));
+          const finalPc22 = pc22 && pc22 > 0 ? pc22 : Number((finalPc24 * (22 / 24)).toFixed(2));
           state.goldPrice = {
             price24k: p24,
-            price22k: p22 && p22 > 0 ? p22 : Number((p24 * (22 / 24)).toFixed(2)),
+            price22k: final22k,
+            prevClose24k: finalPc24,
+            prevClose22k: finalPc22,
             lastFetched: new Date().toISOString(),
-            source: "proxy"
+            source: gData?.source || "proxy"
           };
           recalculateGoldHoldingsValues();
           persist();
           renderGold();
           return state.goldPrice.price24k;
         } else if (p22 >= 4500 && p22 <= 32000) {
+          const calc24k = Number((p22 / (22 / 24)).toFixed(2));
+          const finalPc22 = pc22 && pc22 > 0 ? pc22 : (pc24 && pc24 > 0 ? Number((pc24 * (22 / 24)).toFixed(2)) : (state.goldPrice?.prevClose22k || p22));
+          const finalPc24 = pc24 && pc24 > 0 ? pc24 : Number((finalPc22 / (22 / 24)).toFixed(2));
           state.goldPrice = {
             price22k: p22,
-            price24k: Number((p22 / (22 / 24)).toFixed(2)),
+            price24k: calc24k,
+            prevClose24k: finalPc24,
+            prevClose22k: finalPc22,
             lastFetched: new Date().toISOString(),
-            source: "proxy"
+            source: gData?.source || "proxy"
           };
           recalculateGoldHoldingsValues();
           persist();
@@ -7354,10 +7462,28 @@ async function fetchLiveGoldPrice(force = false) {
         const pricePerGram24k = Number((spotInrPerGram24k * 1.10).toFixed(2));
         const pricePerGram22k = Number((pricePerGram24k * (22 / 24)).toFixed(2));
 
+        let prevPricePerGram24k = pricePerGram24k;
+        let prevPricePerGram22k = pricePerGram22k;
+        const rawCh = Number(data?.ch || data?.change || 0);
+        if (data?.prev_close_price && Number(data.prev_close_price) > 0) {
+          const prevSpot = (Number(data.prev_close_price) * usdInr) / 31.1034768;
+          prevPricePerGram24k = Number((prevSpot * 1.10).toFixed(2));
+          prevPricePerGram22k = Number((prevPricePerGram24k * (22 / 24)).toFixed(2));
+        } else if (rawCh !== 0) {
+          const prevSpot = ((usdPrice - rawCh) * usdInr) / 31.1034768;
+          prevPricePerGram24k = Number((prevSpot * 1.10).toFixed(2));
+          prevPricePerGram22k = Number((prevPricePerGram24k * (22 / 24)).toFixed(2));
+        } else if (state.goldPrice?.prevClose24k && state.goldPrice.prevClose24k > 0) {
+          prevPricePerGram24k = state.goldPrice.prevClose24k;
+          prevPricePerGram22k = state.goldPrice.prevClose22k || Number((prevPricePerGram24k * (22 / 24)).toFixed(2));
+        }
+
         if (pricePerGram24k >= 5000 && pricePerGram24k <= 35000) {
           state.goldPrice = {
             price24k: pricePerGram24k,
             price22k: pricePerGram22k,
+            prevClose24k: prevPricePerGram24k,
+            prevClose22k: prevPricePerGram22k,
             lastFetched: new Date().toISOString(),
             source: "gold-api.com"
           };
@@ -7377,6 +7503,8 @@ async function fetchLiveGoldPrice(force = false) {
     state.goldPrice = {
       price24k: GOLD_BENCHMARK_24K,
       price22k: GOLD_BENCHMARK_22K,
+      prevClose24k: GOLD_BENCHMARK_24K,
+      prevClose22k: GOLD_BENCHMARK_22K,
       lastFetched: new Date().toISOString(),
       source: "reference"
     };
@@ -7733,6 +7861,7 @@ function bindGoldEvents() {
   // Set rate button in banner
   document.getElementById("goldEditRateBtn")?.addEventListener("click", () => {
     const current22k = getCaratGoldRate("22K");
+    const current24k = getLatestGoldPrice24k();
     const val = prompt("Enter current 22K Gold Rate per gram (₹):", current22k ? current22k.toFixed(2) : "13709.00");
     if (val !== null) {
       const parsed = parseFloat(val);
@@ -7741,6 +7870,8 @@ function bindGoldEvents() {
         state.goldPrice = {
           price22k: parsed,
           price24k: rate24k,
+          prevClose22k: current22k && current22k > 0 ? current22k : parsed,
+          prevClose24k: current24k && current24k > 0 ? current24k : rate24k,
           lastFetched: new Date().toISOString(),
           source: "manual"
         };
@@ -7974,7 +8105,7 @@ function renderNetWorthHistory() {
       <article class="metric-card">
         <div class="label">Today's 1-Day Change</div>
         <div class="value" style="color:${dayColor};">${daySign}${formatINR(currentDayChange)}</div>
-        <div class="hint" style="color:${dayColor}; font-weight:600;">${daySign}${currentDayChangePct}% daily movement</div>
+        <div class="hint" style="color:${dayColor}; font-weight:600;">${daySign}${currentDayChangePct}% daily movement (MF, Stocks, US &amp; Gold)</div>
       </article>
       <article class="metric-card">
         <div class="label">All-Time High (Peak)</div>
@@ -8120,6 +8251,19 @@ function deleteNetWorthSnapshot(id) {
   toast(`🗑️ Net worth record for ${formatDate(item.date)} deleted.`);
 }
 
+function clearAllNetWorthHistory() {
+  if (typeof confirm === 'function' && !confirm("Are you sure you want to delete all previous net worth snapshots? This will clear history and capture a fresh snapshot for today.")) {
+    return;
+  }
+  state.netWorthHistory = [];
+  recordDailyNetWorthSnapshot({ source: "fresh-today" });
+  persist();
+  if (typeof renderNetWorthHistory === 'function') {
+    renderNetWorthHistory();
+  }
+  toast("🗑️ All previous snapshots deleted. Fresh snapshot recorded for today!");
+}
+
 function bindNetWorthHistoryEvents() {
   const handleSnapshot = () => {
     const snap = recordDailyNetWorthSnapshot({ source: "manual" });
@@ -8135,6 +8279,9 @@ function bindNetWorthHistoryEvents() {
   document.getElementById("nwhDownloadCsvBtn2")?.addEventListener("click", downloadNetWorthHistoryCSV);
 
   document.getElementById("nwhRefreshPricesBtn")?.addEventListener("click", () => refreshAllLivePrices(true));
+
+  document.getElementById("nwhClearAllBtn")?.addEventListener("click", clearAllNetWorthHistory);
+  document.getElementById("nwhClearAllBtn2")?.addEventListener("click", clearAllNetWorthHistory);
 
   document.getElementById("nwhTableBody")?.addEventListener("click", (e) => {
     const delBtn = e.target.closest(".delete-nwh-btn");
@@ -14858,6 +15005,12 @@ if (typeof module !== 'undefined' && module.exports) {
     initBrokerAutoRefresh,
     persist,
     recordDailyNetWorthSnapshot,
+    calculatePortfolio1DayChange,
+    getCaratGoldRate,
+    getCaratGoldPrevClose,
+    getLatestGoldPrice24k,
+    clearAllNetWorthHistory,
+    captureCurrentNetWorthBreakdown,
     state,
     defaultData,
     demoData
