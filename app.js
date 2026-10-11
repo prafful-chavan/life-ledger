@@ -12098,7 +12098,7 @@ function renderBodyCompositionPanel() {
         ${fmtChg(latest.bodyAge, prev?.bodyAge, '', true)}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+    <div class="chart-pair-grid">
       <div class="panel" style="padding:14px;">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">⚖️ Weight Journey (kg)</div>
         <svg id="weightTrendChart" style="width:100%;height:110px;overflow:visible;"></svg>

@@ -5282,15 +5282,6 @@ body[data-theme="dark"] .sortable-th:hover {
 
 /* ─── 4. iPad & Tablets (768px – 1024px) ─────────────────────────────────── */
 @media (min-width: 769px) and (max-width: 1024px) {
-  .app-shell {
-    grid-template-columns: 220px 1fr;
-  }
-
-  .sidebar {
-    width: 220px;
-    padding: 16px 12px;
-  }
-
   .content-area {
     padding: 16px;
   }
@@ -5958,4 +5949,369 @@ body[data-theme="dark"] .sortable-th:hover {
 .action-btn:hover {
   background: var(--surface, rgba(0, 0, 0, 0.04));
   border-color: var(--muted);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI/UX POLISH v2 — responsive hardening & Safari/Chrome parity
+   Loaded last on purpose: unifies the earlier per-feature breakpoints.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Base: consistent rendering across Safari / Chrome / Firefox ─────────── */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100vh; /* fallback for Safari < 15.4 (no dvh) */
+  min-height: 100dvh;
+  overflow-wrap: break-word;
+}
+
+img, svg, video, canvas { max-width: 100%; }
+
+/* Money & numbers: fixed-width digits so columns/cards don't jitter */
+.metric-card .value,
+.nwh-banner-value,
+.holdings-table td,
+.nwh-table td,
+.gold-table td,
+table td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Grid/flex children must be allowed to shrink — the usual cause of text spilling out */
+.app-shell > *,
+.metric-grid > *,
+.split-grid > *,
+.dashboard-layout > *,
+.career-grid > *,
+.goals-layout > *,
+.panel > *,
+.topbar > *,
+.panel-header > *,
+.section-heading > * {
+  min-width: 0;
+}
+
+.panel,
+.metric-card {
+  overflow-wrap: break-word; /* NOT "anywhere": that shrinks min-content and crushes table columns */
+}
+
+/* Keyboard & switch users: visible focus without affecting mouse/touch */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+button:focus:not(:focus-visible) { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* iOS/Safari form control normalisation (rounded corners, no inner shadow) */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+textarea {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="date"],
+input[type="month"],
+input[type="time"] {
+  min-height: 44px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ── Metric cards: numbers always fit their card ──────────────────────────── */
+.metric-card .value {
+  font-size: clamp(1rem, 3.6vw, 1.9rem); /* fallback when container units are unsupported */
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.metric-grid > .metric-card {
+  container-type: inline-size;
+  container-name: metric;
+}
+
+@supports (width: 1cqi) {
+  .metric-grid > .metric-card .value,
+  .metric-grid > .metric-card.compact-metric .value {
+    /* ≈ width of the card content ÷ ~9 characters of a typical ₹ amount */
+    font-size: clamp(0.82rem, 10.6cqi, 1.9rem);
+  }
+}
+
+.metric-card .hint,
+.metric-card .label {
+  overflow-wrap: break-word;
+}
+
+/* Safety net (also applied by ui-polish.js): never let a number poke out of its box */
+.metric-card .value[data-fit-shrunk],
+.nwh-banner-value[data-fit-shrunk] {
+  white-space: nowrap;
+}
+
+.nwh-banner-value,
+#goldLivePriceDisplay {
+  overflow-wrap: break-word;
+}
+
+/* ── App shell: desktop ≥ 1081px — sidebar + content ─────────────────────── */
+@media (min-width: 1081px) {
+  .sidebar {
+    height: 100vh;
+    height: 100dvh;
+  }
+}
+
+/* Short laptop screens (e.g. 13" MacBook, 1366×768): give the nav the room, compact the footer */
+@media (min-width: 1081px) and (max-height: 900px) {
+  .sidebar { padding: 16px 16px 14px; }
+  .brand-block { margin-bottom: 14px; }
+  .nav-list { gap: 4px; }
+  .nav-item { padding: 8px 10px; }
+  .sidebar-footer {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding-top: 10px;
+  }
+  .sidebar-footer > p { grid-column: 1 / -1; margin: 0; }
+  .sidebar-footer .ghost-button {
+    min-height: 36px;
+    margin: 0;
+    padding: 0 8px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  .sidebar-footer #logoutButton { grid-column: 1 / -1; }
+}
+
+/* ── App shell: tablet & phone ≤ 1080px — top bar layout (iPad portrait/landscape too) ── */
+@media (max-width: 1080px) {
+  .app-shell { grid-template-columns: minmax(0, 1fr); }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    width: auto;
+    height: auto;
+    padding: 10px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+
+  .brand-block { margin-bottom: 8px; }
+
+  .nav-list {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* soft fade on the right edge to hint that the strip scrolls */
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .nav-list::-webkit-scrollbar { display: none; }
+  .nav-item { scroll-snap-align: start; }
+
+  .main-content {
+    width: 100%;
+    padding: 16px max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+
+  .topbar { padding: 0; margin-bottom: 16px; }
+
+  /* Layout grids: single column on tablet portrait and down */
+  .split-grid,
+  .dashboard-layout,
+  .career-grid,
+  .goals-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* iPad (portrait & landscape): 2-column metric cards that stay readable */
+@media (min-width: 681px) and (max-width: 1080px) {
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-card { min-height: 112px; }
+}
+
+/* ── Phones ≤ 680px ───────────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .main-content { padding-top: 14px; }
+
+  /* Action buttons inside panels/banners wrap onto rows instead of being cut off */
+  .topbar-actions {
+    flex-wrap: wrap !important;
+    overflow: visible;
+    margin: 0;
+    padding: 0 !important;
+  }
+  .topbar-actions > button { flex: 1 1 auto; }
+
+  /* The page header's own actions: one tidy scrolling row instead of 3 wrapped rows */
+  header.topbar .topbar-actions {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    width: calc(100% + 32px) !important;
+    max-width: none;
+    margin: 0 -16px;
+    padding: 2px 16px 6px !important;
+    scroll-padding: 0 16px;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+  header.topbar .topbar-actions > * { flex: 0 0 auto; scroll-snap-align: start; }
+
+  .metric-grid { gap: 10px; }
+  .metric-card { min-height: 0; padding: 12px 14px; }
+  .metric-card .value { margin: 8px 0 4px; }
+
+  /* An odd last card spans the row instead of leaving a hole */
+  .metric-grid > .metric-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+  /* Section headers: consistent gutters */
+  .section-heading,
+  .panel-header { gap: 10px; }
+  .panel { padding: 14px; }
+}
+
+/* Very small phones (iPhone SE / mini ≤ 375px) */
+@media (max-width: 375px) {
+  .metric-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .main-content { padding-left: 12px; padding-right: 12px; }
+}
+
+/* ── Tables: always scroll inside their box, never push the page wider ───── */
+.table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Keep symbols, numbers and dates whole — the table scrolls sideways instead of crushing columns.
+   Long text cells (names, notes) are tagged .cell-wrap by ui-polish.js and may wrap. */
+.table-wrap th,
+.table-wrap td {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.table-wrap td.cell-wrap {
+  white-space: normal;
+  min-width: 180px;
+  max-width: 360px;
+}
+
+@media (max-width: 680px) {
+  /* keep the first column (symbol / fund / date) visible while scrolling sideways */
+  .holdings-table tbody td:first-child,
+  .holdings-table thead th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--card-solid, var(--panel));
+  }
+}
+
+/* ── Modals: Safari-safe viewport units ──────────────────────────────────── */
+@media (max-width: 680px) {
+  .modal-window,
+  .modal-card,
+  .modal-content {
+    max-height: 90vh !important;
+    max-height: 90dvh !important;
+  }
+}
+
+/* ── Dark mode touch-ups so nothing looks washed out ──────────────────────── */
+body[data-theme="dark"] .metric-card .hint,
+body[data-theme="dark"] .metric-card .label {
+  color: var(--muted);
+}
+
+/* ── Print: just the content ─────────────────────────────────────────────── */
+@media print {
+  .sidebar, .topbar-actions, .toast { display: none !important; }
+  .app-shell { display: block; }
+  .main-content { width: 100%; padding: 0; }
+}
+
+
+/* ── Chart pairs, filter chips and inline-styled grids (rendered by JS/HTML) ── */
+.chart-pair-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.chart-pair-grid > .panel { min-width: 0; overflow: hidden; }
+.chart-pair-grid svg { max-width: 100%; }
+
+/* Chip rows scroll inside their own box instead of widening the page */
+.activity-filter-chips,
+.owner-toggle,
+.broker-toggle,
+.view-toggle {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* The exercise / habit stat rows are inline-styled with 4 fixed columns — make them responsive */
+@media (max-width: 1080px) {
+  .exercise-stats-grid,
+  .metric-grid[style*="repeat(4, 1fr)"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+}
+@media (max-width: 375px) {
+  .exercise-stats-grid,
+  .metric-grid[style*="repeat(4, 1fr)"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* Modal forms: 3-column inline rows become 2 columns on phones so inputs stay usable */
+@media (max-width: 560px) {
+  [style*="grid-template-columns:1fr 1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .streak-cal-grid { gap: 3px !important; }
+}
+
+@media (max-width: 680px) {
+  /* Banner / panel action rows: tidy 2-per-row buttons */
+  .nwh-banner .topbar-actions,
+  .panel-header .topbar-actions {
+    width: 100%;
+  }
+  .nwh-banner .topbar-actions > button,
+  .panel-header .topbar-actions > button {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    padding: 0 8px;
+    font-size: 14px;
+    white-space: normal;
+    line-height: 1.2;
+  }
 }
