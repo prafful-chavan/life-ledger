@@ -9457,6 +9457,155 @@ function saveItvEntry() {
   renderInterviewTracker();
 }
 
+
+// ── CSV Import / Export ───────────────────────────────────────────────────
+// Accepts the same columns as the interview tracker sheet (Interview Date, Company Name, Role / Position,
+// Outcome / Feedback, Round / Stage, Email Subject Line, Recruiter Name, HR Contact Number, Interviewer Name,
+// Interviewer LinkedIn, Questions Asked, plus optional Notes and Verification). "NA" cells become empty.
+
+const ITV_IMPORT_HEADERS = {
+  "interview date": "date", "date": "date",
+  "company name": "company", "company": "company",
+  "role position": "role", "role": "role", "position": "role",
+  "outcome feedback": "outcome", "outcome": "outcome", "feedback": "outcome",
+  "round stage": "round", "round": "round", "stage": "round",
+  "email subject line": "emailSubject", "email subject": "emailSubject", "subject": "emailSubject",
+  "recruiter name": "recruiter", "recruiter": "recruiter",
+  "hr contact number": "hrContact", "hr contact": "hrContact", "phone": "hrContact",
+  "interviewer name": "interviewer", "interviewer": "interviewer",
+  "interviewer linkedin": "linkedin", "linkedin": "linkedin",
+  "questions asked": "questions", "questions": "questions",
+  "notes": "notes", "verification": "verification",
+};
+
+function itvNormalizeHeader(h) {
+  return String(h || "").replace(/^﻿/, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function itvCleanCell(v) {
+  const s = String(v ?? "").trim();
+  return /^(na|n\/a|-|—|none|null)$/i.test(s) ? "" : s;
+}
+
+// Maps free-text outcomes ("Completed (Rejected)", "Selected / Joined"...) to the tracker's 4 feedback values.
+function itvMapOutcomeToFeedback(text) {
+  const t = String(text || "").toLowerCase();
+  if (!t.trim()) return "Pending";
+  if (/rejected|not selected|failed|no show|not advanced|farewell|removed from|not shortlisted|did not proceed/.test(t)) return "Negative";
+  if (/offer|selected|joined|cleared|moved to round|proceed|positive/.test(t)) return "Positive";
+  if (/cancel|reschedul/.test(t)) return "Hold";
+  return "Pending";
+}
+
+// DD/MM/YYYY (day first), D-M-YYYY or YYYY-MM-DD → YYYY-MM-DD; "" when unreadable.
+function itvParseImportDate(v) {
+  const s = String(v || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if (!m) return "";
+  const day = Number(m[1]), month = Number(m[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+  return `${m[3]}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseInterviewTrackerCSV(text) {
+  // parseCSV returns one object per data row, keyed by the header text
+  const records = parseCSV(String(text || "").replace(/^\uFEFF/, ""));
+  if (!records.length) return { entries: [], skipped: 0, error: "The file is empty." };
+  const fieldOf = Object.fromEntries(Object.keys(records[0]).map(h => [h, ITV_IMPORT_HEADERS[itvNormalizeHeader(h)] || null]));
+  const fields = Object.values(fieldOf);
+  if (!fields.includes("company") || !fields.includes("date")) {
+    return { entries: [], skipped: 0, error: "Could not find the 'Interview Date' and 'Company Name' columns." };
+  }
+  const entries = [];
+  let skipped = 0;
+  records.forEach((record) => {
+    const rec = {};
+    Object.entries(record).forEach(([header, value]) => { if (fieldOf[header]) rec[fieldOf[header]] = itvCleanCell(value); });
+    if (!Object.values(rec).some(Boolean)) return;
+    const date = itvParseImportDate(rec.date);
+    if (!date || !rec.company) { skipped += 1; return; }
+    const noteParts = [];
+    if (rec.outcome) noteParts.push(`Outcome: ${rec.outcome}`);
+    if (rec.notes) noteParts.push(rec.notes);
+    if (rec.verification) noteParts.push(`Source check: ${rec.verification}`);
+    entries.push({
+      date,
+      company: rec.company,
+      role: rec.role || "",
+      feedback: itvMapOutcomeToFeedback(rec.outcome),
+      round: rec.round || "",
+      emailSubject: rec.emailSubject || "",
+      recruiter: rec.recruiter || "",
+      hrContact: rec.hrContact || "",
+      interviewer: rec.interviewer || "",
+      linkedin: rec.linkedin || "",
+      questions: rec.questions || "",
+      notes: noteParts.join("\n"),
+    });
+  });
+  return { entries, skipped, error: "" };
+}
+
+function itvEntryKey(e) {
+  return `${e.date}|${String(e.company || "").trim().toLowerCase()}|${String(e.round || "").trim().toLowerCase()}`;
+}
+
+// Adds only entries that are not already present (same date + company + round).
+function mergeInterviewEntries(existing, incoming) {
+  const seen = new Set((existing || []).map(itvEntryKey));
+  const added = [];
+  let duplicates = 0;
+  (incoming || []).forEach((e) => {
+    const key = itvEntryKey(e);
+    if (seen.has(key)) { duplicates += 1; return; }
+    seen.add(key);
+    added.push({ ...e, id: `itv-${generateUUID()}` });
+  });
+  return { added, duplicates };
+}
+
+function importInterviewTrackerFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const parsed = parseInterviewTrackerCSV(reader.result);
+    if (parsed.error) { toast(`⚠️ ${parsed.error}`); return; }
+    const { added, duplicates } = mergeInterviewEntries(state.interviewTrackerEntries, parsed.entries);
+    if (added.length === 0) {
+      toast(`ℹ️ Nothing new to import (${duplicates} already in the tracker${parsed.skipped ? `, ${parsed.skipped} unreadable rows` : ""}).`);
+      return;
+    }
+    if (!confirm(`Import ${added.length} interview entr${added.length === 1 ? "y" : "ies"}?\n\n${duplicates} already in the tracker will be skipped${parsed.skipped ? `, ${parsed.skipped} unreadable rows ignored` : ""}.`)) return;
+    if (!state.interviewTrackerEntries) state.interviewTrackerEntries = [];
+    state.interviewTrackerEntries.push(...added);
+    saveData();
+    renderInterviewTracker();
+    toast(`✅ Imported ${added.length} interview entr${added.length === 1 ? "y" : "ies"}.`);
+  };
+  reader.onerror = () => toast("⚠️ Could not read that file.");
+  reader.readAsText(file);
+}
+
+function exportInterviewTrackerCSV() {
+  const entries = (state.interviewTrackerEntries || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (entries.length === 0) { toast("⚠️ No interview entries to export yet."); return; }
+  const headers = ["Interview Date", "Company Name", "Role / Position", "Outcome / Feedback", "Round / Stage", "Email Subject Line", "Recruiter Name", "HR Contact Number", "Interviewer Name", "Interviewer LinkedIn", "Questions Asked", "Notes"];
+  const dmy = (iso) => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ""); };
+  const lines = entries.map(e => [dmy(e.date), e.company, e.role, e.feedback, e.round, e.emailSubject, e.recruiter, e.hrContact, e.interviewer, e.linkedin, e.questions, e.notes]
+    .map(v => `"${String(v || "NA").replace(/"/g, '""')}"`).join(","));
+  const blob = new Blob(["﻿" + [headers.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `LifeLedger_Interview_Tracker_${todayISO()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  toast("📤 Interview tracker exported.");
+}
+
 // ── Bind Interview Tracker Controls ──────────────────────────────────────
 
 let isItvBound = false;
@@ -9497,6 +9646,15 @@ function bindInterviewTracker() {
     itvFeedbackFilter = e.target.value;
     renderInterviewTracker();
   });
+
+  // CSV import / export
+  const importInput = document.getElementById("itvImportFile");
+  document.getElementById("itvImportBtn")?.addEventListener("click", () => importInput?.click());
+  importInput?.addEventListener("change", (e) => {
+    importInterviewTrackerFile(e.target.files?.[0]);
+    e.target.value = "";
+  });
+  document.getElementById("itvExportBtn")?.addEventListener("click", exportInterviewTrackerCSV);
 }
 
 let isInterviewControlsInitialized = false;
@@ -15637,6 +15795,10 @@ if (typeof module !== 'undefined' && module.exports) {
     STOCK_HEADER_ALIASES,
     detectBrokerFromHeaders,
     parseBrokerStockCSV,
+    parseInterviewTrackerCSV,
+    mergeInterviewEntries,
+    itvMapOutcomeToFeedback,
+    itvParseImportDate,
     parseCSVDate,
     defaultStockHoldings,
     defaultUsStockHoldings,

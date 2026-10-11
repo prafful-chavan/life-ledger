@@ -6315,3 +6315,12 @@ body[data-theme="dark"] .metric-card .label {
     line-height: 1.2;
   }
 }
+
+/* Interview tracker: long company names (e.g. "X (via Y / Z)") wrap instead of running past the card */
+.itv-card-header-left > * { min-width: 0; }
+.itv-company-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+.itv-action-bar { flex-wrap: wrap; }
