@@ -776,6 +776,8 @@ function getCaratMultiplier(carat) {
   return 22 / 24;
 }
 
+// Calibrated 11 Oct 2026: India 24K base rate ₹14,957/g (8 Oct, excl. GST) ÷ LBMA spot converted at USD/INR 96.73 ≈ 1.146
+const GOLD_INDIA_PREMIUM = 1.146;
 const GOLD_BENCHMARK_24K = 14955.27;
 const GOLD_BENCHMARK_22K = 13709.00;
 const GOLD_MANUAL_RATE_22K_KEY = "lifeLedgerGoldRate22k";
@@ -4350,8 +4352,8 @@ function calculatePortfolio1DayChange() {
     });
   });
 
-  // 3. US Stocks (converted to INR at ~84.50 rate)
-  const usdInrRate = 84.50;
+  // 3. US Stocks (converted to INR at the live USD/INR rate)
+  const usdInrRate = getUsdInrRate();
   const cache = typeof getStockPriceCache === 'function' ? getStockPriceCache() : {};
   const usStockGroups = {};
   (state.usstocks || []).forEach(s => {
@@ -5677,7 +5679,49 @@ function renderMutualFundsPanel() {
 
 const STOCK_PRICE_CACHE_KEY = 'lifeLedgerStockPriceCache:v1';
 const STOCK_PROXY_URL_KEY = 'lifeLedgerStockProxyUrl';
+const USD_INR_CACHE_KEY = 'lifeLedgerUsdInrRate:v1';
+const USD_INR_FALLBACK = 96.7;
 let activeStockBroker = "All";
+
+// Last known USD→INR rate (sync). Refreshed by refreshUsdInrRate() on every price refresh.
+function getUsdInrRate() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(USD_INR_CACHE_KEY) || 'null');
+    if (cached && cached.rate > 50 && cached.rate < 200) return cached.rate;
+  } catch {}
+  return USD_INR_FALLBACK;
+}
+
+// Live USD→INR: Apps Script proxy (?fx=1) first, then public CORS-friendly FX APIs.
+async function refreshUsdInrRate() {
+  const rawProxy = typeof localStorage !== 'undefined' ? localStorage.getItem(STOCK_PROXY_URL_KEY) : null;
+  const proxyUrl = rawProxy ? rawProxy.trim().replace(/^["']|["']$/g, '').replace(/\?+$/, '') : '';
+  const sources = [];
+  if (proxyUrl) {
+    sources.push({ url: `${proxyUrl}${proxyUrl.includes('?') ? '&' : '?'}fx=1`, pick: d => d?.usdInr ?? d?.rate });
+  }
+  sources.push(
+    { url: 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=INR', pick: d => d?.rates?.INR },
+    { url: 'https://open.er-api.com/v6/latest/USD', pick: d => d?.rates?.INR }
+  );
+  for (const src of sources) {
+    try {
+      const res = await fetch(src.url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const rate = Number(src.pick(await res.json()));
+      if (rate > 50 && rate < 200) {
+        try { localStorage.setItem(USD_INR_CACHE_KEY, JSON.stringify({ rate, timestamp: Date.now() })); } catch {}
+        return rate;
+      }
+    } catch {}
+  }
+  return getUsdInrRate();
+}
+
+// US stock holdings are stored in USD; net worth and totals are in INR.
+function calcUsStockTotalValueINR() {
+  return calcStockTotalValue(state.usstocks) * getUsdInrRate();
+}
 
 const defaultStockHoldings = [
   // ── Upstox Holdings (8 ETFs) ──
@@ -7115,6 +7159,7 @@ function renderUsStockHoldingsPanel() {
 async function refreshAllLivePrices(force = true) {
   toast('🔄 Refreshing all live prices (Mutual Funds, Indian Stocks, US Stocks & Gold)…');
   const results = { mf: 0, stocks: 0, usstocks: 0, gold: 0 };
+  await refreshUsdInrRate();
   
   const promises = [
     (async () => {
@@ -7271,7 +7316,7 @@ function investmentHoldingsTotal() {
   }, 0);
 
   const stocksTotal = calcStockTotalValue(state.stocks);
-  const usStocksTotal = calcStockTotalValue(state.usstocks);
+  const usStocksTotal = calcUsStockTotalValueINR();
 
   const simpleAssetsTotal = SIMPLE_ASSET_TABS.reduce((total, { stateKey }) => {
     return total + sum(state[stateKey] || [], "value");
@@ -7499,23 +7544,11 @@ async function fetchLiveGoldPrice(force = false) {
       const usdPrice = Number(data?.price);
       if (usdPrice && usdPrice > 0) {
         // Fetch live USD/INR exchange rate with fallback
-        let usdInr = 96.0;
-        try {
-          const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=INR", {
-            headers: { "Accept": "application/json" },
-            signal: AbortSignal.timeout(3500)
-          });
-          if (fxRes.ok) {
-            const fxData = await fxRes.json();
-            if (fxData?.rates?.INR && Number(fxData.rates.INR) > 50) {
-              usdInr = Number(fxData.rates.INR);
-            }
-          }
-        } catch {}
+        const usdInr = await refreshUsdInrRate();
 
         const spotInrPerGram24k = (usdPrice * usdInr) / 31.1034768;
-        // Physical retail gold with customs (~6%) and GST (3%) in India (~10% total)
-        const pricePerGram24k = Number((spotInrPerGram24k * 1.10).toFixed(2));
+        // Indian base rate (excl. GST) = LBMA spot × GOLD_INDIA_PREMIUM (duty + domestic premium)
+        const pricePerGram24k = Number((spotInrPerGram24k * GOLD_INDIA_PREMIUM).toFixed(2));
         const pricePerGram22k = Number((pricePerGram24k * (22 / 24)).toFixed(2));
 
         let prevPricePerGram24k = pricePerGram24k;
@@ -7523,11 +7556,11 @@ async function fetchLiveGoldPrice(force = false) {
         const rawCh = Number(data?.ch || data?.change || 0);
         if (data?.prev_close_price && Number(data.prev_close_price) > 0) {
           const prevSpot = (Number(data.prev_close_price) * usdInr) / 31.1034768;
-          prevPricePerGram24k = Number((prevSpot * 1.10).toFixed(2));
+          prevPricePerGram24k = Number((prevSpot * GOLD_INDIA_PREMIUM).toFixed(2));
           prevPricePerGram22k = Number((prevPricePerGram24k * (22 / 24)).toFixed(2));
         } else if (rawCh !== 0) {
           const prevSpot = ((usdPrice - rawCh) * usdInr) / 31.1034768;
-          prevPricePerGram24k = Number((prevSpot * 1.10).toFixed(2));
+          prevPricePerGram24k = Number((prevSpot * GOLD_INDIA_PREMIUM).toFixed(2));
           prevPricePerGram22k = Number((prevPricePerGram24k * (22 / 24)).toFixed(2));
         } else if (state.goldPrice?.prevClose24k && state.goldPrice.prevClose24k > 0) {
           prevPricePerGram24k = state.goldPrice.prevClose24k;
@@ -8017,7 +8050,7 @@ function captureCurrentNetWorthBreakdown() {
   }, 0).toFixed(2));
 
   const stocks = Number(calcStockTotalValue(state.stocks).toFixed(2));
-  const usStocks = Number(calcStockTotalValue(state.usstocks).toFixed(2));
+  const usStocks = Number(calcUsStockTotalValueINR().toFixed(2));
   const gold = Number(calcGoldTotalValue().toFixed(2));
   const silver = Number(sum(state.silver || [], "value").toFixed(2));
   const crypto = Number(sum(state.crypto || [], "value").toFixed(2));
@@ -12292,7 +12325,7 @@ function answerQuestion(question) {
   const goldVal = sum(state.gold, "value");
   const silverVal = sum(state.silver, "value");
   const cryptoVal = sum(state.crypto, "value");
-  const usStocksVal = calcStockTotalValue(state.usstocks);
+  const usStocksVal = calcUsStockTotalValueINR();
   const bankSavingVal = sum(state.banksaving, "value");
   const othersVal = sum(state.others, "value");
   const registeredAssets = sum(state.assets, "value");
@@ -15064,6 +15097,8 @@ if (typeof module !== 'undefined' && module.exports) {
     persist,
     recordDailyNetWorthSnapshot,
     calculatePortfolio1DayChange,
+    calcUsStockTotalValueINR,
+    getUsdInrRate,
     getCaratGoldRate,
     getCaratGoldPrevClose,
     getLatestGoldPrice24k,

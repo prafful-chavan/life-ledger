@@ -381,11 +381,11 @@ test("Gold is included in calculatePortfolio1DayChange alongside MF, Indian Stoc
 
   // MF day change: 100 * (110 - 100) = 1,000 INR
   // Indian Stocks day change: 10 * (3500 - 3450) = 500 INR
-  // US Stocks day change: 5 * (200 - 190) * 84.50 = 4,225 INR
+  // US Stocks day change: 5 * (200 - 190) * USD/INR (fallback 96.7 when no live rate cached) = 4,835 INR
   // Gold 22K day change: 10 * (13750 - 13600) = 1,500 INR
   // Gold 24K day change: 5 * (15000 - 14800) = 1,000 INR
-  // Expected Total Day Change: 1000 + 500 + 4225 + 1500 + 1000 = 8,225 INR
-  const expectedTotalChange = 1000 + 500 + 4225 + 1500 + 1000;
+  // Expected Total Day Change: 1000 + 500 + 4225 + 1500 + 1000 = 8,835 INR
+  const expectedTotalChange = 1000 + 500 + 4835 + 1500 + 1000;
   assert.strictEqual(Math.round(result.total1DayChangeINR), expectedTotalChange);
 });
 
@@ -429,6 +429,16 @@ test("Wipe all previous snapshots and initialize fresh snapshot for today", () =
   assert.strictEqual(freshSnap.id, state.netWorthHistory[0].id);
   assert.ok(freshSnap.totalAssets > 0);
   assert.ok(freshSnap.gold !== undefined);
+});
+
+test("US stock holdings are converted from USD to INR in net worth totals", () => {
+  const { calcUsStockTotalValueINR, getUsdInrRate, state } = require("../app.js");
+  state.usstocks = [
+    { symbol: "VOO", quantity: 2, currentPrice: 500, avgPrice: 480 }
+  ];
+  const rate = getUsdInrRate();
+  assert.ok(rate > 50 && rate < 200, "USD/INR rate should be sane");
+  assert.strictEqual(Math.round(calcUsStockTotalValueINR()), Math.round(2 * 500 * rate));
 });
 
 console.log("==========================================");

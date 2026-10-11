@@ -1,5 +1,5 @@
 /**
- * Life Ledger — Stock Price Proxy (Google Apps Script) v5.2
+ * Life Ledger — Stock Price Proxy (Google Apps Script) v5.3
  * 
  * High-Speed Multi-Asset Quote Proxy for:
  * 1. US Stocks & ETFs (NASDAQ/NYSE/NYSEARCA): Stooq (<150ms), Nasdaq Real-Time, Yahoo, and native GOOGLEFINANCE
@@ -14,7 +14,7 @@
  * 3. Replace all code in Code.gs with this complete file
  * 4. Click "Deploy" (top right) → "New deployment"
  * 5. Select type: "Web app"
- * 6. Set Description: "Stock Price Proxy v5.2 (Realtime US, India & Gold)"
+ * 6. Set Description: "Stock Price Proxy v5.3 (Realtime US, India & Gold)"
  * 7. Set Execute as: "Me"
  * 8. Set Who has access: "Anyone"
  * 9. Click "Deploy", authorize access, and copy the Web App URL
@@ -401,6 +401,9 @@ function fetchViaNasdaqInternal(symbol, isEtf) {
   return null;
 }
 
+// Calibrated 11 Oct 2026: India 24K base rate Rs14,957/g (8 Oct, excl. GST) / LBMA spot at USD/INR 96.73 = ~1.146
+var GOLD_INDIA_PREMIUM = 1.146;
+
 var SPREADSHEET_PROP_KEY = "LIFE_LEDGER_PRICE_SHEET_ID_V5";
 
 /**
@@ -528,10 +531,19 @@ function doGet(e) {
   if (e && e.parameter && (e.parameter.test || e.parameter.ping)) {
     return createJsonResponse({
       status: "ok",
-      version: "v5.2",
-      message: "Life Ledger Stock Price Proxy v5.2 is active and operational",
+      version: "v5.3",
+      message: "Life Ledger Stock Price Proxy v5.3 is active and operational",
       timestamp: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm:ss a")
     });
+  }
+
+  // Support live USD/INR rate: ?fx=1
+  if (e && e.parameter && e.parameter.fx) {
+    var fxQuote = fetchViaYahooFinance("USDINR=X", true);
+    if (fxQuote && fxQuote.price > 50) {
+      return createJsonResponse({ usdInr: fxQuote.price, prevClose: fxQuote.prevClose, source: "yahoo-fx", date: fxQuote.date });
+    }
+    return createJsonResponse({ error: "Could not fetch USD/INR rate" });
   }
 
   // Support live gold price: ?gold=1 or ?metal=gold
@@ -729,20 +741,20 @@ function fetchLiveGold() {
           Logger.log("FX rate error: " + fxErr);
         }
         var spot24k = (usdPrice * usdInr) / 31.1034768;
-        // Physical retail gold with customs (~6%) and GST (3%) in India (~10% total)
-        var p24 = Number((spot24k * 1.10).toFixed(2));
+        // Indian base rate (excl. GST) = LBMA spot x GOLD_INDIA_PREMIUM (duty + domestic premium)
+        var p24 = Number((spot24k * GOLD_INDIA_PREMIUM).toFixed(2));
         var p22 = Number((p24 * (22 / 24)).toFixed(2));
         var pc24 = p24;
         var pc22 = p22;
         var ch = Number(data.ch || data.change || 0);
         if (data.prev_close_price && Number(data.prev_close_price) > 0) {
           var prevSpot24k = (Number(data.prev_close_price) * usdInr) / 31.1034768;
-          pc24 = Number((prevSpot24k * 1.10).toFixed(2));
+          pc24 = Number((prevSpot24k * GOLD_INDIA_PREMIUM).toFixed(2));
           pc22 = Number((pc24 * (22 / 24)).toFixed(2));
         } else if (ch !== 0) {
           var prevUsd = usdPrice - ch;
           var prevSpot24k = (prevUsd * usdInr) / 31.1034768;
-          pc24 = Number((prevSpot24k * 1.10).toFixed(2));
+          pc24 = Number((prevSpot24k * GOLD_INDIA_PREMIUM).toFixed(2));
           pc22 = Number((pc24 * (22 / 24)).toFixed(2));
         }
         var ch24 = Number((p24 - pc24).toFixed(2));
