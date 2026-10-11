@@ -6257,8 +6257,17 @@ function initStockCSVImport() {
 function getStockPriceCache() {
   try { return JSON.parse(localStorage.getItem(STOCK_PRICE_CACHE_KEY)) || {}; } catch { return {}; }
 }
+// Merge-on-write: the Indian, US and gold refreshes run in parallel, so a plain overwrite let
+// whichever finished last erase the others' prices. Newest timestamp wins per symbol.
 function saveStockPriceCache(cache) {
-  localStorage.setItem(STOCK_PRICE_CACHE_KEY, JSON.stringify(cache));
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(STOCK_PRICE_CACHE_KEY)) || {}; } catch {}
+  const merged = { ...stored };
+  Object.entries(cache || {}).forEach(([key, entry]) => {
+    const current = stored[key];
+    if (!current || toNumber(entry?.timestamp) >= toNumber(current?.timestamp)) merged[key] = entry;
+  });
+  localStorage.setItem(STOCK_PRICE_CACHE_KEY, JSON.stringify(merged));
 }
 function isStockPriceStale(cached) {
   if (!cached || !cached.timestamp) return true;
@@ -7182,11 +7191,11 @@ function renderUsStockHoldingsPanel() {
   ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
 }
 
-// Lists held assets whose price could not be fetched, so a new purchase never fails silently.
+// Lists held assets that still have no live price, so a new purchase never fails silently.
+// Judged on what the holding actually shows (a fetched price / NAV), not on cache internals.
 function reportUnpricedHoldings() {
   const problems = [];
   const nowMs = Date.now();
-  const staleMs = 3 * 24 * 3600 * 1000;
 
   const mfByFund = {};
   (state.mutualFunds || []).forEach(t => {
@@ -7196,17 +7205,24 @@ function reportUnpricedHoldings() {
   Object.entries(mfByFund).forEach(([key, txns]) => {
     if (!(calcMfCostBasis(txns).netUnits > 0)) return;
     const name = key.split('|')[0];
-    const hasCode = txns.some(t => t.schemeCode || t.amfiCode);
     const navISO = navDateToISO(txns.find(t => t.navDate)?.navDate);
-    const navAgeMs = navISO ? nowMs - new Date(`${navISO}T00:00:00Z`).getTime() : Infinity;
-    if (!hasCode) problems.push({ type: 'Mutual fund', name, hint: 'add its ISIN or AMFI scheme code (edit the fund)' });
-    else if (navAgeMs > 10 * 24 * 3600 * 1000) problems.push({ type: 'Mutual fund', name, hint: 'NAV older than 10 days' });
+    if (!navISO) {
+      problems.push({ type: 'Mutual fund', name, hint: 'no NAV fetched — add its ISIN or AMFI scheme code (edit the fund)' });
+    } else if (nowMs - new Date(`${navISO}T00:00:00Z`).getTime() > 10 * 24 * 3600 * 1000) {
+      problems.push({ type: 'Mutual fund', name, hint: `NAV is stale (${navISO})` });
+    }
   });
 
   const check = (list, isUS, label) => {
-    collectNetStockHoldings(list, isUS).forEach(h => {
-      if (!(h.fetchedAt > 0) || nowMs - h.fetchedAt > staleMs) {
-        problems.push({ type: label, name: h.sym, hint: isUS ? 'check the ticker (renamed/delisted?)' : 'check the symbol or add the ISIN' });
+    const groups = {};
+    (list || []).forEach(s => {
+      const sym = String(s.symbol || s.company || '').toUpperCase().replace(/\s*-EQ$/i, '').trim();
+      if (sym) (groups[sym] = groups[sym] || []).push(s);
+    });
+    Object.entries(groups).forEach(([sym, txns]) => {
+      if (!(calcStockCostBasis(txns).netQty > 0)) return;
+      if (!txns.some(t => t.priceDate)) {
+        problems.push({ type: label, name: sym, hint: isUS ? 'no price fetched — check the ticker (renamed/delisted?)' : 'no price fetched — check the symbol or add the ISIN' });
       }
     });
   };
@@ -14152,23 +14168,50 @@ async function resolveMfViaProxy(query) {
   }
 }
 
-// Gives every fund without a scheme code one: by ISIN/code when known (exact), else by name (strict).
+// Gives funds without a scheme code one: exact by ISIN/code when known, else strict name match against
+// AMFI's list. ONE proxy call covers all funds; failures are remembered for 24h so an old proxy
+// or an unknown fund never slows down later refreshes.
+const MF_RESOLVE_RETRY_KEY = 'lifeLedger_mfResolveFailed';
 async function resolveMissingMfCodes() {
   const funds = {};
   (state.mutualFunds || []).forEach(t => {
     if (!t.fundName || t.schemeCode || t.amfiCode) return;
     (funds[t.fundName] = funds[t.fundName] || []).push(t);
   });
-  const unresolved = [];
-  for (const [name, items] of Object.entries(funds)) {
-    const query = items.find(t => t.isin)?.isin || name;
-    const r = await resolveMfViaProxy(query);
+  const names = Object.keys(funds);
+  if (names.length === 0) return [];
+
+  let failed = {};
+  try { failed = JSON.parse(localStorage.getItem(MF_RESOLVE_RETRY_KEY) || '{}'); } catch {}
+  const nowMs = Date.now();
+  const queryOf = (name) => funds[name].find(t => t.isin)?.isin || name;
+  const toAsk = names.filter(n => !(failed[n] && nowMs - failed[n] < 24 * 3600 * 1000));
+  const unresolved = names.filter(n => !toAsk.includes(n)).map(name => ({ name, suggestions: [] }));
+  const proxyUrl = getProxyBaseUrl();
+  if (toAsk.length === 0 || !proxyUrl) return names.map(name => ({ name, suggestions: [] }));
+
+  let results = null;
+  try {
+    const sep = proxyUrl.includes('?') ? '&' : '?';
+    const joined = toAsk.map(queryOf).join('||');
+    const res = await fetch(`${proxyUrl}${sep}resolveMfMany=${encodeURIComponent(joined)}`, { signal: AbortSignal.timeout(40000) });
+    const data = res.ok ? await res.json() : null;
+    results = data && data.status === 'ok' ? data.results : null;
+  } catch (e) {
+    console.warn('[MF] Batch resolve failed:', e.message);
+  }
+
+  toAsk.forEach((name) => {
+    const r = results?.[queryOf(name)];
     if (r && r.status === 'ok' && (r.confidence === 'exact' || r.confidence === 'high')) {
-      items.forEach(t => { t.schemeCode = r.schemeCode; t.isin = t.isin || r.isin || ''; });
+      funds[name].forEach(t => { t.schemeCode = r.schemeCode; t.isin = t.isin || r.isin || ''; });
+      delete failed[name];
     } else {
+      failed[name] = nowMs;
       unresolved.push({ name, suggestions: (r?.candidates || r?.suggestions || []).slice(0, 3) });
     }
-  }
+  });
+  try { localStorage.setItem(MF_RESOLVE_RETRY_KEY, JSON.stringify(failed)); } catch {}
   return unresolved;
 }
 
@@ -14201,7 +14244,7 @@ function inferAmc(fundName) {
   return parts[0] || "";
 }
 
-async function resolveSchemeCodes(fundNames) {
+async function resolveSchemeCodes(fundNames, options = {}) {
   if (!fundNames || fundNames.length === 0) return getFundCodesCache();
   const cache = getFundCodesCache();
 
@@ -14318,7 +14361,12 @@ async function resolveSchemeCodes(fundNames) {
   });
 
   const missing = fundNames.filter(name => !cache[name]);
-  
+
+  if (options.offlineOnly) {
+    saveFundCodesCache(cache);
+    return cache;
+  }
+
   if (missing.length === 0) {
     saveFundCodesCache(cache);
     return cache;
@@ -14577,12 +14625,19 @@ async function refreshMutualFundNAVs(force = false, silent = false) {
     }
   });
 
-  // Funds with no scheme code yet: exact ISIN/code or strict name match via AMFI (through the proxy)
+  // Resolve a scheme code for every fund, cheapest first, and remember it on the fund:
+  // 1) built-in overrides / earlier results (instant)  2) AMFI exact/strict match via proxy  3) guarded fuzzy search
+  const namesWithoutCode = () => [...new Set(state.mutualFunds.filter(item => !item.schemeCode && !item.amfiCode).map(item => item.fundName).filter(Boolean))];
+  const adoptCodes = (cacheObj) => state.mutualFunds.forEach(item => {
+    if (!item.schemeCode && !item.amfiCode && cacheObj[item.fundName]?.schemeCode) item.schemeCode = cacheObj[item.fundName].schemeCode;
+  });
+  let codesCache = await resolveSchemeCodes(namesWithoutCode(), { offlineOnly: true });
+  adoptCodes(codesCache);
   lastMfUnresolved = await resolveMissingMfCodes().catch(() => []);
-
-  const uniqueNames = [...new Set(state.mutualFunds.filter(item => !item.schemeCode && !item.amfiCode).map(item => item.fundName).filter(Boolean))];
-  const codesCache = await resolveSchemeCodes(uniqueNames);
-
+  if (namesWithoutCode().length > 0) {
+    codesCache = await resolveSchemeCodes(namesWithoutCode());
+    adoptCodes(codesCache);
+  }
   const schemeEntries = [];
   const seenCodes = new Set();
 
@@ -15625,6 +15680,9 @@ if (typeof module !== 'undefined' && module.exports) {
     calculatePortfolio1DayChange,
     isNetWorthClassSettled,
     isConfidentMfMatch,
+    saveStockPriceCache,
+    getStockPriceCache,
+    reportUnpricedHoldings,
     buildNetWorthEntryFromLedger,
     istTodayISO,
     prevBusinessDayISO,

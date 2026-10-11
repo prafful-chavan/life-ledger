@@ -1,5 +1,5 @@
 /**
- * Life Ledger — Stock Price Proxy (Google Apps Script) v5.5
+ * Life Ledger — Stock Price Proxy (Google Apps Script) v5.6
  * 
  * High-Speed Multi-Asset Quote Proxy for:
  * 1. US Stocks & ETFs (NASDAQ/NYSE/NYSEARCA): Stooq (<150ms), Nasdaq Real-Time, Yahoo, and native GOOGLEFINANCE
@@ -14,7 +14,7 @@
  * 3. Replace all code in Code.gs with this complete file
  * 4. Click "Deploy" (top right) → "New deployment"
  * 5. Select type: "Web app"
- * 6. Set Description: "Stock Price Proxy v5.5 (Realtime US, India & Gold)"
+ * 6. Set Description: "Stock Price Proxy v5.6 (Realtime US, India & Gold)"
  * 7. Set Execute as: "Me"
  * 8. Set Who has access: "Anyone"
  * 9. Click "Deploy", authorize access, and copy the Web App URL
@@ -542,12 +542,16 @@ function doGet(e) {
   if (e && e.parameter && (e.parameter.test || e.parameter.ping)) {
     return createJsonResponse({
       status: "ok",
-      version: "v5.5",
-      message: "Life Ledger Stock Price Proxy v5.5 is active and operational",
+      version: "v5.6",
+      message: "Life Ledger Stock Price Proxy v5.6 is active and operational",
       timestamp: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm:ss a")
     });
   }
 
+  // Batch version (one AMFI download for many funds): ?resolveMfMany=name1||name2||ISIN3
+  if (e && e.parameter && e.parameter.resolveMfMany) {
+    return createJsonResponse(resolveMfMany(String(e.parameter.resolveMfMany)));
+  }
   // Dynamic mutual fund resolution from AMFI's official list: ?resolveMf=<ISIN | scheme code | fund name>
   if (e && e.parameter && e.parameter.resolveMf) {
     return createJsonResponse(resolveMfOnline(String(e.parameter.resolveMf).trim()));
@@ -1304,7 +1308,7 @@ function loadAmfiSchemes() {
 }
 
 function mfOptionKind(option) {
-  if (/idcw|dividend|payout/i.test(option)) return "idcw";
+  if (/idcw|dividend|payout|income distribution|withdrawal/i.test(option)) return "idcw";
   if (/bonus/i.test(option)) return "bonus";
   return "growth";
 }
@@ -1316,9 +1320,17 @@ function mfResult(sch, confidence) {
   };
 }
 
-function resolveMfOnline(query) {
-  if (!query) return { status: "error", error: "Empty query" };
+function resolveMfMany(joined) {
+  var queries = joined.split("||").map(function(q) { return q.trim(); }).filter(Boolean).slice(0, 40);
   var all = loadAmfiSchemes();
+  var results = {};
+  for (var i = 0; i < queries.length; i++) results[queries[i]] = resolveMfOnline(queries[i], all);
+  return { status: "ok", results: results };
+}
+
+function resolveMfOnline(query, preloaded) {
+  if (!query) return { status: "error", error: "Empty query" };
+  var all = preloaded || loadAmfiSchemes();
   if (all.length === 0) return { status: "error", error: "Could not load AMFI list" };
   var q = query.toUpperCase().trim();
 
@@ -1339,6 +1351,11 @@ function resolveMfOnline(query) {
     var isRegular = /regular/i.test(c.plan);
     if (isRegular !== wantRegular || mfOptionKind(c.option) !== wantKind) continue;
     matches.push(c);
+  }
+  // Legacy AMFI rows have blank plan/option; prefer fully described rows when both exist
+  if (matches.length > 1) {
+    var described = matches.filter(function(m) { return m.plan && m.option; });
+    if (described.length >= 1) matches = described;
   }
   if (matches.length === 1) return mfResult(matches[0], "high");
   if (matches.length > 1) {

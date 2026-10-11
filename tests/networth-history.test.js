@@ -550,6 +550,40 @@ test("backend ledger marks a class unsettled when its close was never captured",
   assert.strictEqual(buildNetWorthEntryFromLedger({ date: "2026-10-13", records, st, baseEntry: {} }), null, "no records for that day");
 });
 
+test("parallel price refreshes no longer erase each other's cached prices", () => {
+  const { saveStockPriceCache, getStockPriceCache } = require("../app.js");
+  const store = {};
+  global.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+  try {
+    // US refresh finishes first and saves; the slower Indian refresh then saves its stale snapshot
+    saveStockPriceCache({ AAPL: { price: 336, timestamp: 2000 }, T: { price: 22, timestamp: 2000 } });
+    saveStockPriceCache({ TCS: { price: 3500, timestamp: 3000 }, AAPL: { price: 300, timestamp: 1000 } });
+    const merged = getStockPriceCache();
+    assert.strictEqual(merged.TCS.price, 3500, "Indian price saved");
+    assert.strictEqual(merged.T.price, 22, "US price from the other refresh survives");
+    assert.strictEqual(merged.AAPL.price, 336, "newer entry wins over an older snapshot");
+  } finally {
+    delete global.localStorage;
+  }
+});
+
+test("unpriced report flags holdings with no fetched price and ignores priced ones", () => {
+  const { reportUnpricedHoldings, state } = require("../app.js");
+  state.stocks = [
+    { symbol: "TCS", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 10, avgPrice: 3000, invested: 30000, purchaseDate: "2026-01-01", priceDate: "11/10/2026" },
+    { symbol: "NEWCO", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 5, avgPrice: 100, invested: 500, purchaseDate: "2026-02-01" }
+  ];
+  state.usstocks = [
+    { symbol: "AAPL", owner: "Me", transactionType: "BUY", quantity: 1, avgPrice: 200, invested: 200, purchaseDate: "2026-01-01", priceDate: "10/9/2026" }
+  ];
+  state.mutualFunds = [
+    { fundName: "Fund A", owner: "Me", units: 10, invested: 1000, purchaseDate: "2026-01-01", transactionType: "PURCHASE", navDate: new Date().toISOString().slice(8, 10) + "-" + new Date().toISOString().slice(5, 7) + "-" + new Date().toISOString().slice(0, 4) },
+    { fundName: "Fund B", owner: "Me", units: 10, invested: 1000, purchaseDate: "2026-01-01", transactionType: "PURCHASE" }
+  ];
+  const names = reportUnpricedHoldings().map(p => p.name).sort();
+  assert.deepStrictEqual(names, ["Fund B", "NEWCO"]);
+});
+
 console.log("==========================================");
 console.log(`📊 NET WORTH HISTORY TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
 console.log("==========================================");
