@@ -1,5 +1,5 @@
 /**
- * Life Ledger — Stock Price Proxy (Google Apps Script) v5.4
+ * Life Ledger — Stock Price Proxy (Google Apps Script) v5.5
  * 
  * High-Speed Multi-Asset Quote Proxy for:
  * 1. US Stocks & ETFs (NASDAQ/NYSE/NYSEARCA): Stooq (<150ms), Nasdaq Real-Time, Yahoo, and native GOOGLEFINANCE
@@ -14,7 +14,7 @@
  * 3. Replace all code in Code.gs with this complete file
  * 4. Click "Deploy" (top right) → "New deployment"
  * 5. Select type: "Web app"
- * 6. Set Description: "Stock Price Proxy v5.4 (Realtime US, India & Gold)"
+ * 6. Set Description: "Stock Price Proxy v5.5 (Realtime US, India & Gold)"
  * 7. Set Execute as: "Me"
  * 8. Set Who has access: "Anyone"
  * 9. Click "Deploy", authorize access, and copy the Web App URL
@@ -542,10 +542,15 @@ function doGet(e) {
   if (e && e.parameter && (e.parameter.test || e.parameter.ping)) {
     return createJsonResponse({
       status: "ok",
-      version: "v5.4",
-      message: "Life Ledger Stock Price Proxy v5.4 is active and operational",
+      version: "v5.5",
+      message: "Life Ledger Stock Price Proxy v5.5 is active and operational",
       timestamp: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm:ss a")
     });
+  }
+
+  // Dynamic mutual fund resolution from AMFI's official list: ?resolveMf=<ISIN | scheme code | fund name>
+  if (e && e.parameter && e.parameter.resolveMf) {
+    return createJsonResponse(resolveMfOnline(String(e.parameter.resolveMf).trim()));
   }
 
   // Auto-refresh backend: register watchlist, read ledger, manual collect
@@ -1232,4 +1237,129 @@ function readPriceLedger(since) {
     } catch (e) {}
   }
   return { records: out.slice(-300) };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DYNAMIC MUTUAL FUND RESOLVER (AMFI official NAV list: ISIN, code, name, plan, option)
+// ═══════════════════════════════════════════════════════════════════════════
+
+var MF_GENERIC_WORDS = {
+  "fund": 1, "funds": 1, "mutual": 1, "scheme": 1, "plan": 1, "option": 1, "direct": 1, "regular": 1,
+  "growth": 1, "idcw": 1, "dividend": 1, "payout": 1, "reinvestment": 1, "cumulative": 1,
+  "the": 1, "of": 1, "and": 1, "amp": 1, "a": 1
+};
+
+function mfNormalize(str) {
+  return String(str || "").toLowerCase().replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/mid\s+cap/g, "midcap").replace(/large\s+cap/g, "largecap").replace(/small\s+cap/g, "smallcap")
+    .replace(/multi\s+cap/g, "multicap").replace(/micro\s+cap/g, "microcap").replace(/flexi\s+cap/g, "flexicap")
+    .replace(/\s+/g, " ").trim();
+}
+
+function mfSignificantTokens(str) {
+  var out = [];
+  var seen = {};
+  var parts = mfNormalize(str).split(" ");
+  for (var i = 0; i < parts.length; i++) {
+    var w = parts[i];
+    if (!w || MF_GENERIC_WORDS[w] || seen[w]) continue;
+    seen[w] = 1;
+    out.push(w);
+  }
+  return out;
+}
+
+/**
+ * A fund name matches only when BOTH names share exactly the same distinguishing words.
+ * ("Nifty 50 Index" will never match "Nifty Next 50 Index"; "Large Cap" never "Liquid".)
+ */
+function mfNamesMatch(query, schemeName) {
+  var a = mfSignificantTokens(query);
+  var b = mfSignificantTokens(schemeName);
+  if (a.length === 0 || a.length !== b.length) return false;
+  var set = {};
+  for (var i = 0; i < b.length; i++) set[b[i]] = 1;
+  for (var j = 0; j < a.length; j++) if (!set[a[j]]) return false;
+  return true;
+}
+
+function loadAmfiSchemes() {
+  var resp = UrlFetchApp.fetch("https://www.amfiindia.com/spages/NAVAll.txt", {
+    muteHttpExceptions: true,
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36" }
+  });
+  if (resp.getResponseCode() !== 200) return [];
+  var lines = resp.getContentText().split("\n");
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split(";");
+    if (f.length < 8 || !/^\d+$/.test(f[0].trim())) continue;
+    out.push({
+      code: f[0].trim(), isin1: f[1].trim().toUpperCase(), isin2: f[2].trim().toUpperCase(),
+      name: f[3].trim(), plan: f[4].trim(), option: f[5].trim(), nav: Number(f[6]), date: f[7].trim()
+    });
+  }
+  return out;
+}
+
+function mfOptionKind(option) {
+  if (/idcw|dividend|payout/i.test(option)) return "idcw";
+  if (/bonus/i.test(option)) return "bonus";
+  return "growth";
+}
+
+function mfResult(sch, confidence) {
+  return {
+    status: "ok", confidence: confidence, schemeCode: Number(sch.code),
+    schemeName: sch.name + " - " + sch.plan + " - " + sch.option, isin: sch.isin1, nav: sch.nav, navDate: sch.date
+  };
+}
+
+function resolveMfOnline(query) {
+  if (!query) return { status: "error", error: "Empty query" };
+  var all = loadAmfiSchemes();
+  if (all.length === 0) return { status: "error", error: "Could not load AMFI list" };
+  var q = query.toUpperCase().trim();
+
+  // 1. Exact: scheme code or ISIN
+  for (var i = 0; i < all.length; i++) {
+    var s = all[i];
+    if (s.code === q || s.isin1 === q || s.isin2 === q) return mfResult(s, "exact");
+  }
+
+  // 2. Name: same distinguishing words + requested plan/option (defaults: Direct, Growth)
+  var qn = mfNormalize(query);
+  var wantRegular = /\bregular\b/.test(qn);
+  var wantKind = /\b(idcw|dividend|payout)\b/.test(qn) ? "idcw" : (/\bbonus\b/.test(qn) ? "bonus" : "growth");
+  var matches = [];
+  for (var j = 0; j < all.length; j++) {
+    var c = all[j];
+    if (!mfNamesMatch(query, c.name)) continue;
+    var isRegular = /regular/i.test(c.plan);
+    if (isRegular !== wantRegular || mfOptionKind(c.option) !== wantKind) continue;
+    matches.push(c);
+  }
+  if (matches.length === 1) return mfResult(matches[0], "high");
+  if (matches.length > 1) {
+    // Several AMFI rows can be the same fund (e.g. duplicate codes): ambiguous, let the user choose
+    return { status: "ambiguous", candidates: matches.slice(0, 5).map(function(m) { return { schemeCode: Number(m.code), schemeName: m.name + " - " + m.plan + " - " + m.option, isin: m.isin1 }; }) };
+  }
+
+  // 3. Suggestions only (never auto-applied)
+  var qt = mfSignificantTokens(query);
+  var scored = [];
+  for (var k = 0; k < all.length; k++) {
+    var cand = all[k];
+    if (/regular/i.test(cand.plan) !== wantRegular || mfOptionKind(cand.option) !== wantKind) continue;
+    var ct = mfNormalize(cand.name);
+    var hit = 0;
+    for (var t = 0; t < qt.length; t++) if (ct.indexOf(qt[t]) !== -1) hit++;
+    if (qt.length && hit / qt.length >= 0.6) scored.push({ hit: hit, c: cand });
+  }
+  scored.sort(function(a, b) { return b.hit - a.hit; });
+  return {
+    status: "not_found",
+    suggestions: scored.slice(0, 5).map(function(x) { return { schemeCode: Number(x.c.code), schemeName: x.c.name + " - " + x.c.plan + " - " + x.c.option, isin: x.c.isin1 }; })
+  };
 }

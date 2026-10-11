@@ -321,6 +321,8 @@ const fieldsByKind = {
     ["invested", "Amount invested", "number"],
     ["purchaseDate", "Purchase Date", "date"],
     ["folio", "Folio no.", "text"],
+    ["isin", "ISIN (optional — exact fund match, e.g. INF966L01986)", "text"],
+    ["schemeCode", "AMFI scheme code (optional)", "number"],
     ["platform", "Platform (Groww / Kuvera / etc.)", "text"],
     ["notes", "Notes", "textarea"],
   ],
@@ -7180,6 +7182,39 @@ function renderUsStockHoldingsPanel() {
   ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
 }
 
+// Lists held assets whose price could not be fetched, so a new purchase never fails silently.
+function reportUnpricedHoldings() {
+  const problems = [];
+  const nowMs = Date.now();
+  const staleMs = 3 * 24 * 3600 * 1000;
+
+  const mfByFund = {};
+  (state.mutualFunds || []).forEach(t => {
+    const key = `${t.fundName || 'Unknown'}|${t.owner || 'Me'}`;
+    (mfByFund[key] = mfByFund[key] || []).push(t);
+  });
+  Object.entries(mfByFund).forEach(([key, txns]) => {
+    if (!(calcMfCostBasis(txns).netUnits > 0)) return;
+    const name = key.split('|')[0];
+    const hasCode = txns.some(t => t.schemeCode || t.amfiCode);
+    const navISO = navDateToISO(txns.find(t => t.navDate)?.navDate);
+    const navAgeMs = navISO ? nowMs - new Date(`${navISO}T00:00:00Z`).getTime() : Infinity;
+    if (!hasCode) problems.push({ type: 'Mutual fund', name, hint: 'add its ISIN or AMFI scheme code (edit the fund)' });
+    else if (navAgeMs > 10 * 24 * 3600 * 1000) problems.push({ type: 'Mutual fund', name, hint: 'NAV older than 10 days' });
+  });
+
+  const check = (list, isUS, label) => {
+    collectNetStockHoldings(list, isUS).forEach(h => {
+      if (!(h.fetchedAt > 0) || nowMs - h.fetchedAt > staleMs) {
+        problems.push({ type: label, name: h.sym, hint: isUS ? 'check the ticker (renamed/delisted?)' : 'check the symbol or add the ISIN' });
+      }
+    });
+  };
+  check(state.stocks, false, 'Stock');
+  check(state.usstocks, true, 'US stock');
+  return problems;
+}
+
 async function refreshAllLivePrices(force = true) {
   toast('🔄 Refreshing all live prices (Mutual Funds, Indian Stocks, US Stocks & Gold)…');
   const results = { mf: 0, stocks: 0, usstocks: 0, gold: 0 };
@@ -7223,8 +7258,15 @@ async function refreshAllLivePrices(force = true) {
   }
   syncWatchlistToProxy().then(() => backfillNetWorthFromLedger()).catch(e => console.warn('[Ledger] sync error:', e));
 
+  const unpriced = reportUnpricedHoldings();
+  if (unpriced.length > 0) {
+    const names = unpriced.slice(0, 5).map(p => `${p.name} (${p.type})`).join(', ');
+    toast(`⚠️ ${unpriced.length} holding${unpriced.length > 1 ? 's' : ''} could not be priced: ${names}${unpriced.length > 5 ? '…' : ''}. Check Log for details.`);
+    unpriced.forEach(p => addSystemLog(`Unpriced ${p.type}: ${p.name} — ${p.hint}`, "warn", "Prices"));
+  }
+
   const cur22k = getCaratGoldRate("22K");
-  toast(`✅ All prices refreshed! Portfolio updated across Mutual Funds, Stocks, US Stocks & Gold (22K: ₹${cur22k ? cur22k.toFixed(2) : '13709'}/g)`);
+  if (unpriced.length === 0) toast(`✅ All prices refreshed! Portfolio updated across Mutual Funds, Stocks, US Stocks & Gold (22K: ₹${cur22k ? cur22k.toFixed(2) : '13709'}/g)`);
   return results;
 }
 
@@ -14076,12 +14118,67 @@ const CANONICAL_MF_SCHEME_MAP = {
   120334: { schemeCode: 120334, isin: "INF109K015K4", amc: "ICICI Prudential", schemeName: "ICICI Prudential Multi Asset Allocation Fund - Direct Plan - Growth", plan: "Direct", option: "Growth", owner: "Me" }
 };
 
+// ── Dynamic mutual fund matching ─────────────────────────────────────────
+// A fund name only matches when both names share exactly the same distinguishing words, so
+// "Nifty 50 Index" can never resolve to "Nifty Next 50 Index" or "Bluechip" to "Liquid".
+const MF_GENERIC_WORDS = new Set(['fund', 'funds', 'mutual', 'scheme', 'plan', 'option', 'direct', 'regular', 'growth', 'idcw', 'dividend', 'payout', 'reinvestment', 'cumulative', 'the', 'of', 'and', 'amp', 'a']);
+
+function mfSignificantTokens(str) {
+  const norm = String(str || '').toLowerCase().replace(/[^a-z0-9\s]+/g, ' ')
+    .replace(/mid\s+cap/g, 'midcap').replace(/large\s+cap/g, 'largecap').replace(/small\s+cap/g, 'smallcap')
+    .replace(/multi\s+cap/g, 'multicap').replace(/micro\s+cap/g, 'microcap').replace(/flexi\s+cap/g, 'flexicap');
+  return [...new Set(norm.split(/\s+/).filter(w => w && !MF_GENERIC_WORDS.has(w)))];
+}
+
+function isConfidentMfMatch(query, schemeName) {
+  const a = mfSignificantTokens(query);
+  const b = new Set(mfSignificantTokens(schemeName));
+  return a.length > 0 && a.length === b.size && a.every(w => b.has(w));
+}
+
+// Exact ISIN / scheme-code lookup and strict name matching against AMFI's official list, via the proxy.
+async function resolveMfViaProxy(query) {
+  const proxyUrl = getProxyBaseUrl();
+  if (!proxyUrl || !query) return null;
+  try {
+    const sep = proxyUrl.includes('?') ? '&' : '?';
+    const res = await fetch(`${proxyUrl}${sep}resolveMf=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(45000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && data.status ? data : null;
+  } catch (e) {
+    console.warn('[MF] Proxy resolve failed for', query, e.message);
+    return null;
+  }
+}
+
+// Gives every fund without a scheme code one: by ISIN/code when known (exact), else by name (strict).
+async function resolveMissingMfCodes() {
+  const funds = {};
+  (state.mutualFunds || []).forEach(t => {
+    if (!t.fundName || t.schemeCode || t.amfiCode) return;
+    (funds[t.fundName] = funds[t.fundName] || []).push(t);
+  });
+  const unresolved = [];
+  for (const [name, items] of Object.entries(funds)) {
+    const query = items.find(t => t.isin)?.isin || name;
+    const r = await resolveMfViaProxy(query);
+    if (r && r.status === 'ok' && (r.confidence === 'exact' || r.confidence === 'high')) {
+      items.forEach(t => { t.schemeCode = r.schemeCode; t.isin = t.isin || r.isin || ''; });
+    } else {
+      unresolved.push({ name, suggestions: (r?.candidates || r?.suggestions || []).slice(0, 3) });
+    }
+  }
+  return unresolved;
+}
+
 function getFundCodesCache() {
   try {
-    const cache = localStorage.getItem("lifeLedgerFundCodes:v3");
+    const cache = localStorage.getItem("lifeLedgerFundCodes:v4");
     if (!cache) {
       localStorage.removeItem("lifeLedgerFundCodes");
       localStorage.removeItem("lifeLedgerFundCodes:v2");
+      localStorage.removeItem("lifeLedgerFundCodes:v3"); // v3 held unguarded fuzzy matches that could be wrong funds
       return {};
     }
     return JSON.parse(cache);
@@ -14092,7 +14189,7 @@ function getFundCodesCache() {
 
 function saveFundCodesCache(cache) {
   try {
-    localStorage.setItem("lifeLedgerFundCodes:v3", JSON.stringify(cache));
+    localStorage.setItem("lifeLedgerFundCodes:v4", JSON.stringify(cache));
   } catch (e) {
     console.warn("Failed to write fund codes cache:", e);
   }
@@ -14336,6 +14433,11 @@ async function resolveSchemeCodes(fundNames) {
         }
       }
 
+      if (best && !isConfidentMfMatch(query, best.schemeName)) {
+        console.warn(`[MF] "${query}" only fuzzily matched "${best.schemeName}" — not used (add the ISIN or scheme code to this fund).`);
+        best = null;
+      }
+
       if (best) {
         cache[query] = {
           schemeCode: best.schemeCode,
@@ -14444,6 +14546,8 @@ function saveNavCache(cache) {
 }
 
 
+let lastMfUnresolved = [];
+
 async function refreshMutualFundNAVs(force = false, silent = false) {
   if (!state.mutualFunds || state.mutualFunds.length === 0) return 0;
 
@@ -14473,7 +14577,10 @@ async function refreshMutualFundNAVs(force = false, silent = false) {
     }
   });
 
-  const uniqueNames = [...new Set(state.mutualFunds.map(item => item.fundName).filter(Boolean))];
+  // Funds with no scheme code yet: exact ISIN/code or strict name match via AMFI (through the proxy)
+  lastMfUnresolved = await resolveMissingMfCodes().catch(() => []);
+
+  const uniqueNames = [...new Set(state.mutualFunds.filter(item => !item.schemeCode && !item.amfiCode).map(item => item.fundName).filter(Boolean))];
   const codesCache = await resolveSchemeCodes(uniqueNames);
 
   const schemeEntries = [];
@@ -15517,6 +15624,7 @@ if (typeof module !== 'undefined' && module.exports) {
     recordDailyNetWorthSnapshot,
     calculatePortfolio1DayChange,
     isNetWorthClassSettled,
+    isConfidentMfMatch,
     buildNetWorthEntryFromLedger,
     istTodayISO,
     prevBusinessDayISO,
