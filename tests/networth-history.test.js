@@ -508,6 +508,48 @@ test("daily snapshot locks a settled class and never mixes in cash flows", () =>
   assert.strictEqual(state.netWorthHistory.find(e => e.id === "nwh-old").netWorth, 5);
 });
 
+test("backend ledger rebuilds a missed day using each class's close and holdings owned that day", () => {
+  const { buildNetWorthEntryFromLedger } = require("../app.js");
+  const ist = (t) => new Date(`2026-10-12T${t}+05:30`).toISOString();
+  const st = {
+    stocks: [
+      { symbol: "TCS", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 10, avgPrice: 3000, invested: 30000, purchaseDate: "2026-01-01" },
+      { symbol: "TCS", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 5, avgPrice: 3300, invested: 16500, purchaseDate: "2026-10-13" }
+    ],
+    usstocks: [{ symbol: "AAPL", owner: "Me", demat: "I", transactionType: "BUY", quantity: 2, avgPrice: 150, invested: 300, purchaseDate: "2026-01-01" }],
+    mutualFunds: [{ fundName: "Fund X", owner: "Me", schemeCode: 111, units: 100, invested: 4000, purchaseDate: "2026-01-01", transactionType: "PURCHASE" }],
+    gold: [{ weightGrams: 10, carat: "22K", purchaseDate: "2026-01-01" }]
+  };
+  const records = [
+    { date: "2026-10-12", ts: ist("02:00:00"), fx: { usdInr: 95 }, stocks: { TCS: { price: 3500, prevClose: 3400 } }, us: { AAPL: { price: 205, prevClose: 190 } }, mf: { "111": { nav: 49, date: "09-10-2026", prevNav: 48 } }, gold: { price24k: 15000, prevClose24k: 15000 } },
+    { date: "2026-10-12", ts: ist("08:00:00"), fx: { usdInr: 96 }, stocks: { TCS: { price: 3500, prevClose: 3400 } }, us: { AAPL: { price: 200, prevClose: 190 } }, mf: { "111": { nav: 50, date: "09-10-2026", prevNav: 49 } }, gold: { price24k: 15100, prevClose24k: 15071 } },
+    { date: "2026-10-12", ts: ist("20:00:00"), fx: { usdInr: 97 }, stocks: { TCS: { price: 3600, prevClose: 3500 } }, us: { AAPL: { price: 999, prevClose: 1 } }, mf: { "111": { nav: 50, date: "09-10-2026", prevNav: 49 } }, gold: { price24k: 15142, prevClose24k: 15071 } }
+  ];
+  const e = buildNetWorthEntryFromLedger({ date: "2026-10-12", records, st, baseEntry: { fd: 1000, liabilities: 500 } });
+  assert.strictEqual(e.stocks, 36000, "stocks use the post-close record and only the 10 shares owned that day");
+  assert.strictEqual(e.changes.stocks, 1000);
+  assert.strictEqual(e.usStocks, 2 * 200 * 96, "US uses the market-closed record (08:00 IST) with its own FX");
+  assert.strictEqual(e.changes.usStocks, 2 * 10 * 96);
+  assert.strictEqual(e.mutualFunds, 5000);
+  assert.strictEqual(e.changes.mutualFunds, 100);
+  assert.strictEqual(Math.round(e.gold), Math.round(10 * 15142 * 22 / 24));
+  assert.strictEqual(e.final, true);
+  assert.strictEqual(e.fd, 1000, "non-market assets carry forward");
+  assert.strictEqual(e.netWorth, Number((e.totalAssets - 500).toFixed(2)));
+  assert.strictEqual(e.source, "backend-ledger");
+});
+
+test("backend ledger marks a class unsettled when its close was never captured", () => {
+  const { buildNetWorthEntryFromLedger } = require("../app.js");
+  const ist = (t) => new Date(`2026-10-12T${t}+05:30`).toISOString();
+  const st = { stocks: [{ symbol: "TCS", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 10, avgPrice: 3000, invested: 30000, purchaseDate: "2026-01-01" }], usstocks: [], mutualFunds: [], gold: [] };
+  const records = [{ date: "2026-10-12", ts: ist("11:00:00"), stocks: { TCS: { price: 3500, prevClose: 3400 } } }];
+  const e = buildNetWorthEntryFromLedger({ date: "2026-10-12", records, st, baseEntry: {} });
+  assert.strictEqual(e.settled.stocks, false, "11:00 IST is before the 15:45 close");
+  assert.strictEqual(e.final, false);
+  assert.strictEqual(buildNetWorthEntryFromLedger({ date: "2026-10-13", records, st, baseEntry: {} }), null, "no records for that day");
+});
+
 console.log("==========================================");
 console.log(`📊 NET WORTH HISTORY TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
 console.log("==========================================");

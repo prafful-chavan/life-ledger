@@ -1,5 +1,5 @@
 /**
- * Life Ledger — Stock Price Proxy (Google Apps Script) v5.3
+ * Life Ledger — Stock Price Proxy (Google Apps Script) v5.4
  * 
  * High-Speed Multi-Asset Quote Proxy for:
  * 1. US Stocks & ETFs (NASDAQ/NYSE/NYSEARCA): Stooq (<150ms), Nasdaq Real-Time, Yahoo, and native GOOGLEFINANCE
@@ -14,11 +14,18 @@
  * 3. Replace all code in Code.gs with this complete file
  * 4. Click "Deploy" (top right) → "New deployment"
  * 5. Select type: "Web app"
- * 6. Set Description: "Stock Price Proxy v5.3 (Realtime US, India & Gold)"
+ * 6. Set Description: "Stock Price Proxy v5.4 (Realtime US, India & Gold)"
  * 7. Set Execute as: "Me"
  * 8. Set Who has access: "Anyone"
  * 9. Click "Deploy", authorize access, and copy the Web App URL
  * 10. Open Life Ledger → Settings → 📈 Stock Prices → Paste URL & Save!
+ *
+ * AUTO-REFRESH (works even when the app is closed) - one-time setup:
+ *   In the Apps Script editor pick the function setupAutoRefreshTriggers and click Run (authorize).
+ *   It creates triggers: every 6 hours + every night ~11:45 PM IST. Each run saves a price record
+ *   (Indian stocks, US stocks, mutual fund NAVs, gold, USD/INR) to a 'PriceLedger' sheet. The app
+ *   registers only the ticker symbols / fund codes to track (never quantities or amounts) and,
+ *   when opened, back-fills any missed days of net worth history from these records.
  *
  * IMPORTANT: After updating this code, you MUST create a NEW deployment
  * (Deploy → New deployment, not "Manage deployments") for changes to take effect.
@@ -414,6 +421,10 @@ var SPREADSHEET_PROP_KEY = "LIFE_LEDGER_PRICE_SHEET_ID_V5";
  * 3. Never clutters user's Google Drive.
  */
 function getSharedPriceSheet() {
+  return getSharedSpreadsheet().getActiveSheet();
+}
+
+function getSharedSpreadsheet() {
   var props = PropertiesService.getUserProperties();
   var sheetId = props.getProperty(SPREADSHEET_PROP_KEY);
   var ss = null;
@@ -429,7 +440,7 @@ function getSharedPriceSheet() {
     ss = SpreadsheetApp.create("LifeLedger_Internal_Price_Engine_DoNotDelete");
     props.setProperty(SPREADSHEET_PROP_KEY, ss.getId());
   }
-  return ss.getActiveSheet();
+  return ss;
 }
 
 /**
@@ -531,10 +542,21 @@ function doGet(e) {
   if (e && e.parameter && (e.parameter.test || e.parameter.ping)) {
     return createJsonResponse({
       status: "ok",
-      version: "v5.3",
-      message: "Life Ledger Stock Price Proxy v5.3 is active and operational",
+      version: "v5.4",
+      message: "Life Ledger Stock Price Proxy v5.4 is active and operational",
       timestamp: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm:ss a")
     });
+  }
+
+  // Auto-refresh backend: register watchlist, read ledger, manual collect
+  if (e && e.parameter && e.parameter.registerWatch) {
+    return createJsonResponse(registerWatchlist(e.parameter));
+  }
+  if (e && e.parameter && e.parameter.ledger) {
+    return createJsonResponse(readPriceLedger(e.parameter.since));
+  }
+  if (e && e.parameter && e.parameter.collect) {
+    return createJsonResponse(collectPricesNow("manual"));
   }
 
   // Support live USD/INR rate: ?fx=1
@@ -1050,4 +1072,164 @@ function fetchViaScrape(symbol) {
 function createJsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUTO-REFRESH BACKEND: scheduled price collection + PriceLedger
+// ═══════════════════════════════════════════════════════════════════════════
+
+var WATCH_PROP_KEY = "LIFE_LEDGER_WATCHLIST_V1";
+var LEDGER_SHEET_NAME = "PriceLedger";
+var LEDGER_MAX_ROWS = 1500;
+
+/**
+ * RUN THIS ONCE from the Apps Script editor (Run -> setupAutoRefreshTriggers).
+ * Creates: every 6 hours, and every night around 11:45 PM IST.
+ */
+function setupAutoRefreshTriggers() {
+  var existing = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < existing.length; i++) {
+    var fn = existing[i].getHandlerFunction();
+    if (fn === "scheduledCollectInterval" || fn === "scheduledCollectNightly") {
+      ScriptApp.deleteTrigger(existing[i]);
+    }
+  }
+  ScriptApp.newTrigger("scheduledCollectInterval").timeBased().everyHours(6).create();
+  ScriptApp.newTrigger("scheduledCollectNightly").timeBased().atHour(23).nearMinute(45).everyDays(1).inTimezone("Asia/Kolkata").create();
+  Logger.log("Auto-refresh triggers created: every 6 hours + nightly ~23:45 IST");
+}
+
+function scheduledCollectInterval() { collectPricesNow("interval"); }
+function scheduledCollectNightly() { collectPricesNow("nightly"); }
+
+/**
+ * Stores the symbols to track. Only tickers / fund codes - no quantities or amounts.
+ * ?registerWatch=1&stocks=TCS,INFY&us=AAPL,VOO&mf=120847,118759
+ */
+function registerWatchlist(params) {
+  function list(v) {
+    return String(v || "").split(",").map(function(x) { return x.trim().toUpperCase(); }).filter(Boolean).slice(0, 150);
+  }
+  var watch = {
+    stocks: list(params.stocks),
+    us: list(params.us),
+    mf: list(params.mf).filter(function(c) { return /^\d+$/.test(c); }),
+    updated: Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd HH:mm")
+  };
+  PropertiesService.getScriptProperties().setProperty(WATCH_PROP_KEY, JSON.stringify(watch));
+  return { status: "ok", stocks: watch.stocks.length, us: watch.us.length, mf: watch.mf.length };
+}
+
+function getWatchlist() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(WATCH_PROP_KEY);
+    return raw ? JSON.parse(raw) : { stocks: [], us: [], mf: [] };
+  } catch (e) {
+    return { stocks: [], us: [], mf: [] };
+  }
+}
+
+function getLedgerSheet() {
+  var ss = getSharedSpreadsheet();
+  var sh = ss.getSheetByName(LEDGER_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(LEDGER_SHEET_NAME);
+    sh.getRange("A:D").setNumberFormat("@");
+    sh.getRange(1, 1, 1, 4).setValues([["dateIST", "slot", "timestamp", "json"]]);
+  }
+  return sh;
+}
+
+/**
+ * Fetches every watched price plus gold and USD/INR, then appends ONE record to the ledger.
+ */
+function collectPricesNow(slot) {
+  var watch = getWatchlist();
+  var now = new Date();
+  var record = {
+    date: Utilities.formatDate(now, "Asia/Kolkata", "yyyy-MM-dd"),
+    slot: slot || "manual",
+    ts: now.toISOString(),
+    fx: null,
+    gold: null,
+    stocks: {},
+    us: {},
+    mf: {}
+  };
+
+  try {
+    var fxQ = fetchViaYahooFinance("USDINR=X", true);
+    if (fxQ && fxQ.price > 50) record.fx = { usdInr: fxQ.price };
+  } catch (e) { Logger.log("collect fx: " + e); }
+
+  try {
+    var g = fetchLiveGold();
+    if (g && g.price24k > 0) {
+      record.gold = { price24k: g.price24k, price22k: g.price22k, prevClose24k: g.prevClose24k, prevClose22k: g.prevClose22k, source: g.source };
+    }
+  } catch (e2) { Logger.log("collect gold: " + e2); }
+
+  for (var i = 0; i < watch.stocks.length; i++) {
+    var sym = watch.stocks[i];
+    var resolved = ISIN_TO_TICKER[sym] || sym;
+    var q = fetchViaYahooFinance(resolved, false);
+    if (q && q.price > 0) record.stocks[sym] = { price: q.price, prevClose: q.prevClose };
+  }
+
+  for (var j = 0; j < watch.us.length; j++) {
+    var us = watch.us[j];
+    var uq = fetchViaYahooFinance(us, true);
+    if (!uq || !(uq.price > 0)) {
+      uq = fetchViaNasdaq(us, (US_EXCHANGES[us] === "NYSEARCA"));
+    }
+    if (uq && uq.price > 0) record.us[us] = { price: uq.price, prevClose: uq.prevClose };
+  }
+
+  for (var k = 0; k < watch.mf.length; k++) {
+    try {
+      var resp = UrlFetchApp.fetch("https://api.mfapi.in/mf/" + watch.mf[k], { muteHttpExceptions: true });
+      if (resp.getResponseCode() === 200) {
+        var d = JSON.parse(resp.getContentText());
+        if (d && d.data && d.data[0]) {
+          record.mf[watch.mf[k]] = {
+            nav: Number(d.data[0].nav),
+            date: d.data[0].date,
+            prevNav: d.data[1] ? Number(d.data[1].nav) : null,
+            prevDate: d.data[1] ? d.data[1].date : null
+          };
+        }
+      }
+    } catch (e3) { Logger.log("collect mf " + watch.mf[k] + ": " + e3); }
+  }
+
+  var sheet = getLedgerSheet();
+  sheet.appendRow([record.date, record.slot, record.ts, JSON.stringify(record)]);
+  var rows = sheet.getLastRow();
+  if (rows > LEDGER_MAX_ROWS + 1) sheet.deleteRows(2, rows - LEDGER_MAX_ROWS - 1);
+
+  return {
+    status: "ok", date: record.date, slot: record.slot,
+    counts: { stocks: Object.keys(record.stocks).length, us: Object.keys(record.us).length, mf: Object.keys(record.mf).length, gold: record.gold ? 1 : 0, fx: record.fx ? 1 : 0 }
+  };
+}
+
+/**
+ * Returns ledger records dated >= since (yyyy-MM-dd), max ~45 days.
+ */
+function readPriceLedger(since) {
+  var sheet = getLedgerSheet();
+  var last = sheet.getLastRow();
+  if (last < 2) return { records: [] };
+  var floor = String(since || "");
+  var values = sheet.getRange(2, 4, last - 1, 1).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    try {
+      var rec = JSON.parse(values[i][0]);
+      if (floor && String(rec.date) < floor) continue;
+      out.push(rec);
+    } catch (e) {}
+  }
+  return { records: out.slice(-300) };
 }

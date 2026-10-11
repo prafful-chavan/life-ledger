@@ -521,6 +521,7 @@ function bootstrapApp(initialState) {
       recordDailyNetWorthSnapshot({ source: "startup-refresh" });
     } catch (e) {}
     if (typeof renderNetWorthHistory === 'function') renderNetWorthHistory();
+    syncWatchlistToProxy().then(() => backfillNetWorthFromLedger()).catch(e => console.warn('[Ledger] sync error:', e));
   }).catch((err) => {
     console.warn("[Startup] Price refresh error:", err);
   });
@@ -7220,6 +7221,7 @@ async function refreshAllLivePrices(force = true) {
   if (typeof renderNetWorthHistory === 'function') {
     renderNetWorthHistory();
   }
+  syncWatchlistToProxy().then(() => backfillNetWorthFromLedger()).catch(e => console.warn('[Ledger] sync error:', e));
 
   const cur22k = getCaratGoldRate("22K");
   toast(`✅ All prices refreshed! Portfolio updated across Mutual Funds, Stocks, US Stocks & Gold (22K: ₹${cur22k ? cur22k.toFixed(2) : '13709'}/g)`);
@@ -8278,6 +8280,228 @@ function recordDailyNetWorthSnapshot(options = {}) {
     renderNetWorthHistory();
   }
   return snapshot;
+}
+
+/* ── Backend price ledger (Apps Script) ────────────────────────────────────
+   The proxy's time triggers (every 6h + ~23:45 IST) save price records even when the app
+   is closed. The app tells the proxy only WHICH tickers / fund codes to track (no
+   quantities or amounts) and, when opened, rebuilds missed days of history locally from
+   those records combined with the holdings in the encrypted vault. */
+const NWH_WATCH_HASH_KEY = 'lifeLedger_watchlistHash';
+const NWH_BACKFILL_KEY = 'lifeLedger_ledgerBackfillAt';
+
+function getProxyBaseUrl() {
+  const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STOCK_PROXY_URL_KEY) : null;
+  return raw ? raw.trim().replace(/^["']|["']$/g, '').replace(/\?+$/, '') : '';
+}
+
+function ledgerStockKey(sym) {
+  return getExchangeTicker(String(sym || '').toUpperCase().replace(/\s*-EQ$/i, '').trim()).replace(/\.(NS|BO)$/i, '').toUpperCase();
+}
+
+function getMfSchemeCodes() {
+  const codes = new Set();
+  (state.mutualFunds || []).forEach(t => {
+    const c = parseInt(t.schemeCode || t.amfiCode, 10);
+    if (c) codes.add(String(c));
+  });
+  return [...codes];
+}
+
+// Registers every ticker / fund code ever held so the backend can track their prices.
+async function syncWatchlistToProxy(force = false) {
+  const proxyUrl = getProxyBaseUrl();
+  if (!proxyUrl) return false;
+  const stocks = [...new Set((state.stocks || []).map(s => s.symbol || s.company).filter(Boolean).map(ledgerStockKey))];
+  const us = [...new Set((state.usstocks || []).map(s => s.symbol).filter(Boolean).map(x => String(x).toUpperCase().trim()))];
+  const mf = getMfSchemeCodes();
+  const hash = JSON.stringify([stocks, us, mf]);
+  try {
+    if (!force && localStorage.getItem(NWH_WATCH_HASH_KEY) === hash) return true;
+  } catch {}
+  try {
+    const sep = proxyUrl.includes('?') ? '&' : '?';
+    const url = `${proxyUrl}${sep}registerWatch=1&stocks=${encodeURIComponent(stocks.join(','))}&us=${encodeURIComponent(us.join(','))}&mf=${encodeURIComponent(mf.join(','))}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    const data = res.ok ? await res.json() : null;
+    if (data && data.status === 'ok') {
+      try { localStorage.setItem(NWH_WATCH_HASH_KEY, hash); } catch {}
+      return true;
+    }
+  } catch (e) {
+    console.warn('[Ledger] Watchlist sync failed:', e.message);
+  }
+  return false;
+}
+
+function dateOfTxn(t) {
+  return String(t.purchaseDate || t.date || '').slice(0, 10);
+}
+
+// Builds one past day's snapshot from backend price records + holdings owned on that date.
+function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
+  const dayRecords = (records || []).filter(r => r.date === date).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  if (dayRecords.length === 0) return null;
+  const owned = (list) => (list || []).filter(t => !dateOfTxn(t) || dateOfTxn(t) <= date);
+
+  // Net holdings on `date`
+  const groupNet = (list, keyFn, netFn) => {
+    const groups = {};
+    owned(list).forEach(t => { const k = keyFn(t); (groups[k] = groups[k] || []).push(t); });
+    return Object.entries(groups).map(([k, txns]) => ({ key: k, txns, qty: netFn(txns) })).filter(g => g.qty > 0);
+  };
+  const stockKey = t => `${ledgerStockKey(t.symbol || t.company)}|${t.owner || 'Me'}|${t.demat || ''}`;
+  const heldStocks = groupNet(st.stocks, stockKey, tx => calcStockCostBasis(tx).netQty);
+  const heldUs = groupNet(st.usstocks, t => `${String(t.symbol || '').toUpperCase().trim()}|${t.owner || 'Me'}|${t.demat || ''}`, tx => calcStockCostBasis(tx).netQty);
+  const heldMf = groupNet(st.mutualFunds, t => `${t.fundName || 'Unknown'}|${t.owner || 'Me'}`, tx => Math.max(0, calcMfCostBasis(tx).netUnits));
+  const heldGold = owned(st.gold).filter(g => toNumber(g.weightGrams || g.weight) > 0);
+
+  const mfCode = (g) => String(parseInt(g.txns.find(t => t.schemeCode || t.amfiCode)?.schemeCode || g.txns.find(t => t.amfiCode)?.amfiCode, 10) || '');
+  const mfNavISO = (rec) => {
+    let oldest = '';
+    heldMf.forEach(g => {
+      const iso = navDateToISO(rec.mf?.[mfCode(g)]?.date);
+      if (!iso) { oldest = oldest || '0000'; return; }
+      if (!oldest || iso < oldest) oldest = iso;
+    });
+    return oldest === '0000' ? '' : oldest;
+  };
+
+  // Choose the record that represents each class's close (else the latest of the day)
+  const pick = (cls, held) => {
+    if (held.length === 0) return { rec: dayRecords[dayRecords.length - 1], settled: true };
+    const ok = dayRecords.filter(r => isNetWorthClassSettled(cls, new Date(r.ts).getTime(), date, cls === 'mutualFunds' ? mfNavISO(r) : ''));
+    return ok.length ? { rec: ok[ok.length - 1], settled: true } : { rec: dayRecords[dayRecords.length - 1], settled: false };
+  };
+
+  const out = { values: {}, changes: {}, settled: {}, asOf: {} };
+
+  let c = pick('stocks', heldStocks), missing = 0, value = 0, change = 0;
+  heldStocks.forEach(g => {
+    const q = c.rec.stocks?.[g.key.split('|')[0]];
+    if (!q || !(q.price > 0)) { missing++; return; }
+    value += g.qty * q.price;
+    if (q.prevClose > 0) change += g.qty * (q.price - q.prevClose);
+  });
+  Object.assign(out.values, { stocks: value }); out.changes.stocks = change; out.settled.stocks = c.settled && missing === 0; out.asOf.stocks = c.rec.ts;
+
+  c = pick('usStocks', heldUs); missing = 0; value = 0; change = 0;
+  const fx = Number(c.rec.fx?.usdInr) || Number(dayRecords.find(r => r.fx?.usdInr)?.fx?.usdInr) || getUsdInrRate();
+  heldUs.forEach(g => {
+    const q = c.rec.us?.[g.key.split('|')[0]];
+    if (!q || !(q.price > 0)) { missing++; return; }
+    value += g.qty * q.price * fx;
+    if (q.prevClose > 0) change += g.qty * (q.price - q.prevClose) * fx;
+  });
+  out.values.usStocks = value; out.changes.usStocks = change; out.settled.usStocks = c.settled && missing === 0; out.asOf.usStocks = c.rec.ts;
+
+  c = pick('mutualFunds', heldMf); missing = 0; value = 0; change = 0;
+  heldMf.forEach(g => {
+    const q = c.rec.mf?.[mfCode(g)];
+    if (!q || !(q.nav > 0)) { missing++; return; }
+    value += g.qty * q.nav;
+    if (q.prevNav > 0) change += g.qty * (q.nav - q.prevNav);
+  });
+  out.values.mutualFunds = value; out.changes.mutualFunds = change; out.settled.mutualFunds = c.settled && missing === 0; out.asOf.mutualFunds = c.rec.ts;
+
+  c = pick('gold', heldGold); value = 0; change = 0; let goldOk = true;
+  const gr = c.rec.gold || dayRecords.map(r => r.gold).filter(Boolean).pop();
+  if (heldGold.length && !(gr && gr.price24k > 0)) goldOk = false;
+  heldGold.forEach(g => {
+    if (!goldOk) return;
+    const w = toNumber(g.weightGrams || g.weight);
+    const mult = getCaratMultiplier(g.carat || '22K');
+    value += w * gr.price24k * mult;
+    if (gr.prevClose24k > 0) change += w * (gr.price24k - gr.prevClose24k) * mult;
+  });
+  out.values.gold = value; out.changes.gold = change; out.settled.gold = c.settled && goldOk; out.asOf.gold = c.rec.ts;
+
+  // Non-market classes cannot be reconstructed: carry forward the last known values
+  const carry = {};
+  ['silver', 'crypto', 'fd', 'epf', 'ppf', 'bonds', 'bankSaving', 'others', 'liabilities'].forEach(k => { carry[k] = toNumber(baseEntry?.[k]); });
+
+  const totalAssets = Number((out.values.mutualFunds + out.values.stocks + out.values.usStocks + out.values.gold +
+    carry.silver + carry.crypto + carry.fd + carry.epf + carry.ppf + carry.bonds + carry.bankSaving + carry.others).toFixed(2));
+  const dayChange = Number(NWH_MARKET_CLASSES.reduce((sum, k) => sum + out.changes[k], 0).toFixed(2));
+  const marketValue = NWH_MARKET_CLASSES.reduce((sum, k) => sum + out.values[k], 0);
+  const roundMap = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Number(Number(v).toFixed(2))]));
+
+  return {
+    id: `nwh-${generateUUID()}`,
+    date,
+    timestamp: dayRecords[dayRecords.length - 1].ts,
+    netWorth: Number((totalAssets - carry.liabilities).toFixed(2)),
+    totalAssets,
+    totalLiabilities: carry.liabilities,
+    dayChange,
+    dayChangePct: marketValue - dayChange > 0 ? Number(((dayChange / (marketValue - dayChange)) * 100).toFixed(2)) : 0,
+    changes: roundMap(out.changes),
+    settled: out.settled,
+    asOf: out.asOf,
+    final: NWH_MARKET_CLASSES.every(k => out.settled[k]),
+    mutualFunds: Number(out.values.mutualFunds.toFixed(2)),
+    stocks: Number(out.values.stocks.toFixed(2)),
+    usStocks: Number(out.values.usStocks.toFixed(2)),
+    gold: Number(out.values.gold.toFixed(2)),
+    ...carry,
+    source: 'backend-ledger'
+  };
+}
+
+// Fills missed past days (and completes partial ones) from the backend price ledger.
+async function backfillNetWorthFromLedger(force = false) {
+  const proxyUrl = getProxyBaseUrl();
+  if (!proxyUrl || !state.netWorthHistory) return 0;
+  const nowMs = Date.now();
+  try {
+    if (!force && nowMs - parseInt(localStorage.getItem(NWH_BACKFILL_KEY) || '0', 10) < 60 * 60 * 1000) return 0;
+  } catch {}
+
+  const today = istTodayISO(nowMs);
+  const floorDate = istTodayISO(nowMs - 45 * 24 * 3600 * 1000);
+  const since = floorDate; // covers gaps as well as partially captured days
+
+  let records = [];
+  try {
+    const sep = proxyUrl.includes('?') ? '&' : '?';
+    const res = await fetch(`${proxyUrl}${sep}ledger=1&since=${since}`, { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) return 0;
+    records = (await res.json())?.records || [];
+  } catch (e) {
+    console.warn('[Ledger] Backfill fetch failed:', e.message);
+    return 0;
+  }
+  try { localStorage.setItem(NWH_BACKFILL_KEY, String(nowMs)); } catch {}
+  if (!records.length) return 0;
+
+  const dates = [...new Set(records.map(r => r.date))].filter(d => d >= floorDate && d < today).sort();
+  let changed = 0;
+  dates.forEach((date) => {
+    const idx = state.netWorthHistory.findIndex(e => e.date === date);
+    const existing = idx >= 0 ? state.netWorthHistory[idx] : null;
+    if (existing && (!existing.settled || !Object.keys(existing.settled).length || existing.final)) return;
+    const baseEntry = state.netWorthHistory.filter(e => e.date < date).sort((a, b) => b.date.localeCompare(a.date))[0]
+      || { ...captureCurrentNetWorthBreakdown() };
+    const entry = buildNetWorthEntryFromLedger({ date, records, st: state, baseEntry });
+    if (!entry) return;
+    const countSettled = (e) => NWH_MARKET_CLASSES.filter(k => e.settled?.[k]).length;
+    if (existing) {
+      if (countSettled(entry) <= countSettled(existing)) return;
+      entry.id = existing.id;
+      state.netWorthHistory[idx] = entry;
+    } else {
+      state.netWorthHistory.push(entry);
+    }
+    changed++;
+  });
+
+  if (changed > 0) {
+    state.netWorthHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+    persist();
+    if (typeof renderNetWorthHistory === 'function') renderNetWorthHistory();
+    toast(`📈 Net worth history: filled ${changed} day${changed > 1 ? 's' : ''} from backend price records`);
+  }
+  return changed;
 }
 
 // Called every 15 min while the app is open: once a class's close has passed and today's
@@ -15293,6 +15517,7 @@ if (typeof module !== 'undefined' && module.exports) {
     recordDailyNetWorthSnapshot,
     calculatePortfolio1DayChange,
     isNetWorthClassSettled,
+    buildNetWorthEntryFromLedger,
     istTodayISO,
     prevBusinessDayISO,
     parseGoodReturnsGold,
