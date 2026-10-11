@@ -441,6 +441,73 @@ test("US stock holdings are converted from USD to INR in net worth totals", () =
   assert.strictEqual(Math.round(calcUsStockTotalValueINR()), Math.round(2 * 500 * rate));
 });
 
+test("settlement rules: each asset class locks only after its own close", () => {
+  const { isNetWorthClassSettled, prevBusinessDayISO } = require("../app.js");
+  const ist = (iso) => new Date(`${iso}+05:30`).getTime();
+  // Indian stocks (Mon 12 Oct 2026): 11:00 live, 16:00 settled; Saturday any time settled
+  assert.strictEqual(isNetWorthClassSettled("stocks", ist("2026-10-12T11:00:00"), "2026-10-12"), false);
+  assert.strictEqual(isNetWorthClassSettled("stocks", ist("2026-10-12T16:00:00"), "2026-10-12"), true);
+  assert.strictEqual(isNetWorthClassSettled("stocks", ist("2026-10-10T11:00:00"), "2026-10-10"), true);
+  // A price fetched on a previous day never settles today
+  assert.strictEqual(isNetWorthClassSettled("stocks", ist("2026-10-09T16:00:00"), "2026-10-12"), false);
+  // Gold: settles from 18:00 IST
+  assert.strictEqual(isNetWorthClassSettled("gold", ist("2026-10-12T17:59:00"), "2026-10-12"), false);
+  assert.strictEqual(isNetWorthClassSettled("gold", ist("2026-10-12T18:00:00"), "2026-10-12"), true);
+  // US stocks: 10:00 IST = 00:30 ET (closed) settled; 22:00 IST = 12:30 ET (open) live
+  assert.strictEqual(isNetWorthClassSettled("usStocks", ist("2026-10-12T10:00:00"), "2026-10-12"), true);
+  assert.strictEqual(isNetWorthClassSettled("usStocks", ist("2026-10-12T22:00:00"), "2026-10-12"), false);
+  // Mutual funds: NAV must be dated at least the previous business day
+  assert.strictEqual(prevBusinessDayISO("2026-10-12"), "2026-10-09");
+  assert.strictEqual(isNetWorthClassSettled("mutualFunds", ist("2026-10-12T09:00:00"), "2026-10-12", "2026-10-09"), true);
+  assert.strictEqual(isNetWorthClassSettled("mutualFunds", ist("2026-10-13T09:00:00"), "2026-10-13", "2026-10-09"), false);
+});
+
+test("1-day change counts net holdings only (sold lots excluded)", () => {
+  const { calculatePortfolio1DayChange, state } = require("../app.js");
+  state.mutualFunds = [];
+  state.gold = [];
+  state.usstocks = [];
+  state.stocks = [
+    { symbol: "TCS", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 10, avgPrice: 3000, invested: 30000, purchaseDate: "2026-01-01", currentPrice: 3500, prevClose: 3450 },
+    { symbol: "TCS", owner: "Me", demat: "Z", transactionType: "SELL", quantity: 4, avgPrice: 3400, invested: 13600, purchaseDate: "2026-02-01", currentPrice: 3500, prevClose: 3450 },
+    { symbol: "INFY", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 5, avgPrice: 1500, invested: 7500, purchaseDate: "2026-01-01", currentPrice: 1600, prevClose: 1600 },
+    { symbol: "INFY", owner: "Me", demat: "Z", transactionType: "SELL", quantity: 5, avgPrice: 1600, invested: 8000, purchaseDate: "2026-03-01", currentPrice: 1600, prevClose: 1600 }
+  ];
+  const r = calculatePortfolio1DayChange();
+  // TCS net 6 shares: 6 * (3500 - 3450) = 300; INFY fully sold: contributes nothing
+  assert.strictEqual(Math.round(r.classes.stocks.change), 300);
+  assert.strictEqual(Math.round(r.classes.stocks.value), 6 * 3500);
+});
+
+test("daily snapshot locks a settled class and never mixes in cash flows", () => {
+  const { recordDailyNetWorthSnapshot, istTodayISO, state } = require("../app.js");
+  const today = istTodayISO();
+  state.mutualFunds = [];
+  state.gold = [];
+  state.usstocks = [];
+  state.fd = [];
+  state.epf = [];
+  state.liabilities = [];
+  state.stocks = [
+    { symbol: "TCS", owner: "Me", demat: "Z", transactionType: "BUY", quantity: 10, avgPrice: 3000, invested: 30000, purchaseDate: "2026-01-01", currentPrice: 3600, prevClose: 3500 }
+  ];
+  state.netWorthHistory = [
+    { id: "nwh-locked", date: today, timestamp: new Date().toISOString(), netWorth: 1, totalAssets: 1,
+      stocks: 33000, changes: { stocks: 500 }, settled: { stocks: true }, asOf: { stocks: "x" }, source: "settle" },
+    { id: "nwh-old", date: "2000-01-01", netWorth: 5, totalAssets: 5, stocks: 5 }
+  ];
+  const snap = recordDailyNetWorthSnapshot({ source: "test" });
+  assert.strictEqual(snap.id, "nwh-locked");
+  assert.strictEqual(snap.stocks, 33000, "settled class keeps its locked value");
+  assert.strictEqual(snap.changes.stocks, 500, "settled class keeps its locked gain/loss");
+  assert.strictEqual(snap.dayChange, 500, "day change is market gain/loss only");
+  assert.strictEqual(snap.settled.stocks, true);
+  assert.strictEqual(snap.settled.mutualFunds, true, "class with no holdings counts as settled");
+  assert.strictEqual(snap.netWorth, 33000);
+  // older days are never touched
+  assert.strictEqual(state.netWorthHistory.find(e => e.id === "nwh-old").netWorth, 5);
+});
+
 console.log("==========================================");
 console.log(`📊 NET WORTH HISTORY TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
 console.log("==========================================");

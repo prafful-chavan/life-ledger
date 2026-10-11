@@ -560,6 +560,7 @@ function initBrokerAutoRefresh() {
 }
 
 async function checkAndRunAutoRefresh(force6h = false) {
+  runNetWorthSettlementCheck().catch(e => console.warn('[NetWorth] Settlement check error:', e));
   const now = Date.now();
   const last6hRun = parseInt(localStorage.getItem(AUTO_REFRESH_6H_KEY) || '0', 10);
   const is6hDue = (now - last6hRun >= SIX_HOURS_MS);
@@ -898,6 +899,10 @@ function normalizeNetWorthHistoryEntry(entry) {
     totalLiabilities: toNumber(entry.totalLiabilities),
     dayChange: toNumber(entry.dayChange),
     dayChangePct: toNumber(entry.dayChangePct),
+    changes: entry.changes && typeof entry.changes === "object" ? entry.changes : {},
+    settled: entry.settled && typeof entry.settled === "object" ? entry.settled : {},
+    asOf: entry.asOf && typeof entry.asOf === "object" ? entry.asOf : {},
+    final: !!entry.final,
     mutualFunds: toNumber(entry.mutualFunds),
     stocks: toNumber(entry.stocks),
     usStocks: toNumber(entry.usStocks),
@@ -4318,134 +4323,133 @@ function renderAll() {
   renderChat();
 }
 
+// Net holdings per symbol|owner|broker (FIFO-aware) with live price, previous close and fetch time.
+// Sold lots are excluded, so the 1-day change only reflects shares actually held.
+function collectNetStockHoldings(stockList, isUS) {
+  const cache = typeof getStockPriceCache === 'function' ? getStockPriceCache() : {};
+  const groups = {};
+  (stockList || []).forEach((s) => {
+    if (!s.symbol && !s.company) return;
+    const key = `${String(s.symbol || s.company).toUpperCase().replace(/\s*-EQ$/i, '').trim()}|${s.owner || 'Me'}|${s.demat || ''}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  });
+  const holdings = [];
+  Object.values(groups).forEach((txns) => {
+    const netQty = calcStockCostBasis(txns).netQty;
+    if (!(netQty > 0)) return;
+    const sym = String(txns[0].symbol || txns[0].company).toUpperCase().replace(/\s*-EQ$/i, '').trim();
+    const cached = isUS
+      ? (cache[sym] || cache[`NASDAQ:${sym}`] || cache[`NYSE:${sym}`] || cache[`NYSEARCA:${sym}`] || cache[`${sym}.US`] || cache[sym.toLowerCase()])
+      : (cache[sym] || cache[getExchangeTicker(sym)]);
+    const priced = txns.find(t => toNumber(t.currentPrice) > 0);
+    const price = toNumber(priced ? priced.currentPrice : (cached ? cached.price : txns[0].avgPrice));
+    const prevClose = toNumber(priced ? priced.prevClose : 0) || toNumber(cached?.prevClose);
+    holdings.push({ sym, qty: netQty, price, prevClose: (priced || cached) ? prevClose : 0, fetchedAt: toNumber(cached?.timestamp) });
+  });
+  return holdings;
+}
+
+function navDateToISO(navDate) {
+  const m = String(navDate || '').match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : (/^\d{4}-\d{2}-\d{2}$/.test(String(navDate || '')) ? String(navDate) : '');
+}
+
+// Returns the total 1-day market gain/loss (price moves only, never cash flows) plus a
+// per-asset-class breakdown with the freshness of each class's prices.
 function calculatePortfolio1DayChange() {
-  let total1DayChangeINR = 0;
-  let totalPortfolioValueINR = 0;
-  let hasData = false;
+  const classes = {
+    mutualFunds: { value: 0, change: 0, hasChange: false, held: false, fetchedAt: 0, asOf: '' },
+    stocks:      { value: 0, change: 0, hasChange: false, held: false, fetchedAt: 0, asOf: '' },
+    usStocks:    { value: 0, change: 0, hasChange: false, held: false, fetchedAt: 0, asOf: '' },
+    gold:        { value: 0, change: 0, hasChange: false, held: false, fetchedAt: 0, asOf: '' },
+  };
+  const minPositive = (cur, v) => (v > 0 ? (cur > 0 ? Math.min(cur, v) : v) : cur);
 
   // 1. Mutual Funds
   const mfByFund = {};
   (state.mutualFunds || []).forEach((t) => {
     const key = `${t.fundName || "Unknown"}|${t.owner || 'Me'}`;
-    if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || 0 };
+    if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || 0, navDate: t.navDate || '', fetchedAt: toNumber(t.navFetchedAt) };
     mfByFund[key].txns.push(t);
     if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
     if (t.prevNav) mfByFund[key].prevNav = toNumber(t.prevNav);
+    if (t.navDate) mfByFund[key].navDate = t.navDate;
+    if (t.navFetchedAt) mfByFund[key].fetchedAt = toNumber(t.navFetchedAt);
   });
+  let oldestNavISO = '';
   Object.values(mfByFund).forEach(fund => {
     const netUnits = calcMfCostBasis(fund.txns).netUnits;
     if (netUnits > 0 && fund.latestNav > 0) {
-      const curVal = netUnits * fund.latestNav;
-      totalPortfolioValueINR += curVal;
+      const c = classes.mutualFunds;
+      c.held = true;
+      c.value += netUnits * fund.latestNav;
+      c.fetchedAt = minPositive(c.fetchedAt, fund.fetchedAt);
+      const iso = navDateToISO(fund.navDate);
+      if (iso && (!oldestNavISO || iso < oldestNavISO)) oldestNavISO = iso;
       if (fund.prevNav > 0) {
-        const dayChange = netUnits * (fund.latestNav - fund.prevNav);
-        total1DayChangeINR += dayChange;
-        hasData = true;
+        c.change += netUnits * (fund.latestNav - fund.prevNav);
+        c.hasChange = true;
       }
     }
   });
+  classes.mutualFunds.asOf = oldestNavISO;
+  if (classes.mutualFunds.held && !classes.mutualFunds.fetchedAt) classes.mutualFunds.fetchedAt = 0;
 
-  // 2. Indian Stocks (all brokers: Upstox, Zerodha, Groww, INDmoney)
-  const stockGroups = {};
-  (state.stocks || []).forEach(s => {
-    if (!s.symbol) return;
-    const sym = s.symbol.toUpperCase().replace(/\s*-EQ$/i, '').trim();
-    if (!stockGroups[sym]) stockGroups[sym] = [];
-    stockGroups[sym].push(s);
-  });
-  Object.values(stockGroups).forEach(items => {
-    items.forEach(s => {
-      const qty = toNumber(s.quantity);
-      const curPrice = toNumber(s.currentPrice || s.avgPrice);
-      const prevClose = s.prevClose ? toNumber(s.prevClose) : 0;
-      if (qty > 0 && curPrice > 0) {
-        const curVal = qty * curPrice;
-        totalPortfolioValueINR += curVal;
-        if (prevClose > 0) {
-          const dayChange = qty * (curPrice - prevClose);
-          total1DayChangeINR += dayChange;
-          hasData = true;
-        }
-      }
-    });
+  // 2. Indian Stocks (net holdings across all brokers)
+  collectNetStockHoldings(state.stocks, false).forEach(h => {
+    const c = classes.stocks;
+    c.held = true;
+    c.value += h.qty * h.price;
+    c.fetchedAt = h.fetchedAt > 0 ? minPositive(c.fetchedAt, h.fetchedAt) : c.fetchedAt;
+    if (h.prevClose > 0 && h.price > 0) {
+      c.change += h.qty * (h.price - h.prevClose);
+      c.hasChange = true;
+    }
   });
 
-  // 3. US Stocks (converted to INR at the live USD/INR rate)
+  // 3. US Stocks (USD → INR at the live rate)
   const usdInrRate = getUsdInrRate();
-  const cache = typeof getStockPriceCache === 'function' ? getStockPriceCache() : {};
-  const usStockGroups = {};
-  (state.usstocks || []).forEach(s => {
-    if (!s.symbol) return;
-    const sym = s.symbol.toUpperCase().trim();
-    if (!usStockGroups[sym]) usStockGroups[sym] = [];
-    usStockGroups[sym].push(s);
-  });
-  Object.values(usStockGroups).forEach(items => {
-    items.forEach(s => {
-      const qty = toNumber(s.quantity);
-      const sym = (s.symbol || '').toUpperCase().trim();
-      const cached = cache[sym] || cache[`NASDAQ:${sym}`] || cache[`NYSE:${sym}`] || cache[`NYSEARCA:${sym}`] || cache[`${sym}.US`] || cache[sym.toLowerCase()];
-      const curPrice = toNumber(s.currentPrice || cached?.price || s.avgPrice);
-      const prevClose = s.prevClose ? toNumber(s.prevClose) : (cached?.prevClose ? toNumber(cached.prevClose) : 0);
-      if (qty > 0 && curPrice > 0) {
-        const curValINR = qty * curPrice * usdInrRate;
-        totalPortfolioValueINR += curValINR;
-        if (prevClose > 0) {
-          const dayChangeUSD = qty * (curPrice - prevClose);
-          total1DayChangeINR += dayChangeUSD * usdInrRate;
-          hasData = true;
-        }
-      }
-    });
+  collectNetStockHoldings(state.usstocks, true).forEach(h => {
+    const c = classes.usStocks;
+    c.held = true;
+    c.value += h.qty * h.price * usdInrRate;
+    c.fetchedAt = h.fetchedAt > 0 ? minPositive(c.fetchedAt, h.fetchedAt) : c.fetchedAt;
+    if (h.prevClose > 0 && h.price > 0) {
+      c.change += h.qty * (h.price - h.prevClose) * usdInrRate;
+      c.hasChange = true;
+    }
   });
 
   // 4. Physical / Sovereign Gold Assets (24K, 22K, 18K)
-  let totalGoldValINR = 0;
-  let totalGoldDayChangeINR = 0;
-  let hasGoldDayChange = false;
-
   (state.gold || []).forEach(item => {
     const weight = toNumber(item.weightGrams || item.weight);
     if (weight > 0) {
       const carat = item.carat || "22K";
       const curRate = getCaratGoldRate(carat);
       const prevRate = getCaratGoldPrevClose(carat);
-      const curVal = weight * curRate;
-      totalGoldValINR += curVal;
-
-      if (prevRate > 0) {
-        const dayChange = weight * (curRate - prevRate);
-        totalGoldDayChangeINR += dayChange;
-        if (Math.abs(curRate - prevRate) > 0.001) {
-          hasGoldDayChange = true;
-        }
-      }
+      const c = classes.gold;
+      c.held = true;
+      c.value += weight * curRate;
+      if (prevRate > 0) c.change += weight * (curRate - prevRate);
     }
   });
-
-  // Fallback: If live quote prevRate was identical to curRate, check yesterday's net worth history snapshot
-  if (!hasGoldDayChange && totalGoldValINR > 0) {
-    const today = todayISO();
-    const prevSnap = (state.netWorthHistory || [])
-      .filter(entry => entry.date < today && entry.gold !== undefined && entry.gold !== null)
-      .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-    if (prevSnap && prevSnap.gold > 0) {
-      const histDiff = totalGoldValINR - Number(prevSnap.gold);
-      if (Math.abs(histDiff) > 0.01) {
-        totalGoldDayChangeINR = histDiff;
-        hasGoldDayChange = true;
-      }
-    }
+  if (classes.gold.held) {
+    const gp = state.goldPrice || {};
+    classes.gold.hasChange = !!(gp.price24k > 0 && (gp.prevClose24k > 0 || gp.lastFetched));
+    classes.gold.fetchedAt = gp.lastFetched ? new Date(gp.lastFetched).getTime() || 0 : 0;
   }
 
-  if (totalGoldValINR > 0) {
-    totalPortfolioValueINR += totalGoldValINR;
-    const goldQuoteActive = (state.goldPrice && state.goldPrice.price24k > 0 && (hasGoldDayChange || state.goldPrice.prevClose24k > 0 || state.goldPrice.lastFetched));
-    if (goldQuoteActive) {
-      total1DayChangeINR += totalGoldDayChangeINR;
+  let total1DayChangeINR = 0;
+  let totalPortfolioValueINR = 0;
+  let hasData = false;
+  Object.values(classes).forEach(c => {
+    totalPortfolioValueINR += c.value;
+    if (c.held && c.hasChange) {
+      total1DayChangeINR += c.change;
       hasData = true;
     }
-  }
+  });
 
   const prevValINR = totalPortfolioValueINR - total1DayChangeINR;
   const changePct = hasData && prevValINR > 0 ? (total1DayChangeINR / prevValINR) * 100 : 0;
@@ -4454,7 +4458,8 @@ function calculatePortfolio1DayChange() {
     total1DayChangeINR,
     totalPortfolioValueINR,
     changePct,
-    hasData
+    hasData,
+    classes
   };
 }
 
@@ -8135,34 +8140,103 @@ function captureCurrentNetWorthBreakdown() {
   };
 }
 
+/* ── Settlement rules ─────────────────────────────────────────────────────
+   Each asset class finishes its trading "day" at a different time, so today's snapshot
+   updates live and each class is LOCKED once a price fetched after its close arrives:
+   • Indian stocks : fetched on/after 15:45 IST (any time on weekends)
+   • US stocks     : fetched while the US market is fully closed (ET weekend, <04:00 or ≥20:00)
+   • Gold          : fetched on/after 18:00 IST (GoodReturns rate for the day is out)
+   • Mutual funds  : latest NAV is dated at least the previous business day (1+ day lag is OK)
+   Past days are never modified. A class that never settled keeps its last live value. */
+const NWH_MARKET_CLASSES = ['mutualFunds', 'stocks', 'usStocks', 'gold'];
+const NWH_CLASS_LABELS = { mutualFunds: 'MF', stocks: 'Stocks', usStocks: 'US', gold: 'Gold' };
+const NWH_STOCKS_SETTLE_MIN_IST = 15 * 60 + 45;
+const NWH_GOLD_SETTLE_MIN_IST = 18 * 60;
+
+function zonedClock(ms, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', weekday: 'short'
+  }).formatToParts(new Date(ms)).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday);
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute),
+    dow
+  };
+}
+
+function istClock(ms) { return zonedClock(ms, 'Asia/Kolkata'); }
+function istTodayISO(ms = Date.now()) { return istClock(ms).date; }
+
+function isUsMarketClosedAt(ms) {
+  const et = zonedClock(ms, 'America/New_York');
+  return et.dow === 0 || et.dow === 6 || et.minutes < 4 * 60 || et.minutes >= 20 * 60;
+}
+
+function prevBusinessDayISO(dateISO) {
+  const d = new Date(`${dateISO}T00:00:00Z`);
+  do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}
+
+// True when `fetchedAtMs` is a price fetched on IST day `dateISO` after that class's close.
+function isNetWorthClassSettled(cls, fetchedAtMs, dateISO, navISO) {
+  if (!fetchedAtMs) return false;
+  const f = istClock(fetchedAtMs);
+  if (f.date !== dateISO) return false;
+  switch (cls) {
+    case 'stocks': return f.dow === 0 || f.dow === 6 || f.minutes >= NWH_STOCKS_SETTLE_MIN_IST;
+    case 'usStocks': return isUsMarketClosedAt(fetchedAtMs);
+    case 'gold': return f.minutes >= NWH_GOLD_SETTLE_MIN_IST;
+    case 'mutualFunds': return !!navISO && navISO >= prevBusinessDayISO(dateISO);
+    default: return false;
+  }
+}
+
 function recordDailyNetWorthSnapshot(options = {}) {
   if (!state.netWorthHistory) state.netWorthHistory = [];
 
-  const today = todayISO();
+  const today = istTodayISO();
   const breakdown = captureCurrentNetWorthBreakdown();
   const dayChangeMetrics = calculatePortfolio1DayChange();
-
-  // Find if a record for today already exists
   const existingIndex = state.netWorthHistory.findIndex(entry => entry.date === today);
+  const existing = existingIndex >= 0 ? state.netWorthHistory[existingIndex] : null;
+  const prevSettled = existing?.settled || {};
+  const prevChanges = existing?.changes || {};
+  const prevAsOf = existing?.asOf || {};
 
-  // Find the most recent prior day record
-  const previousEntry = state.netWorthHistory
-    .filter(entry => entry.date < today)
-    .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+  const settled = {};
+  const changes = {};
+  const asOf = {};
+  NWH_MARKET_CLASSES.forEach((cls) => {
+    const live = dayChangeMetrics.classes[cls];
+    if (prevSettled[cls]) {
+      // Locked at its close earlier today: keep that value and gain/loss
+      breakdown[cls] = toNumber(existing[cls]);
+      changes[cls] = toNumber(prevChanges[cls]);
+      asOf[cls] = prevAsOf[cls] || '';
+      settled[cls] = true;
+      return;
+    }
+    changes[cls] = live.held && live.hasChange ? Number(live.change.toFixed(2)) : 0;
+    settled[cls] = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
+    asOf[cls] = live.fetchedAt ? new Date(live.fetchedAt).toISOString() : '';
+  });
 
-  let dayChange = 0;
-  let dayChangePct = 0;
+  // Totals recomputed so locked classes and live classes add up consistently
+  const otherAssets = breakdown.silver + breakdown.crypto + breakdown.fd + breakdown.epf +
+    breakdown.ppf + breakdown.bonds + breakdown.bankSaving + breakdown.others;
+  breakdown.totalAssets = Number((breakdown.mutualFunds + breakdown.stocks + breakdown.usStocks + breakdown.gold + otherAssets).toFixed(2));
+  breakdown.netWorth = Number((breakdown.totalAssets - breakdown.liabilities).toFixed(2));
 
-  if (dayChangeMetrics.hasData && dayChangeMetrics.total1DayChangeINR !== 0) {
-    dayChange = Number(dayChangeMetrics.total1DayChangeINR.toFixed(2));
-    dayChangePct = Number(dayChangeMetrics.changePct.toFixed(2));
-  } else if (previousEntry && previousEntry.netWorth > 0) {
-    dayChange = Number((breakdown.netWorth - previousEntry.netWorth).toFixed(2));
-    dayChangePct = Number(((dayChange / previousEntry.netWorth) * 100).toFixed(2));
-  }
+  const dayChange = Number(NWH_MARKET_CLASSES.reduce((sum, cls) => sum + changes[cls], 0).toFixed(2));
+  const marketValue = NWH_MARKET_CLASSES.reduce((sum, cls) => sum + breakdown[cls], 0);
+  const prevMarketValue = marketValue - dayChange;
+  const dayChangePct = prevMarketValue > 0 ? Number(((dayChange / prevMarketValue) * 100).toFixed(2)) : 0;
 
   const snapshot = {
-    id: existingIndex >= 0 ? state.netWorthHistory[existingIndex].id : `nwh-${generateUUID()}`,
+    id: existing ? existing.id : `nwh-${generateUUID()}`,
     date: today,
     timestamp: new Date().toISOString(),
     netWorth: breakdown.netWorth,
@@ -8170,6 +8244,10 @@ function recordDailyNetWorthSnapshot(options = {}) {
     totalLiabilities: breakdown.liabilities,
     dayChange,
     dayChangePct,
+    changes,
+    settled,
+    asOf,
+    final: NWH_MARKET_CLASSES.every(cls => settled[cls]),
     mutualFunds: breakdown.mutualFunds,
     stocks: breakdown.stocks,
     usStocks: breakdown.usStocks,
@@ -8200,6 +8278,44 @@ function recordDailyNetWorthSnapshot(options = {}) {
     renderNetWorthHistory();
   }
   return snapshot;
+}
+
+// Called every 15 min while the app is open: once a class's close has passed and today's
+// snapshot is still holding a live value for it, fetch fresh prices and lock the class.
+let nwhSettleInFlight = false;
+async function runNetWorthSettlementCheck() {
+  if (nwhSettleInFlight || !state.netWorthHistory) return;
+  const nowMs = Date.now();
+  const today = istTodayISO(nowMs);
+  const snap = state.netWorthHistory.find(e => e.date === today);
+  const settled = snap?.settled || {};
+  const metrics = calculatePortfolio1DayChange();
+  const due = [];
+  NWH_MARKET_CLASSES.forEach((cls) => {
+    const c = metrics.classes[cls];
+    if (!c.held || settled[cls] || cls === 'mutualFunds') return;
+    if (isNetWorthClassSettled(cls, nowMs, today, '')) due.push(cls);
+  });
+  if (due.length === 0) return;
+
+  const lastKey = 'lifeLedger_nwhSettleAttempt';
+  const last = parseInt(localStorage.getItem(lastKey) || '0', 10);
+  if (nowMs - last < 30 * 60 * 1000) return;
+  try { localStorage.setItem(lastKey, String(nowMs)); } catch {}
+
+  nwhSettleInFlight = true;
+  try {
+    const jobs = [];
+    if (due.includes('stocks')) jobs.push(refreshStockPrices(true, true));
+    if (due.includes('usStocks')) jobs.push(refreshUsStockPrices(true, true));
+    if (due.includes('gold')) jobs.push(fetchLiveGoldPrice(true));
+    await Promise.allSettled(jobs);
+    recalculateGoldHoldingsValues();
+    renderAll();
+    recordDailyNetWorthSnapshot({ source: 'settle' });
+  } finally {
+    nwhSettleInFlight = false;
+  }
 }
 
 function renderNetWorthHistory() {
@@ -8267,7 +8383,7 @@ function renderNetWorthHistory() {
   }
 
   // 4. Render Table Rows
-  const today = todayISO();
+  const today = istTodayISO();
   renderRows(
     tableBody,
     history,
@@ -8286,9 +8402,25 @@ function renderNetWorthHistory() {
         `<div>
           <strong>${formatDate(item.date)}</strong>
           ${isToday ? `<span class="nwh-today-pill">Today</span>` : ""}
+          ${(() => {
+            const pending = NWH_MARKET_CLASSES.filter(cls => item.settled && item.settled[cls] === false);
+            if (isToday) {
+              return item.final
+                ? `<div style="font-size:0.7rem;color:var(--positive,#16a34a);">✅ Final — all prices closed</div>`
+                : `<div style="font-size:0.7rem;color:var(--muted);" title="Prices still moving or not yet fetched after close">🟡 Live — waiting: ${pending.map(c => NWH_CLASS_LABELS[c]).join(', ') || '—'}</div>`;
+            }
+            return pending.length
+              ? `<div style="font-size:0.7rem;color:var(--muted);" title="These prices were not captured after their close that day">Last known: ${pending.map(c => NWH_CLASS_LABELS[c]).join(', ')}</div>`
+              : "";
+          })()}
         </div>`,
         `<strong style="color:var(--brand); font-size:1rem;">${formatINR(item.netWorth)}</strong>`,
-        `<span class="nwh-change-badge ${chgBadgeClass}">${chgSign}${formatINR(chg)} (${chgSign}${chgPct}%)</span>`,
+        `<div><span class="nwh-change-badge ${chgBadgeClass}">${chgSign}${formatINR(chg)} (${chgSign}${chgPct}%)</span>
+          ${item.changes && Object.keys(item.changes).length ? `<div style="font-size:0.68rem;color:var(--muted);margin-top:3px;line-height:1.35;">${NWH_MARKET_CLASSES.map(cls => {
+            const v = toNumber(item.changes[cls]);
+            return `${NWH_CLASS_LABELS[cls]} ${v >= 0 ? '+' : '−'}${formatINR(Math.abs(v))}`;
+          }).join(' · ')}</div>` : ""}
+        </div>`,
         `<strong>${formatINR(item.totalAssets)}</strong>`,
         `${item.totalLiabilities > 0 ? `<span style="color:var(--negative, #dc2626);">${formatINR(item.totalLiabilities)}</span>` : "₹0.00"}`,
         `${formatINR(item.mutualFunds || 0)}`,
@@ -8319,6 +8451,11 @@ function downloadNetWorthHistoryCSV() {
     "Net Worth (INR)",
     "1-Day Change (INR)",
     "1-Day Change (%)",
+    "MF Day Change (INR)",
+    "Indian Stocks Day Change (INR)",
+    "US Stocks Day Change (INR)",
+    "Gold Day Change (INR)",
+    "Final (all prices closed)",
     "Total Assets (INR)",
     "Total Liabilities (INR)",
     "Mutual Funds (INR)",
@@ -8343,6 +8480,11 @@ function downloadNetWorthHistoryCSV() {
     (item.netWorth ?? 0).toFixed(2),
     (item.dayChange ?? 0).toFixed(2),
     (item.dayChangePct ?? 0).toFixed(2),
+    toNumber(item.changes?.mutualFunds).toFixed(2),
+    toNumber(item.changes?.stocks).toFixed(2),
+    toNumber(item.changes?.usStocks).toFixed(2),
+    toNumber(item.changes?.gold).toFixed(2),
+    item.final || item.date < istTodayISO() ? "Yes" : "No",
     (item.totalAssets ?? 0).toFixed(2),
     (item.totalLiabilities ?? 0).toFixed(2),
     (item.mutualFunds ?? 0).toFixed(2),
@@ -14053,6 +14195,7 @@ function updateMutualFundsFromCache() {
       if (cachedNavObj) {
         item.latestNav = cachedNavObj.nav;
         item.navDate = cachedNavObj.date || null;
+        item.navFetchedAt = cachedNavObj.timestamp || 0;
         item.prevNav = cachedNavObj.prevNav || null;
         item.currentValue = toNumber(item.units) * cachedNavObj.nav;
       }
@@ -14182,6 +14325,7 @@ async function refreshMutualFundNAVs(force = false, silent = false) {
           if (cachedNavObj) {
             item.latestNav = cachedNavObj.nav;
             item.navDate = cachedNavObj.date;
+            item.navFetchedAt = cachedNavObj.timestamp || 0;
             item.prevNav = cachedNavObj.prevNav;
             item.currentValue = toNumber(item.units) * cachedNavObj.nav;
           }
@@ -15148,6 +15292,9 @@ if (typeof module !== 'undefined' && module.exports) {
     persist,
     recordDailyNetWorthSnapshot,
     calculatePortfolio1DayChange,
+    isNetWorthClassSettled,
+    istTodayISO,
+    prevBusinessDayISO,
     parseGoodReturnsGold,
     calcUsStockTotalValueINR,
     getUsdInrRate,
