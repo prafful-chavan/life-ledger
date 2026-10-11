@@ -401,8 +401,8 @@ function fetchViaNasdaqInternal(symbol, isEtf) {
   return null;
 }
 
-// Calibrated 11 Oct 2026: India 24K base rate Rs14,957/g (8 Oct, excl. GST) / LBMA spot at USD/INR 96.73 = ~1.146
-var GOLD_INDIA_PREMIUM = 1.146;
+// Fallback only (GoodReturns unreachable): Mumbai 24K Rs15,142/g on 11 Oct 2026 / LBMA spot at USD/INR 96.73 = ~1.16
+var GOLD_INDIA_PREMIUM = 1.16;
 
 var SPREADSHEET_PROP_KEY = "LIFE_LEDGER_PRICE_SHEET_ID_V5";
 
@@ -614,30 +614,41 @@ function doGet(e) {
   }
 
   // ─── Step 1: Resolve US Symbols ───────────────────────────────────────────
-  // Primary: Fast batch resolution via Google Sheets GOOGLEFINANCE formulas (< 300ms)
-  var gfUsResults = batchResolveViaGoogleFinance(usSymbols, true);
+  // Primary: Yahoo chart (accurate prev close + extended-hours price).
+  // GOOGLEFINANCE is only a fallback: it can return multi-day-stale quotes for some ETFs.
   var pendingUs = [];
-
   for (var u = 0; u < usSymbols.length; u++) {
     var usSym = usSymbols[u];
     var rawOrigUs = isinOrigMap[usSym] || usSym;
-    if (gfUsResults[usSym] && gfUsResults[usSym].price > 0) {
-      assignResultsWithAliases(results, usSym, rawOrigUs, gfUsResults[usSym]);
+    var yUs = fetchViaYahooFinance(usSym, true);
+    if (yUs && yUs.price > 0) {
+      assignResultsWithAliases(results, usSym, rawOrigUs, yUs);
     } else {
       pendingUs.push(usSym);
     }
   }
 
-  // Fallback: Nasdaq, Yahoo Finance & Web Scrape for any un-resolved US symbols
+  if (pendingUs.length > 0) {
+    var gfUsResults = batchResolveViaGoogleFinance(pendingUs, true);
+    var stillPendingUs = [];
+    for (var g = 0; g < pendingUs.length; g++) {
+      var gSym = pendingUs[g];
+      if (gfUsResults[gSym] && gfUsResults[gSym].price > 0) {
+        assignResultsWithAliases(results, gSym, isinOrigMap[gSym] || gSym, gfUsResults[gSym]);
+      } else {
+        stillPendingUs.push(gSym);
+      }
+    }
+    pendingUs = stillPendingUs;
+  }
+
+  // Fallback: Nasdaq & Web Scrape for any un-resolved US symbols
   for (var pu = 0; pu < pendingUs.length; pu++) {
     var pSym = pendingUs[pu];
     var pOrig = isinOrigMap[pSym] || pSym;
     var isEtf = (US_EXCHANGES[pSym] === "NYSEARCA") || /ETF|VOO|SPY|QQQ|IVV|VTI|ARKK/i.test(pSym);
 
     var itemUs = fetchViaNasdaq(pSym, isEtf);
-    if (!itemUs || !itemUs.price || itemUs.price <= 0) {
-      itemUs = fetchViaYahooFinance(pSym, true);
-    }
     if (itemUs && itemUs.price > 0) {
       assignResultsWithAliases(results, pSym, pOrig, itemUs);
     } else {
@@ -713,7 +724,57 @@ function doGet(e) {
  * using live USD/INR exchange rate, scaled for Indian retail 24K and 22K per gram.
  * Fallback to Google Finance GOLDBEES ETF or GLD if API is unreachable.
  */
+/**
+ * Indian retail gold rate from GoodReturns (Mumbai) - the same rate INDmoney shows.
+ * Returns null if the page layout changes or the site is unreachable.
+ */
+function fetchGoldFromGoodReturns() {
+  try {
+    var resp = UrlFetchApp.fetch("https://www.goodreturns.in/gold-rates/mumbai.html", {
+      muteHttpExceptions: true,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
+    });
+    if (resp.getResponseCode() !== 200) return null;
+    var html = resp.getContentText();
+    var m = html.match(/currentMetalPrices\s*=\s*\{[^}]*?'24'\s*:\s*(\d+)[^}]*?'22'\s*:\s*(\d+)[^}]*?'18'\s*:\s*(\d+)/);
+    if (!m) return null;
+    var p24 = Number(m[1]);
+    if (!(p24 >= 5000 && p24 <= 35000)) return null;
+    var p22 = Number((p24 * 22 / 24).toFixed(2));
+
+    // Previous close = most recent different rate in the history table
+    var pc24 = p24;
+    var rowRe = /<td>[A-Z][a-z]{2} \d{1,2}, \d{4}<\/td>\s*<td>\s*(?:&#x20b9;|\u20b9)\s*([\d,]+)/g;
+    var row;
+    while ((row = rowRe.exec(html)) !== null) {
+      var v = Number(row[1].replace(/,/g, ""));
+      if (v > 0 && v !== p24) { pc24 = v; break; }
+    }
+    var pc22 = Number((pc24 * 22 / 24).toFixed(2));
+    var ch24 = Number((p24 - pc24).toFixed(2));
+    return {
+      price24k: p24,
+      price22k: p22,
+      prevClose24k: pc24,
+      prevClose22k: pc22,
+      change24k: ch24,
+      changePct: pc24 > 0 ? Number(((ch24 / pc24) * 100).toFixed(2)) : 0,
+      gold24k: p24,
+      gold22k: p22,
+      currency: "INR",
+      date: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm a"),
+      source: "goodreturns-mumbai"
+    };
+  } catch (e) {
+    Logger.log("GoodReturns gold error: " + e);
+    return null;
+  }
+}
+
 function fetchLiveGold() {
+  var grQuote = fetchGoldFromGoodReturns();
+  if (grQuote) return grQuote;
+
   // Strategy 1: Direct real-time endpoint api.gold-api.com + live USD/INR FX
   try {
     var url = "https://api.gold-api.com/price/XAU";
@@ -840,15 +901,21 @@ function assignResultsWithAliases(results, canonicalSym, rawOrig, item) {
 
 /**
  * Direct Yahoo Finance Chart API.
+ * - Previous close is taken from the daily candles (second-to-last session). Yahoo's
+ *   meta.chartPreviousClose is unreliable (it depends on the requested range).
+ * - For US symbols the latest pre/post-market trade is used as the price when it is
+ *   newer than the regular close, matching what INDmoney / broker apps display.
  */
 function fetchViaYahooFinance(symbol, isUS) {
   try {
     var sym = String(symbol || "").toUpperCase().trim();
     var yahooSym = sym;
+    var us = !!isUS;
     if (sym.indexOf(":") !== -1) {
       yahooSym = sym.split(":")[1];
     } else if (isUS || isLikelyUS(sym)) {
       yahooSym = sym;
+      us = true;
     } else {
       yahooSym = sym + ".NS";
     }
@@ -856,40 +923,67 @@ function fetchViaYahooFinance(symbol, isUS) {
     var hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
     for (var h = 0; h < hosts.length; h++) {
       try {
-        var url = "https://" + hosts[h] + "/v8/finance/chart/" + encodeURIComponent(yahooSym) + "?interval=1d&range=1d";
-        var resp = UrlFetchApp.fetch(url, {
-          muteHttpExceptions: true,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-          }
-        });
+        var base = "https://" + hosts[h] + "/v8/finance/chart/" + encodeURIComponent(yahooSym);
+        var json = yahooChartJson(base + "?interval=1d&range=5d");
+        var result = json && json.chart && json.chart.result && json.chart.result[0];
+        var meta = result && result.meta;
+        if (!meta || !(Number(meta.regularMarketPrice) > 0)) continue;
 
-        if (resp.getResponseCode() === 200) {
-          var json = JSON.parse(resp.getContentText());
-          var meta = json && json.chart && json.chart.result && json.chart.result[0] && json.chart.result[0].meta;
-          if (meta && Number(meta.regularMarketPrice) > 0) {
-            var price = Number(meta.regularMarketPrice);
-            var prevClose = Number(meta.chartPreviousClose || meta.previousClose || price);
-            var change = price - prevClose;
-            var changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-            return {
-              symbol: sym,
-              price: price,
-              prevClose: prevClose,
-              change: change,
-              changePct: changePct,
-              date: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm a"),
-              source: "yahoo-chart"
-            };
+        var price = Number(meta.regularMarketPrice);
+        var regularPrice = price;
+
+        // Daily closes (drop nulls); last entry is the latest session
+        var closes = [];
+        var rawCloses = (result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close) || [];
+        for (var c = 0; c < rawCloses.length; c++) {
+          if (rawCloses[c] !== null && Number(rawCloses[c]) > 0) closes.push(Number(rawCloses[c]));
+        }
+        var prevClose = closes.length >= 2 ? closes[closes.length - 2] : Number(meta.chartPreviousClose || meta.previousClose || price);
+
+        var source = "yahoo-chart";
+        if (us) {
+          var ext = yahooChartJson(base + "?interval=5m&range=1d&includePrePost=true");
+          var extResult = ext && ext.chart && ext.chart.result && ext.chart.result[0];
+          var extCloses = (extResult && extResult.indicators && extResult.indicators.quote && extResult.indicators.quote[0] && extResult.indicators.quote[0].close) || [];
+          for (var e = extCloses.length - 1; e >= 0; e--) {
+            if (extCloses[e] !== null && Number(extCloses[e]) > 0) {
+              if (Number(extCloses[e]) !== regularPrice) source = "yahoo-chart-extended";
+              price = Number(extCloses[e]);
+              break;
+            }
           }
         }
+
+        var change = price - prevClose;
+        var changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+        return {
+          symbol: sym,
+          price: price,
+          regularPrice: regularPrice,
+          prevClose: prevClose,
+          change: change,
+          changePct: changePct,
+          date: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm a"),
+          source: source
+        };
       } catch (errHost) {}
     }
   } catch (e) {
     Logger.log("Yahoo Finance API fallback error for " + symbol + ": " + e);
   }
   return null;
+}
+
+function yahooChartJson(url) {
+  var resp = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      "Accept": "application/json,text/html,application/xhtml+xml,*/*;q=0.8"
+    }
+  });
+  if (resp.getResponseCode() !== 200) return null;
+  return JSON.parse(resp.getContentText());
 }
 
 /**

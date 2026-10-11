@@ -776,8 +776,26 @@ function getCaratMultiplier(carat) {
   return 22 / 24;
 }
 
-// Calibrated 11 Oct 2026: India 24K base rate ₹14,957/g (8 Oct, excl. GST) ÷ LBMA spot converted at USD/INR 96.73 ≈ 1.146
-const GOLD_INDIA_PREMIUM = 1.146;
+// Fallback only (when GoodReturns is unreachable): Mumbai 24K ₹15,142/g on 11 Oct 2026 ÷ LBMA spot at USD/INR 96.73 ≈ 1.16
+const GOLD_INDIA_PREMIUM = 1.16;
+
+// Parses GoodReturns' Mumbai gold page (the same rate INDmoney shows) into per-gram INR rates.
+// prevClose24k is the most recent different rate in the page's history table.
+function parseGoodReturnsGold(html) {
+  if (!html) return null;
+  const m = String(html).match(/currentMetalPrices\s*=\s*\{[^}]*?'24'\s*:\s*(\d+)[^}]*?'22'\s*:\s*(\d+)[^}]*?'18'\s*:\s*(\d+)/);
+  if (!m) return null;
+  const price24k = Number(m[1]), price22k = Number(m[2]), price18k = Number(m[3]);
+  if (!(price24k >= 5000 && price24k <= 35000)) return null;
+  let prevClose24k = price24k;
+  const rowRe = /<td>[A-Z][a-z]{2} \d{1,2}, \d{4}<\/td>\s*<td>\s*(?:&#x20b9;|₹)\s*([\d,]+)/g;
+  let row;
+  while ((row = rowRe.exec(html))) {
+    const v = Number(row[1].replace(/,/g, ''));
+    if (v > 0 && v !== price24k) { prevClose24k = v; break; }
+  }
+  return { price24k, price22k, price18k, prevClose24k, prevClose22k: Number((prevClose24k * 22 / 24).toFixed(2)) };
+}
 const GOLD_BENCHMARK_24K = 14955.27;
 const GOLD_BENCHMARK_22K = 13709.00;
 const GOLD_MANUAL_RATE_22K_KEY = "lifeLedgerGoldRate22k";
@@ -7469,6 +7487,37 @@ async function fetchLiveGoldPrice(force = false) {
     }
   }
 
+  // 0b. GoodReturns Mumbai (same source as INDmoney) through public CORS gateways
+  try {
+    const grUrl = 'https://www.goodreturns.in/gold-rates/mumbai.html';
+    const gateways = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(grUrl)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(grUrl)}`
+    ];
+    for (const gw of gateways) {
+      try {
+        const res = await fetch(gw, { signal: AbortSignal.timeout(4000) });
+        if (!res.ok) continue;
+        const gr = parseGoodReturnsGold(await res.text());
+        if (!gr) continue;
+        state.goldPrice = {
+          price24k: gr.price24k,
+          price22k: Number((gr.price24k * (22 / 24)).toFixed(2)),
+          prevClose24k: gr.prevClose24k,
+          prevClose22k: gr.prevClose22k,
+          lastFetched: new Date().toISOString(),
+          source: "goodreturns-mumbai"
+        };
+        recalculateGoldHoldingsValues();
+        persist();
+        renderGold();
+        return state.goldPrice.price24k;
+      } catch {}
+    }
+  } catch (e) {
+    console.warn("[Gold API] GoodReturns attempt failed:", e);
+  }
+
   // 1. Configured custom Gold API or Stock Proxy URL
   const customGoldUrl = typeof localStorage !== "undefined" ? localStorage.getItem(GOLD_API_URL_KEY)?.trim() : "";
   const stockProxyUrl = typeof localStorage !== "undefined" ? localStorage.getItem(STOCK_PROXY_URL_KEY)?.trim()?.replace(/^["']|["']$/g, '').replace(/\?+$/, '') : "";
@@ -7489,6 +7538,8 @@ async function fetchLiveGoldPrice(force = false) {
       if (res.ok) {
         const data = await res.json();
         const gData = data?.gold || data;
+        // Proxy v5.2 estimated gold from spot × a flat 1.10 (≈1.3% low). v5.3+ reports goodreturns-mumbai.
+        if (gData?.source === 'proxy-live-gold') continue;
         const p22 = Number(gData?.price22k || gData?.rate22k || gData?.gold22k || gData?.gold_22k);
         const p24 = Number(gData?.price24k || gData?.rate24k || gData?.gold24k || gData?.gold_24k || gData?.price || gData?.rate);
         const pc24 = Number(gData?.prevClose24k || gData?.prev_close_24k || gData?.prevClose || gData?.prev_close);
@@ -15097,6 +15148,7 @@ if (typeof module !== 'undefined' && module.exports) {
     persist,
     recordDailyNetWorthSnapshot,
     calculatePortfolio1DayChange,
+    parseGoodReturnsGold,
     calcUsStockTotalValueINR,
     getUsdInrRate,
     getCaratGoldRate,
