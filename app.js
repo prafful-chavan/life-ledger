@@ -4352,6 +4352,7 @@ function calculatePortfolio1DayChange() {
 
   // 3. US Stocks (converted to INR at ~84.50 rate)
   const usdInrRate = 84.50;
+  const cache = typeof getStockPriceCache === 'function' ? getStockPriceCache() : {};
   const usStockGroups = {};
   (state.usstocks || []).forEach(s => {
     if (!s.symbol) return;
@@ -4362,8 +4363,10 @@ function calculatePortfolio1DayChange() {
   Object.values(usStockGroups).forEach(items => {
     items.forEach(s => {
       const qty = toNumber(s.quantity);
-      const curPrice = toNumber(s.currentPrice || s.avgPrice);
-      const prevClose = s.prevClose ? toNumber(s.prevClose) : 0;
+      const sym = (s.symbol || '').toUpperCase().trim();
+      const cached = cache[sym] || cache[`NASDAQ:${sym}`] || cache[`NYSE:${sym}`] || cache[`NYSEARCA:${sym}`] || cache[`${sym}.US`] || cache[sym.toLowerCase()];
+      const curPrice = toNumber(s.currentPrice || cached?.price || s.avgPrice);
+      const prevClose = s.prevClose ? toNumber(s.prevClose) : (cached?.prevClose ? toNumber(cached.prevClose) : 0);
       if (qty > 0 && curPrice > 0) {
         const curValINR = qty * curPrice * usdInrRate;
         totalPortfolioValueINR += curValINR;
@@ -6337,28 +6340,43 @@ async function fetchStockPriceSingleSymbolFast(symbol, isUS = false) {
 
   // 2. High-speed Yahoo Chart fetch via resilient public CORS gateways
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
+  const yahooUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
   const gateways = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl2)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`
   ];
 
   for (const url of gateways) {
     try {
       const resp = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(4500)
+        headers: { 'Accept': 'application/json, text/plain, */*' },
+        signal: AbortSignal.timeout(6000)
       });
       if (!resp.ok) continue;
       const text = await resp.text();
-      const jsonStart = text.indexOf('{');
-      if (jsonStart < 0) continue;
-      const data = JSON.parse(text.slice(jsonStart));
+      let data = null;
+      try {
+        data = JSON.parse(text);
+        if (data && typeof data.contents === 'string') {
+          data = JSON.parse(data.contents);
+        }
+      } catch {
+        const jsonStart = text.indexOf('{');
+        if (jsonStart >= 0) {
+          try {
+            data = JSON.parse(text.slice(jsonStart));
+            if (data && typeof data.contents === 'string') data = JSON.parse(data.contents);
+          } catch {}
+        }
+      }
       const meta = data?.chart?.result?.[0]?.meta;
-      if (meta && meta.regularMarketPrice > 0) {
+      if (meta && Number(meta.regularMarketPrice) > 0) {
         return {
           currentPrice: Number(meta.regularMarketPrice),
           prevClose: Number(meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice),
-          source: 'fast-api',
+          source: 'yahoo-chart',
           exchangeSymbol: exchangeSym
         };
       }
@@ -6863,14 +6881,38 @@ async function refreshUsStockPrices(force = false, silent = false) {
     }
   }
 
-  // ─── Strategy 2: Fast Cache Fallback for failed symbols ─────────
+  // ─── Strategy 2: Resilient Live Fallback for any symbols not resolved by proxy ─────────
   if (failedSymbols.length > 0) {
-    failedSymbols.forEach(sym => {
-      const cached = cache[sym];
-      if (cached && cached.price > 0) {
-        // preserve existing cached price
+    const remainingFailed = [];
+    for (const sym of failedSymbols) {
+      try {
+        const fallback = await fetchUsStockPriceFallback(sym);
+        if (fallback && fallback.currentPrice > 0) {
+          const entry = {
+            price: fallback.currentPrice,
+            prevClose: fallback.prevClose || fallback.currentPrice,
+            change: fallback.currentPrice - (fallback.prevClose || fallback.currentPrice),
+            changePct: (fallback.prevClose && fallback.prevClose > 0)
+              ? Number((((fallback.currentPrice - fallback.prevClose) / fallback.prevClose) * 100).toFixed(4)) : 0,
+            timestamp: now,
+            date: new Date().toLocaleDateString('en-US'),
+            source: fallback.source || 'fallback',
+          };
+          cache[sym] = entry;
+          cache[sym.toLowerCase()] = entry;
+          cache[`NASDAQ:${sym}`] = entry;
+          cache[`NYSE:${sym}`] = entry;
+          cache[`NYSEARCA:${sym}`] = entry;
+          cache[`${sym}.US`] = entry;
+          updatedCount++;
+        } else {
+          remainingFailed.push(sym);
+        }
+      } catch (e) {
+        remainingFailed.push(sym);
       }
-    });
+    }
+    failedSymbols = remainingFailed;
   }
 
   // ─── Apply to state ────────────────────────────────────────────────────
@@ -6879,13 +6921,13 @@ async function refreshUsStockPrices(force = false, silent = false) {
     state.usstocks.forEach(s => {
       if (!s.symbol) return;
       const sym = s.symbol.toUpperCase().trim();
-      const cached = cache[sym];
+      const cached = cache[sym] || cache[`NASDAQ:${sym}`] || cache[`NYSE:${sym}`] || cache[`NYSEARCA:${sym}`] || cache[`${sym}.US`] || cache[sym.toLowerCase()];
       if (cached && cached.price) {
         s.currentPrice = cached.price;
-        s.prevClose = cached.prevClose;
+        s.prevClose = cached.prevClose || cached.price;
         s.priceDate = cached.date;
         const isSell = ['SELL', 'S', 'SOLD'].includes(String(s.transactionType || '').toUpperCase());
-        s.currentValue = isSell ? 0 : (toNumber(s.quantity) * cached.price);
+        s.currentValue = isSell ? 0 : Number((toNumber(s.quantity) * cached.price).toFixed(2));
       }
     });
     await saveData(true);
@@ -6897,11 +6939,12 @@ async function refreshUsStockPrices(force = false, silent = false) {
     return updatedCount;
   } else {
     updateUsStocksFromCache();
+    await saveData(true);
     renderUsStockHoldingsPanel();
-    const hasCached = uniqueSymbols.some(sym => cache[sym]?.price > 0);
+    const hasCached = uniqueSymbols.some(sym => (cache[sym]?.price > 0 || cache[`NASDAQ:${sym}`]?.price > 0));
     if (!silent) {
       if (hasCached) {
-        toast('ℹ️ Using latest cached US stock prices (live feed unreachable).');
+        toast('ℹ️ Using latest cached US stock prices.');
       } else {
         toast('⚠️ Could not fetch US stock prices. Check proxy URL in Settings or try again later.');
       }
@@ -6920,13 +6963,13 @@ function updateUsStocksFromCache() {
   (state.usstocks || []).forEach(s => {
     if (!s.symbol) return;
     const sym = s.symbol.toUpperCase().trim();
-    const cached = cache[sym];
+    const cached = cache[sym] || cache[`NASDAQ:${sym}`] || cache[`NYSE:${sym}`] || cache[`NYSEARCA:${sym}`] || cache[`${sym}.US`] || cache[sym.toLowerCase()];
     if (cached && cached.price) {
       s.currentPrice = cached.price;
-      s.prevClose = cached.prevClose;
+      s.prevClose = cached.prevClose || cached.price;
       s.priceDate = cached.date;
       const isSell = ['SELL', 'S', 'SOLD'].includes(String(s.transactionType || '').toUpperCase());
-      s.currentValue = isSell ? 0 : (toNumber(s.quantity) * cached.price);
+      s.currentValue = isSell ? 0 : Number((toNumber(s.quantity) * cached.price).toFixed(2));
     }
   });
 }
@@ -6952,15 +6995,18 @@ function renderUsStockHoldingsPanel() {
   let oneDayChangeUSD = 0;
   let hasOneDayDataUSD = false;
 
+  const cache = typeof getStockPriceCache === 'function' ? getStockPriceCache() : {};
   const holdings = rows.map(item => {
     const qty = toNumber(item.quantity);
     const avgPrice = toNumber(item.avgPrice);
-    const currentPrice = toNumber(item.currentPrice || item.avgPrice);
+    const sym = (item.symbol || '').toUpperCase().trim();
+    const cached = cache[sym] || cache[`NASDAQ:${sym}`] || cache[`NYSE:${sym}`] || cache[`NYSEARCA:${sym}`] || cache[`${sym}.US`] || cache[sym.toLowerCase()];
+    const currentPrice = toNumber(item.currentPrice || cached?.price || item.avgPrice);
     const invested = toNumber(item.invested || (qty * avgPrice));
     const currentValue = (qty > 0 && currentPrice > 0) ? (qty * currentPrice) : toNumber(item.currentValue || invested);
     const gain = currentValue - invested;
     const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
-    const prevClose = item.prevClose ? toNumber(item.prevClose) : null;
+    const prevClose = item.prevClose ? toNumber(item.prevClose) : (cached?.prevClose ? toNumber(cached.prevClose) : null);
     const dayChange = prevClose ? qty * (currentPrice - prevClose) : (item.dayPnl !== undefined && item.dayPnl !== 0 ? toNumber(item.dayPnl) : null);
     const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
 
@@ -7179,6 +7225,7 @@ function calcMfTotalValue(mfList) {
 }
 
 function calcStockTotalValue(stockList) {
+  const cache = typeof getStockPriceCache === 'function' ? getStockPriceCache() : {};
   const groups = {};
   (stockList || []).forEach((s) => {
     if (!s.symbol && !s.company) return;
@@ -7189,7 +7236,10 @@ function calcStockTotalValue(stockList) {
   return Object.entries(groups).reduce((total, [, txns]) => {
     const basis = calcStockCostBasis(txns);
     if (basis.netQty <= 0) return total;
-    const price = toNumber(txns[0].currentPrice || txns[0].avgPrice || 0);
+    const itemWithPrice = txns.find(t => toNumber(t.currentPrice) > 0);
+    const rawSym = (txns[0].symbol || txns[0].company || '').toUpperCase().trim();
+    const cached = cache[rawSym] || cache[`NASDAQ:${rawSym}`] || cache[`NYSE:${rawSym}`] || cache[`NYSEARCA:${rawSym}`] || cache[`${rawSym}.US`] || cache[rawSym.toLowerCase()];
+    const price = toNumber(itemWithPrice ? itemWithPrice.currentPrice : (cached ? cached.price : (txns[0].avgPrice || 0)));
     return total + (basis.netQty * price);
   }, 0);
 }
@@ -15009,6 +15059,8 @@ if (typeof module !== 'undefined' && module.exports) {
     recalculateGoldHoldingsValues,
     checkAndRunAutoRefresh,
     initBrokerAutoRefresh,
+    updateUsStocksFromCache,
+    fetchUsStockPriceFallback,
     persist,
     recordDailyNetWorthSnapshot,
     calculatePortfolio1DayChange,

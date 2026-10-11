@@ -9,6 +9,8 @@ const {
   recordDailyNetWorthSnapshot,
   getCaratGoldRate,
   getCaratGoldPrevClose,
+  updateUsStocksFromCache,
+  calcStockTotalValue,
   state
 } = require('../app.js');
 
@@ -286,6 +288,51 @@ it('Proxy gold quote shape verification: parses price and previous close fields'
   assert.strictEqual(g.prevClose24k, 15050.00);
   assert.strictEqual(g.change24k, 150.50);
   assert.strictEqual(g.changePct, 1.00);
+});
+
+// 18. updateUsStocksFromCache resolves prices including exchange prefixes and updates currentValue
+it('updateUsStocksFromCache: updates currentPrice and currentValue for US stocks including exchange prefix keys', () => {
+  // Mock localStorage cache
+  const mockCache = {
+    'NASDAQ:AAPL': { price: 345.50, prevClose: 340.00, date: '11 Oct 2026' },
+    'voo': { price: 720.00, prevClose: 715.00, date: '11 Oct 2026' },
+    'T': { price: 23.50, prevClose: 23.00, date: '11 Oct 2026' }
+  };
+  global.localStorage = {
+    getItem: (key) => (key === 'lifeLedgerStockPriceCache:v1' || key === 'lifeLedgerStockPriceCache') ? JSON.stringify(mockCache) : null,
+    setItem: () => {}
+  };
+
+  state.usstocks = [
+    { id: 'u1', symbol: 'AAPL', quantity: 2, avgPrice: 200, currentPrice: 0, currentValue: 0 },
+    { id: 'u2', symbol: 'VOO', quantity: 0.5, avgPrice: 650, currentPrice: 0, currentValue: 0 },
+    { id: 'u3', symbol: 'T', quantity: 10, avgPrice: 20, currentPrice: 0, currentValue: 0 }
+  ];
+
+  updateUsStocksFromCache();
+
+  assert.strictEqual(state.usstocks[0].currentPrice, 345.50);
+  assert.strictEqual(state.usstocks[0].currentValue, 691.00); // 2 * 345.50
+
+  assert.strictEqual(state.usstocks[1].currentPrice, 720.00);
+  assert.strictEqual(state.usstocks[1].currentValue, 360.00); // 0.5 * 720.00
+
+  assert.strictEqual(state.usstocks[2].currentPrice, 23.50);
+  assert.strictEqual(state.usstocks[2].currentValue, 235.00); // 10 * 23.50
+});
+
+// 19. calcStockTotalValue correctly reflects updated US stock current value
+it('calcStockTotalValue: calculates total USD current value from updated current prices', () => {
+  const totalUSD = calcStockTotalValue(state.usstocks);
+  // 691.00 + 360.00 + 235.00 = 1286.00
+  assert.strictEqual(Number(totalUSD.toFixed(2)), 1286.00);
+});
+
+// 20. US stock with sold position does not contribute to current value
+it('calcStockTotalValue: sold US stock positions do not inflate current value', () => {
+  state.usstocks.push({ id: 'u4', symbol: 'NFLX', quantity: 5, transactionType: 'SELL', currentPrice: 600, currentValue: 0 });
+  const totalUSD = calcStockTotalValue(state.usstocks);
+  assert.strictEqual(Number(totalUSD.toFixed(2)), 1286.00);
 });
 
 console.log('==========================================');

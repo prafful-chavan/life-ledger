@@ -453,7 +453,7 @@ function batchResolveViaGoogleFinance(symbolsList, isUS) {
         tickers.push(sym);
       } else if (isUS) {
         var ex = US_EXCHANGES[sym] || "NASDAQ";
-        tickers.push(sym + ":" + ex);
+        tickers.push(ex + ":" + sym);
         tickers.push("NASDAQ:" + sym);
         tickers.push("NYSE:" + sym);
         tickers.push("NYSEARCA:" + sym);
@@ -602,48 +602,38 @@ function doGet(e) {
   }
 
   // ─── Step 1: Resolve US Symbols ───────────────────────────────────────────
+  // Primary: Fast batch resolution via Google Sheets GOOGLEFINANCE formulas (< 300ms)
+  var gfUsResults = batchResolveViaGoogleFinance(usSymbols, true);
   var pendingUs = [];
+
   for (var u = 0; u < usSymbols.length; u++) {
     var usSym = usSymbols[u];
     var rawOrigUs = isinOrigMap[usSym] || usSym;
-    var isEtf = (US_EXCHANGES[usSym] === "NYSEARCA") || /ETF|VOO|SPY|QQQ|IVV|VTI|ARKK/i.test(usSym);
-
-    // Fast-tier 1: Direct Stooq quote (< 150ms)
-    var itemUs = fetchViaStooq(usSym);
-
-    // Fast-tier 2: Nasdaq API (< 200ms)
-    if (!itemUs || !itemUs.price || itemUs.price <= 0) {
-      itemUs = fetchViaNasdaq(usSym, isEtf);
-    }
-
-    // Fast-tier 3: Yahoo Finance Chart API
-    if (!itemUs || !itemUs.price || itemUs.price <= 0) {
-      itemUs = fetchViaYahooFinance(usSym, true);
-    }
-
-    if (itemUs && itemUs.price > 0) {
-      assignResultsWithAliases(results, usSym, rawOrigUs, itemUs);
+    if (gfUsResults[usSym] && gfUsResults[usSym].price > 0) {
+      assignResultsWithAliases(results, usSym, rawOrigUs, gfUsResults[usSym]);
     } else {
       pendingUs.push(usSym);
     }
   }
 
-  // If any US symbols still pending, resolve via Google Sheets GOOGLEFINANCE formulas
-  if (pendingUs.length > 0) {
-    var gfUsResults = batchResolveViaGoogleFinance(pendingUs, true);
-    for (var pu = 0; pu < pendingUs.length; pu++) {
-      var pSym = pendingUs[pu];
-      var pOrig = isinOrigMap[pSym] || pSym;
-      if (gfUsResults[pSym] && gfUsResults[pSym].price > 0) {
-        assignResultsWithAliases(results, pSym, pOrig, gfUsResults[pSym]);
+  // Fallback: Nasdaq, Yahoo Finance & Web Scrape for any un-resolved US symbols
+  for (var pu = 0; pu < pendingUs.length; pu++) {
+    var pSym = pendingUs[pu];
+    var pOrig = isinOrigMap[pSym] || pSym;
+    var isEtf = (US_EXCHANGES[pSym] === "NYSEARCA") || /ETF|VOO|SPY|QQQ|IVV|VTI|ARKK/i.test(pSym);
+
+    var itemUs = fetchViaNasdaq(pSym, isEtf);
+    if (!itemUs || !itemUs.price || itemUs.price <= 0) {
+      itemUs = fetchViaYahooFinance(pSym, true);
+    }
+    if (itemUs && itemUs.price > 0) {
+      assignResultsWithAliases(results, pSym, pOrig, itemUs);
+    } else {
+      var scItem = fetchViaScrape(pSym);
+      if (scItem && scItem.price > 0) {
+        assignResultsWithAliases(results, pSym, pOrig, scItem);
       } else {
-        // Last-resort fallback: Google Finance Scrape
-        var scItem = fetchViaScrape(pSym);
-        if (scItem && scItem.price > 0) {
-          assignResultsWithAliases(results, pSym, pOrig, scItem);
-        } else {
-          assignResultsWithAliases(results, pSym, pOrig, { symbol: pSym, error: "Price not found", price: 0 });
-        }
+        assignResultsWithAliases(results, pSym, pOrig, { symbol: pSym, error: "Price not found", price: 0 });
       }
     }
   }
