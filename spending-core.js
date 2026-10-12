@@ -95,6 +95,20 @@
     return { toAdd, handledIds, alreadyImported, matchedExisting, skippedFuture };
   }
 
+  const baseId = (id) => String(id).replace(IMPORTED_ID, "");
+
+  /**
+   * Fraction of `incoming` rows whose content already appears among `otherIds`
+   * (another source's imported ids). Used to detect "wife's backup is really mine".
+   */
+  function overlapRatio(incoming, otherIds) {
+    if (!incoming.length) return 0;
+    const other = new Set((otherIds || []).map(baseId));
+    let hit = 0;
+    for (const e of incoming) if (other.has(baseId(e.id))) hit++;
+    return hit / incoming.length;
+  }
+
   /** Sum of amounts for a "YYYY-MM" month, optionally ignoring rows after `today`. */
   function monthTotal(items, ym, today) {
     let t = 0;
@@ -110,5 +124,5 @@
     };
   }
 
-  return { monthTotal, resetSource, coreDataToISODate, rowsToExpenses, planImport, hash32, ID_PREFIX };
+  return { overlapRatio, baseId, monthTotal, resetSource, coreDataToISODate, rowsToExpenses, planImport, hash32, ID_PREFIX };
 });

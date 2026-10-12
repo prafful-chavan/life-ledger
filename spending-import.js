@@ -95,6 +95,16 @@
     const rows = readRows(SQL, b64ToBytes(full.data));
     const incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
     const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    // Safety: a second source whose rows are (mostly) the same as the first source's is almost
+    // certainly the same Dropbox data linked twice. Importing it would double every expense.
+    if (src.key !== "me") {
+      const mineIds = prev.ids.filter((id) => id.startsWith("sp-"));
+      const same = file.hash === ((prev.sources || {}).me || {}).file || Core.overlapRatio(incoming, mineIds) > 0.5;
+      if (same) {
+        summary.push(src.label + ": SKIPPED — this backup contains the same transactions as your own, so it looks like the same Dropbox account. Re-link the wife's Dropbox (see README).");
+        return;
+      }
+    }
     const plan = Core.planImport(state.expenses || [], incoming, knownIds, {
       matchExisting: src.matchExisting, poolFilter: src.poolFilter, today,
     });

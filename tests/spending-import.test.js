@@ -125,5 +125,11 @@ function harness(files) {
   await h2.win.LifeLedgerSpending.run({ manual: true });
   assert.strictEqual(h2.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0, "her earlier manual entry absorbed the row");
 
+  // Wife's source that is really the same data as mine is refused (no doubling)
+  const h3 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w9", bytes: mine } });
+  await h3.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(h3.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0);
+  assert.strictEqual(h3.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 2);
+
   console.log("spending-import tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

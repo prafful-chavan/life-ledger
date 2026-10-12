@@ -129,3 +129,17 @@ function dropboxClearCache() {
   CacheService.getScriptCache().removeAll(["dbx_access", "dbx_access_WIFE"]);
   Logger.log("Cleared cached Dropbox access token.");
 }
+
+// Which Dropbox account is each source linked to? Compares what each token can see (names/sizes only).
+function dropboxCompare() {
+  ["", "wife"].forEach(function (source) {
+    try {
+      var top = dropboxRpc_("https://api.dropboxapi.com/2/files/list_folder", { path: SPENDING_ROOT, recursive: false, limit: 50 }, source);
+      var names = top.entries.map(function (e) { return e.name; });
+      var f = spendingNewest_(source);
+      Logger.log((source || "me") + ": folders=" + JSON.stringify(names) + " | newest=" + f.name + " " + f.size + "B " + f.server_modified + " hash=" + String(f.content_hash).slice(0, 10));
+    } catch (e) {
+      Logger.log((source || "me") + ": " + e.message);
+    }
+  });
+}

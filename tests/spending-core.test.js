@@ -76,4 +76,12 @@ assert.strictEqual(wp.matchedExisting, 0);
 wp = C.planImport(wifeInc, inc, [], { matchExisting: true });
 assert.strictEqual(wp.matchedExisting, 0);
 
+{
+  const mine = C.rowsToExpenses(rows, { idPrefix: "sp-" });
+  const sameAsMine = C.rowsToExpenses(rows, { paidBy: "Wife", idPrefix: "spw-" });
+  assert.strictEqual(C.overlapRatio(sameAsMine, mine.map((e) => e.id)), 1);
+  const other = C.rowsToExpenses([row({ amount: 7, name: "Other" })], { paidBy: "Wife", idPrefix: "spw-" });
+  assert.strictEqual(C.overlapRatio(other, mine.map((e) => e.id)), 0);
+}
+
 console.log("spending-core tests passed");
