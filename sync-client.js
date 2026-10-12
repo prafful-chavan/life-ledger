@@ -187,6 +187,12 @@
       clearTimeout(api._debounce);
     },
 
+    /** Authenticated gateway call for add-on features (e.g. spending import). */
+    async call(op, extra) {
+      const t = await deriveToken(host.getPassword());
+      return post({ op, token: t, ...(extra || {}) });
+    },
+
     async listBackups() {
       const t = await deriveToken(host.getPassword());
       return (await post({ op: "listBackups", token: t })).backups || [];

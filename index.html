@@ -25,11 +25,13 @@
     <script defer src="interview-db.js?v=1.0.8"></script>
     <script defer src="ai-agent.js?v=1.0.42"></script>
     <script src="ui-polish.js?v=1.0.3" defer></script>
-    <script defer src="app.js?v=1.0.45"></script>
+    <script defer src="app.js?v=1.0.46"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
-    <script defer src="sync-client.js?v=1.0.0"></script>
+    <script defer src="sync-client.js?v=1.0.1"></script>
     <script defer src="auth.js?v=1.0.43"></script>
     <script defer src="sync-ui.js?v=1.0.0"></script>
+    <script defer src="spending-core.js?v=1.0.0"></script>
+    <script defer src="spending-import.js?v=1.0.0"></script>
   </head>
   <body class="auth-locked">
     <div id="appLoading" class="app-loading hidden">
@@ -2279,6 +2281,15 @@
             <button class="secondary-button" type="button" id="syncGatewayHistoryButton" style="flex: 1;">🕘 Version history</button>
           </div>
           <div id="syncGatewayHistory" style="margin-top: 10px;" hidden></div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section" id="spendingSyncSection">
+          <h4>Spending app sync</h4>
+          <p class="muted-small" style="margin-bottom: 12px;">Imports new expenses from your Spending app's daily Dropbox backup. Already-present and deleted expenses are never duplicated or brought back.</p>
+          <p class="muted-small" id="spendingSyncStatus" style="margin-bottom: 8px;">Not checked yet.</p>
+          <button class="secondary-button" type="button" id="spendingSyncNowButton" style="width: 100%;">⟳ Import now</button>
         </div>
 
         <div class="settings-divider"></div>

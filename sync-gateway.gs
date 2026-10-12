@@ -77,6 +77,12 @@ function syncHandle_(req) {
     var h = syncHash_(req.token);
     if (state.tokenHash && state.tokenHash !== h) return { ok: false, error: "unauthorized" };
 
+    // Spending Tracker backups (Dropbox → browser). Same token guard as vault sync.
+    if (op === "spendingMeta" || op === "spendingLatest") {
+      if (!state.tokenHash) return { ok: false, error: "unauthorized" };
+      return spendingHandle_(op);
+    }
+
     if (op === "pull") {
       if (!state.vault) return { ok: true, rev: 0, empty: true };
       if (req.sinceRev && Number(req.sinceRev) === state.rev) return { ok: true, rev: state.rev, unchanged: true };

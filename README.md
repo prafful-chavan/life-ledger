@@ -94,3 +94,14 @@ overwriting each other. The old Google Drive vault is still written as a mirror/
 
 Install on iPhone/iPad: Safari → Share → Add to Home Screen (manifest + service worker included).
 Snapshots live in the Drive folder "Life Ledger Sync" (last 40); restore from Settings → Version history.
+
+## Spending app sync (Dropbox → Life Ledger)
+
+The Spending Tracker app writes a daily SQLite backup to Dropbox (`Apps/SpendingTracker`).
+`spending-sync.gs` (Apps Script, read-only Dropbox access) fetches the newest backup through the
+authenticated sync gateway; `spending-import.js` reads it in the browser with sql.js and merges
+new expenses (ids derived from row content; deleted rows are not re-imported).
+
+Setup: add `spending-sync.gs` to the Apps Script project, set script properties
+`DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET`, run `dropboxAuthUrl`, approve, set `DROPBOX_AUTH_CODE`,
+run `dropboxExchangeCode`, then `dropboxTest`. Redeploy a new version.

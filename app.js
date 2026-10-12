@@ -35,6 +35,7 @@ const defaultData = {
   chat: [],
   mfMonthlyTarget: { me: 100000, wife: 100000 },
   interviewTrackerEntries: [],
+  spendingImport: { ids: [], file: "", importedAt: null },
   goldPrice: { price24k: 14955.27, price22k: 13709.00, prevClose24k: 14955.27, prevClose22k: 13709.00, lastFetched: null, source: "reference" },
   netWorthHistory: [],
 };
@@ -1052,6 +1053,9 @@ function normalizeData(data) {
     mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
     interviewPrep: data.interviewPrep || { mastered: [], flagged: [], customProjects: [] },
     interviewTrackerEntries: ensureIds(data.interviewTrackerEntries || [], "itv"),
+    spendingImport: data.spendingImport && Array.isArray(data.spendingImport.ids)
+      ? data.spendingImport
+      : { ids: [], file: "", importedAt: null },
     netWorthHistory: ensureIds(data.netWorthHistory || [], "nwh").map(normalizeNetWorthHistoryEntry),
   };
 }
