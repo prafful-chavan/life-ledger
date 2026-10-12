@@ -142,3 +142,10 @@ function doPost(e) {
   }
   return createJsonResponse(syncHandle_(body));
 }
+
+// Run this once from the editor to grant Drive access and create the sync folder.
+function authorizeSync() {
+  var meta = syncMeta_();
+  Logger.log(JSON.stringify(meta));
+  return meta;
+}
