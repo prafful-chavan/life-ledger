@@ -99,6 +99,7 @@
     // (e.g. her app was restored from your backup, or you both log the same purchase) are
     // skipped, so only transactions unique to her are added.
     let dupOfMine = 0;
+    const totalRows = incoming.length;
     if (src.key !== "me") {
       const mineBase = new Set(prev.ids.filter((id) => id.startsWith("sp-")).map(Core.baseId));
       const before = incoming.length;
@@ -109,9 +110,11 @@
       matchExisting: src.matchExisting, poolFilter: src.poolFilter, today,
     });
 
-    if (manual && !sourceIds.length) {
+    // Nothing unique to this source: record it silently instead of asking.
+    const nothingNew = !plan.toAdd.length && !plan.matchedExisting;
+    if (manual && !sourceIds.length && !nothingNew) {
       const ok = confirm(
-        src.label + ": " + incoming.length + " expenses (paid by " + src.paidBy + ").\n\n" +
+        src.label + ": " + totalRows + " expenses in the backup (paid by " + src.paidBy + ").\n\n" +
         "• " + plan.toAdd.length + " will be added\n" +
         "• " + plan.matchedExisting + " already exist (same date and amount) and are skipped\n" +
         (dupOfMine ? "• " + dupOfMine + " are identical to rows from your own backup and are skipped\n" : "") +
@@ -133,6 +136,10 @@
     live.spendingImport = next;
     app.renderAll();
     await app.saveData(true);
+    if (src.key !== "me" && dupOfMine && !plan.toAdd.length) {
+      summary.push(src.label + ": nothing new — its backup matches yours (shared Spending data)");
+      return;
+    }
     summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") + (dupOfMine ? " (" + dupOfMine + " identical to yours skipped)" : ""));
   }
 
