@@ -77,3 +77,20 @@ Use **Upload sheet** to import `.xlsx`, `.xls`, `.csv`, or backup `.json` files.
 Use **Reset data** to clear one area before reuploading. Use **Dark mode** to switch themes.
 
 The salary importer can read workbook tabs named like `Blazeclan-Salary`, `Hashedin-Salary`, `Quantiphi-Salary`, `JLR-Salary`, `TCS-Salary`, and `Wife-Ascent-Salary`. It preserves salary components and uses net salary as the income number for dashboards.
+
+
+## Multi-device sync (v2)
+
+Changes merge **record by record** (`sync-engine.js`) through an Apps Script gateway
+(`sync-gateway.gs`), so a Mac and an iPhone edited at the same time converge instead of
+overwriting each other. The old Google Drive vault is still written as a mirror/fallback.
+
+**One-time setup (needs you, in the Apps Script editor):**
+1. Open the same Apps Script project as the stock price proxy.
+2. Replace `stock-price-proxy.gs` with the repo version and add `sync-gateway.gs` as a new file.
+3. Run any function once (e.g. `syncMeta_`) and approve the Drive permission.
+4. Deploy → Manage deployments → Edit → **New version** (keep the same URL).
+5. In the app: Settings → "Multi-device sync" → **Sync now**. Status should show "Up to date".
+
+Install on iPhone/iPad: Safari → Share → Add to Home Screen (manifest + service worker included).
+Snapshots live in the Drive folder "Life Ledger Sync" (last 40); restore from Settings → Version history.

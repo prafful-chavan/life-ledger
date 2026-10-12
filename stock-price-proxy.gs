@@ -538,6 +538,11 @@ function batchResolveViaGoogleFinance(symbolsList, isUS) {
 }
 
 function doGet(e) {
+  // Sync gateway: fresh devices ask whether a vault exists (no secrets returned)
+  if (e && e.parameter && e.parameter.syncMeta) {
+    return createJsonResponse(syncMeta_());
+  }
+
   // Support testing / ping
   if (e && e.parameter && (e.parameter.test || e.parameter.ping)) {
     return createJsonResponse({

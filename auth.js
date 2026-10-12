@@ -209,11 +209,35 @@
     writeSession(longExpiry);
   }
 
-  function vaultInnerPayload(data, totpSecret) {
-    return {
+  function vaultInnerPayload(data, totpSecret, sync) {
+    const inner = {
       totpSecret: totpSecret || null,
       data,
     };
+    if (sync) inner.sync = sync;
+    try {
+      const gw = localStorage.getItem("lifeLedgerStockProxyUrl");
+      if (gw) inner.gatewayUrl = gw;
+    } catch { /* ignore */ }
+    return inner;
+  }
+
+  function cloneJson(value) {
+    return value === undefined ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  // After the app has normalised the data it renders, make that the diff baseline so
+  // normalisation alone is never mistaken for a user edit.
+  function rebaseline() {
+    const live = window.LifeLedgerApp?.getState?.();
+    if (live && unlockedPayload) unlockedPayload.data = cloneJson(live);
+  }
+
+  // Strictly increasing edit clock so two quick saves never share a timestamp.
+  let lastStampMs = 0;
+  function nextStampMs() {
+    lastStampMs = Math.max(Date.now(), lastStampMs + 1);
+    return lastStampMs;
   }
 
   /**
@@ -362,6 +386,7 @@
     currentSyncState = state;
     const badge = document.getElementById("topbarSyncStatus");
     if (!badge) return;
+    if (window.LifeLedgerSync?.isConfigured?.()) return; // gateway badge owns the indicator
 
     if (!window.LifeLedgerDrive?.hasLinkedDrive?.()) {
       badge.style.display = "none";
@@ -540,19 +565,103 @@
   async function persistAppData(data) {
     if (!unlockedPayload) throw new Error("Not unlocked");
     console.log("[auth.js] Persisting updated app data to storage...");
-    unlockedPayload.data = data;
+    const Engine = window.LifeLedgerSyncEngine;
+    // The app hands us its live (mutated-in-place) state object, so diff against a
+    // private snapshot of what we persisted last time.
+    const snapshot = cloneJson(data);
+    if (Engine) {
+      unlockedPayload.sync = Engine.stamp(unlockedPayload.data, snapshot, unlockedPayload.sync, nextStampMs());
+    }
+    unlockedPayload.data = snapshot;
     const password = unlockedPayload._sessionPassword;
     const salt = unlockedPayload._salt;
     const sessionKey = unlockedPayload._sessionKey;
     if (!password || !vaultMeta) throw new Error("Session expired — sign in again");
     const vault = await buildVault(
       password,
-      vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret),
+      vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret, unlockedPayload.sync),
       salt,
       sessionKey
     );
     await saveVaultFile(vault);
+    window.LifeLedgerSync?.markDirty();
     console.log("[auth.js] App data persistence completed successfully.");
+  }
+
+  /**
+   * Adopt a merged {data, meta}: persist locally (and mirror to Drive), then
+   * refresh the UI. Returns {data, meta, vault} for the sync client.
+   */
+  async function applyMergedState(merged, opts = {}) {
+    const password = unlockedPayload._sessionPassword;
+    const dataChanged = !window.LifeLedgerSyncEngine.dataEquals(merged.data, unlockedPayload.data);
+    unlockedPayload.data = cloneJson(merged.data);
+    unlockedPayload.sync = merged.meta;
+    const vault = await buildVault(
+      password,
+      vaultInnerPayload(merged.data, unlockedPayload.totpSecret, merged.meta),
+      unlockedPayload._salt,
+      unlockedPayload._sessionKey
+    );
+    await saveVaultFile(vault);
+    if (dataChanged && !opts.quiet) {
+      window.LifeLedgerApp?.applyRemoteData?.(cloneJson(merged.data));
+      rebaseline();
+    }
+    return { data: unlockedPayload.data, meta: merged.meta, vault };
+  }
+
+  const remoteKeyCache = new Map();
+  async function decryptRemoteVault(remoteVault) {
+    const password = unlockedPayload._sessionPassword;
+    const cacheKey = remoteVault.salt;
+    let key = remoteKeyCache.get(cacheKey);
+    if (!key) {
+      key = await deriveAesKey(password, base64ToBytes(remoteVault.salt));
+      remoteKeyCache.set(cacheKey, key);
+    }
+    return decryptJson(key, remoteVault.iv, remoteVault.ciphertext, remoteVault.compressed || false);
+  }
+
+  function startGatewaySync() {
+    const Sync = window.LifeLedgerSync;
+    if (!Sync) return;
+    Sync.init({
+      isReady: () => Boolean(unlockedPayload && vaultMeta),
+      getPassword: () => unlockedPayload._sessionPassword,
+      getLocal: () => ({
+        data: unlockedPayload.data,
+        meta: unlockedPayload.sync || window.LifeLedgerSyncEngine.emptyMeta(),
+        vault: vaultMeta,
+      }),
+      beforeSync: () => window.LifeLedgerApp?.flushSave?.(),
+      decryptVault: decryptRemoteVault,
+      applyMerged: applyMergedState,
+    });
+    if (!Sync.__wired) {
+      Sync.__wired = true;
+      Sync.onStatus((st) => updateGatewayBadge(st));
+    }
+    if (Sync.isConfigured()) Sync.start();
+  }
+
+  function updateGatewayBadge(st) {
+    const badge = document.getElementById("topbarSyncStatus");
+    if (!badge || !window.LifeLedgerSync?.isConfigured()) return;
+    badge.style.display = "flex";
+    badge.className = "sync-status " + (st.state === "synced" ? "synced" : st.state === "syncing" ? "syncing" : st.state === "off" ? "offline" : "failed");
+    const iconEl = badge.querySelector(".sync-icon");
+    const textEl = badge.querySelector(".sync-text");
+    const label = {
+      syncing: ["⟳", "Syncing…"],
+      synced: ["✓", "Synced"],
+      offline: ["○", "Offline — will sync"],
+      error: ["⚠", "Sync issue (retrying)"],
+      off: ["○", "Sync off"],
+    }[st.state] || ["○", st.state];
+    if (iconEl) iconEl.textContent = label[0];
+    if (textEl) textEl.textContent = label[1];
+    badge.title = st.detail || "";
   }
 
   // Background sync poller — metadata-only checks with exponential backoff
@@ -573,6 +682,7 @@
 
   function startSyncPoller() {
     stopSyncPoller();
+    if (window.LifeLedgerSync?.isConfigured?.()) return; // gateway owns pulling; Drive is a write-only mirror
     if (!window.LifeLedgerDrive?.isConnected?.()) return;
 
     // Reset backoff on tab focus
@@ -647,6 +757,11 @@
       _sessionKey: key
     };
     saveRememberedPassword(password);
+    try {
+      if (inner.gatewayUrl && !localStorage.getItem("lifeLedgerStockProxyUrl")) {
+        localStorage.setItem("lifeLedgerStockProxyUrl", inner.gatewayUrl);
+      }
+    } catch { /* ignore */ }
 
     const loader = document.getElementById("appLoading");
     if (loader) {
@@ -658,7 +773,8 @@
     // Defer bootstrapping slightly to let the browser paint the loading spinner first
     setTimeout(() => {
       try {
-        window.LifeLedgerApp?.bootstrap(inner.data);
+        window.LifeLedgerApp?.bootstrap(cloneJson(inner.data));
+        rebaseline();
       } finally {
         if (loader) {
           loader.classList.add("hidden");
@@ -666,6 +782,7 @@
       }
 
       updateSyncStatusUI(window.LifeLedgerDrive?.hasLinkedDrive?.() ? "synced" : "offline");
+      startGatewaySync();
 
       if (window.LifeLedgerDrive?.isConnected?.()) {
         // Skip redundant sync if Drive was already fetched recently during init/loadVaultFile
@@ -797,7 +914,7 @@
         return "Synced: Vault restored from Google Drive.";
       }
 
-      // --- Case 3: Vault is unlocked — PULL remote data as truth ---
+      // --- Case 3: Vault is unlocked — MERGE remote data into local ---
       if (unlockedPayload) {
         const password = unlockedPayload._sessionPassword;
         try {
@@ -808,13 +925,10 @@
             const remoteCount = countEntries(remoteData);
 
             // Check if content is actually different
-            const localFingerprint = vaultDataFingerprint(unlockedPayload.data);
-            const remoteFingerprint = vaultDataFingerprint(remoteData);
+            const identical = window.LifeLedgerSyncEngine.dataEquals(unlockedPayload.data, remoteData);
 
-            if (remoteFingerprint === localFingerprint) {
+            if (identical) {
               // Data is identical — just accept remote timestamp
-              vaultMeta = remoteVault;
-              await window.LifeLedgerVaultStore.save(remoteVault);
               window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
               hasSyncedThisSession = true;
               console.log(`[auth.js] Sync: content identical (${localCount} entries). Accepted remote timestamp.`);
@@ -822,24 +936,18 @@
               return `Synced: Already up to date (${localCount} entries).`;
             }
 
-            // REPLACE local with remote data — Drive is master
-            // Save the remote vault as-is (keeps remote timestamp)
-            await window.LifeLedgerVaultStore.save(remoteVault);
-            vaultMeta = remoteVault;
-            window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
-
-            // Update in-memory payload with remote data
-            unlockedPayload = {
-              ...inner,
-              _sessionPassword: password,
-              _salt: unlockedPayload._salt,
-              _sessionKey: unlockedPayload._sessionKey
-            };
-
-            // Re-render with fresh remote data
-            requestAnimationFrame(() => window.LifeLedgerApp?.bootstrap(remoteData));
+            // Merge record-by-record (never wholesale replace).
+            const Engine = window.LifeLedgerSyncEngine;
+            const merged = Engine.merge(
+              { data: unlockedPayload.data, meta: unlockedPayload.sync || Engine.emptyMeta() },
+              { data: remoteData, meta: inner.sync || Engine.emptyMeta() },
+              Date.now()
+            );
             hasSyncedThisSession = true;
-            console.log(`[auth.js] Sync PULL: replaced local (${localCount} entries) with Drive (${remoteCount} entries).`);
+            await applyMergedState(merged, { remoteVault });
+            window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
+            hasSyncedThisSession = true;
+            console.log(`[auth.js] Sync PULL: merged Drive (${remoteCount}) into local (${localCount}).`);
             updateSyncStatusUI("synced");
             return `Synced: Pulled ${remoteCount} entries from Google Drive.`;
           } else {
@@ -898,7 +1006,7 @@
       const password = unlockedPayload._sessionPassword;
       const salt = unlockedPayload._salt;
       const sessionKey = unlockedPayload._sessionKey;
-      const inner = vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret);
+      const inner = vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret, unlockedPayload.sync);
       const vault = await buildVault(password, inner, salt, sessionKey);
 
       // Save locally (updates vaultMeta timestamp)
@@ -1025,6 +1133,7 @@
 
     logout() {
       stopSyncPoller();
+      window.LifeLedgerSync?.reset();
       clearSession();
       unlockedPayload = null;
       showGate("auth");

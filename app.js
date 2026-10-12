@@ -495,16 +495,6 @@ function bootstrapApp(initialState) {
     isAppInitialized = true;
   }
 
-  // User requested: Delete all previously stored snapshots and start fresh today
-  const NWH_RESET_PREVIOUS_KEY = "lifeLedger_nwh_reset_to_today_v1";
-  if (typeof localStorage !== "undefined" && localStorage.getItem(NWH_RESET_PREVIOUS_KEY) !== "done") {
-    state.netWorthHistory = [];
-    try {
-      localStorage.setItem(NWH_RESET_PREVIOUS_KEY, "done");
-    } catch {}
-    persist();
-  }
-
   renderAll();
   try {
     recordDailyNetWorthSnapshot({ source: "fresh-today" });
@@ -625,6 +615,12 @@ if (typeof window !== "undefined") {
   window.LifeLedgerApp = {
     defaultData: () => clone(defaultData),
     bootstrap: bootstrapApp,
+    // Lightweight refresh used by multi-device sync: swap state and re-render only
+    // (no price refresh, no first-run wiring).
+    applyRemoteData(data) {
+      state = normalizeData(data || defaultData);
+      renderAll();
+    },
     saveData: saveData,
     flushSave: () => {
       if (saveDataTimer) {
