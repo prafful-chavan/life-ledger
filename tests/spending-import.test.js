@@ -125,11 +125,21 @@ function harness(files) {
   await h2.win.LifeLedgerSpending.run({ manual: true });
   assert.strictEqual(h2.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0, "her earlier manual entry absorbed the row");
 
-  // Wife's source that is really the same data as mine is refused (no doubling)
+  // Wife's backup identical to mine adds nothing; rows unique to her are still imported
   const h3 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w9", bytes: mine } });
   await h3.win.LifeLedgerSpending.run({ manual: true });
   assert.strictEqual(h3.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0);
   assert.strictEqual(h3.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 2);
+  const herMix = makeBackup([
+    { amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }, // same as mine
+    { amount: 77, date: day("2026-10-04"), name: "Her own", cat: 1 },
+  ]);
+  const h4 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w2", bytes: herMix } });
+  await h4.win.LifeLedgerSpending.run({ manual: true });
+  const wr = h4.state.expenses.filter((e) => e.id.startsWith("spw-"));
+  assert.strictEqual(wr.length, 1);
+  assert.strictEqual(wr[0].amount, 77);
+  assert.strictEqual(wr[0].paidBy, "Wife");
 
   console.log("spending-import tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

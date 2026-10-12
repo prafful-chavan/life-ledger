@@ -93,17 +93,17 @@
     const full = await Sync.call("spendingLatest", { source: src.key });
     const SQL = await loadSqlJs();
     const rows = readRows(SQL, b64ToBytes(full.data));
-    const incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
+    let incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
     const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
-    // Safety: a second source whose rows are (mostly) the same as the first source's is almost
-    // certainly the same Dropbox data linked twice. Importing it would double every expense.
+    // Rows in a second source that are identical to rows already imported from the first
+    // (e.g. her app was restored from your backup, or you both log the same purchase) are
+    // skipped, so only transactions unique to her are added.
+    let dupOfMine = 0;
     if (src.key !== "me") {
-      const mineIds = prev.ids.filter((id) => id.startsWith("sp-"));
-      const same = file.hash === ((prev.sources || {}).me || {}).file || Core.overlapRatio(incoming, mineIds) > 0.5;
-      if (same) {
-        summary.push(src.label + ": SKIPPED — this backup contains the same transactions as your own, so it looks like the same Dropbox account. Re-link the wife's Dropbox (see README).");
-        return;
-      }
+      const mineBase = new Set(prev.ids.filter((id) => id.startsWith("sp-")).map(Core.baseId));
+      const before = incoming.length;
+      incoming = incoming.filter((e) => !mineBase.has(Core.baseId(e.id)));
+      dupOfMine = before - incoming.length;
     }
     const plan = Core.planImport(state.expenses || [], incoming, knownIds, {
       matchExisting: src.matchExisting, poolFilter: src.poolFilter, today,
@@ -114,6 +114,7 @@
         src.label + ": " + incoming.length + " expenses (paid by " + src.paidBy + ").\n\n" +
         "• " + plan.toAdd.length + " will be added\n" +
         "• " + plan.matchedExisting + " already exist (same date and amount) and are skipped\n" +
+        (dupOfMine ? "• " + dupOfMine + " are identical to rows from your own backup and are skipped\n" : "") +
         (plan.skippedFuture ? "• " + plan.skippedFuture + " are dated in the future (recurring) and wait for their day\n" : "") +
         "\nThis month in that backup: ₹" + Core.monthTotal(incoming, today.slice(0, 7), today).toLocaleString("en-IN") +
         " (compare with the Spending app's own month total)\n\nImport now?"
@@ -132,7 +133,7 @@
     live.spendingImport = next;
     app.renderAll();
     await app.saveData(true);
-    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses"));
+    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") + (dupOfMine ? " (" + dupOfMine + " identical to yours skipped)" : ""));
   }
 
   async function resetWife() {
