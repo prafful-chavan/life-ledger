@@ -71,7 +71,12 @@
     const Core = window.LifeLedgerSpendingCore;
     const state = app.getState();
     const prev = state.spendingImport || { ids: [], file: "", importedAt: null };
-    const sourceIds = prev.ids.filter((id) => id.startsWith(src.idPrefix));
+    // If expenses were reset/wiped (none of this source's imported rows remain) the remembered
+    // ids are stale: forget them so the import starts fresh. A single deleted row doesn't trigger this.
+    const stillHasRows = (state.expenses || []).some((e) => typeof e.id === "string" && e.id.startsWith(src.idPrefix));
+    const wiped = !stillHasRows && prev.ids.some((id) => id.startsWith(src.idPrefix));
+    const knownIds = wiped ? prev.ids.filter((id) => !id.startsWith(src.idPrefix)) : prev.ids;
+    const sourceIds = knownIds.filter((id) => id.startsWith(src.idPrefix));
 
     let metaRes;
     try {
@@ -81,7 +86,7 @@
       throw err;
     }
     const file = metaRes.file;
-    if (!manual && sourceFile(prev, src) === file.hash) { summary.push(src.label + ": up to date"); return; }
+    if (!manual && !wiped && sourceFile(prev, src) === file.hash) { summary.push(src.label + ": up to date"); return; }
     if (!manual && !sourceIds.length) { summary.push(src.label + ": backup found — tap “Import now” for the first import"); return; }
 
     say("Downloading " + src.label + "…");
@@ -90,7 +95,7 @@
     const rows = readRows(SQL, b64ToBytes(full.data));
     const incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
     const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
-    const plan = Core.planImport(state.expenses || [], incoming, prev.ids, {
+    const plan = Core.planImport(state.expenses || [], incoming, knownIds, {
       matchExisting: src.matchExisting, poolFilter: src.poolFilter, today,
     });
 
@@ -109,7 +114,8 @@
     const live = app.getState();
     live.expenses = (live.expenses || []).concat(plan.toAdd);
     const cur = live.spendingImport || { ids: [], file: "", importedAt: null };
-    const next = { ...cur, ids: (cur.ids || []).concat(plan.handledIds) };
+    const baseIds = wiped ? (cur.ids || []).filter((id) => !id.startsWith(src.idPrefix)) : (cur.ids || []);
+    const next = { ...cur, ids: baseIds.concat(plan.handledIds) };
     const at = new Date().toISOString();
     if (src.key === "me") { next.file = file.hash; next.importedAt = at; }
     else next.sources = { ...(cur.sources || {}), wife: { file: file.hash, importedAt: at } };
