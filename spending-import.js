@@ -57,8 +57,8 @@
 
   // "me" keeps its original ids/tag so already-imported rows are untouched.
   const SOURCES = [
-    { key: "me", label: "Your Spending app", paidBy: "Both", idPrefix: "sp-", matchExisting: true },
-    { key: "wife", label: "Wife's Spending app", paidBy: "Wife", idPrefix: "spw-", matchExisting: false, optional: true },
+    { key: "me", label: "Your Spending app", paidBy: "Both", idPrefix: "sp-", matchExisting: true, poolFilter: (e) => !/wife/i.test(e.paidBy || "") },
+    { key: "wife", label: "Wife's Spending app", paidBy: "Wife", idPrefix: "spw-", matchExisting: true, poolFilter: (e) => /wife/i.test(e.paidBy || ""), optional: true },
   ];
 
   function sourceFile(prev, src) {
@@ -89,14 +89,19 @@
     const SQL = await loadSqlJs();
     const rows = readRows(SQL, b64ToBytes(full.data));
     const incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
-    const plan = Core.planImport(state.expenses || [], incoming, prev.ids, { matchExisting: src.matchExisting });
+    const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    const plan = Core.planImport(state.expenses || [], incoming, prev.ids, {
+      matchExisting: src.matchExisting, poolFilter: src.poolFilter, today,
+    });
 
     if (manual && !sourceIds.length) {
       const ok = confirm(
         src.label + ": " + incoming.length + " expenses (paid by " + src.paidBy + ").\n\n" +
         "• " + plan.toAdd.length + " will be added\n" +
-        (src.matchExisting ? "• " + plan.matchedExisting + " already exist (same date and amount) and are skipped\n" : "") +
-        "\nImport now?"
+        "• " + plan.matchedExisting + " already exist (same date and amount) and are skipped\n" +
+        (plan.skippedFuture ? "• " + plan.skippedFuture + " are dated in the future (recurring) and wait for their day\n" : "") +
+        "\nThis month in that backup: ₹" + Core.monthTotal(incoming, today.slice(0, 7), today).toLocaleString("en-IN") +
+        " (compare with the Spending app's own month total)\n\nImport now?"
       );
       if (!ok) { summary.push(src.label + ": import cancelled"); return; }
     }
@@ -112,6 +117,21 @@
     app.renderAll();
     await app.saveData(true);
     summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses"));
+  }
+
+  async function resetWife() {
+    const app = window.LifeLedgerApp;
+    const Core = window.LifeLedgerSpendingCore;
+    if (!app || !Core || busy) return;
+    const live = app.getState();
+    const count = (live.expenses || []).filter((e) => typeof e.id === "string" && e.id.startsWith("spw-")).length;
+    if (!confirm("Remove the " + count + " expenses imported from your wife's Spending app and import them again?\n\nOnly rows imported by this feature are removed; everything you typed in yourself stays.")) return;
+    const r = Core.resetSource(live.expenses, (live.spendingImport || {}).ids, "spw-");
+    live.expenses = r.expenses;
+    live.spendingImport = { ...(live.spendingImport || {}), ids: r.ids, sources: { ...((live.spendingImport || {}).sources || {}), wife: { file: "", importedAt: null } } };
+    app.renderAll();
+    await app.saveData(true);
+    await run({ manual: true });
   }
 
   /** opts.manual: user clicked the button (may confirm and force). */
@@ -149,6 +169,7 @@
 
   window.addEventListener("load", () => {
     $("spendingSyncNowButton")?.addEventListener("click", () => run({ manual: true }));
+    $("spendingResetWifeButton")?.addEventListener("click", resetWife);
     // Once this session, after the first successful vault sync, check for a newer backup.
     let armed = true;
     window.LifeLedgerSync?.onStatus((st) => {

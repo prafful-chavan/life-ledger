@@ -30,8 +30,8 @@
     <script defer src="sync-client.js?v=1.0.1"></script>
     <script defer src="auth.js?v=1.0.43"></script>
     <script defer src="sync-ui.js?v=1.0.0"></script>
-    <script defer src="spending-core.js?v=1.0.1"></script>
-    <script defer src="spending-import.js?v=1.0.1"></script>
+    <script defer src="spending-core.js?v=1.0.2"></script>
+    <script defer src="spending-import.js?v=1.0.2"></script>
   </head>
   <body class="auth-locked">
     <div id="appLoading" class="app-loading hidden">
@@ -2290,6 +2290,7 @@
           <p class="muted-small" style="margin-bottom: 12px;">Imports new expenses from your Spending app's daily Dropbox backup. Already-present and deleted expenses are never duplicated or brought back.</p>
           <p class="muted-small" id="spendingSyncStatus" style="margin-bottom: 8px;">Not checked yet.</p>
           <button class="secondary-button" type="button" id="spendingSyncNowButton" style="width: 100%;">⟳ Import now</button>
+          <button class="secondary-button" type="button" id="spendingResetWifeButton" style="width: 100%; margin-top: 8px;">↺ Re-import wife's expenses</button>
         </div>
 
         <div class="settings-divider"></div>

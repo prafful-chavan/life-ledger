@@ -65,9 +65,12 @@
   function planImport(existing, incoming, importedIds, opts) {
     const done = new Set(importedIds || []);
     const matchExisting = !opts || opts.matchExisting !== false;
+    const poolFilter = (opts && opts.poolFilter) || (() => true);
+    const today = opts && opts.today; // ISO date; rows after it (future recurring) wait until their day
     const pool = new Map();
     for (const e of matchExisting ? existing || [] : []) {
       if (typeof e.id === "string" && IMPORTED_ID.test(e.id)) continue;
+      if (!poolFilter(e)) continue;
       const k = e.date + "|" + Math.abs(Number(e.amount) || 0);
       pool.set(k, (pool.get(k) || 0) + 1);
     }
@@ -75,8 +78,10 @@
     const handledIds = [];
     let alreadyImported = 0;
     let matchedExisting = 0;
+    let skippedFuture = 0;
     for (const item of incoming) {
       if (done.has(item.id)) { alreadyImported++; continue; }
+      if (today && item.date > today) { skippedFuture++; continue; }
       const k = item.date + "|" + item.amount;
       if ((pool.get(k) || 0) > 0) {
         pool.set(k, pool.get(k) - 1);
@@ -87,8 +92,23 @@
       toAdd.push(item);
       handledIds.push(item.id);
     }
-    return { toAdd, handledIds, alreadyImported, matchedExisting };
+    return { toAdd, handledIds, alreadyImported, matchedExisting, skippedFuture };
   }
 
-  return { coreDataToISODate, rowsToExpenses, planImport, hash32, ID_PREFIX };
+  /** Sum of amounts for a "YYYY-MM" month, optionally ignoring rows after `today`. */
+  function monthTotal(items, ym, today) {
+    let t = 0;
+    for (const e of items) if (e.date.startsWith(ym) && (!today || e.date <= today)) t += e.amount;
+    return Math.round(t);
+  }
+
+  /** Remove every expense imported for a source prefix and forget its ids (for a clean re-import). */
+  function resetSource(expenses, ids, prefix) {
+    return {
+      expenses: (expenses || []).filter((e) => !(typeof e.id === "string" && e.id.startsWith(prefix))),
+      ids: (ids || []).filter((id) => !id.startsWith(prefix)),
+    };
+  }
+
+  return { monthTotal, resetSource, coreDataToISODate, rowsToExpenses, planImport, hash32, ID_PREFIX };
 });
