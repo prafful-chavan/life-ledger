@@ -42,6 +42,7 @@ function dropboxExchangeCode() {
   if (!json.refresh_token) throw new Error("Dropbox said: " + res.getContentText());
   props.setProperty("DROPBOX_REFRESH_TOKEN", json.refresh_token);
   props.deleteProperty("DROPBOX_AUTH_CODE");
+  CacheService.getScriptCache().remove("dbx_access"); // drop any token issued with older permissions
   Logger.log("Done. Refresh token saved. Now run dropboxTest.");
 }
 
@@ -110,4 +111,9 @@ function spendingHandle_(op) {
 function dropboxTest() {
   var f = spendingNewest_();
   Logger.log("Newest backup: " + f.name + " (" + f.size + " bytes, modified " + f.server_modified + ")");
+}
+
+function dropboxClearCache() {
+  CacheService.getScriptCache().remove("dbx_access");
+  Logger.log("Cleared cached Dropbox access token.");
 }
