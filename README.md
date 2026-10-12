@@ -105,3 +105,7 @@ new expenses (ids derived from row content; deleted rows are not re-imported).
 Setup: add `spending-sync.gs` to the Apps Script project, set script properties
 `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET`, run `dropboxAuthUrl`, approve, set `DROPBOX_AUTH_CODE`,
 run `dropboxExchangeCode`, then `dropboxTest`. Redeploy a new version.
+
+Wife's backup (separate Dropbox account): in the Dropbox app console enable additional users, have her
+open the link from `dropboxAuthUrl` and Allow, save the code as `DROPBOX_AUTH_CODE_WIFE`, run
+`dropboxExchangeCodeWife`, then `dropboxTestWife`. Her rows import as paid by "Wife" (ids `spw-…`).

@@ -15,6 +15,7 @@
   const CORE_DATA_EPOCH = 978307200; // 2001-01-01T00:00:00Z in unix seconds
   const IST_OFFSET_MS = 330 * 60 * 1000;
   const ID_PREFIX = "sp-";
+  const IMPORTED_ID = /^sp[a-z]?-/; // sp- (you), spw- (wife)
 
   /** Core Data stores midnight IST as 18:30 UTC the day before; shift to IST. */
   function coreDataToISODate(seconds) {
@@ -39,6 +40,7 @@
    */
   function rowsToExpenses(rows, opts) {
     const paidBy = (opts && opts.paidBy) || "Both";
+    const prefix = (opts && opts.idPrefix) || ID_PREFIX;
     const seen = new Map();
     const out = [];
     for (const r of rows) {
@@ -51,7 +53,7 @@
       const base = hash32([date, amount, category, name, extra].join("|"));
       const n = (seen.get(base) || 0) + 1;
       seen.set(base, n);
-      out.push({ id: ID_PREFIX + base + (n > 1 ? "-" + n : ""), date, category, paidBy, amount, note });
+      out.push({ id: prefix + base + (n > 1 ? "-" + n : ""), date, category, paidBy, amount, note });
     }
     return out;
   }
@@ -60,11 +62,12 @@
    * existing: current expenses; incoming: output of rowsToExpenses;
    * importedIds: ids this feature has handled before (array or Set).
    */
-  function planImport(existing, incoming, importedIds) {
+  function planImport(existing, incoming, importedIds, opts) {
     const done = new Set(importedIds || []);
+    const matchExisting = !opts || opts.matchExisting !== false;
     const pool = new Map();
-    for (const e of existing || []) {
-      if (typeof e.id === "string" && e.id.startsWith(ID_PREFIX)) continue;
+    for (const e of matchExisting ? existing || [] : []) {
+      if (typeof e.id === "string" && IMPORTED_ID.test(e.id)) continue;
       const k = e.date + "|" + Math.abs(Number(e.amount) || 0);
       pool.set(k, (pool.get(k) || 0) + 1);
     }

@@ -43,4 +43,16 @@ plan = C.planImport(inc, later, handled);
 assert.strictEqual(plan.toAdd.length, 1);
 assert.strictEqual(plan.toAdd[0].amount, 999);
 
+// Wife's source: own id prefix, own payer, and no date+amount matching against shared expenses
+const wifeInc = C.rowsToExpenses(rows, { paidBy: "Wife", idPrefix: "spw-" });
+assert.ok(wifeInc.every((e) => e.id.startsWith("spw-") && e.paidBy === "Wife"));
+assert.notStrictEqual(wifeInc[0].id, inc[0].id, "same row in both backups never collides");
+const shared = [{ id: "exp-9", date: "2022-10-12", amount: 100 }, ...inc];
+let wp = C.planImport(shared, wifeInc, [], { matchExisting: false });
+assert.strictEqual(wp.toAdd.length, 3);
+assert.strictEqual(wp.matchedExisting, 0);
+// Imported sp-/spw- rows are excluded from the existing-expense pool for either source
+wp = C.planImport(wifeInc, inc, [], { matchExisting: true });
+assert.strictEqual(wp.matchedExisting, 0);
+
 console.log("spending-core tests passed");

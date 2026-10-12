@@ -55,64 +55,90 @@
     try { localStorage.setItem(AUTO_CHECK_KEY, String(Date.now())); } catch { /* ignore */ }
   }
 
+  // "me" keeps its original ids/tag so already-imported rows are untouched.
+  const SOURCES = [
+    { key: "me", label: "Your Spending app", paidBy: "Both", idPrefix: "sp-", matchExisting: true },
+    { key: "wife", label: "Wife's Spending app", paidBy: "Wife", idPrefix: "spw-", matchExisting: false, optional: true },
+  ];
+
+  function sourceFile(prev, src) {
+    return src.key === "me" ? prev.file : ((prev.sources || {}).wife || {}).file || "";
+  }
+
+  async function importSource(src, manual, summary) {
+    const Sync = window.LifeLedgerSync;
+    const app = window.LifeLedgerApp;
+    const Core = window.LifeLedgerSpendingCore;
+    const state = app.getState();
+    const prev = state.spendingImport || { ids: [], file: "", importedAt: null };
+    const sourceIds = prev.ids.filter((id) => id.startsWith(src.idPrefix));
+
+    let metaRes;
+    try {
+      metaRes = await Sync.call("spendingMeta", { source: src.key });
+    } catch (err) {
+      if (src.optional && /not connected/i.test(err.message)) return; // wife not linked yet
+      throw err;
+    }
+    const file = metaRes.file;
+    if (!manual && sourceFile(prev, src) === file.hash) { summary.push(src.label + ": up to date"); return; }
+    if (!manual && !sourceIds.length) { summary.push(src.label + ": backup found — tap “Import now” for the first import"); return; }
+
+    say("Downloading " + src.label + "…");
+    const full = await Sync.call("spendingLatest", { source: src.key });
+    const SQL = await loadSqlJs();
+    const rows = readRows(SQL, b64ToBytes(full.data));
+    const incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
+    const plan = Core.planImport(state.expenses || [], incoming, prev.ids, { matchExisting: src.matchExisting });
+
+    if (manual && !sourceIds.length) {
+      const ok = confirm(
+        src.label + ": " + incoming.length + " expenses (paid by " + src.paidBy + ").\n\n" +
+        "• " + plan.toAdd.length + " will be added\n" +
+        (src.matchExisting ? "• " + plan.matchedExisting + " already exist (same date and amount) and are skipped\n" : "") +
+        "\nImport now?"
+      );
+      if (!ok) { summary.push(src.label + ": import cancelled"); return; }
+    }
+
+    const live = app.getState();
+    live.expenses = (live.expenses || []).concat(plan.toAdd);
+    const cur = live.spendingImport || { ids: [], file: "", importedAt: null };
+    const next = { ...cur, ids: (cur.ids || []).concat(plan.handledIds) };
+    const at = new Date().toISOString();
+    if (src.key === "me") { next.file = file.hash; next.importedAt = at; }
+    else next.sources = { ...(cur.sources || {}), wife: { file: file.hash, importedAt: at } };
+    live.spendingImport = next;
+    app.renderAll();
+    await app.saveData(true);
+    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses"));
+  }
+
   /** opts.manual: user clicked the button (may confirm and force). */
   async function run(opts) {
     const manual = Boolean(opts && opts.manual);
     if (busy) return;
     const Sync = window.LifeLedgerSync;
-    const app = window.LifeLedgerApp;
-    const Core = window.LifeLedgerSpendingCore;
-    if (!Sync || !app || !Core || !Sync.isConfigured()) { say("Needs the Apps Script URL and sync gateway."); return; }
+    if (!Sync || !window.LifeLedgerApp || !window.LifeLedgerSpendingCore || !Sync.isConfigured()) {
+      say("Needs the Apps Script URL and sync gateway.");
+      return;
+    }
     busy = true;
+    const summary = [];
     try {
       say("Checking Dropbox…");
-      const state = app.getState();
-      const prev = state.spendingImport || { ids: [], file: "", importedAt: null };
-      const metaRes = await Sync.call("spendingMeta");
-      const file = metaRes.file;
       stamp();
-      if (!manual && prev.file === file.hash) { say("Up to date · " + describe(prev)); return; }
-      if (!manual && !prev.ids.length) { say("Backup found (" + file.name + "). Tap “Import now” to do the first import."); return; }
-
-      say("Downloading " + file.name + "…");
-      const full = await Sync.call("spendingLatest");
-      say("Reading backup…");
-      const SQL = await loadSqlJs();
-      const rows = readRows(SQL, b64ToBytes(full.data));
-      const incoming = Core.rowsToExpenses(rows);
-      const plan = Core.planImport(state.expenses || [], incoming, prev.ids);
-
-      if (manual && !prev.ids.length) {
-        const ok = confirm(
-          "Spending app backup: " + incoming.length + " expenses.\n\n" +
-          "• " + plan.toAdd.length + " will be added\n" +
-          "• " + plan.matchedExisting + " already exist in Life Ledger (same date and amount) and are skipped\n\n" +
-          "Import now?"
-        );
-        if (!ok) { say("Import cancelled."); return; }
+      for (const src of SOURCES) {
+        try {
+          await importSource(src, manual, summary);
+        } catch (err) {
+          summary.push(src.label + " failed: " + err.message);
+        }
       }
-
-      const live = app.getState();
-      live.expenses = (live.expenses || []).concat(plan.toAdd);
-      live.spendingImport = {
-        ids: (live.spendingImport && live.spendingImport.ids || []).concat(plan.handledIds),
-        file: file.hash,
-        importedAt: new Date().toISOString(),
-      };
-      app.renderAll();
-      await app.saveData(true);
-      say(plan.toAdd.length
-        ? "Imported " + plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") + " · " + file.name
-        : "Up to date · no new expenses in " + file.name);
-    } catch (err) {
-      say("Import failed: " + err.message);
+      say(summary.length ? summary.join(" · ") : "Up to date.");
     } finally {
       busy = false;
     }
-  }
-
-  function describe(prev) {
-    return prev.importedAt ? "last import " + new Date(prev.importedAt).toLocaleString() : "no import yet";
   }
 
   function autoCheckDue() {
