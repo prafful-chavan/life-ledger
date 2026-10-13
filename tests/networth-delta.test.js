@@ -33,4 +33,10 @@ assert.strictEqual(e.change, -10);
 assert.strictEqual(e.parts.liabilities, -10);
 assert.strictEqual(e.gapDays, 3);
 
+// compare() is the single comparison used for the live "today vs yesterday" figure too
+const { compare } = require("../networth-delta.js");
+const cmp = compare(h[1], h[2]);
+assert.strictEqual(cmp.change, d.get("c").change);
+assert.deepStrictEqual(cmp.parts, d.get("c").parts);
+
 console.log("networth-delta tests passed");

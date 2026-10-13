@@ -4495,26 +4495,33 @@ function calculatePortfolio1DayChange() {
 
 function renderMetrics() {
   const metrics = calculateMetrics();
-  const dayChangeMetrics = calculatePortfolio1DayChange();
+  const nw = getNetWorthSummary();
   const metricGrid = document.getElementById("metricGrid");
   metricGrid.innerHTML = "";
 
-  const dayColor = dayChangeMetrics.total1DayChangeINR >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
-  const dayArrow = dayChangeMetrics.total1DayChangeINR >= 0 ? '▲' : '▼';
+  // Headline change = net worth now − net worth at the previous day's record (same number the
+  // Finance tab shows). Before there is a previous record, fall back to the market move.
+  const hasDelta = Boolean(nw.delta);
+  const dayChange = hasDelta ? nw.delta.change : nw.marketMove;
+  const dayPct = hasDelta ? nw.delta.pct : nw.marketMovePct;
+  const dayColor = dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
+  const dayArrow = dayChange >= 0 ? '▲' : '▼';
+  const hasDayData = hasDelta || Boolean(nw.snapshot && (nw.marketMove || nw.marketMovePct));
+  const marketHint = nw.marketMove ? ` · market move ${nw.marketMove >= 0 ? '+' : '−'}${formatINR(Math.abs(nw.marketMove))}` : '';
 
   [
     {
       label: "Net worth",
-      value: formatINR(metrics.netWorth),
+      value: formatINR(nw.netWorth),
       hint: `Investment holdings − liabilities`,
     },
     {
       label: "📉 1-Day Net Worth",
-      value: dayChangeMetrics.hasData
-        ? `<span style="color:${dayColor}">${dayArrow} ${formatINR(Math.abs(dayChangeMetrics.total1DayChangeINR))}</span>`
+      value: hasDayData
+        ? `<span style="color:${dayColor}">${dayArrow} ${formatINR(Math.abs(dayChange))}</span>`
         : '—',
-      hint: dayChangeMetrics.hasData
-        ? `<span style="color:${dayColor}">${dayChangeMetrics.total1DayChangeINR >= 0 ? '+' : ''}${dayChangeMetrics.changePct.toFixed(2)}% today (MF, Stocks, US & Gold)</span>`
+      hint: hasDayData
+        ? `<span style="color:${dayColor}">${dayChange >= 0 ? '+' : ''}${dayPct.toFixed(2)}% ${hasDelta ? `vs ${formatDate(nw.prevDate)}` : 'market move today'}${hasDelta ? marketHint : ''}</span>`
         : 'Refresh prices to calculate',
       isHTML: true,
       customBorder: `3px solid ${dayColor}`
@@ -7413,26 +7420,7 @@ function calcGoldTotalValue() {
 }
 
 function investmentHoldingsTotal() {
-  const mfByFund = {};
-  (state.mutualFunds || []).forEach((t) => {
-    const key = `${t.fundName || "Unknown"}|${t.owner || 'Me'}`;
-    if (!mfByFund[key]) mfByFund[key] = { txns: [], latestNav: t.latestNav || t.nav || 0 };
-    mfByFund[key].txns.push(t);
-    if (t.latestNav) mfByFund[key].latestNav = toNumber(t.latestNav);
-  });
-  const mutualFunds = Object.entries(mfByFund).reduce((total, [, fund]) => {
-    const netUnits = calcMfCostBasis(fund.txns).netUnits;
-    return total + Math.max(0, netUnits) * fund.latestNav;
-  }, 0);
-
-  const stocksTotal = calcStockTotalValue(state.stocks);
-  const usStocksTotal = calcUsStockTotalValueINR();
-
-  const simpleAssetsTotal = SIMPLE_ASSET_TABS.reduce((total, { stateKey }) => {
-    return total + sum(state[stateKey] || [], "value");
-  }, 0);
-  const goldTotal = calcGoldTotalValue();
-  return mutualFunds + stocksTotal + usStocksTotal + simpleAssetsTotal + goldTotal;
+  return getNetWorthSummary().totalAssets;
 }
 
 
@@ -8260,6 +8248,32 @@ function bindGoldEvents() {
    NET WORTH HISTORY & DAILY TRACKER (Cross-Platform, CSV Export, Day Change)
    ══════════════════════════════════════════════════════════════════════ */
 
+
+/**
+ * The ONE place the app gets "current net worth" and "change since yesterday".
+ * Dashboard, Finance header, history table, charts and the AI assistant all read this,
+ * so they cannot disagree. Change = net worth now − net worth at the previous day's record;
+ * `marketMove` is the separate price-movement figure (qty × price change on holdings).
+ */
+function getNetWorthSummary() {
+  const snapshot = buildTodaySnapshot({ source: "live" });
+  const prev = (state.netWorthHistory || [])
+    .filter((h) => h.date < snapshot.date)
+    .sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null;
+  const NW = window.LifeLedgerNetWorth;
+  const delta = prev && NW ? NW.compare(prev, snapshot) : null;
+  return {
+    snapshot,
+    netWorth: snapshot.netWorth,
+    totalAssets: snapshot.totalAssets,
+    liabilities: snapshot.totalLiabilities,
+    delta,
+    prevDate: prev ? prev.date : null,
+    marketMove: snapshot.dayChange,
+    marketMovePct: snapshot.dayChangePct,
+  };
+}
+
 function captureCurrentNetWorthBreakdown() {
   const mfByFund = {};
   (state.mutualFunds || []).forEach((t) => {
@@ -8362,14 +8376,13 @@ function isNetWorthClassSettled(cls, fetchedAtMs, dateISO, navISO) {
   }
 }
 
-function recordDailyNetWorthSnapshot(options = {}) {
-  if (!state.netWorthHistory) state.netWorthHistory = [];
-
+// What today's net worth record looks like RIGHT NOW (pure: does not touch saved history).
+// Classes already locked at their close keep their locked value; the rest are live.
+function buildTodaySnapshot(options = {}) {
   const today = istTodayISO();
   const breakdown = captureCurrentNetWorthBreakdown();
   const dayChangeMetrics = calculatePortfolio1DayChange();
-  const existingIndex = state.netWorthHistory.findIndex(entry => entry.date === today);
-  const existing = existingIndex >= 0 ? state.netWorthHistory[existingIndex] : null;
+  const existing = (state.netWorthHistory || []).find(entry => entry.date === today) || null;
   const prevSettled = existing?.settled || {};
   const prevChanges = existing?.changes || {};
   const prevAsOf = existing?.asOf || {};
@@ -8431,6 +8444,14 @@ function recordDailyNetWorthSnapshot(options = {}) {
     liabilities: breakdown.liabilities,
     source: options.source || "daily"
   };
+
+  return snapshot;
+}
+
+function recordDailyNetWorthSnapshot(options = {}) {
+  if (!state.netWorthHistory) state.netWorthHistory = [];
+  const snapshot = buildTodaySnapshot(options);
+  const existingIndex = state.netWorthHistory.findIndex(entry => entry.date === snapshot.date);
 
   if (existingIndex >= 0) {
     state.netWorthHistory[existingIndex] = snapshot;
@@ -8712,8 +8733,11 @@ function renderNetWorthHistory() {
   const tableBody = document.getElementById("nwhTableBody");
   if (!tableBody) return;
 
+  // Today's row is shown from the same live calculation the dashboard uses, so the two screens
+  // can never disagree (the stored record is only refreshed on price/edit events).
+  const liveToday = getNetWorthSummary().snapshot;
   const history = (state.netWorthHistory || [])
-    .slice()
+    .map((h) => (h.date === liveToday.date ? { ...h, ...liveToday, id: h.id } : h))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const latest = history[0] || captureCurrentNetWorthBreakdown();

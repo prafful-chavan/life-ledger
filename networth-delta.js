@@ -27,36 +27,37 @@
     return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
   }
 
+  /** Change from snapshot `prev` to snapshot `cur`, with what moved. */
+  function compare(prev, cur) {
+    const prevNw = netWorthOf(prev);
+    const change = r2(netWorthOf(cur) - prevNw);
+    return {
+      change,
+      pct: prevNw ? r2((change / Math.abs(prevNw)) * 100) : 0,
+      prevDate: prev.date,
+      gapDays: daysBetween(prev.date, cur.date),
+      parts: {
+        mutualFunds: r2(n(cur.mutualFunds) - n(prev.mutualFunds)),
+        stocks: r2(n(cur.stocks) - n(prev.stocks)),
+        usStocks: r2(n(cur.usStocks) - n(prev.usStocks)),
+        gold: r2(n(cur.gold) - n(prev.gold)),
+        cashOthers: r2(cashOthers(cur) - cashOthers(prev)),
+        // liabilities going up lowers net worth
+        liabilities: r2(-(n(cur.totalLiabilities) - n(prev.totalLiabilities))),
+      },
+    };
+  }
+
   /**
-   * Returns a Map keyed by snapshot id (or date) → { change, pct, prevDate, gapDays, parts }.
+   * Returns a Map keyed by snapshot id (or date) → compare(previous, snapshot).
    * The oldest snapshot has no entry (nothing to compare with).
    */
   function computeDeltas(history) {
     const sorted = (history || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const out = new Map();
-    for (let i = 1; i < sorted.length; i++) {
-      const cur = sorted[i];
-      const prev = sorted[i - 1];
-      const prevNw = netWorthOf(prev);
-      const change = r2(netWorthOf(cur) - prevNw);
-      out.set(cur.id || cur.date, {
-        change,
-        pct: prevNw ? r2((change / Math.abs(prevNw)) * 100) : 0,
-        prevDate: prev.date,
-        gapDays: daysBetween(prev.date, cur.date),
-        parts: {
-          mutualFunds: r2(n(cur.mutualFunds) - n(prev.mutualFunds)),
-          stocks: r2(n(cur.stocks) - n(prev.stocks)),
-          usStocks: r2(n(cur.usStocks) - n(prev.usStocks)),
-          gold: r2(n(cur.gold) - n(prev.gold)),
-          cashOthers: r2(cashOthers(cur) - cashOthers(prev)),
-          // liabilities going up lowers net worth
-          liabilities: r2(-(n(cur.totalLiabilities) - n(prev.totalLiabilities))),
-        },
-      });
-    }
+    for (let i = 1; i < sorted.length; i++) out.set(sorted[i].id || sorted[i].date, compare(sorted[i - 1], sorted[i]));
     return out;
   }
 
-  return { computeDeltas, cashOthers, netWorthOf };
+  return { compare, computeDeltas, cashOthers, netWorthOf };
 });
