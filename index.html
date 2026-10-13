@@ -26,7 +26,8 @@
     <script defer src="ai-agent.js?v=1.0.42"></script>
     <script src="ui-polish.js?v=1.0.3" defer></script>
     <script defer src="networth-delta.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.48"></script>
+    <script defer src="liability-calc.js?v=1.0.0"></script>
+    <script defer src="app.js?v=1.0.49"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.1"></script>
     <script defer src="auth.js?v=1.0.43"></script>
@@ -1078,6 +1079,7 @@
                 <button class="owner-pill" type="button" data-holdings-owner="Both">Both</button>
               </div>
               <div class="metric-grid compact" id="liabilitiesOwnerSummary"></div>
+              <div style="display:flex;justify-content:flex-end;margin:6px 0;"><button class="secondary-button" type="button" id="clearLiabilitiesBtn">Remove all liabilities</button></div>
               <div class="table-wrap tall-table">
                 <table>
                   <thead>
@@ -1086,6 +1088,7 @@
                       <th>Category</th>
                       <th>Owner</th>
                       <th>Outstanding Value</th>
+                      <th>Monthly EMI</th>
                       <th>Action</th>
                     </tr>
                   </thead>

@@ -278,6 +278,9 @@ const fieldsByKind = {
     ["category", "Category", "text"],
     ["owner", "Owner", "select"],
     ["value", "Outstanding value", "number"],
+    ["emi", "Monthly EMI (₹, optional)", "number"],
+    ["rate", "Interest rate % per year (optional)", "number"],
+    ["emiDay", "EMI day of month (optional)", "number"],
   ],
   goal: [
     ["name", "Goal name", "text"],
@@ -493,6 +496,7 @@ function bootstrapApp(initialState) {
     bindHabitsEvents();
     bindGoldEvents();
     bindNetWorthHistoryEvents();
+    bindLiabilityActions();
     isAppInitialized = true;
   }
 
@@ -931,7 +935,9 @@ function normalizeData(data) {
       return { ...exp, amount: amt };
     }),
     assets: ensureIds(data.assets || [], "asset"),
-    liabilities: ensureIds(data.liabilities || [], "liab"),
+    liabilities: ensureIds(data.liabilities || [], "liab").map((l) =>
+      window.LifeLedgerLiability ? window.LifeLedgerLiability.normalizeLiability(l, normalizeOwner) : l
+    ),
     mutualFunds: ensureIds(data.mutualFunds || [], "mf").map(t => ({
       ...t,
       transactionType: normalizeTransactionType(t.transactionType)
@@ -1279,6 +1285,7 @@ function bindFinanceTabs() {
         const stateKey = stateKeys[kind];
         if (stateKey && confirm(`Are you sure you want to delete this ${kind} entry?`)) {
           state[stateKey] = (state[stateKey] || []).filter(item => item.id !== id);
+          if (kind === "liability") refreshNetWorthRecord("delete");
           if (kind === "expense" || kind === "income" || kind === "asset" || kind === "liability" || kind === "mutualFund" || kind === "stock" || kind === "fd" || kind === "epf" || kind === "bonds" || kind === "ppf" || kind === "gold" || kind === "silver" || kind === "crypto" || kind === "usstocks" || kind === "banksaving" || kind === "others") {
             renderExpensesOnly();
           } else if (kind === "task") {
@@ -2542,10 +2549,19 @@ function buildQuickAddForm(kind, editId = null) {
       if (entry.bestStreak === undefined) entry.bestStreak = entry.streak;
     }
 
+    if (kind === "liability" && window.LifeLedgerLiability) {
+      Object.assign(entry, window.LifeLedgerLiability.normalizeLiability(entry, normalizeOwner));
+    }
+
     if (existingEntry) {
-      const idx = collection.findIndex(item => item.id === editId);
+      const liveCollection = getLiveCollection(kind) || collection;
+      const idx = liveCollection.findIndex(item => item.id === editId);
       if (idx !== -1) {
-        collection[idx] = entry;
+        // keep fields the form doesn't edit (e.g. EMI payment history)
+        liveCollection[idx] = { ...liveCollection[idx], ...entry };
+      } else {
+        // the record vanished (e.g. changed on another device): keep what the user typed
+        liveCollection.push(entry);
       }
     } else {
       if (kind === "expense") state.expenses.push(entry);
@@ -2580,6 +2596,7 @@ function buildQuickAddForm(kind, editId = null) {
       }
     }
 
+    if (kind === "liability" || kind === "asset") refreshNetWorthRecord("edit");
     if (kind === "expense" || kind === "income" || kind === "asset" || kind === "liability" || kind === "mutualFund" || kind === "stock" || kind === "fd" || kind === "epf" || kind === "bonds" || kind === "ppf" || kind === "gold" || kind === "silver" || kind === "crypto" || kind === "usstocks" || kind === "banksaving" || kind === "others") {
       renderExpensesOnly();
       if (kind === "stock") renderStockHoldingsPanel();
@@ -7418,6 +7435,82 @@ function investmentHoldingsTotal() {
   return mutualFunds + stocksTotal + usStocksTotal + simpleAssetsTotal + goldTotal;
 }
 
+
+// Resolve a collection from the CURRENT state (state can be swapped by a sync refresh while a
+// form is open, so arrays captured earlier may be stale).
+function getLiveCollection(kind) {
+  const keys = {
+    expense: "expenses", income: "income", asset: "assets", liability: "liabilities",
+    mutualFund: "mutualFunds", stock: "stocks", fd: "fd", epf: "epf", bonds: "bonds", ppf: "ppf",
+    gold: "gold", silver: "silver", crypto: "crypto", usstocks: "usstocks", banksaving: "banksaving",
+    others: "others", goal: "goals", task: "tasks", study: "studies", workout: "workouts", habit: "habits",
+  };
+  const key = keys[kind];
+  if (!key) return null;
+  if (!Array.isArray(state[key])) state[key] = [];
+  return state[key];
+}
+
+// Liabilities/assets feed net worth: keep today's history record in step immediately
+// instead of waiting for the next price refresh.
+function refreshNetWorthRecord(source) {
+  try {
+    recordDailyNetWorthSnapshot({ source: "edit-" + source });
+  } catch (err) {
+    console.warn("[NetWorth] could not refresh today's record:", err);
+  }
+}
+
+function bindLiabilityActions() {
+  document.addEventListener("click", async (event) => {
+    const pay = event.target.closest(".pay-emi-btn");
+    const undo = event.target.closest(".undo-emi-btn");
+    const clearAll = event.target.closest("#clearLiabilitiesBtn");
+    const L = window.LifeLedgerLiability;
+    if (!L) return;
+
+    if (pay || undo) {
+      const id = (pay || undo).dataset.id;
+      const idx = state.liabilities.findIndex((l) => l.id === id);
+      if (idx === -1) return;
+      const cur = state.liabilities[idx];
+      try {
+        if (pay) {
+          const today = istTodayISO();
+          if (L.paidThisMonth(cur, today) && !confirm(`An EMI is already recorded for this month on "${cur.name}". Record another?`)) return;
+          const input = prompt(`EMI paid for "${cur.name}" (₹)`, cur.emi || "");
+          if (input === null) return;
+          const next = L.applyEmiPayment(cur, { amount: input, date: today, id: `pay-${generateUUID()}` });
+          state.liabilities[idx] = next;
+          const last = next.payments[next.payments.length - 1];
+          toast(`EMI recorded: outstanding ${formatINR(last.before)} → ${formatINR(last.after)}` + (last.interest ? ` (interest ${formatINR(last.interest)})` : ""));
+        } else {
+          const r = L.undoLastPayment(cur);
+          if (!r.ok) { toast(r.reason); return; }
+          if (!confirm(`Undo the last EMI on "${cur.name}"? Outstanding returns to ${formatINR(r.liability.value)}.`)) return;
+          state.liabilities[idx] = r.liability;
+          toast("Last EMI undone.");
+        }
+      } catch (err) {
+        toast(err.message);
+        return;
+      }
+      refreshNetWorthRecord("emi");
+      renderExpensesOnly();
+      await saveData(true, "liability");
+    } else if (clearAll) {
+      const n = state.liabilities.length;
+      if (!n) { toast("No liabilities to clear."); return; }
+      if (!confirm(`Remove all ${n} liabilities? Past net worth records are not changed.`)) return;
+      state.liabilities = [];
+      refreshNetWorthRecord("clear");
+      renderExpensesOnly();
+      await saveData(true, "liability");
+      toast("All liabilities removed.");
+    }
+  });
+}
+
 function renderLiabilities() {
   const summary = document.getElementById("liabilitiesOwnerSummary");
   const table = document.getElementById("liabilityTable");
@@ -7447,13 +7540,18 @@ function renderLiabilities() {
       item.category || "-",
       item.owner || "Both",
       formatINR(item.value),
+      item.emi > 0
+        ? `<span>${formatINR(item.emi)}${item.emiDay ? ` <small>on the ${item.emiDay}${["th","st","nd","rd"][(item.emiDay % 10 > 3 || [11,12,13].includes(item.emiDay % 100)) ? 0 : item.emiDay % 10]}</small>` : ""}${item.rate ? ` <small>· ${item.rate}%</small>` : ""}</span>`
+        : "—",
       `<div class="actions-wrapper">
+        ${item.value > 0 ? `<button class="action-btn pay-emi-btn" data-id="${item.id}" title="Record this month's EMI">💳 Pay EMI</button>` : ""}
+        ${(item.payments || []).length ? `<button class="action-btn undo-emi-btn" data-id="${item.id}" title="Undo last EMI">↩</button>` : ""}
         <button class="action-btn edit-btn edit-simple-asset-btn" data-kind="liability" data-id="${item.id}" title="Edit entry">✏️</button>
         <button class="action-btn delete-btn delete-simple-asset-btn" data-kind="liability" data-id="${item.id}" title="Delete entry">🗑️</button>
       </div>`
     ],
     `No liabilities found for ${activeHoldingsOwner}.`,
-    5
+    6
   );
 }
 
