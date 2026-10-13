@@ -8620,8 +8620,13 @@ function renderNetWorthHistory() {
 
   const latest = history[0] || captureCurrentNetWorthBreakdown();
   const currentNetWorth = latest.netWorth ?? (latest.totalAssets - latest.totalLiabilities);
-  const currentDayChange = latest.dayChange ?? 0;
-  const currentDayChangePct = latest.dayChangePct ?? 0;
+  const nwDeltas = window.LifeLedgerNetWorth ? window.LifeLedgerNetWorth.computeDeltas(history) : new Map();
+  const latestDelta = nwDeltas.get(latest.id || latest.date);
+  // Headline = net worth today minus net worth at the previous snapshot. Falls back to the
+  // market-move figure only while there is a single snapshot.
+  const currentDayChange = latestDelta ? latestDelta.change : (latest.dayChange ?? 0);
+  const currentDayChangePct = latestDelta ? latestDelta.pct : (latest.dayChangePct ?? 0);
+  const deltaBasis = latestDelta ? `vs ${formatDate(latestDelta.prevDate)}` : "market move";
 
   // 1. Banner
   const nwDisplay = document.getElementById("nwhLatestNetWorthDisplay");
@@ -8633,7 +8638,7 @@ function renderNetWorthHistory() {
     const sign = currentDayChange >= 0 ? "+" : "";
     const color = currentDayChange >= 0 ? "var(--positive, #16a34a)" : "var(--negative, #dc2626)";
     const arrow = currentDayChange >= 0 ? "▲" : "▼";
-    changeDisplay.innerHTML = `<span style="color:${color}; font-weight:600;">${arrow} 1-Day: ${sign}${formatINR(Math.abs(currentDayChange))} (${sign}${currentDayChangePct}%)</span> &nbsp;•&nbsp; Total Assets: ${formatINR(latest.totalAssets || 0)} &nbsp;•&nbsp; Liabilities: ${formatINR(latest.totalLiabilities || 0)}`;
+    changeDisplay.innerHTML = `<span style="color:${color}; font-weight:600;">${arrow} ${deltaBasis}: ${sign}${formatINR(Math.abs(currentDayChange))} (${sign}${currentDayChangePct}%)</span> &nbsp;•&nbsp; Total Assets: ${formatINR(latest.totalAssets || 0)} &nbsp;•&nbsp; Liabilities: ${formatINR(latest.totalLiabilities || 0)}`;
   }
 
   // 2. Stats Grid
@@ -8651,9 +8656,9 @@ function renderNetWorthHistory() {
         <div class="hint">Total Assets: ${formatINR(latest.totalAssets || 0)}</div>
       </article>
       <article class="metric-card">
-        <div class="label">Today's 1-Day Change</div>
+        <div class="label">Net worth change</div>
         <div class="value" style="color:${dayColor};">${daySign}${formatINR(currentDayChange)}</div>
-        <div class="hint" style="color:${dayColor}; font-weight:600;">${daySign}${currentDayChangePct}% daily movement (MF, Stocks, US &amp; Gold)</div>
+        <div class="hint" style="color:${dayColor}; font-weight:600;">${daySign}${currentDayChangePct}% ${deltaBasis}${latest.dayChange != null ? ` · market move ${latest.dayChange >= 0 ? "+" : "−"}${formatINR(Math.abs(latest.dayChange))}` : ""}</div>
       </article>
       <article class="metric-card">
         <div class="label">All-Time High (Peak)</div>
@@ -8681,10 +8686,11 @@ function renderNetWorthHistory() {
     history,
     (item) => {
       const isToday = item.date === today;
-      const chg = toNumber(item.dayChange);
-      const chgPct = toNumber(item.dayChangePct);
-      const chgBadgeClass = chg > 0 ? "positive" : chg < 0 ? "negative" : "neutral";
-      const chgSign = chg >= 0 ? "+" : "";
+      const delta = nwDeltas.get(item.id || item.date);
+      const chg = delta ? delta.change : 0;
+      const chgPct = delta ? delta.pct : 0;
+      const chgBadgeClass = !delta ? "neutral" : chg > 0 ? "positive" : chg < 0 ? "negative" : "neutral";
+      const chgSign = chg >= 0 ? "+" : "−";
 
       const cashAndOthers = toNumber(item.fd) + toNumber(item.epf) + toNumber(item.ppf) +
                             toNumber(item.bonds) + toNumber(item.bankSaving) + toNumber(item.others) +
@@ -8707,11 +8713,13 @@ function renderNetWorthHistory() {
           })()}
         </div>`,
         `<strong style="color:var(--brand); font-size:1rem;">${formatINR(item.netWorth)}</strong>`,
-        `<div><span class="nwh-change-badge ${chgBadgeClass}">${chgSign}${formatINR(chg)} (${chgSign}${chgPct}%)</span>
-          ${item.changes && Object.keys(item.changes).length ? `<div style="font-size:0.68rem;color:var(--muted);margin-top:3px;line-height:1.35;">${NWH_MARKET_CLASSES.map(cls => {
-            const v = toNumber(item.changes[cls]);
-            return `${NWH_CLASS_LABELS[cls]} ${v >= 0 ? '+' : '−'}${formatINR(Math.abs(v))}`;
-          }).join(' · ')}</div>` : ""}
+        `<div>${delta
+          ? `<span class="nwh-change-badge ${chgBadgeClass}" title="Net worth ${formatDate(item.date)} minus ${formatDate(delta.prevDate)}${item.dayChange != null ? `. Market move on holdings (price change vs previous close): ${formatINR(item.dayChange)}` : ""}">${chgSign}${formatINR(Math.abs(chg))} (${chgSign}${Math.abs(chgPct)}%)</span>
+            <div style="font-size:0.68rem;color:var(--muted);margin-top:3px;line-height:1.35;">${delta.gapDays > 1 ? `vs ${formatDate(delta.prevDate)} · ` : ""}${[
+              ["MF", delta.parts.mutualFunds], ["Stocks", delta.parts.stocks], ["US", delta.parts.usStocks],
+              ["Gold", delta.parts.gold], ["Cash & other", delta.parts.cashOthers], ["Liabilities", delta.parts.liabilities],
+            ].filter(([, v]) => Math.abs(v) >= 0.5).map(([label, v]) => `${label} ${v >= 0 ? "+" : "−"}${formatINR(Math.abs(v))}`).join(" · ") || "no movement"}</div>`
+          : `<span class="nwh-change-badge neutral">First record</span>`}
         </div>`,
         `<strong>${formatINR(item.totalAssets)}</strong>`,
         `${item.totalLiabilities > 0 ? `<span style="color:var(--negative, #dc2626);">${formatINR(item.totalLiabilities)}</span>` : "₹0.00"}`,
@@ -8741,12 +8749,16 @@ function downloadNetWorthHistoryCSV() {
   const headers = [
     "Date",
     "Net Worth (INR)",
-    "1-Day Change (INR)",
-    "1-Day Change (%)",
-    "MF Day Change (INR)",
-    "Indian Stocks Day Change (INR)",
-    "US Stocks Day Change (INR)",
-    "Gold Day Change (INR)",
+    "Net Worth Change vs Previous Snapshot (INR)",
+    "Net Worth Change (%)",
+    "Compared With",
+    "MF Change (INR)",
+    "Indian Stocks Change (INR)",
+    "US Stocks Change (INR)",
+    "Gold Change (INR)",
+    "Cash & Other Change (INR)",
+    "Liabilities Effect (INR)",
+    "Market Price Move (INR)",
     "Final (all prices closed)",
     "Total Assets (INR)",
     "Total Liabilities (INR)",
@@ -8767,15 +8779,22 @@ function downloadNetWorthHistoryCSV() {
     "Timestamp"
   ];
 
-  const rows = history.map(item => [
+  const csvDeltas = window.LifeLedgerNetWorth ? window.LifeLedgerNetWorth.computeDeltas(history) : new Map();
+  const rows = history.map(item => {
+    const dl = csvDeltas.get(item.id || item.date);
+    return [
     item.date,
     (item.netWorth ?? 0).toFixed(2),
+    dl ? dl.change.toFixed(2) : "",
+    dl ? dl.pct.toFixed(2) : "",
+    dl ? dl.prevDate : "",
+    dl ? dl.parts.mutualFunds.toFixed(2) : "",
+    dl ? dl.parts.stocks.toFixed(2) : "",
+    dl ? dl.parts.usStocks.toFixed(2) : "",
+    dl ? dl.parts.gold.toFixed(2) : "",
+    dl ? dl.parts.cashOthers.toFixed(2) : "",
+    dl ? dl.parts.liabilities.toFixed(2) : "",
     (item.dayChange ?? 0).toFixed(2),
-    (item.dayChangePct ?? 0).toFixed(2),
-    toNumber(item.changes?.mutualFunds).toFixed(2),
-    toNumber(item.changes?.stocks).toFixed(2),
-    toNumber(item.changes?.usStocks).toFixed(2),
-    toNumber(item.changes?.gold).toFixed(2),
     item.final || item.date < istTodayISO() ? "Yes" : "No",
     (item.totalAssets ?? 0).toFixed(2),
     (item.totalLiabilities ?? 0).toFixed(2),
@@ -8794,7 +8813,8 @@ function downloadNetWorthHistoryCSV() {
     (item.liabilities ?? 0).toFixed(2),
     item.source || "snapshot",
     item.timestamp || ""
-  ]);
+  ];
+  });
 
   const csvContent = [
     headers.join(","),
