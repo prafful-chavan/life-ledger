@@ -501,15 +501,30 @@
     runUpload();
   }
 
-  async function saveVaultFile(vault) {
-    if (!window.LifeLedgerVaultStore) {
-      throw new Error("Vault storage is not available.");
-    }
-    console.log("[auth] Vault saved locally.");
-    await window.LifeLedgerVaultStore.save(vault);
-    vaultMeta = vault;
+  // Saves run one at a time, and a vault built from OLDER data never overwrites one built from
+  // newer data (each vault carries the sequence number taken when its data was captured).
+  let dataSeq = 0;
+  let savedSeq = 0;
+  let vaultSaveChain = Promise.resolve();
 
-    triggerDriveUpload(vault);
+  function saveVaultFile(vault, seq = ++dataSeq) {
+    if (!window.LifeLedgerVaultStore) {
+      return Promise.reject(new Error("Vault storage is not available."));
+    }
+    const run = async () => {
+      if (seq < savedSeq) {
+        console.log("[auth] Skipped saving an outdated vault (newer data already saved).");
+        return;
+      }
+      await window.LifeLedgerVaultStore.save(vault);
+      savedSeq = seq;
+      vaultMeta = vault;
+      console.log("[auth] Vault saved locally.");
+      triggerDriveUpload(vault);
+    };
+    const p = vaultSaveChain.then(run, run);
+    vaultSaveChain = p.catch(() => {});
+    return p;
   }
 
   async function buildVault(password, innerPayload, existingSalt = null, existingKey = null) {
@@ -566,6 +581,7 @@
     if (!unlockedPayload) throw new Error("Not unlocked");
     console.log("[auth.js] Persisting updated app data to storage...");
     const Engine = window.LifeLedgerSyncEngine;
+    const seq = ++dataSeq;
     // The app hands us its live (mutated-in-place) state object, so diff against a
     // private snapshot of what we persisted last time.
     const snapshot = cloneJson(data);
@@ -589,26 +605,39 @@
   }
 
   /**
-   * Adopt a merged {data, meta}: persist locally (and mirror to Drive), then
-   * refresh the UI. Returns {data, meta, vault} for the sync client.
+   * Merge another device's state into this device. The merge itself is one synchronous step that
+   * starts from the app's LIVE data (so an edit made while the remote copy was being fetched or
+   * decrypted can never be lost), and only then is the result persisted. Returns
+   * {data, meta, vault, remoteBehind} for the sync client.
    */
-  async function applyMergedState(merged, opts = {}) {
+  async function mergeRemoteIntoLive(remote, opts = {}) {
+    const Engine = window.LifeLedgerSyncEngine;
+    const app = window.LifeLedgerApp;
     const password = unlockedPayload._sessionPassword;
-    const dataChanged = !window.LifeLedgerSyncEngine.dataEquals(merged.data, unlockedPayload.data);
+
+    // ── synchronous: no await between reading live data and replacing it ──
+    const seq = ++dataSeq;
+    const live = cloneJson(app?.getState?.() ?? unlockedPayload.data);
+    const liveMeta = Engine.stamp(unlockedPayload.data, live, unlockedPayload.sync, nextStampMs());
+    const merged = Engine.merge({ data: live, meta: liveMeta }, remote, Date.now());
+    const liveChanged = !Engine.dataEquals(merged.data, live);
+    const remoteBehind = !Engine.dataEquals(merged.data, remote.data);
     unlockedPayload.data = cloneJson(merged.data);
     unlockedPayload.sync = merged.meta;
+    if (liveChanged && !opts.quiet) {
+      app?.applyRemoteData?.(cloneJson(merged.data));
+      rebaseline();
+    }
+    const snapshotData = unlockedPayload.data;
+    // ── asynchronous: persist (ordered, newest data wins) ──
     const vault = await buildVault(
       password,
-      vaultInnerPayload(merged.data, unlockedPayload.totpSecret, merged.meta),
+      vaultInnerPayload(snapshotData, unlockedPayload.totpSecret, merged.meta),
       unlockedPayload._salt,
       unlockedPayload._sessionKey
     );
-    await saveVaultFile(vault);
-    if (dataChanged && !opts.quiet) {
-      window.LifeLedgerApp?.applyRemoteData?.(cloneJson(merged.data));
-      rebaseline();
-    }
-    return { data: unlockedPayload.data, meta: merged.meta, vault };
+    await saveVaultFile(vault, seq);
+    return { data: snapshotData, meta: merged.meta, vault, remoteBehind, liveChanged };
   }
 
   const remoteKeyCache = new Map();
@@ -636,7 +665,7 @@
       }),
       beforeSync: () => window.LifeLedgerApp?.flushSave?.(),
       decryptVault: decryptRemoteVault,
-      applyMerged: applyMergedState,
+      mergeRemote: mergeRemoteIntoLive,
     });
     if (!Sync.__wired) {
       Sync.__wired = true;
@@ -936,15 +965,9 @@
               return `Synced: Already up to date (${localCount} entries).`;
             }
 
-            // Merge record-by-record (never wholesale replace).
-            const Engine = window.LifeLedgerSyncEngine;
-            const merged = Engine.merge(
-              { data: unlockedPayload.data, meta: unlockedPayload.sync || Engine.emptyMeta() },
-              { data: remoteData, meta: inner.sync || Engine.emptyMeta() },
-              Date.now()
-            );
+            // Merge record-by-record (never wholesale replace), from the live data.
             hasSyncedThisSession = true;
-            await applyMergedState(merged, { remoteVault });
+            await mergeRemoteIntoLive({ data: remoteData, meta: inner.sync || window.LifeLedgerSyncEngine.emptyMeta() });
             window.LifeLedgerDrive.updateCachedRemoteTime?.(remoteVault.updatedAt);
             hasSyncedThisSession = true;
             console.log(`[auth.js] Sync PULL: merged Drive (${remoteCount}) into local (${localCount}).`);

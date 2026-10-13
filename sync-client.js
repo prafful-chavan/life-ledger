@@ -19,6 +19,7 @@
   let running = null;
   let again = false;
   let dirty = false;
+  let dirtyGen = 0;
   let pollTimer = null;
   let status = { state: "off", detail: "", at: 0 };
   const listeners = new Set();
@@ -94,22 +95,18 @@
     const pulled = await post({ op: "pull", token: token_, sinceRev: state.rev || 0 });
 
     let local = host.getLocal();
-    let rev = pulled.rev || 0;
+    const rev = pulled.rev || 0;
+    const genAtMerge = dirtyGen;
 
     if (pulled.vault && !pulled.unchanged) {
       const remoteInner = await host.decryptVault(pulled.vault);
       const remote = { data: remoteInner.data, meta: remoteInner.sync || E.emptyMeta() };
-      const merged = E.merge(local, remote, Date.now());
-      const localChanged = !E.dataEquals(merged.data, local.data);
-      const remoteBehind = !E.dataEquals(merged.data, remote.data);
-      const metaChanged = JSON.stringify(merged.meta) !== JSON.stringify(local.meta);
-      if (localChanged) {
-        if (userIsTyping()) { setStatus("synced", "Update waiting — finish typing"); return { retry: 3000 }; }
-        local = await host.applyMerged(merged);
-      } else if (metaChanged) {
-        local = await host.applyMerged(merged, { quiet: true });
-      }
-      if (!remoteBehind && !dirty) {
+      if (userIsTyping()) { setStatus("synced", "Update waiting — finish typing"); return { retry: 3000 }; }
+      // The host merges into the app's LIVE data in one step (see auth.js), so edits made while
+      // we were waiting on the network or decrypting are kept.
+      const r = await host.mergeRemote(remote);
+      local = { data: r.data, meta: r.meta, vault: r.vault };
+      if (!r.remoteBehind && dirtyGen === genAtMerge) {
         writeState({ rev, lastOkAt: Date.now() });
         return { done: true };
       }
@@ -121,7 +118,8 @@
     // Push our (possibly merged) state, guarded by the revision we merged against.
     const pushed = await post({ op: "push", token: token_, baseRev: rev, vault: local.vault });
     if (pushed.conflict) return { conflict: true };
-    dirty = false;
+    // Only clear the flag if nothing was saved while this round was running.
+    if (dirtyGen === genAtMerge) dirty = false;
     writeState({ rev: pushed.rev, lastOkAt: Date.now() });
     return { done: true };
   }
@@ -171,6 +169,7 @@
     /** Call after any local change has been durably saved. */
     markDirty() {
       dirty = true;
+      dirtyGen++;
       clearTimeout(api._debounce);
       api._debounce = setTimeout(() => api.sync("local-change"), 1500);
     },

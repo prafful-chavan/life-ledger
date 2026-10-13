@@ -2597,6 +2597,11 @@ function buildQuickAddForm(kind, editId = null) {
     }
 
     if (kind === "liability" || kind === "asset") refreshNetWorthRecord("edit");
+    if (kind === "liability" && !matchHoldingsOwner(entry.owner, activeHoldingsOwner)) {
+      activeHoldingsOwner = "Both"; // "All"
+      syncHoldingsOwnerPills();
+      toast("Showing all liabilities so you can see the one you just saved.");
+    }
     if (kind === "expense" || kind === "income" || kind === "asset" || kind === "liability" || kind === "mutualFund" || kind === "stock" || kind === "fd" || kind === "epf" || kind === "bonds" || kind === "ppf" || kind === "gold" || kind === "silver" || kind === "crypto" || kind === "usstocks" || kind === "banksaving" || kind === "others") {
       renderExpensesOnly();
       if (kind === "stock") renderStockHoldingsPanel();
@@ -5369,7 +5374,14 @@ function formatMonthKeyLabel(key) {
   return date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 }
 
+function syncHoldingsOwnerPills() {
+  document.querySelectorAll("[data-holdings-owner]").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.holdingsOwner === activeHoldingsOwner);
+  });
+}
+
 function renderHoldingsTabs() {
+  syncHoldingsOwnerPills();
   renderMutualFundsPanel();
   renderStockHoldingsPanel();
   renderUsStockHoldingsPanel();
@@ -7509,13 +7521,22 @@ function renderLiabilities() {
     .sort((a, b) => b.value - a.value);
 
   const totalValue = rows.reduce((total, row) => total + toNumber(row.value), 0);
+  const ownerTotal = (who) => state.liabilities.filter((l) => normalizeOwner(l.owner || "Both") === who).reduce((t, l) => t + toNumber(l.value), 0);
+  const allTotal = state.liabilities.reduce((t, l) => t + toNumber(l.value), 0);
+  syncHoldingsOwnerPills();
 
   if (summary) {
+    const shownLabel = activeHoldingsOwner === "Both" ? "All" : activeHoldingsOwner;
     summary.innerHTML = `
       <article class="metric-card compact-metric">
-        <div class="label">Total Outstanding (${activeHoldingsOwner})</div>
+        <div class="label">Total Outstanding (${shownLabel})</div>
         <div class="value">${formatINR(totalValue)}</div>
-        <div class="hint">${rows.length} liability / liabilities</div>
+        <div class="hint">${rows.length} of ${state.liabilities.length} liabilities shown</div>
+      </article>
+      <article class="metric-card compact-metric">
+        <div class="label">All liabilities</div>
+        <div class="value">${formatINR(allTotal)}</div>
+        <div class="hint">Me ${formatINR(ownerTotal("Me"))} · Wife ${formatINR(ownerTotal("Wife"))} · Joint ${formatINR(ownerTotal("Both"))}</div>
       </article>
     `;
   }
@@ -7532,7 +7553,7 @@ function renderLiabilities() {
         ? `<span>${formatINR(item.emi)}${item.emiDay ? ` <small>on the ${item.emiDay}${["th","st","nd","rd"][(item.emiDay % 10 > 3 || [11,12,13].includes(item.emiDay % 100)) ? 0 : item.emiDay % 10]}</small>` : ""}${item.rate ? ` <small>· ${item.rate}%</small>` : ""}</span>`
         : "—",
       `<div class="actions-wrapper">
-        ${item.value > 0 ? `<button class="action-btn pay-emi-btn" data-id="${item.id}" title="Record this month's EMI">💳 Pay EMI</button>` : ""}
+        ${item.value > 0 ? `<button class="action-btn pay-emi-btn" data-id="${item.id}" title="Record this month's EMI" style="white-space:nowrap;display:inline-flex;gap:4px;align-items:center;width:auto;padding:0 8px;">💳 <span>Pay EMI</span></button>` : ""}
         ${(item.payments || []).length ? `<button class="action-btn undo-emi-btn" data-id="${item.id}" title="Undo last EMI">↩</button>` : ""}
         <button class="action-btn edit-btn edit-simple-asset-btn" data-kind="liability" data-id="${item.id}" title="Edit entry">✏️</button>
         <button class="action-btn delete-btn delete-simple-asset-btn" data-kind="liability" data-id="${item.id}" title="Delete entry">🗑️</button>

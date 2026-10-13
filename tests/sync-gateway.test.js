@@ -95,8 +95,14 @@ function makeDevice(gw, name) {
     isReady: () => true,
     getPassword: () => "pw",
     getLocal: () => ({ data: dev.data, meta: dev.meta, vault: dev.vault }),
-    decryptVault: async (v) => JSON.parse(v.ciphertext),
-    applyMerged: async (m) => { dev.data = m.data; dev.meta = m.meta; dev.vault = buildVault(); return { ...m, vault: dev.vault }; },
+    decryptVault: async (v) => { if (dev.decryptDelay) await new Promise((r) => setTimeout(r, dev.decryptDelay)); return JSON.parse(v.ciphertext); },
+    // like auth.js: merge the device's CURRENT data with the remote copy in one synchronous step
+    mergeRemote: async (remote) => {
+      const m = Engine.merge({ data: dev.data, meta: dev.meta }, remote);
+      const remoteBehind = !Engine.dataEquals(m.data, remote.data);
+      dev.data = m.data; dev.meta = m.meta; dev.vault = buildVault();
+      return { data: m.data, meta: m.meta, vault: dev.vault, remoteBehind };
+    },
   });
   dev.edit = (fn) => {
     const next = JSON.parse(JSON.stringify(dev.data));
@@ -143,6 +149,21 @@ function makeDevice(gw, name) {
   await phone.Sync.sync("t");
   await mac.Sync.sync("t");
   assert.strictEqual(ids(mac), "e2,e3");
+
+  // An edit made WHILE a sync is decrypting the other device's copy must survive and reach the other device
+  phone.edit((d) => { d.expenses.push({ id: "e-from-phone", v: 5 }); });
+  await phone.Sync.sync("t");                       // phone's change is on the gateway
+  mac.decryptDelay = 200;
+  const running = mac.Sync.sync("t");               // mac starts pulling phone's change…
+  await new Promise((r) => setTimeout(r, 60));
+  mac.edit((d) => { d.expenses.push({ id: "e-mid-sync", v: 6 }); }); // …and edits during the decrypt window
+  await running;
+  mac.decryptDelay = 0;
+  assert.ok(mac.data.expenses.some((r) => r.id === "e-mid-sync"), "edit made during sync is not lost");
+  assert.ok(mac.data.expenses.some((r) => r.id === "e-from-phone"), "remote change still arrives");
+  await mac.Sync.sync("t");
+  await phone.Sync.sync("t");
+  assert.ok(phone.data.expenses.some((r) => r.id === "e-mid-sync"), "and the mid-sync edit reaches the other device");
 
   // Wrong token is rejected
   const bad = gw.call({ op: "pull", token: "nope" });
