@@ -160,6 +160,36 @@
     await run({ manual: true });
   }
 
+  /**
+   * Deterministic repair: snapshot, clear every expense, then import both Spending apps fresh.
+   * Result depends only on the two backups, so duplicates from any older import path vanish.
+   */
+  async function rebuild() {
+    const app = window.LifeLedgerApp;
+    const Sync = window.LifeLedgerSync;
+    if (!app || !Sync || busy) return;
+    const live = app.getState();
+    const n = (live.expenses || []).length;
+    if (!confirm(
+      "Rebuild ALL expenses from your two Spending apps?\n\n" +
+      "• A safety snapshot is saved first (Settings → Version history can restore it)\n" +
+      "• All " + n + " current expenses are removed, including any typed in by hand\n" +
+      "• Your backup and your wife's backup are then imported fresh (Me / Wife)\n\nContinue?"
+    )) return;
+    try {
+      say("Saving a safety snapshot…");
+      await Sync.snapshotNow();
+    } catch (err) {
+      say("Rebuild stopped — could not save a safety snapshot: " + err.message);
+      return;
+    }
+    live.expenses = [];
+    live.spendingImport = { ids: [], file: "", importedAt: null, sources: {}, tagMigrated: true };
+    app.renderAll();
+    await app.saveData(true);
+    await run({ manual: true });
+  }
+
   // Rows imported earlier from your backup were tagged "Both"; your Spending app is yours alone.
   function migrateMeTag() {
     const app = window.LifeLedgerApp;
@@ -204,11 +234,12 @@
     try { return Date.now() - Number(localStorage.getItem(AUTO_CHECK_KEY) || 0) > AUTO_EVERY_MS; } catch { return true; }
   }
 
-  window.LifeLedgerSpending = { run };
+  window.LifeLedgerSpending = { run, rebuild };
 
   window.addEventListener("load", () => {
     $("spendingSyncNowButton")?.addEventListener("click", () => run({ manual: true }));
     $("spendingResetWifeButton")?.addEventListener("click", resetWife);
+    $("spendingRebuildButton")?.addEventListener("click", rebuild);
     // Once this session, after the first successful vault sync, check for a newer backup.
     let armed = true;
     window.LifeLedgerSync?.onStatus((st) => {

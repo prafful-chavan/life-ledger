@@ -25,13 +25,13 @@
     <script defer src="interview-db.js?v=1.0.8"></script>
     <script defer src="ai-agent.js?v=1.0.42"></script>
     <script src="ui-polish.js?v=1.0.3" defer></script>
-    <script defer src="app.js?v=1.0.46"></script>
+    <script defer src="app.js?v=1.0.47"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.1"></script>
     <script defer src="auth.js?v=1.0.43"></script>
     <script defer src="sync-ui.js?v=1.0.0"></script>
     <script defer src="spending-core.js?v=1.0.3"></script>
-    <script defer src="spending-import.js?v=1.0.7"></script>
+    <script defer src="spending-import.js?v=1.0.8"></script>
   </head>
   <body class="auth-locked">
     <div id="appLoading" class="app-loading hidden">
@@ -2291,6 +2291,7 @@
           <p class="muted-small" id="spendingSyncStatus" style="margin-bottom: 8px;">Not checked yet.</p>
           <button class="secondary-button" type="button" id="spendingSyncNowButton" style="width: 100%;">⟳ Import now</button>
           <button class="secondary-button" type="button" id="spendingResetWifeButton" style="width: 100%; margin-top: 8px;">↺ Re-import wife's expenses</button>
+          <button class="secondary-button" type="button" id="spendingRebuildButton" style="width: 100%; margin-top: 8px;">🛠 Rebuild all expenses from both Spending apps</button>
         </div>
 
         <div class="settings-divider"></div>

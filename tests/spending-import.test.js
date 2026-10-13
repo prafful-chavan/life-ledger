@@ -31,6 +31,7 @@ function harness(files, opts) {
     addEventListener: (t, fn) => { if (t === "load") win.__load = fn; },
     LifeLedgerSync: {
       isConfigured: () => true,
+      snapshotNow: async () => { win.__snapshots = (win.__snapshots || 0) + 1; },
       onStatus() {},
       call: async (op, extra) => {
         const f = files[(extra && extra.source) || "me"];
@@ -160,6 +161,17 @@ function harness(files, opts) {
   await h7.win.LifeLedgerSpending.run({ manual: false });
   assert.strictEqual(h7.state.expenses.find((e) => e.id === "sp-old").paidBy, "Me");
   assert.strictEqual(h7.state.expenses.find((e) => e.id === "exp-x").paidBy, "Both", "manual entries untouched");
+
+  // Rebuild: wipes every expense (any origin, any duplicates) and imports both sources fresh
+  const h8 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w2", bytes: herOwn } });
+  await h8.win.LifeLedgerSpending.run({ manual: true });
+  h8.state.expenses = h8.state.expenses.concat(h8.state.expenses.map((e) => ({ ...e, id: "exp-dup-" + e.id, paidBy: "Me" }))); // simulate CSV duplicates
+  assert.strictEqual(h8.state.expenses.length, 68);
+  await h8.win.LifeLedgerSpending.rebuild();
+  assert.strictEqual(h8.win.__snapshots, 1, "snapshot taken first");
+  assert.strictEqual(h8.state.expenses.length, 34, "exactly the two backups, no duplicates");
+  assert.strictEqual(h8.state.expenses.filter((e) => e.paidBy === "Me").length, 2);
+  assert.strictEqual(h8.state.expenses.filter((e) => e.paidBy === "Wife").length, 32);
 
   console.log("spending-import tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

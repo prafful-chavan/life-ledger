@@ -2628,6 +2628,16 @@ async function syncExpensesFromDrive() {
     return;
   }
 
+  // The Spending-app Dropbox import is the automated source now. This button REPLACES every
+  // expense with CSV rows (new random ids), which then get imported a second time by the
+  // Dropbox sync. Make that a deliberate choice.
+  if (state.spendingImport && state.spendingImport.importedAt) {
+    const ok = confirm(
+      "Spending app auto-sync is on.\n\nThis old CSV sync REPLACES all expenses with the CSV files, and the next Spending app import will then add them again (duplicates).\n\nUse Settings → Spending app sync → “Rebuild” instead.\n\nRun the CSV sync anyway?"
+    );
+    if (!ok) return;
+  }
+
   const btn = document.getElementById("syncExpensesFromDriveBtn");
   if (btn) {
     btn.disabled = true;
