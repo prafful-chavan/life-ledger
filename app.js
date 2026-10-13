@@ -2598,9 +2598,9 @@ function buildQuickAddForm(kind, editId = null) {
 
     if (kind === "liability" || kind === "asset") refreshNetWorthRecord("edit");
     if (kind === "liability" && !matchHoldingsOwner(entry.owner, activeHoldingsOwner)) {
-      activeHoldingsOwner = "Both"; // "All"
+      // jump to the saved entry's own tab (Joint entries show under every tab, so "All")
+      activeHoldingsOwner = entry.owner === "Me" || entry.owner === "Wife" ? entry.owner : "Both";
       syncHoldingsOwnerPills();
-      toast("Showing all liabilities so you can see the one you just saved.");
     }
     if (kind === "expense" || kind === "income" || kind === "asset" || kind === "liability" || kind === "mutualFund" || kind === "stock" || kind === "fd" || kind === "epf" || kind === "bonds" || kind === "ppf" || kind === "gold" || kind === "silver" || kind === "crypto" || kind === "usstocks" || kind === "banksaving" || kind === "others") {
       renderExpensesOnly();
@@ -5382,6 +5382,7 @@ function syncHoldingsOwnerPills() {
 
 function renderHoldingsTabs() {
   syncHoldingsOwnerPills();
+  renderLiabilities(); // the owner tabs on the Liabilities screen filter this list too
   renderMutualFundsPanel();
   renderStockHoldingsPanel();
   renderUsStockHoldingsPanel();
