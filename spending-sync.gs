@@ -107,14 +107,15 @@ function spendingHandle_(op, source) {
   source = source === "wife" ? "wife" : "";
   var f = spendingNewest_(source);
   var meta = { name: f.name, modified: f.server_modified, size: f.size, hash: f.content_hash };
-  if (op === "spendingMeta") return { ok: true, file: meta };
+  var answeredBy = source === "wife" ? "wife" : "me";
+  if (op === "spendingMeta") return { ok: true, source: answeredBy, file: meta };
   var res = UrlFetchApp.fetch("https://content.dropboxapi.com/2/files/download", {
     method: "post",
     headers: { Authorization: "Bearer " + dropboxAccessToken_(source), "Dropbox-API-Arg": JSON.stringify({ path: f.id }) },
     muteHttpExceptions: true
   });
   if (res.getResponseCode() !== 200) return { ok: false, error: "Dropbox download " + res.getResponseCode() };
-  return { ok: true, file: meta, data: Utilities.base64Encode(res.getContent()) };
+  return { ok: true, source: answeredBy, file: meta, data: Utilities.base64Encode(res.getContent()) };
 }
 
 function dropboxTestWife() { dropboxTest("wife"); }

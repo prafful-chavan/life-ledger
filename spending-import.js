@@ -57,7 +57,7 @@
 
   // "me" keeps its original ids/tag so already-imported rows are untouched.
   const SOURCES = [
-    { key: "me", label: "Your Spending app", paidBy: "Both", idPrefix: "sp-", matchExisting: true, poolFilter: (e) => !/wife/i.test(e.paidBy || "") },
+    { key: "me", label: "Your Spending app", paidBy: "Me", idPrefix: "sp-", matchExisting: true, poolFilter: (e) => !/wife/i.test(e.paidBy || "") },
     { key: "wife", label: "Wife's Spending app", paidBy: "Wife", idPrefix: "spw-", matchExisting: true, poolFilter: (e) => /wife/i.test(e.paidBy || ""), optional: true },
   ];
 
@@ -85,7 +85,15 @@
       if (src.optional && /not connected/i.test(err.message)) return; // wife not linked yet
       throw err;
     }
+    // The gateway must say which Dropbox account answered. An outdated gateway ignores the
+    // request and always answers with yours, which would import your data as hers.
+    if (src.key !== "me" && metaRes.source !== src.key) {
+      throw new Error("the Apps Script gateway is outdated — paste the latest sync-gateway.gs and spending-sync.gs, then Deploy → New version");
+    }
     const file = metaRes.file;
+    if (src.key !== "me" && file.hash === (prev.sources || {}).meFileHash) {
+      throw new Error("her backup is the same file as yours — re-link her Dropbox");
+    }
     if (!manual && !wiped && sourceFile(prev, src) === file.hash) { summary.push(src.label + ": up to date"); return; }
     if (!manual && !sourceIds.length) { summary.push(src.label + ": backup found — tap “Import now” for the first import"); return; }
 
@@ -94,18 +102,17 @@
     const SQL = await loadSqlJs();
     const rows = readRows(SQL, b64ToBytes(full.data));
     let incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
-    const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
-    // Rows in a second source that are identical to rows already imported from the first
-    // (e.g. her app was restored from your backup, or you both log the same purchase) are
-    // skipped, so only transactions unique to her are added.
-    let dupOfMine = 0;
+    // The two Spending apps are separate datasets, so rows are never filtered by content.
+    // If the second backup is (almost) entirely the first one's data it is the same account
+    // linked twice: refuse rather than double every expense.
     const totalRows = incoming.length;
-    if (src.key !== "me") {
-      const mineBase = new Set(prev.ids.filter((id) => id.startsWith("sp-")).map(Core.baseId));
-      const before = incoming.length;
-      incoming = incoming.filter((e) => !mineBase.has(Core.baseId(e.id)));
-      dupOfMine = before - incoming.length;
+    if (src.key !== "me" && totalRows >= 20) {
+      const ratio = Core.overlapRatio(incoming, prev.ids.filter((id) => id.startsWith("sp-")));
+      if (ratio >= 0.8) {
+        throw new Error("her backup is " + Math.round(ratio * 100) + "% identical to yours — it looks like the same account. Re-link her Dropbox");
+      }
     }
+    const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
     const plan = Core.planImport(state.expenses || [], incoming, knownIds, {
       matchExisting: src.matchExisting, poolFilter: src.poolFilter, today,
     });
@@ -117,7 +124,6 @@
         src.label + ": " + totalRows + " expenses in the backup (paid by " + src.paidBy + ").\n\n" +
         "• " + plan.toAdd.length + " will be added\n" +
         "• " + plan.matchedExisting + " already exist (same date and amount) and are skipped\n" +
-        (dupOfMine ? "• " + dupOfMine + " are identical to rows from your own backup and are skipped\n" : "") +
         (plan.skippedFuture ? "• " + plan.skippedFuture + " are dated in the future (recurring) and wait for their day\n" : "") +
         "\nThis month in that backup: ₹" + Core.monthTotal(incoming, today.slice(0, 7), today).toLocaleString("en-IN") +
         " (compare with the Spending app's own month total)\n\nImport now?"
@@ -131,16 +137,12 @@
     const baseIds = wiped ? (cur.ids || []).filter((id) => !id.startsWith(src.idPrefix)) : (cur.ids || []);
     const next = { ...cur, ids: baseIds.concat(plan.handledIds) };
     const at = new Date().toISOString();
-    if (src.key === "me") { next.file = file.hash; next.importedAt = at; }
-    else next.sources = { ...(cur.sources || {}), wife: { file: file.hash, importedAt: at } };
+    if (src.key === "me") { next.file = file.hash; next.importedAt = at; next.sources = { ...(cur.sources || {}), meFileHash: file.hash }; }
+    else next.sources = { ...(next.sources || cur.sources || {}), wife: { file: file.hash, importedAt: at } };
     live.spendingImport = next;
     app.renderAll();
     await app.saveData(true);
-    if (src.key !== "me" && dupOfMine && !plan.toAdd.length) {
-      summary.push(src.label + ": nothing new — its backup matches yours (shared Spending data)");
-      return;
-    }
-    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") + (dupOfMine ? " (" + dupOfMine + " identical to yours skipped)" : ""));
+    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses"));
   }
 
   async function resetWife() {
@@ -158,6 +160,18 @@
     await run({ manual: true });
   }
 
+  // Rows imported earlier from your backup were tagged "Both"; your Spending app is yours alone.
+  function migrateMeTag() {
+    const app = window.LifeLedgerApp;
+    const live = app && app.getState();
+    if (!live || !live.spendingImport || live.spendingImport.tagMigrated) return false;
+    for (const e of live.expenses || []) {
+      if (typeof e.id === "string" && e.id.startsWith("sp-") && e.paidBy === "Both") e.paidBy = "Me";
+    }
+    live.spendingImport = { ...live.spendingImport, tagMigrated: true };
+    return true;
+  }
+
   /** opts.manual: user clicked the button (may confirm and force). */
   async function run(opts) {
     const manual = Boolean(opts && opts.manual);
@@ -172,6 +186,7 @@
     try {
       say("Checking Dropbox…");
       stamp();
+      if (migrateMeTag()) { window.LifeLedgerApp.renderAll(); await window.LifeLedgerApp.saveData(true); }
       for (const src of SOURCES) {
         try {
           await importSource(src, manual, summary);

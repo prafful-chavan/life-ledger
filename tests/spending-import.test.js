@@ -21,7 +21,7 @@ function makeBackup(rows) {
 }
 const day = (iso) => (Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) - 330 * 60000) / 1000 - 978307200;
 
-function harness(files) {
+function harness(files, opts) {
   const state = { expenses: [], spendingImport: { ids: [], file: "", importedAt: null } };
   const status = { text: "" };
   const handlers = {};
@@ -35,8 +35,11 @@ function harness(files) {
       call: async (op, extra) => {
         const f = files[(extra && extra.source) || "me"];
         if (!f) throw new Error("Dropbox source 'wife' is not connected yet.");
-        if (op === "spendingMeta") return { ok: true, file: { name: "Auto", hash: f.hash } };
-        return { ok: true, file: { name: "Auto", hash: f.hash }, data: f.bytes.toString("base64") };
+        const source = (opts && opts.oldGateway) ? undefined : ((extra && extra.source) || "me");
+        // an outdated gateway ignores `source` and always answers with the first account
+        const g = (opts && opts.oldGateway) ? files.me : f;
+        if (op === "spendingMeta") return { ok: true, source, file: { name: "Auto", hash: g.hash } };
+        return { ok: true, source, file: { name: "Auto", hash: g.hash }, data: g.bytes.toString("base64") };
       },
     },
     LifeLedgerApp: {
@@ -125,21 +128,38 @@ function harness(files) {
   await h2.win.LifeLedgerSpending.run({ manual: true });
   assert.strictEqual(h2.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0, "her earlier manual entry absorbed the row");
 
-  // Wife's backup identical to mine adds nothing; rows unique to her are still imported
-  const h3 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w9", bytes: mine } });
-  await h3.win.LifeLedgerSpending.run({ manual: true });
-  assert.strictEqual(h3.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0);
-  assert.strictEqual(h3.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 2);
-  const herMix = makeBackup([
-    { amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }, // same as mine
+  // Separate datasets: hers imports as Wife, yours as Me, even if one row matches
+  const herOwn = makeBackup([
+    { amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }, // coincidentally same as mine
     { amount: 77, date: day("2026-10-04"), name: "Her own", cat: 1 },
+    ...Array.from({ length: 30 }, (_, i) => ({ amount: 10 + i, date: day("2026-09-" + String((i % 27) + 1).padStart(2, "0")), name: "Her " + i, cat: 2 })),
   ]);
-  const h4 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w2", bytes: herMix } });
+  const h4 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w2", bytes: herOwn } });
   await h4.win.LifeLedgerSpending.run({ manual: true });
-  const wr = h4.state.expenses.filter((e) => e.id.startsWith("spw-"));
-  assert.strictEqual(wr.length, 1);
-  assert.strictEqual(wr[0].amount, 77);
-  assert.strictEqual(wr[0].paidBy, "Wife");
+  assert.strictEqual(h4.state.expenses.filter((e) => e.id.startsWith("sp-") && e.paidBy === "Me").length, 2);
+  assert.strictEqual(h4.state.expenses.filter((e) => e.id.startsWith("spw-") && e.paidBy === "Wife").length, 32, "her rows are all hers, including the coincidental match");
+
+  // An outdated gateway (ignores `source`) must NOT import your data as hers
+  const h5 = harness({ me: { hash: "h1", bytes: mine }, wife: { hash: "w2", bytes: herOwn } }, { oldGateway: true });
+  await h5.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(h5.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0);
+  assert.strictEqual(h5.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 2);
+  assert.ok(/outdated/.test(h5.els.spendingSyncStatus.textContent), "user is told to update the gateway");
+
+  // The same account linked twice (≥80% identical rows) is refused
+  const bigMine = makeBackup(Array.from({ length: 40 }, (_, i) => ({ amount: 5 + i, date: day("2026-08-" + String((i % 27) + 1).padStart(2, "0")), name: "Row " + i, cat: 1 })));
+  const h6 = harness({ me: { hash: "h1", bytes: bigMine }, wife: { hash: "w3", bytes: bigMine } });
+  await h6.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(h6.state.expenses.filter((e) => e.id.startsWith("spw-")).length, 0);
+  assert.strictEqual(h6.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 40);
+
+  // Earlier imports tagged "Both" are switched to "Me" once
+  const h7 = harness({ me: { hash: "h1", bytes: mine } });
+  h7.state.expenses = [{ id: "sp-old", date: "2026-10-01", amount: 1, paidBy: "Both" }, { id: "exp-x", date: "2026-10-01", amount: 2, paidBy: "Both" }];
+  h7.state.spendingImport = { ids: ["sp-old"], file: "", importedAt: null };
+  await h7.win.LifeLedgerSpending.run({ manual: false });
+  assert.strictEqual(h7.state.expenses.find((e) => e.id === "sp-old").paidBy, "Me");
+  assert.strictEqual(h7.state.expenses.find((e) => e.id === "exp-x").paidBy, "Both", "manual entries untouched");
 
   console.log("spending-import tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });
