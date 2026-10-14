@@ -106,7 +106,7 @@ function spendingNewest_(source) {
 function spendingHandle_(op, source) {
   source = source === "wife" ? "wife" : "";
   var f = spendingNewest_(source);
-  var meta = { name: f.name, modified: f.server_modified, size: f.size, hash: f.content_hash };
+  var meta = { name: f.name, path: f.path_display, modified: f.server_modified, size: f.size, hash: f.content_hash };
   var answeredBy = source === "wife" ? "wife" : "me";
   if (op === "spendingMeta") return { ok: true, source: answeredBy, file: meta };
   var res = UrlFetchApp.fetch("https://content.dropboxapi.com/2/files/download", {
@@ -144,3 +144,22 @@ function dropboxCompare() {
     }
   });
 }
+
+// Shows the 10 most recently saved files the Spending app wrote to Dropbox (names, folders, times,
+// sizes only). If the newest one is old, the Spending app has stopped backing up — not this importer.
+function dropboxRecent(source) {
+  if (typeof source !== "string") source = "";
+  var page = dropboxRpc_("https://api.dropboxapi.com/2/files/list_folder", { path: SPENDING_ROOT, recursive: true, limit: 2000 }, source);
+  var files = [];
+  while (true) {
+    page.entries.forEach(function (e) { if (e[".tag"] === "file") files.push(e); });
+    if (!page.has_more) break;
+    page = dropboxRpc_("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor: page.cursor }, source);
+  }
+  files.sort(function (a, b) { return a.server_modified < b.server_modified ? 1 : -1; });
+  Logger.log("Total files: " + files.length + ". Newest 10:");
+  files.slice(0, 10).forEach(function (f) {
+    Logger.log(f.server_modified + "  " + f.size + "B  " + f.path_display);
+  });
+}
+function dropboxRecentWife() { dropboxRecent("wife"); }

@@ -61,6 +61,19 @@
     { key: "wife", label: "Wife's Spending app", paidBy: "Wife", idPrefix: "spw-", matchExisting: true, poolFilter: (e) => /wife/i.test(e.paidBy || ""), optional: true },
   ];
 
+  const fmtWhen = (iso) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
+  // What the app actually looked at, so "no new expenses" can be judged: is the backup itself old?
+  function describeBackup(file, latestTxn) {
+    const ageH = (Date.now() - new Date(file.modified).getTime()) / 36e5;
+    let t = "backup “" + file.name + "” saved " + fmtWhen(file.modified);
+    if (latestTxn) t += ", latest transaction " + latestTxn;
+    if (ageH > 30) {
+      t += " ⚠ this backup is " + Math.floor(ageH / 24) + " day(s) old — the Spending app has not backed up to Dropbox since; open it and check its Dropbox backup/sync setting";
+    }
+    return t;
+  }
+
   function sourceFile(prev, src) {
     return src.key === "me" ? prev.file : ((prev.sources || {}).wife || {}).file || "";
   }
@@ -94,7 +107,7 @@
     if (src.key !== "me" && file.hash === (prev.sources || {}).meFileHash) {
       throw new Error("her backup is the same file as yours — re-link her Dropbox");
     }
-    if (!manual && !wiped && sourceFile(prev, src) === file.hash) { summary.push(src.label + ": up to date"); return; }
+    if (!manual && !wiped && sourceFile(prev, src) === file.hash) { summary.push(src.label + ": up to date — " + describeBackup(file)); return; }
     if (!manual && !sourceIds.length) { summary.push(src.label + ": backup found — tap “Import now” for the first import"); return; }
 
     say("Downloading " + src.label + "…");
@@ -113,6 +126,7 @@
       }
     }
     const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    const latestTxn = incoming.reduce((m, e) => (e.date <= today && e.date > m ? e.date : m), "");
     const plan = Core.planImport(state.expenses || [], incoming, knownIds, {
       matchExisting: src.matchExisting, poolFilter: src.poolFilter, today,
     });
@@ -142,7 +156,7 @@
     live.spendingImport = next;
     app.renderAll();
     await app.saveData(true);
-    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses"));
+    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") + " — " + describeBackup(file, latestTxn));
   }
 
   async function resetWife() {
