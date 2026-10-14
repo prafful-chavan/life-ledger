@@ -230,6 +230,7 @@ const demoData = {
 let state = clone(defaultData);
 let activeView = "dashboard";
 let activeFinanceTab = "overview";
+let nwhShowAllRows = false;
 let activeHoldingsOwner = "Me";
 let activeMfView = "holdings";
 let activeStockView = "holdings";
@@ -5027,7 +5028,8 @@ function renderFinance() {
   renderHoldingsTabs();
   renderLiabilities();
   renderExpensesAnalysis();
-  renderNetWorthHistory();
+  // Heavy (one row per day of history) and invisible unless its tab is open; the tab switch draws it.
+  if (activeFinanceTab === "networthhistory") renderNetWorthHistory();
 }
 
 function renderSalaryCards() {
@@ -8823,11 +8825,19 @@ function renderNetWorthHistory() {
     emptyEl.hidden = history.length > 0;
   }
 
-  // 4. Render Table Rows
+  // 4. Render Table Rows (latest 90 by default: the table grows by one row every day)
   const today = istTodayISO();
+  const NWH_ROW_LIMIT = 90;
+  const showAllBtn = document.getElementById("nwhShowAllBtn");
+  const limited = !nwhShowAllRows && history.length > NWH_ROW_LIMIT;
+  if (showAllBtn) {
+    showAllBtn.hidden = !limited;
+    showAllBtn.textContent = `Show all ${history.length} days`;
+    showAllBtn.onclick = () => { nwhShowAllRows = true; renderNetWorthHistory(); };
+  }
   renderRows(
     tableBody,
-    history,
+    limited ? history.slice(0, NWH_ROW_LIMIT) : history,
     (item) => {
       const isToday = item.date === today;
       const delta = nwDeltas.get(item.id || item.date);
@@ -15318,23 +15328,29 @@ function listDashboardMonths() {
   return [...months].sort().reverse();
 }
 
+let dashboardMonthsSignature = "";
+const dashboardMonthFormat = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
+
 function renderDashboardPeriodSelector() {
   const select = document.getElementById("dashboardMonthSelect");
   if (!select) return;
-  
+
   const months = listDashboardMonths();
-  select.innerHTML = "";
-  
-  months.forEach((key) => {
-    const option = document.createElement("option");
-    option.value = key;
-    
-    const [year, month] = key.split("-").map(Number);
-    const date = new Date(year, month - 1, 1);
-    option.textContent = date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-    select.append(option);
-  });
-  
+  // Rebuild the options only when the list of months actually changed (this runs on every render).
+  const signature = months.join(",");
+  if (signature !== dashboardMonthsSignature || select.options.length !== months.length) {
+    dashboardMonthsSignature = signature;
+    const frag = document.createDocumentFragment();
+    months.forEach((key) => {
+      const option = document.createElement("option");
+      option.value = key;
+      const [year, month] = key.split("-").map(Number);
+      option.textContent = dashboardMonthFormat.format(new Date(year, month - 1, 1));
+      frag.append(option);
+    });
+    select.replaceChildren(frag);
+  }
+
   if (activeDashboardMonth && months.includes(activeDashboardMonth)) {
     select.value = activeDashboardMonth;
   } else {
