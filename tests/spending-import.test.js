@@ -29,6 +29,7 @@ function harness(files, opts) {
   const getEl = (id) => (els[id] ||= { id, textContent: "", addEventListener: (t, fn) => { handlers[id + ":" + t] = fn; } });
   const win = {
     addEventListener: (t, fn) => { if (t === "load") win.__load = fn; },
+    LifeLedgerAuth: { isUnlocked: () => true },
     LifeLedgerSync: {
       isConfigured: () => true,
       snapshotNow: async () => { win.__snapshots = (win.__snapshots || 0) + 1; },
@@ -57,9 +58,10 @@ function harness(files, opts) {
     },
   };
   const ctx = {
-    window: win, console, atob: (s) => Buffer.from(s, "base64").toString("binary"), confirm: () => true,
-    localStorage: { getItem: () => null, setItem() {} }, Date, Math, JSON, Promise, Uint8Array, Object, Error, String, Number, Array, Set, Map, RegExp,
+    window: win, console, setInterval: () => 0, setTimeout, atob: (s) => Buffer.from(s, "base64").toString("binary"), confirm: () => true,
+    localStorage: (() => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) }; })(), Date, Math, JSON, Promise, Uint8Array, Object, Error, String, Number, Array, Set, Map, RegExp,
     document: {
+      hidden: false, activeElement: null, addEventListener() {}, querySelector: () => null,
       getElementById: getEl,
       createElement: () => ({}),
       head: { appendChild(el) { setTimeout(() => el.onload(), 0); } },
@@ -89,7 +91,7 @@ function harness(files, opts) {
   win.LifeLedgerSpendingCore = ctx.LifeLedgerSpendingCore || win.LifeLedgerSpendingCore;
   vm.runInContext(read("spending-import.js"), ctx);
   win.__load();
-  return { win, state, status, els, handlers };
+  return { win, state, status, els, handlers, ls: ctx.localStorage };
 }
 
 (async () => {
@@ -197,6 +199,29 @@ function harness(files, opts) {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(got)), [40, 90, 100, 250], "rows from both devices, shared rows once");
   await h9.win.LifeLedgerSpending.run({ manual: true });
   assert.strictEqual(h9.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 4, "re-running adds nothing");
+
+  // Automatic checks: pick up new rows on their own, but throttled, and never while hidden or typing
+  const devA2 = makeBackup([{ amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }]);
+  const files = { me: { hash: "x1", bytes: devA2 } };
+  const h10 = harness(files);
+  await h10.win.LifeLedgerSpending.run({ manual: true });          // first import (manual, confirmed)
+  assert.strictEqual(h10.state.expenses.length, 1);
+  files.me = { hash: "x2", bytes: makeBackup([
+    { amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 },
+    { amount: 55, date: day("2026-10-13"), name: "New today", cat: 1 },
+  ]) };
+  h10.ls.setItem("lifeLedgerSpendingLastCheck", "0");               // pretend the last check was long ago
+  h10.win.LifeLedgerSpending.autoCheck();                           // not hidden, unlocked, due → imports
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(h10.state.expenses.length, 2, "automatic check imported the new row");
+  files.me = { hash: "x3", bytes: makeBackup([
+    { amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 },
+    { amount: 55, date: day("2026-10-13"), name: "New today", cat: 1 },
+    { amount: 12, date: day("2026-10-14"), name: "Even newer", cat: 1 },
+  ]) };
+  h10.win.LifeLedgerSpending.autoCheck();                           // inside the 30-minute throttle
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(h10.state.expenses.length, 2, "throttled: no second Dropbox check so soon");
 
   console.log("spending-import tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

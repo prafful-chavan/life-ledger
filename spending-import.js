@@ -6,7 +6,8 @@
 (function () {
   const SQLJS_BASE = "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/";
   const AUTO_CHECK_KEY = "lifeLedgerSpendingLastCheck";
-  const AUTO_EVERY_MS = 6 * 60 * 60 * 1000;
+  const AUTO_EVERY_MS = 30 * 60 * 1000;      // at most one Dropbox check per device every 30 min
+  const AUTO_POLL_MS = 10 * 60 * 1000;       // while the app stays open and visible
   const QUERY =
     "SELECT t.Z_PK AS pk, t.ZAMOUNT AS amount, t.ZDATE AS date, t.ZDISPLAYNAME AS name, t.ZNOTE AS note, c.ZNAME AS category " +
     "FROM ZTRANSACTION t LEFT JOIN ZCATEGORY c ON c.Z_PK = t.ZCATEGORY WHERE t.ZTYPE = 'Expense' ORDER BY t.ZDATE, t.Z_PK";
@@ -257,19 +258,39 @@
     try { return Date.now() - Number(localStorage.getItem(AUTO_CHECK_KEY) || 0) > AUTO_EVERY_MS; } catch { return true; }
   }
 
-  window.LifeLedgerSpending = { run, rebuild };
+  function userIsBusy() {
+    const el = document.activeElement;
+    const typing = Boolean(el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+    const modalOpen = Boolean(document.querySelector(".modal:not([hidden])"));
+    return typing || modalOpen;
+  }
+
+  /**
+   * Automatic check, called from every "the app is alive again" signal (foreground, focus, back
+   * online, vault synced, timer). Throttled per device; never interrupts typing or an open form.
+   */
+  function autoCheck() {
+    if (document.hidden) return;
+    if (!window.LifeLedgerAuth?.isUnlocked?.()) return;
+    if (!autoCheckDue() || busy) return;
+    if (userIsBusy()) { setTimeout(autoCheck, 20000); return; }
+    run({ manual: false });
+  }
+
+  window.LifeLedgerSpending = { run, rebuild, autoCheck };
 
   window.addEventListener("load", () => {
     $("spendingSyncNowButton")?.addEventListener("click", () => run({ manual: true }));
     $("spendingResetWifeButton")?.addEventListener("click", resetWife);
     $("spendingRebuildButton")?.addEventListener("click", rebuild);
-    // Once this session, after the first successful vault sync, check for a newer backup.
-    let armed = true;
-    window.LifeLedgerSync?.onStatus((st) => {
-      if (armed && st.state === "synced" && autoCheckDue()) {
-        armed = false;
-        setTimeout(() => run({ manual: false }), 1500);
-      }
-    });
+
+    // iPhone (Safari and Home Screen app) and desktop browsers all report coming back to the app
+    // through these events; the throttle above keeps Dropbox calls to a handful per day.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(autoCheck, 1500); });
+    window.addEventListener("pageshow", () => setTimeout(autoCheck, 1500));
+    window.addEventListener("focus", () => setTimeout(autoCheck, 1500));
+    window.addEventListener("online", () => setTimeout(autoCheck, 1500));
+    window.LifeLedgerSync?.onStatus((st) => { if (st.state === "synced") setTimeout(autoCheck, 1500); });
+    setInterval(autoCheck, AUTO_POLL_MS);
   });
 })();
