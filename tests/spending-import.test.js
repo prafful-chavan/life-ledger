@@ -36,6 +36,13 @@ function harness(files, opts) {
       call: async (op, extra) => {
         const f = files[(extra && extra.source) || "me"];
         if (!f) throw new Error("Dropbox source 'wife' is not connected yet.");
+        if (f.devices) {
+          // several active devices: meta lists them all, latest downloads one by id
+          const metas = f.devices.map((d, i) => ({ id: "d" + i, name: "Auto " + i, hash: d.hash, modified: new Date().toISOString() }));
+          if (op === "spendingMeta") return { ok: true, source: (extra && extra.source) || "me", file: metas[0], files: metas };
+          const d = f.devices[Number(String(extra.fileId).slice(1))];
+          return { ok: true, source: (extra && extra.source) || "me", file: metas[0], data: d.bytes.toString("base64") };
+        }
         const source = (opts && opts.oldGateway) ? undefined : ((extra && extra.source) || "me");
         // an outdated gateway ignores `source` and always answers with the first account
         const g = (opts && opts.oldGateway) ? files.me : f;
@@ -172,6 +179,24 @@ function harness(files, opts) {
   assert.strictEqual(h8.state.expenses.length, 34, "exactly the two backups, no duplicates");
   assert.strictEqual(h8.state.expenses.filter((e) => e.paidBy === "Me").length, 2);
   assert.strictEqual(h8.state.expenses.filter((e) => e.paidBy === "Wife").length, 32);
+
+  // Two active devices whose backups lag each other: rows from BOTH are imported, once each
+  const devA = makeBackup([
+    { amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 },
+    { amount: 250, date: day("2026-10-02"), name: "Bus", cat: 2 },
+    { amount: 40, date: day("2026-10-12"), name: "Only on A", cat: 1 },
+  ]);
+  const devB = makeBackup([
+    { amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 },
+    { amount: 250, date: day("2026-10-02"), name: "Bus", cat: 2 },
+    { amount: 90, date: day("2026-10-13"), name: "Only on B (newest day)", cat: 1 },
+  ]);
+  const h9 = harness({ me: { devices: [{ hash: "a1", bytes: devA }, { hash: "b1", bytes: devB }] } });
+  await h9.win.LifeLedgerSpending.run({ manual: true });
+  const got = h9.state.expenses.filter((e) => e.id.startsWith("sp-")).map((e) => e.amount).sort((x, y) => x - y);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(got)), [40, 90, 100, 250], "rows from both devices, shared rows once");
+  await h9.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(h9.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 4, "re-running adds nothing");
 
   console.log("spending-import tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

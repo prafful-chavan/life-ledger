@@ -87,35 +87,64 @@ function dropboxRpc_(url, body, source) {
   return JSON.parse(res.getContentText());
 }
 
-// Newest backup file under the Spending app's folder.
-function spendingNewest_(source) {
+var SPENDING_ACTIVE_DAYS = 21;
+
+// Every device running the Spending app writes to its own Auto-<id> folder. A device's newest backup
+// can lag another device's, so we return the newest file of EACH recently active device; the app
+// merges them (rows are de-duplicated there).
+function spendingFiles_(source) {
   var page = dropboxRpc_("https://api.dropboxapi.com/2/files/list_folder", { path: SPENDING_ROOT, recursive: true, limit: 2000 }, source);
-  var best = null;
+  var newestByFolder = {};
+  var newestOverall = null;
   while (true) {
     page.entries.forEach(function (e) {
       if (e[".tag"] !== "file" || e.size < 10000) return;
-      if (!best || e.server_modified > best.server_modified) best = e;
+      var parts = String(e.path_display).split("/");          // ["", "Apps", "SpendingTracker", folder, file]
+      var folder = parts.length > 4 ? parts[3] : "";
+      if (!newestOverall || e.server_modified > newestOverall.server_modified) newestOverall = e;
+      if (!/^Auto-/i.test(folder)) return;                    // skip Sync, Exports and old manual backups
+      var cur = newestByFolder[folder];
+      if (!cur || e.server_modified > cur.server_modified) newestByFolder[folder] = e;
     });
     if (!page.has_more) break;
     page = dropboxRpc_("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor: page.cursor }, source);
   }
-  if (!best) throw new Error("No backup files found under " + SPENDING_ROOT);
-  return best;
+  if (!newestOverall) throw new Error("No backup files found under " + SPENDING_ROOT);
+  var cutoff = new Date(new Date(newestOverall.server_modified).getTime() - SPENDING_ACTIVE_DAYS * 86400000).toISOString();
+  var files = Object.keys(newestByFolder).map(function (k) { return newestByFolder[k]; })
+    .filter(function (e) { return e.server_modified >= cutoff; })
+    .sort(function (a, b) { return a.server_modified < b.server_modified ? 1 : -1; });
+  return files.length ? files : [newestOverall];
 }
 
-function spendingHandle_(op, source) {
+function spendingNewest_(source) {
+  return spendingFiles_(source)[0];
+}
+
+function spendingMetaOf_(f) {
+  return { id: f.id, name: f.name, path: f.path_display, modified: f.server_modified, size: f.size, hash: f.content_hash };
+}
+
+function spendingHandle_(op, source, fileId) {
   source = source === "wife" ? "wife" : "";
-  var f = spendingNewest_(source);
-  var meta = { name: f.name, path: f.path_display, modified: f.server_modified, size: f.size, hash: f.content_hash };
   var answeredBy = source === "wife" ? "wife" : "me";
-  if (op === "spendingMeta") return { ok: true, source: answeredBy, file: meta };
+  var files = spendingFiles_(source);
+  var metas = files.map(spendingMetaOf_);
+  if (op === "spendingMeta") return { ok: true, source: answeredBy, file: metas[0], files: metas };
+
+  // Download one file; only files from the listing above can be requested.
+  var f = files[0];
+  if (fileId) {
+    f = files.filter(function (x) { return x.id === fileId; })[0];
+    if (!f) return { ok: false, error: "unknown backup file" };
+  }
   var res = UrlFetchApp.fetch("https://content.dropboxapi.com/2/files/download", {
     method: "post",
     headers: { Authorization: "Bearer " + dropboxAccessToken_(source), "Dropbox-API-Arg": JSON.stringify({ path: f.id }) },
     muteHttpExceptions: true
   });
   if (res.getResponseCode() !== 200) return { ok: false, error: "Dropbox download " + res.getResponseCode() };
-  return { ok: true, source: answeredBy, file: meta, data: Utilities.base64Encode(res.getContent()) };
+  return { ok: true, source: answeredBy, file: spendingMetaOf_(f), data: Utilities.base64Encode(res.getContent()) };
 }
 
 function dropboxTestWife() { dropboxTest("wife"); }

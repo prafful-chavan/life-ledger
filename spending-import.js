@@ -103,18 +103,27 @@
     if (src.key !== "me" && metaRes.source !== src.key) {
       throw new Error("the Apps Script gateway is outdated — paste the latest sync-gateway.gs and spending-sync.gs, then Deploy → New version");
     }
-    const file = metaRes.file;
-    if (src.key !== "me" && file.hash === (prev.sources || {}).meFileHash) {
+    // One backup per active device (each device saves into its own folder; they can lag each other).
+    const files = metaRes.files && metaRes.files.length ? metaRes.files : [metaRes.file];
+    const file = files[0]; // newest, used for the age warning
+    const fileKey = files.map((f) => f.hash).sort().join("+");
+    if (src.key !== "me" && fileKey === (prev.sources || {}).meFileHash) {
       throw new Error("her backup is the same file as yours — re-link her Dropbox");
     }
-    if (!manual && !wiped && sourceFile(prev, src) === file.hash) { summary.push(src.label + ": up to date — " + describeBackup(file)); return; }
+    if (!manual && !wiped && sourceFile(prev, src) === fileKey) { summary.push(src.label + ": up to date — " + describeBackup(file) + (files.length > 1 ? " (+" + (files.length - 1) + " other device)" : "")); return; }
     if (!manual && !sourceIds.length) { summary.push(src.label + ": backup found — tap “Import now” for the first import"); return; }
 
-    say("Downloading " + src.label + "…");
-    const full = await Sync.call("spendingLatest", { source: src.key });
     const SQL = await loadSqlJs();
-    const rows = readRows(SQL, b64ToBytes(full.data));
-    let incoming = Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix });
+    const byId = new Map(); // merged rows from every device, de-duplicated by content id
+    for (let i = 0; i < files.length; i++) {
+      say("Downloading " + src.label + (files.length > 1 ? " (device " + (i + 1) + " of " + files.length + ")" : "") + "…");
+      const full = await Sync.call("spendingLatest", { source: src.key, fileId: files[i].id });
+      const rows = readRows(SQL, b64ToBytes(full.data));
+      for (const e of Core.rowsToExpenses(rows, { paidBy: src.paidBy, idPrefix: src.idPrefix })) {
+        if (!byId.has(e.id)) byId.set(e.id, e);
+      }
+    }
+    let incoming = [...byId.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     // The two Spending apps are separate datasets, so rows are never filtered by content.
     // If the second backup is (almost) entirely the first one's data it is the same account
     // linked twice: refuse rather than double every expense.
@@ -151,12 +160,12 @@
     const baseIds = wiped ? (cur.ids || []).filter((id) => !id.startsWith(src.idPrefix)) : (cur.ids || []);
     const next = { ...cur, ids: baseIds.concat(plan.handledIds) };
     const at = new Date().toISOString();
-    if (src.key === "me") { next.file = file.hash; next.importedAt = at; next.sources = { ...(cur.sources || {}), meFileHash: file.hash }; }
-    else next.sources = { ...(next.sources || cur.sources || {}), wife: { file: file.hash, importedAt: at } };
+    if (src.key === "me") { next.file = fileKey; next.importedAt = at; next.sources = { ...(cur.sources || {}), meFileHash: fileKey }; }
+    else next.sources = { ...(next.sources || cur.sources || {}), wife: { file: fileKey, importedAt: at } };
     live.spendingImport = next;
     app.renderAll();
     await app.saveData(true);
-    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") + " — " + describeBackup(file, latestTxn));
+    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") + " — " + describeBackup(file, latestTxn) + (files.length > 1 ? " (merged " + files.length + " device backups)" : ""));
   }
 
   async function resetWife() {
