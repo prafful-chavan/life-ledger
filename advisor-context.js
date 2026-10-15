@@ -45,7 +45,12 @@
     hs.forEach((h) => {
       L.push(`- ${h.name} | ${h.cls}/${h.kind} | ${h.verdict ? h.verdict.label + " (" + h.verdict.moveLabel + ")" : "n/a"} | ${inr(h.value)} | ${h.weight}% | ${inr(h.invested)} | ${pc(h.returnPct)} | ${h.xirr != null ? pc(h.xirr) : "n/a"} | ${[h.r1m, h.r3m, h.r6m, h.r1y].map((v) => (v == null ? "n/a" : pc(v))).join(" / ")} | ${h.drawdown != null ? h.drawdown + "%" : "n/a"} | ${h.vs1yBenchmark != null ? (h.vs1yBenchmark >= 0 ? "+" : "") + h.vs1yBenchmark + "pp" : "n/a"} | ${h.historyDays}`);
     });
-    if ((result.holdings || []).length > hs.length) L.push(`(+${result.holdings.length - hs.length} more positions not listed${compact ? " — call get_module {id: \"portfolio\"} for every holding with returns, trend and verdict" : ""})`);
+    if ((result.holdings || []).length > hs.length) {
+      const rest = (result.holdings || []).slice().sort((x, y) => y.value - x.value).slice(hs.length);
+      // Every other position still gets its official verdict, so the AI never has to guess one.
+      L.push(`REMAINING ${rest.length} POSITIONS — verdict only (name | class | VERDICT | value | return | 1y vs Nifty)${compact ? "; call get_module {id: \"portfolio\"} for full returns and trend" : ""}:`);
+      rest.forEach((h) => L.push(`- ${h.name} | ${h.cls} | ${h.verdict ? h.verdict.label + " (" + h.verdict.moveLabel + ")" : "n/a"} | ${inr(h.value)} | ${pc(h.returnPct)} | ${h.vs1yBenchmark != null ? (h.vs1yBenchmark >= 0 ? "+" : "") + h.vs1yBenchmark + "pp" : "n/a"}`));
+    }
 
     L.push("\nADVISOR SIGNALS (rule-based; use these ids when explaining):");
     (compact ? (result.signals || []).slice(0, 12) : (result.signals || [])).forEach((s) => L.push(`- [${s.severity.toUpperCase()}] ${s.action}: ${s.title} (id ${s.id}, confidence ${s.confidence}) — ${compact ? (s.why || [])[0] || "" : (s.why || []).join(" ")}`));

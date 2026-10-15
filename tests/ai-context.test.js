@@ -20,4 +20,12 @@ AI.setContextProvider(null);
 const payload = AI.buildGeminiPayload("should I add to TCS?", "CTX");
 assert.ok(payload.systemInstruction.parts[0].text.includes("HOW TO ANSWER PORTFOLIO & INVESTMENT QUESTIONS"));
 assert.ok(payload.systemInstruction.parts[0].text.includes("SEBI-registered"));
+// The AI must quote the same net worth as every screen (single source), not its own recomputation.
+global.window = { LifeLedgerApp: { getNetWorthSnapshot: () => ({ netWorth: 12345678, totalAssets: 12500000, totalLiabilities: 154322, mutualFunds: 5000000, stocks: 7500000 }) } };
+const official = AI.buildDataContext(state);
+assert.ok(official.includes("Net Worth: ₹1,23,45,678"), "uses the app's net worth: " + official.slice(0, 400));
+assert.ok(official.includes("Stocks: ₹75,00,000"), "uses the app's class values");
+global.window = { LifeLedgerApp: { getNetWorthSnapshot: () => { throw new Error("x"); } } };
+assert.ok(AI.buildDataContext(state).includes("Net Worth:"), "falls back when the app figure is unavailable");
+delete global.window;
 console.log("ai-context tests passed");

@@ -39,9 +39,11 @@ assert.strictEqual(Ctx.build({}), "", "no data → empty (never throws)");
   const big = Engine.analyze(many);
   const full = Ctx.build({ result: big, input: many, extras });
   const small = Ctx.build({ result: big, input: many, extras, compact: true });
-  assert.ok(small.length < full.length * 0.6, "compact is much smaller (" + small.length + " vs " + full.length + ")");
+  assert.ok(small.length < 10000 && small.length < full.length, "compact stays small (" + small.length + " vs " + full.length + ")");
   assert.ok(small.includes("get_module") && small.includes("portfolio"), "tells the model where the rest is");
-  assert.ok(small.includes("Fund 59") && !small.includes("Fund 20 |"), "keeps the biggest holdings only");
+  assert.ok(small.includes("Fund 59"), "keeps the biggest holdings");
+  assert.ok(small.includes("REMAINING 48 POSITIONS") && small.includes("Fund 20 | mf |"), "every other position still carries its official verdict");
+  assert.ok(!small.includes("Fund 20 | mf/") , "but only the verdict line, not the full table row");
 }
 
 console.log("advisor-context tests passed");

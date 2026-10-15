@@ -624,6 +624,7 @@ if (typeof window !== "undefined") {
     bootstrap: bootstrapApp,
     // Lightweight refresh used by multi-device sync: swap state and re-render only
     // (no price refresh, no first-run wiring).
+    getNetWorthSnapshot: () => getNetWorthSummary().snapshot,
     getAdvisorInput: () => buildAdvisorInput(),
     getAdvisorExtras: () => buildAdvisorExtras(),
     getAdvisorState: () => state.advisor || { profile: {}, review: null },

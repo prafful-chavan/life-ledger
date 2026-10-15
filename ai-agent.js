@@ -198,6 +198,14 @@
     return [...(arr || [])].sort((a, b) => new Date(b[dateField] || 0) - new Date(a[dateField] || 0)).slice(0, n);
   }
 
+  function officialNetWorth() {
+    try {
+      const app = typeof window !== "undefined" ? window.LifeLedgerApp : null;
+      const s = app && app.getNetWorthSnapshot ? app.getNetWorthSnapshot() : null;
+      return s && Number.isFinite(s.netWorth) ? s : null;
+    } catch { return null; }
+  }
+
   function buildBaseContext(state) {
     if (!state) return "No data available.";
 
@@ -290,9 +298,23 @@
       "Bonds": { value: sumField(state.bonds, "value"), count: state.bonds?.length || 0 },
       "Others": { value: sumField(state.others, "value"), count: state.others?.length || 0 },
     };
-    const totalHoldings = mfCurrent + Object.entries(investments).filter(([k]) => k !== "Mutual Funds").reduce((s, [, v]) => s + (v.value || 0), 0);
-    const totalLiabilities = sumField(state.liabilities, "value");
-    const netWorth = totalHoldings - totalLiabilities;
+    let totalHoldings = mfCurrent + Object.entries(investments).filter(([k]) => k !== "Mutual Funds").reduce((s, [, v]) => s + (v.value || 0), 0);
+    let totalLiabilities = sumField(state.liabilities, "value");
+    let netWorth = totalHoldings - totalLiabilities;
+
+    // The app's own net worth (the number every screen shows) is the single source of truth; the
+    // figures above are only a fallback when the app isn't available (tests, early load).
+    const official = officialNetWorth();
+    if (official) {
+      totalHoldings = official.totalAssets;
+      totalLiabilities = official.totalLiabilities;
+      netWorth = official.netWorth;
+      const classes = [["Stocks", "stocks"], ["US Stocks", "usStocks"], ["Gold", "gold"], ["Silver", "silver"], ["Crypto", "crypto"], ["FD", "fd"], ["EPF", "epf"], ["PPF", "ppf"], ["Bonds", "bonds"], ["Bank Savings", "bankSaving"], ["Others", "others"]];
+      investments["Mutual Funds"].current = official.mutualFunds;
+      classes.forEach(([label, key]) => {
+        investments[label] = { value: official[key] || 0, count: investments[label] ? investments[label].count : 0 };
+      });
+    }
 
     // ── Goals ──
     const goalsText = (state.goals || []).map(g => {
