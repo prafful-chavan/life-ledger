@@ -927,7 +927,9 @@ function normalizeNetWorthHistoryEntry(entry) {
     bankSaving: toNumber(entry.bankSaving),
     others: toNumber(entry.others),
     liabilities: toNumber(entry.liabilities),
-    source: entry.source || "snapshot"
+    source: entry.source || "snapshot",
+    // audit trail written by the official-close check (must survive every reload and sync)
+    ...(entry.audit && typeof entry.audit === "object" ? { audit: entry.audit } : {})
   };
 }
 
