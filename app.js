@@ -1114,6 +1114,7 @@ function bindNavigation() {
         targetView.hidden = false;
       }
       document.getElementById("todayTitle").textContent = viewTitle(activeView);
+      if (activeView === "exercise") renderExerciseView();
     });
   });
 }
@@ -4362,7 +4363,8 @@ function renderAll() {
   renderCareer();
   renderGoals();
   renderTodoView();
-  renderExerciseView();
+  // The Exercise screen is heavy (charts) and invisible unless its tab is open; navigation draws it.
+  if (activeView === 'exercise') renderExerciseView();
   renderHabitsView();
   renderDashboardAnalysis();
   renderChat();
@@ -12904,15 +12906,15 @@ function renderWeightTrendChart(metrics) {
   s2.setAttribute("offset", "100%"); s2.setAttribute("stop-color", "var(--primary,#6366f1)"); s2.setAttribute("stop-opacity", "0.02");
   grad.append(s1, s2); defs.append(grad); svg.append(defs);
 
-  const areaPoints = data.map((m, i) => `${xScale(i)},${yScale(m.weight)}`).join(" L ");
+  const areaPoints = data.map((m, i) => `${xScale(i)},${yScale(m.weight)}`).join(" ");
   const area = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-  area.setAttribute("points", `${pl},${yScale(minW)} L ${areaPoints} L ${xScale(data.length - 1)},${yScale(minW)}`);
+  area.setAttribute("points", `${pl},${yScale(minW)} ${areaPoints} ${xScale(data.length - 1)},${yScale(minW)}`);
   area.setAttribute("fill", "url(#weightGrad)");
   svg.append(area);
 
   // Line
   const path = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-  path.setAttribute("points", data.map((m, i) => `${xScale(i)},${yScale(m.weight)}`).join(" L "));
+  path.setAttribute("points", data.map((m, i) => `${xScale(i)},${yScale(m.weight)}`).join(" "));
   path.setAttribute("fill", "none");
   path.setAttribute("stroke", "var(--primary,#6366f1)");
   path.setAttribute("stroke-width", "2");
@@ -12997,7 +12999,7 @@ function renderBodyCompChart(metrics) {
 
   const drawLine = (vals, color) => {
     const path = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    path.setAttribute("points", vals.map((v, i) => `${xScale(i)},${yScale(v)}`).join(" L "));
+    path.setAttribute("points", vals.map((v, i) => `${xScale(i)},${yScale(v)}`).join(" "));
     path.setAttribute("fill", "none");
     path.setAttribute("stroke", color);
     path.setAttribute("stroke-width", "2");

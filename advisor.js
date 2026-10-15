@@ -399,20 +399,20 @@
   });
 
   // ── Hey Prafful gets the full briefing + tools that read any list in the app ──
-  function portfolioText() {
+  function portfolioText(compact) {
     const Ctx = window.LifeLedgerAdvisorContext;
     const app = window.LifeLedgerApp;
     if (!app || !Engine() || !Ctx) return "";
     const inp = input || app.getAdvisorInput();
     const res = result || Engine().analyze(inp);
     const rev = stored();
-    return Ctx.build({ result: res, input: inp, extras: app.getAdvisorExtras(), review: rev && rev.review });
+    return Ctx.build({ result: res, input: inp, extras: app.getAdvisorExtras(), review: rev && rev.review, compact: Boolean(compact) });
   }
 
   function registerChatContext() {
     const AIm = window.LifeLedgerAI;
     if (!AIm) return;
-    if (AIm.setContextProvider && window.LifeLedgerAdvisorContext) AIm.setContextProvider(() => portfolioText());
+    if (AIm.setContextProvider && window.LifeLedgerAdvisorContext) AIm.setContextProvider(() => portfolioText(true));   // compact on every message; the full briefing is a tool
     const K = window.LifeLedgerKnowledge;
     const KM = window.LifeLedgerKnowledgeModules;
     if (K && KM && AIm.attachKnowledge) {

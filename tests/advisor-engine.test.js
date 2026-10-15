@@ -199,4 +199,40 @@ assert.strictEqual(A.kindOf({ cls: "stock", name: "TCS Ltd", symbol: "TCS" }), "
   assert.ok(!e.signals.some((s) => s.id === "conc-us:QQQM"), "a broad ETF is not flagged as a concentrated stock");
 }
 
+// ── QA fixes (found on real data) ─────────────────────────────────────
+{
+  // a stock that fell only as much as a falling market is not a stock-specific alert
+  const mkt = peakThen(100, 130, 100);                      // market down ~23% from its high
+  const same = A.analyze(base({
+    holdings: [...base().holdings, H({ key: "STK", cls: "stock", name: "Market Mover Ltd", value: 60000 })],
+    series: { STK: peakThen(200, 260, 200) }, benchmarks: { nifty: mkt },
+  }));
+  assert.ok(!find(same, "trend-STK"), "falling with the market: no stock-specific alert");
+  const worse = A.analyze(base({
+    holdings: [...base().holdings, H({ key: "STK", cls: "stock", name: "Weak Ltd", value: 60000 })],
+    series: { STK: peakThen(200, 260, 150) }, benchmarks: { nifty: peakThen(100, 110, 100) },
+  }));
+  assert.ok(find(worse, "trend-STK"), "falling much more than the market is flagged");
+
+  // many market-wide funds below their highs become ONE note
+  const dipHoldings = ["A", "B", "C", "D"].map((k) => H({ key: "IDX" + k, cls: "mf", name: "Nifty Index " + k, value: 60000 }));
+  const dipSeries = Object.fromEntries(dipHoldings.map((h) => [h.key, peakThen(100, 130, 112)]));
+  const multi = A.analyze(base({ holdings: [...base().holdings.filter((h) => h.cls !== "mf"), ...dipHoldings], series: dipSeries }));
+  assert.ok(find(multi, "dip-multi"), "one combined note");
+  assert.ok(!multi.signals.some((s) => /^dip-IDX/.test(s.id)), "no per-fund copies");
+  assert.ok(find(multi, "dip-multi").title.startsWith("4 of your market-wide funds"));
+
+  // physical gold is judged against the gold price, not "too new to judge"
+  const gold = A.analyze(base({ benchmarks: { nifty: ramp(100, 110), gold: ramp(100, 130) } }));
+  const g1 = gold.holdings.find((h) => h.key === "GOLD1").verdict;
+  assert.strictEqual(g1.status, "good");
+  assert.ok(g1.headline.includes("Gold has moved"));
+  assert.strictEqual(A.analyze(base()).holdings.find((h) => h.key === "GOLD1").verdict.status, "nodata", "no gold price data at all → honest 'too new to judge'");
+
+  // a loan without a rate is not reported as a perfect debt position
+  const unk = A.analyze(base({ liabilities: [{ name: "Car loan", value: 400000, emi: 0, rate: 0 }] }));
+  const dp = unk.pillars.find((p) => p.id === "debt");
+  assert.ok(dp.score < 100 && dp.line.includes("Add the interest rate"));
+}
+
 console.log("advisor-engine tests passed");

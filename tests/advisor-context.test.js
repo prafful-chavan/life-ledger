@@ -33,4 +33,15 @@ for (const must of ["PORTFOLIO INTELLIGENCE", "UTI Nifty 50 Index Fund", "ALLOCA
 }
 assert.ok(text.includes("₹10,00,000") || text.includes("₹1,000,000") || /₹[\d,]+/.test(text), "Indian number formatting");
 assert.strictEqual(Ctx.build({}), "", "no data → empty (never throws)");
+// compact briefing (rides along with every chat message) is much smaller and points to the full module
+{
+  const many = { ...input, holdings: Array.from({ length: 60 }, (_, i) => ({ key: "h" + i, cls: "mf", name: "Fund " + i, value: 50000 + i, invested: 40000 })) };
+  const big = Engine.analyze(many);
+  const full = Ctx.build({ result: big, input: many, extras });
+  const small = Ctx.build({ result: big, input: many, extras, compact: true });
+  assert.ok(small.length < full.length * 0.6, "compact is much smaller (" + small.length + " vs " + full.length + ")");
+  assert.ok(small.includes("get_module") && small.includes("portfolio"), "tells the model where the rest is");
+  assert.ok(small.includes("Fund 59") && !small.includes("Fund 20 |"), "keeps the biggest holdings only");
+}
+
 console.log("advisor-context tests passed");

@@ -137,7 +137,8 @@
       }
       setStatus("error", "Too many concurrent changes — will retry");
     } catch (err) {
-      if (err.message === "unauthorized") setStatus("error", "Sync password mismatch — sign in again");
+      if (err.name === "AbortError") setStatus("error", "Sync timed out — retrying");
+      else if (err.message === "unauthorized") setStatus("error", "Sync password mismatch — sign in again");
       else setStatus(navigator.onLine === false ? "offline" : "error", err.message);
     }
   }

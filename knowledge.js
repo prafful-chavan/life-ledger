@@ -94,21 +94,36 @@
   }
   function unregisterModule(id) { modules.delete(id); }
 
-  function catalog(state) {
+  // The catalog is shown to the model on every message, so it must stay small even for wide data
+  // (hundreds of rows, dozens of fields). `detail` returns one source's full schema.
+  const MAX_FIELDS_LISTED = 24;
+  const CATEGORY_LIKE = /^(category|type|status|paidBy|owner|person|demat|source|kind|area|priority|round|outcome|role|stage|result)$/i;
+
+  function compactSchema(sch) {
+    const names = sch.fields.map((f) => `${f.name}(${f.type === "string" ? "s" : f.type === "number" ? "n" : f.type === "date" ? "d" : f.type === "boolean" ? "b" : f.type[0]})`);
+    const cats = sch.fields.filter((f) => f.values && f.values.length && CATEGORY_LIKE.test(f.name)).slice(0, 3)
+      .map((f) => ({ field: f.name, values: f.values.slice(0, 10), more: Math.max(0, f.values.length - 10) }));
+    return { name: sch.name, rows: sch.rows, dateField: sch.dateField, range: sch.range, description: sch.description,
+      fields: names.slice(0, MAX_FIELDS_LISTED), moreFields: Math.max(0, names.length - MAX_FIELDS_LISTED), categories: cats };
+  }
+
+  function catalog(state, opts) {
+    const only = opts && opts.source;
+    const names = collectionNames(state).filter((n) => !only || n === only);
     return {
-      collections: collectionNames(state).map((n) => inferSchema(n, state[n])),
-      objects: objectNames(state).map((n) => ({ name: n, keys: Object.keys(state[n]).slice(0, 20) })),
-      modules: [...modules.values()].map((m) => ({ id: m.id, title: m.title, description: m.description })),
+      collections: names.map((n) => (only ? inferSchema(n, state[n]) : compactSchema(inferSchema(n, state[n])))),
+      objects: only ? [] : objectNames(state).map((n) => ({ name: n, keys: Object.keys(state[n]).slice(0, 12) })),
+      modules: only ? [] : [...modules.values()].map((m) => ({ id: m.id, title: m.title, description: m.description })),
     };
   }
 
-  /** One-paragraph-per-source overview that fits in the system context. */
+  /** One short paragraph per source; small enough to ride along with every message. */
   function catalogText(state) {
     const c = catalog(state);
-    const L = ["=== DATA SOURCES YOU CAN QUERY (use the tools; do not guess) ==="];
+    const L = ["=== DATA SOURCES YOU CAN QUERY (use the tools; list_sources {source} shows one source's full fields and category values) ==="];
     c.collections.forEach((s) => {
-      const cats = s.fields.filter((f) => f.values && f.values.length).slice(0, 4).map((f) => `${f.name}∈{${f.values.slice(0, 10).join(", ")}${f.values.length > 10 ? ", …" : ""}}`);
-      L.push(`- ${s.name}: ${s.rows} rows${s.range ? `, ${s.dateField} from ${s.range.from} to ${s.range.to}` : ""}. ${s.description} Fields: ${s.fields.map((f) => `${f.name}(${f.type})`).join(", ")}.${cats.length ? " " + cats.join("; ") + "." : ""}`);
+      const cats = s.categories.map((f) => `${f.field}∈{${f.values.join(", ")}${f.more ? ", …" : ""}}`);
+      L.push(`- ${s.name}: ${s.rows} rows${s.range ? `, ${s.dateField} ${s.range.from}…${s.range.to}` : ""}. ${s.description} Fields: ${s.fields.join(" ")}${s.moreFields ? ` +${s.moreFields} more` : ""}.${cats.length ? " " + cats.join("; ") + "." : ""}`);
     });
     if (c.objects.length) L.push(`- single objects (use get_object): ${c.objects.map((o) => o.name).join(", ")}`);
     if (c.modules.length) L.push(`- special modules (use get_module): ${c.modules.map((m) => `${m.id} — ${m.description || m.title}`).join(" | ")}`);
@@ -295,7 +310,7 @@
 
   // ── tools exposed to the model ────────────────────────────────────────────
   const TOOL_SPECS = [
-    { name: "list_sources", description: "List every data source in the app with row counts, date ranges, fields and category values, plus special modules. Call this first if unsure what exists.", parameters: { type: "object", properties: {} } },
+    { name: "list_sources", description: "List every data source in the app with row counts, date ranges and field names, plus special modules. Pass {source} to get ONE source's complete field list with types and category values (use this before filtering by a category).", parameters: { type: "object", properties: { source: { type: "string", description: "Optional collection name for full detail." } } } },
     { name: "query_data", description: "Query any list in the app (expenses, income, workouts, activities, habits, tasks, goals, studies, interviewTrackerEntries, netWorthHistory, mutualFunds, stocks, liabilities, bodyMetrics, …). Filter, group (by field or year/quarter/month/week/day) and aggregate (count/sum/avg/min/max/distinct). All maths is done exactly in code across the FULL history.", parameters: { type: "object", properties: {
       source: { type: "string", description: "Collection name from list_sources." },
       date_from: { type: "string", description: "YYYY-MM-DD, inclusive." }, date_to: { type: "string", description: "YYYY-MM-DD, inclusive." },
@@ -341,7 +356,9 @@
     try {
       const a = normalizeArgs(args);
       switch (name) {
-        case "list_sources": return clip({ ok: true, ...catalog(state) });
+        case "list_sources":
+          if (a.source && !collectionNames(state).includes(a.source)) return { ok: false, error: `Unknown source "${a.source}". Available: ${collectionNames(state).join(", ")}.` };
+          return clip({ ok: true, ...catalog(state, a.source ? { source: a.source } : undefined) });
         case "query_data": return clip({ ok: true, ...queryData(state, a) });
         case "get_module": {
           const m = modules.get(a.id);

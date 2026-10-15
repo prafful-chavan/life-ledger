@@ -39,6 +39,7 @@
     stockActDrawdown: -30,
     stockActRelative: -10,      // pp vs Nifty over 1y, together with the deep drawdown
     stockWatchDrawdown: -15,
+    stockWatchRelative: -3,     // a fall that merely matches a falling market is not stock-specific
     indexBuyDrawdown: -10,
     underperformWatch: -5,      // pp vs benchmark over 1y
     underperformAct: -10,
@@ -204,6 +205,14 @@
         headline: h.cls === "bank" ? "Cash you can reach quickly." : "Steady, low-risk money.",
         reasons: [h.cls === "bank" ? "Good for emergencies, but it earns little — keep only what you need here." : "Grows slowly and safely. Good for stability, not for beating inflation by a lot."] };
     }
+    if (g === "gold" && ctx && ctx.goldBm && ctx.goldBm.days >= CFG.minHistoryDays && !hasHistory) {
+      const r = ctx.goldBm.r1y;
+      const st2 = r == null ? "nodata" : r >= 10 ? "good" : r >= -10 ? "ok" : "weak";
+      return { status: st2, label: STATUS_LABEL[st2], move: "hold", moveLabel: MOVE_LABEL.hold,
+        headline: r == null ? "Gold price history is not available yet." : `Gold has moved ${signed(r)} over the last year.`,
+        reasons: ["Gold is there to protect your wealth in bad times, not to beat the market every year.",
+          h.returnPct != null ? `Versus what you paid: ${h.returnPct >= 0 ? "up" : "down"} ${plainPct(h.returnPct)}.` : null].filter(Boolean) };
+    }
     if (g === "other") {
       return { status: "ok", label: STATUS_LABEL.ok, move: "watch", moveLabel: MOVE_LABEL.watch,
         headline: "Not tracked against market prices.", reasons: ["Keep it small compared with your core investments, and update its value now and then."] };
@@ -306,6 +315,8 @@
       const income = num(cash.monthlyIncome);
       const burden = income > 0 ? (emi / income) * 100 : null;
       let sc = 100;
+      const unknownRate = liabilities.filter((l) => !(num(l.rate) > 0));
+      if (unknownRate.length) sc = 85;                      // can't call it perfect when a loan's cost is unknown
       sc -= high.length * 35; sc -= mid.length * 12;
       if (burden != null && burden > 30) sc -= Math.min(30, (burden - 30) * 1.5);
       sc = Math.max(0, Math.min(100, Math.round(sc)));
@@ -314,6 +325,7 @@
       else {
         bits.push(`${liabilities.length} loan${liabilities.length > 1 ? "s" : ""}, EMIs ${inr(emi)} a month${burden != null ? ` (${Math.round(burden)}% of your income)` : ""}.`);
         if (high.length) bits.push(`${high.map((l) => l.name).join(", ")} costs a lot in interest.`);
+        if (unknownRate.length) bits.push(`Add the interest rate and EMI for ${unknownRate.map((l) => l.name).join(", ")} so I can judge it.`);
       }
       P.push({ id: "debt", label: "Debt", emoji: "💳", weight: 20, score: sc, level: lvl(sc), line: bits.join(" ") });
     }
@@ -387,7 +399,8 @@
         historyDays: mom ? mom.days : 0,
       };
     });
-    items.forEach((h) => { h.verdict = verdictFor(h, {}); });
+    const goldBm0 = bench.gold ? momentum(bench.gold, now) : null;
+    items.forEach((h) => { h.verdict = verdictFor(h, { goldBm: goldBm0 }); });
 
     // allocation (hybrid counts half equity / half debt)
     const alloc = { equity: 0, gold: 0, debt: 0, cash: 0, other: 0 };
@@ -468,7 +481,7 @@
               h.relative1y != null ? `It is also doing ${plainPct(h.relative1y)} worse than the market over a year.` : null,
               h.returnPct != null ? `Versus what you paid: ${h.returnPct >= 0 ? "up" : "down"} ${plainPct(h.returnPct)}.` : null,
               "If the reason you bought it no longer holds, selling may be sensible. If it still holds, don't buy more just because it looks cheaper."].filter(Boolean) });
-        } else if (m.drawdown != null && m.drawdown <= CFG.stockWatchDrawdown) {
+        } else if (m.drawdown != null && m.drawdown <= CFG.stockWatchDrawdown && (h.relative1y == null || h.relative1y <= CFG.stockWatchRelative)) {
           add({ id: "trend-" + h.key, severity: "watch", action: "REVIEW", assetKey: h.key, confidence: conf,
             title: `${h.name} is down ${plainPct(m.drawdown)} from its high`,
             why: [`Last 3 months: ${signed(m.r3m)}.`, "Add more only if the reason you bought it still holds and it is a small part of your money."] });
@@ -498,8 +511,22 @@
       }
     });
 
+    // several market-wide funds/ETFs below their highs: one calm note instead of a list of alerts
+    {
+      const dips = signals.filter((x) => x.id.startsWith("dip-"));
+      if (dips.length >= 3) {
+        const names = dips.map((x) => x.assetKey).map((k) => (items.find((h) => h.key === k) || {}).name).filter(Boolean);
+        const falls = dips.map((x) => Number((x.title.match(/(\d+(?:\.\d+)?)%/) || [])[1])).filter(Number.isFinite);
+        for (let i = signals.length - 1; i >= 0; i--) if (signals[i].id.startsWith("dip-")) signals.splice(i, 1);
+        add({ id: "dip-multi", severity: "info", action: "ADD", confidence: "medium",
+          title: `${dips.length} of your market-wide funds and ETFs are ${Math.round(Math.min(...falls))}–${Math.round(Math.max(...falls))}% below their recent highs`,
+          why: [names.slice(0, 4).join(", ") + (names.length > 4 ? ` and ${names.length - 4} more` : "") + ".",
+            "Funds that follow the whole market usually recover over many years. If you have spare money, adding a little every month (instead of all at once) is a calm way to buy."] });
+      }
+    }
+
     // gold timing
-    const goldBm = bench.gold ? momentum(bench.gold, now) : null;
+    const goldBm = goldBm0;
     if (goldBm && goldBm.days >= CFG.minHistoryDays) {
       if (goldBm.drawdown != null && goldBm.drawdown <= CFG.goldDrop && allocPct.gold < num(tgt.gold)) {
         add({ id: "gold-dip", severity: "info", action: "ADD", assetKey: "gold", confidence: goldBm.days >= 300 ? "high" : "medium",

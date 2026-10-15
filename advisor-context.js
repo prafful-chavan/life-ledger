@@ -20,7 +20,7 @@
     return Math.round(lump + sip);
   }
 
-  function build({ result, input, extras, review }) {
+  function build({ result, input, extras, review, compact }) {
     if (!result || !input) return "";
     const L = [];
     const m = result.metrics;
@@ -33,7 +33,7 @@
     if (m.emergencyMonths != null) L.push(`EMERGENCY FUND: liquid savings cover ${m.emergencyMonths} months of expenses (target ${(input.profile && input.profile.emergencyMonths) || 6}).`);
     if (m.savingsRate != null) L.push(`SAVINGS RATE (6-month average): ${m.savingsRate}%.`);
 
-    const hs = (result.holdings || []).slice().sort((x, y) => y.value - x.value).slice(0, 40);
+    const hs = (result.holdings || []).slice().sort((x, y) => y.value - x.value).slice(0, compact ? 12 : 40);
     if ((result.pillars || []).length) {
       L.push("\nHEALTH PILLARS (0-100): " + result.pillars.map((p) => `${p.label} ${p.score} — ${p.line}`).join(" | "));
     }
@@ -41,14 +41,15 @@
     if ((result.groups || []).length) {
       L.push("\nBY TYPE: " + result.groups.map((g) => `${g.label}: ${g.count} holdings, ${inr(g.value)} (${g.weight}% of portfolio)${g.returnPct != null ? `, ${pc(g.returnPct)} vs paid` : ""}`).join(" | "));
     }
-    L.push("\nHOLDINGS (top 40 by value): name | class/kind | VERDICT | value | weight | invested | return | XIRR | 1m / 3m / 6m / 1y | drawdown | vs Nifty 1y | history days");
+    L.push("\nHOLDINGS (top " + (compact ? 12 : 40) + " by value): name | class/kind | VERDICT | value | weight | invested | return | XIRR | 1m / 3m / 6m / 1y | drawdown | vs Nifty 1y | history days");
     hs.forEach((h) => {
       L.push(`- ${h.name} | ${h.cls}/${h.kind} | ${h.verdict ? h.verdict.label + " (" + h.verdict.moveLabel + ")" : "n/a"} | ${inr(h.value)} | ${h.weight}% | ${inr(h.invested)} | ${pc(h.returnPct)} | ${h.xirr != null ? pc(h.xirr) : "n/a"} | ${[h.r1m, h.r3m, h.r6m, h.r1y].map((v) => (v == null ? "n/a" : pc(v))).join(" / ")} | ${h.drawdown != null ? h.drawdown + "%" : "n/a"} | ${h.vs1yBenchmark != null ? (h.vs1yBenchmark >= 0 ? "+" : "") + h.vs1yBenchmark + "pp" : "n/a"} | ${h.historyDays}`);
     });
-    if ((result.holdings || []).length > hs.length) L.push(`(+${result.holdings.length - hs.length} smaller positions not listed)`);
+    if ((result.holdings || []).length > hs.length) L.push(`(+${result.holdings.length - hs.length} more positions not listed${compact ? " — call get_module {id: \"portfolio\"} for every holding with returns, trend and verdict" : ""})`);
 
     L.push("\nADVISOR SIGNALS (rule-based; use these ids when explaining):");
-    (result.signals || []).forEach((s) => L.push(`- [${s.severity.toUpperCase()}] ${s.action}: ${s.title} (id ${s.id}, confidence ${s.confidence}) — ${(s.why || []).join(" ")}`));
+    (compact ? (result.signals || []).slice(0, 12) : (result.signals || [])).forEach((s) => L.push(`- [${s.severity.toUpperCase()}] ${s.action}: ${s.title} (id ${s.id}, confidence ${s.confidence}) — ${compact ? (s.why || [])[0] || "" : (s.why || []).join(" ")}`));
+    if (compact && (result.signals || []).length > 12) L.push(`(+${result.signals.length - 12} lower-priority signals in get_module portfolio)`);
     if (!(result.signals || []).length) L.push("- none right now");
 
     if (review && review.headline) {
@@ -60,8 +61,8 @@
     L.push(`\nCASH FLOW (6-month average): income ${inr(c.monthlyIncome)}/month, expenses ${inr(c.monthlyExpenses)}/month. Largest recurring spends: ${(c.topCategories || []).map(([k, v]) => `${k} ${inr(v)}`).join(", ") || "n/a"}.`);
 
     if (extras && extras.monthly) {
-      L.push("MONTHLY TREND (income / expenses / saved; last 12 months, current month is partial):");
-      extras.monthly.forEach((x) => {
+      L.push(compact ? "MONTHLY TREND (last 6 months; the whole history is in get_module cashflow_history):" : "MONTHLY TREND (income / expenses / saved; last 12 months, current month is partial):");
+      extras.monthly.slice(compact ? -6 : 0).forEach((x) => {
         const who = Object.entries(x.expensesByOwner || {}).map(([k, v]) => `${k} ${inr(v)}`).join(", ");
         L.push(`- ${x.month}${x.partial ? " (so far)" : ""}: ${inr(x.income)} / ${inr(x.expenses)} / ${inr(x.saved)}${who ? ` | spent by: ${who}` : ""}`);
       });

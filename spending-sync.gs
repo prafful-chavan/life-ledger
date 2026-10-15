@@ -125,10 +125,22 @@ function spendingMetaOf_(f) {
   return { id: f.id, name: f.name, path: f.path_display, modified: f.server_modified, size: f.size, hash: f.content_hash };
 }
 
+// Listing a Dropbox folder with hundreds of backups takes seconds; one import asks for it once per file,
+// so keep the (tiny) result for two minutes.
+function spendingFilesCached_(source) {
+  var cache = CacheService.getScriptCache();
+  var key = "spf:" + (source || "me");
+  var hit = cache.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) { /* recompute */ } }
+  var files = spendingFiles_(source);
+  try { cache.put(key, JSON.stringify(files), 120); } catch (e) { /* too large: skip caching */ }
+  return files;
+}
+
 function spendingHandle_(op, source, fileId) {
   source = source === "wife" ? "wife" : "";
   var answeredBy = source === "wife" ? "wife" : "me";
-  var files = spendingFiles_(source);
+  var files = spendingFilesCached_(source);
   var metas = files.map(spendingMetaOf_);
   if (op === "spendingMeta") return { ok: true, source: answeredBy, file: metas[0], files: metas };
 

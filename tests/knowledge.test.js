@@ -29,7 +29,13 @@ const ex = cat.collections.find((c) => c.name === "expenses");
 assert.strictEqual(ex.rows, 5);
 assert.strictEqual(ex.dateField, "date");
 assert.deepStrictEqual(ex.range, { from: "2021-03-05", to: "2025-04-02" });
-assert.ok(ex.fields.find((f) => f.name === "category").values.includes("Travel"), "category values are listed");
+assert.ok(ex.fields.includes("category(s)"), "compact field list with type letters");
+assert.ok(ex.categories.find((f) => f.field === "category").values.includes("Travel"), "category values are listed");
+// one source in full detail
+const full = K.runTool("list_sources", { source: "expenses" }, state);
+assert.strictEqual(full.collections.length, 1);
+assert.ok(full.collections[0].fields.find((f) => f.name === "category").values.includes("Travel"));
+assert.strictEqual(K.runTool("list_sources", { source: "nope" }, state).ok, false);
 assert.ok(K.catalogText(state).includes("expenses: 5 rows"));
 
 // a brand-new collection is queryable with zero wiring
@@ -104,5 +110,24 @@ assert.strictEqual(r.truncated, true);
 // the tool list is stable and well-formed for function-calling APIs
 assert.deepStrictEqual(K.TOOL_SPECS.map((t) => t.name), ["list_sources", "query_data", "get_module", "get_object", "calculate"]);
 K.TOOL_SPECS.forEach((t) => { assert.ok(t.description && t.parameters.type === "object"); });
+
+// wide, realistic data: the catalog that rides along with every message must stay small and the tool must not fail
+{
+  const wide = {};
+  const field = (i) => "field" + i;
+  for (const name of ["mutualFunds", "interviewTrackerEntries", "expenses", "stocks", "workouts", "income"]) {
+    wide[name] = Array.from({ length: 700 }, (_, r) => {
+      const row = { id: name + r, date: "2026-01-" + String((r % 28) + 1).padStart(2, "0"), category: "C" + (r % 7) };
+      for (let i = 0; i < 40; i++) row[field(i)] = i % 3 === 0 ? "value-" + ((r * 7 + i) % 30) : r * i;   // many fields, many distinct strings
+      return row;
+    });
+  }
+  const text = K.catalogText(wide);
+  assert.ok(text.length < 9000, "catalog text stays small for wide data (was " + text.length + ")");
+  const ls = K.runTool("list_sources", {}, wide);
+  assert.strictEqual(ls.ok, true, "list_sources works on wide data");
+  assert.ok(JSON.stringify(ls).length < 24000);
+  assert.ok(ls.collections[0].moreFields > 0 || ls.collections[0].fields.length <= 24);
+}
 
 console.log("knowledge tests passed");

@@ -254,6 +254,14 @@
     }
   }
 
+  // After a reload the card should still say when things were last imported
+  function idleStatus() {
+    const el = $("spendingSyncStatus");
+    const si = window.LifeLedgerApp?.getState?.().spendingImport;
+    if (!el || !si || !si.importedAt || !/^Not checked yet/.test(el.textContent)) return;
+    el.textContent = "Last import " + fmtWhen(si.importedAt) + ". New expenses are picked up automatically when you open the app.";
+  }
+
   function autoCheckDue() {
     try { return Date.now() - Number(localStorage.getItem(AUTO_CHECK_KEY) || 0) > AUTO_EVERY_MS; } catch { return true; }
   }
@@ -290,7 +298,7 @@
     window.addEventListener("pageshow", () => setTimeout(autoCheck, 1500));
     window.addEventListener("focus", () => setTimeout(autoCheck, 1500));
     window.addEventListener("online", () => setTimeout(autoCheck, 1500));
-    window.LifeLedgerSync?.onStatus((st) => { if (st.state === "synced") setTimeout(autoCheck, 1500); });
+    window.LifeLedgerSync?.onStatus((st) => { if (st.state === "synced") { setTimeout(autoCheck, 1500); setTimeout(idleStatus, 2000); } });
     setInterval(autoCheck, AUTO_POLL_MS);
   });
 })();
