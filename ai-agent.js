@@ -198,7 +198,7 @@
     return [...(arr || [])].sort((a, b) => new Date(b[dateField] || 0) - new Date(a[dateField] || 0)).slice(0, n);
   }
 
-  function buildDataContext(state) {
+  function buildBaseContext(state) {
     if (!state) return "No data available.";
 
     const now = new Date();
@@ -470,6 +470,23 @@ ${studiesText("ETL", wifeStudies)}
   }
 
   // ─── System Prompt — Pro Banker + CA + Life Coach ────────────────────────────
+
+  // Extra briefing sources (e.g. the portfolio advisor) registered by other modules.
+  let contextProvider = null;
+  function setContextProvider(fn) { contextProvider = typeof fn === "function" ? fn : null; }
+
+  function buildDataContext(state) {
+    const base = buildBaseContext(state);
+    if (!contextProvider) return base;
+    try {
+      const extra = contextProvider(state);
+      return extra ? `${base}\n\n${extra}` : base;
+    } catch (err) {
+      console.warn("[AI Agent] context provider failed:", err);
+      return base;
+    }
+  }
+
   const SYSTEM_PROMPT = `You are "Hey Prafful" — Prafful Chavan's AI-powered personal life operating system. You are embedded inside his Life Ledger app and have COMPLETE access to all his financial, career, health, and life data.
 
 YOU ARE THREE EXPERTS IN ONE:
@@ -505,6 +522,14 @@ YOU ARE THREE EXPERTS IN ONE:
 • Goal completion probability analysis
 • Investment portfolio rebalancing suggestions
 • Identify financial leaks (subscriptions, unnecessary spending)
+
+HOW TO ANSWER PORTFOLIO & INVESTMENT QUESTIONS (the "PORTFOLIO INTELLIGENCE" section is the primary source)
+• Quote exact figures from it; never recompute from memory. If something is not tracked, say so plainly.
+• For "should I buy / sell / hold / add to X": weigh (1) the position's weight and return, (2) trend metrics (drawdown, 3m/6m/1y, vs Nifty), (3) the matching advisor signals, (4) allocation vs target, (5) goals, emergency fund and debt. Give a balanced view and the conditions that would change it. Never promise returns or predict prices.
+• Order of priorities: emergency fund → expensive debt → insurance → funding goal SIPs → rebalancing with new money → new ideas.
+• For what-if questions, show the arithmetic and the assumptions; treat the projection block as illustrative only.
+• Mention tax impact qualitatively when a sale is involved (listed equity and equity MFs: STCG 20% within 12 months, LTCG 12.5% above ₹1.25 lakh a year; verify with a CA).
+• You are an analyst, not a SEBI-registered adviser: close investment-specific answers with a one-line reminder to verify before acting.
 
 PERSONALITY & RULES:
 • You are direct, data-driven, and hold Prafful accountable like a strict mentor
@@ -1125,6 +1150,7 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     buildOpenRouterMessages,
     cancelRequest,
     buildDataContext,
+    setContextProvider,
     generateStructured,
     parseJsonLoose,
   };

@@ -23,18 +23,19 @@
     <script defer src="vault-store.js?v=1.0.8"></script>
     <script defer src="drive-sync.js?v=1.0.42"></script>
     <script defer src="interview-db.js?v=1.0.8"></script>
-    <script defer src="ai-agent.js?v=1.0.43"></script>
+    <script defer src="ai-agent.js?v=1.0.44"></script>
     <script src="ui-polish.js?v=1.0.3" defer></script>
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.54"></script>
+    <script defer src="app.js?v=1.0.55"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.2"></script>
     <script defer src="auth.js?v=1.0.44"></script>
     <script defer src="sync-ui.js?v=1.0.0"></script>
     <script defer src="advisor-engine.js?v=1.0.0"></script>
     <script defer src="advisor-ai.js?v=1.0.0"></script>
-    <script defer src="advisor.js?v=1.0.2"></script>
+    <script defer src="advisor-context.js?v=1.0.0"></script>
+    <script defer src="advisor.js?v=1.0.3"></script>
     <script defer src="spending-core.js?v=1.0.3"></script>
     <script defer src="spending-import.js?v=1.0.11"></script>
   </head>
@@ -1892,6 +1893,11 @@
                 <button type="button" class="chip chip-ai" data-prompt="Give me honest, tough-love feedback on how I'm doing across finances, habits, career, and fitness">💪 Roast Me</button>
                 <button type="button" class="chip chip-ai" data-prompt="What should I focus on this week to make the biggest impact on my goals?">🎯 Weekly Focus</button>
                 <button type="button" class="chip chip-ai" data-prompt="How is my investment strategy? Am I diversified enough? Any suggestions?">📈 Investment Review</button>
+                <button type="button" class="chip chip-ai" data-prompt="Which of my holdings are underperforming, and what should I do about each one?">📉 Underperformers</button>
+                <button type="button" class="chip chip-ai" data-prompt="Where should my next ₹50,000 go, based on my allocation, goals, debts and emergency fund?">💸 Where to invest next</button>
+                <button type="button" class="chip chip-ai" data-prompt="Am I on track for my goals? Project my portfolio at 8%, 10% and 12% for 10 and 20 years">🔮 On track?</button>
+                <button type="button" class="chip chip-ai" data-prompt="What are the biggest financial risks in my portfolio and cash flow right now?">⚠️ Biggest risks</button>
+                <button type="button" class="chip chip-ai" data-prompt="Compare how Prafful and Archana are spending, saving and investing, and suggest how to balance it">👫 Prafful vs Archana</button>
                 <!-- Data Prompts -->
                 <button type="button" class="chip" data-prompt="Give me this month's finance summary">💰 Monthly summary</button>
                 <button type="button" class="chip" data-prompt="What is my net worth?">💼 Net worth</button>

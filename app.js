@@ -625,6 +625,7 @@ if (typeof window !== "undefined") {
     // Lightweight refresh used by multi-device sync: swap state and re-render only
     // (no price refresh, no first-run wiring).
     getAdvisorInput: () => buildAdvisorInput(),
+    getAdvisorExtras: () => buildAdvisorExtras(),
     getAdvisorState: () => state.advisor || { profile: {}, review: null },
     setAdvisorState: (patch) => { state.advisor = { ...(state.advisor || { profile: {}, review: null }), ...patch }; return saveData(true); },
     applyRemoteData(data) {
@@ -4615,6 +4616,42 @@ function buildAdvisorInput() {
     liabilities: (state.liabilities || []).map((l) => ({ name: l.name, owner: l.owner, value: toNumber(l.value), emi: toNumber(l.emi), rate: toNumber(l.rate) })),
     goals: (state.goals || []).map((g) => ({ name: g.name, target: toNumber(g.target), saved: toNumber(g.saved), dueDate: g.dueDate })),
     series: {}, benchmarks: {},
+  };
+}
+
+// Extra facts for the AI agent: trends, history, SIP discipline (computed here so the model never does arithmetic).
+function buildAdvisorExtras() {
+  const now = istTodayISO();
+  const [cy, cm] = now.split("-").map(Number);
+  const keyOf = (offset) => { const d = new Date(Date.UTC(cy, cm - 1 - offset, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`; };
+  const monthly = [];
+  for (let i = 12; i >= 0; i--) {
+    const k = keyOf(i);
+    const inc = (state.income || []).filter((x) => toMonthKey(x.date) === k);
+    const exp = (state.expenses || []).filter((x) => toMonthKey(x.date) === k);
+    const income = sum(inc, "amount");
+    const expenses = sum(exp, "amount");
+    const byOwner = {};
+    exp.forEach((e) => { const o = normalizeOwner(e.paidBy); byOwner[o] = (byOwner[o] || 0) + toNumber(e.amount); });
+    monthly.push({ month: k, income: Math.round(income), expenses: Math.round(expenses), saved: Math.round(income - expenses), expensesByOwner: byOwner, partial: i === 0 });
+  }
+  const mtdKey = keyOf(0);
+  const catThis = {};
+  (state.expenses || []).filter((x) => toMonthKey(x.date) === mtdKey).forEach((e) => { catThis[e.category || "General"] = (catThis[e.category || "General"] || 0) + toNumber(e.amount); });
+
+  const nwHistory = (state.netWorthHistory || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30)
+    .map((h) => ({ date: h.date, netWorth: Math.round(h.netWorth), assets: Math.round(h.totalAssets), liabilities: Math.round(h.totalLiabilities) }));
+
+  const sipByOwner = {};
+  (state.mutualFunds || []).filter((t) => !isRedemption(t) && toMonthKey(t.purchaseDate || t.date) === mtdKey)
+    .forEach((t) => { const o = normalizeOwner(t.owner); sipByOwner[o] = (sipByOwner[o] || 0) + toNumber(t.invested); });
+
+  return {
+    now, monthly,
+    thisMonthCategories: Object.entries(catThis).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [k, Math.round(v)]),
+    nwHistory,
+    sipThisMonth: sipByOwner,
+    sipTargets: { Me: toNumber(state.mfMonthlyTarget?.me), Wife: toNumber(state.mfMonthlyTarget?.wife) },
   };
 }
 

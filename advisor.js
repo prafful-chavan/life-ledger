@@ -297,5 +297,20 @@
     setInterval(() => { if (!document.hidden) schedule({ history: false }); }, 10 * 60 * 1000);
   });
 
+  // Give the Hey Prafful chat the full portfolio briefing (holdings metrics, signals, trends, debts, goals).
+  function registerChatContext() {
+    const Ctx = window.LifeLedgerAdvisorContext;
+    if (!window.LifeLedgerAI?.setContextProvider || !Ctx) return;
+    window.LifeLedgerAI.setContextProvider(() => {
+      const app = window.LifeLedgerApp;
+      if (!app || !Engine()) return "";
+      const inp = input || app.getAdvisorInput();
+      const res = result || Engine().analyze(inp);
+      const rev = stored();
+      return Ctx.build({ result: res, input: inp, extras: app.getAdvisorExtras(), review: rev && rev.review });
+    });
+  }
+  window.addEventListener("load", registerChatContext);
+
   window.LifeLedgerAdvisorUI = { analyse, generateReview, getResult: () => result };
 })();
