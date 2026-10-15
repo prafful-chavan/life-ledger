@@ -8,8 +8,6 @@
 (function () {
   "use strict";
 
-  const HIST_KEY = "lifeLedgerAdvisorHistory:v1";
-  const HIST_TTL_MS = 12 * 60 * 60 * 1000;
   const AI_MIN_GAP_MS = 30 * 60 * 1000;
   const AI_ERROR_BACKOFF_MS = 15 * 60 * 1000;
   const BENCH = { nifty: "^NSEI", sp500: "^GSPC", gold: "GOLDBEES.NS" };
@@ -50,41 +48,14 @@
   const signedPct = (v) => (v == null ? "—" : (v >= 0 ? "+" : "−") + Math.abs(Math.round(v * 10) / 10) + "%");
   const cls = (v) => (v == null ? "" : v >= 0 ? "pos" : "neg");
 
-  // ── price history (cached on this device) ─────────────────────────────────
-  function readHistCache() {
-    try { return JSON.parse(localStorage.getItem(HIST_KEY) || "null") || { at: 0, series: {} }; } catch { return { at: 0, series: {} }; }
-  }
-  function writeHistCache(c) { try { localStorage.setItem(HIST_KEY, JSON.stringify(c)); } catch { /* quota: refetch next time */ } }
-  function proxyUrl() {
-    try { return (localStorage.getItem("lifeLedgerStockProxyUrl") || "").trim().replace(/^["']|["']$/g, "").replace(/\?+$/, ""); } catch { return ""; }
-  }
-
-  // network=false: use whatever is cached on this device (instant, no requests)
+  // ── price history: shared loader (cached on this device) ─────────────────
+  const PH = () => window.LifeLedgerPriceHistory;
+  const toSeries = (s) => PH().toSeries(s);
   async function loadHistory(keys, network = true) {
-    const cache = readHistCache();
-    const fresh = Date.now() - cache.at < HIST_TTL_MS;
-    const need = keys.filter((k) => !cache.series[k] || !fresh);
-    const url = proxyUrl();
-    if (!network) return cache.series;
-    if (need.length && url) {
-      histStatus = "Loading price history…";
-      for (let i = 0; i < need.length; i += 40) {
-        const chunk = need.slice(i, i + 40);
-        try {
-          const res = await fetch(`${url}?history=${encodeURIComponent(chunk.join(","))}&days=400`, { redirect: "follow" });
-          const json = await res.json();
-          if (json && json.series) Object.assign(cache.series, json.series);
-        } catch { histStatus = "Price history is unavailable right now, so some judgements are paused."; }
-      }
-      cache.at = Date.now();
-      writeHistCache(cache);
-      if (histStatus.startsWith("Loading")) histStatus = "";
-    } else if (!url) {
-      histStatus = "Add your Apps Script link in Settings to compare each investment with the market.";
-    }
-    return cache.series;
+    const series = await PH().load(keys, { network });
+    histStatus = PH().status();
+    return series;
   }
-  const toSeries = (s) => (s && s.d && s.c ? { dates: s.d, closes: s.c } : null);
 
   // ── analysis ──────────────────────────────────────────────────────────────
   async function analyse(opts = {}) {

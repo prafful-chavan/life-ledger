@@ -1110,17 +1110,20 @@ function setupAutoRefreshTriggers() {
   var existing = ScriptApp.getProjectTriggers();
   for (var i = 0; i < existing.length; i++) {
     var fn = existing[i].getHandlerFunction();
-    if (fn === "scheduledCollectInterval" || fn === "scheduledCollectNightly") {
+    if (fn === "scheduledCollectInterval" || fn === "scheduledCollectNightly" || fn === "scheduledCollectMorning") {
       ScriptApp.deleteTrigger(existing[i]);
     }
   }
   ScriptApp.newTrigger("scheduledCollectInterval").timeBased().everyHours(6).create();
   ScriptApp.newTrigger("scheduledCollectNightly").timeBased().atHour(23).nearMinute(45).everyDays(1).inTimezone("Asia/Kolkata").create();
-  Logger.log("Auto-refresh triggers created: every 6 hours + nightly ~23:45 IST");
+  // Morning pass: the US session has closed (~1:30-2:30 am IST) and mutual-fund NAVs for the previous day are out
+  ScriptApp.newTrigger("scheduledCollectMorning").timeBased().atHour(8).nearMinute(45).everyDays(1).inTimezone("Asia/Kolkata").create();
+  Logger.log("Auto-refresh triggers created: every 6 hours + nightly ~23:45 IST + morning ~08:45 IST");
 }
 
 function scheduledCollectInterval() { collectPricesNow("interval"); }
 function scheduledCollectNightly() { collectPricesNow("nightly"); }
+function scheduledCollectMorning() { collectPricesNow("morning"); }
 
 /**
  * Stores the symbols to track. Only tickers / fund codes - no quantities or amounts.

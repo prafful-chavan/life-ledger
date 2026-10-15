@@ -520,7 +520,7 @@ function bootstrapApp(initialState) {
       recordDailyNetWorthSnapshot({ source: "startup-refresh" });
     } catch (e) {}
     if (typeof renderNetWorthHistory === 'function') renderNetWorthHistory();
-    syncWatchlistToProxy().then(() => backfillNetWorthFromLedger()).catch(e => console.warn('[Ledger] sync error:', e));
+    syncWatchlistToProxy().then(() => backfillNetWorthFromLedger()).then(() => finalizeRecentNetWorthDays({ force: true })).catch(e => console.warn('[Ledger] sync error:', e));
   }).catch((err) => {
     console.warn("[Startup] Price refresh error:", err);
   });
@@ -7478,7 +7478,7 @@ async function refreshAllLivePrices(force = true) {
   if (typeof renderNetWorthHistory === 'function') {
     renderNetWorthHistory();
   }
-  syncWatchlistToProxy().then(() => backfillNetWorthFromLedger()).catch(e => console.warn('[Ledger] sync error:', e));
+  syncWatchlistToProxy().then(() => backfillNetWorthFromLedger()).then(() => finalizeRecentNetWorthDays({ toast: false })).catch(e => console.warn('[Ledger] sync error:', e));
 
   const unpriced = reportUnpricedHoldings();
   if (unpriced.length > 0) {
@@ -9013,15 +9013,19 @@ function renderNetWorthHistory() {
           <strong>${formatDate(item.date)}</strong>
           ${isToday ? `<span class="nwh-today-pill">Today</span>` : ""}
           ${(() => {
-            const pending = NWH_MARKET_CLASSES.filter(cls => item.settled && item.settled[cls] === false);
+            const waiting = nwhWaitingFor(item);
+            const closes = item.audit && item.audit.closes ? Object.entries(item.audit.closes).filter(([, d]) => d).map(([c, d]) => `${NWH_CLASS_LABELS[c]} ${d}`).join(' · ') : '';
+            const warn = item.audit && item.audit.warnings && item.audit.warnings.length ? `<div style="font-size:0.7rem;color:var(--negative,#dc2626);" title="${escapeHTML(item.audit.warnings.join('; '))}">⚠ Check this day</div>` : '';
             if (isToday) {
-              return item.final
-                ? `<div style="font-size:0.7rem;color:var(--positive,#16a34a);">✅ Final — all prices closed</div>`
-                : `<div style="font-size:0.7rem;color:var(--muted);" title="Prices still moving or not yet fetched after close">🟡 Live — waiting: ${pending.map(c => NWH_CLASS_LABELS[c]).join(', ') || '—'}</div>`;
+              return `<div style="font-size:0.7rem;color:var(--muted);" title="Today's record is live. It is checked against the official closing prices and locked the next morning (mutual-fund NAVs are published overnight, the US market closes about 2 am IST).">🟡 Live — locks tomorrow morning</div>${warn}`;
             }
-            return pending.length
-              ? `<div style="font-size:0.7rem;color:var(--muted);" title="These prices were not captured after their close that day">Last known: ${pending.map(c => NWH_CLASS_LABELS[c]).join(', ')}</div>`
-              : "";
+            if (item.audit && item.audit.warnings && item.audit.warnings.length) {
+              return `<div style="font-size:0.7rem;color:var(--negative,#dc2626);" title="${escapeHTML(item.audit.warnings.join('; '))}">⚠ Needs a look — a value differs a lot from the official close</div>`;
+            }
+            if (item.final) {
+              return `<div style="font-size:0.7rem;color:var(--positive,#16a34a);" title="${escapeHTML(closes ? 'Prices used (date of each official close): ' + closes : 'All prices were captured after their close.')}">✅ Final — official closing prices</div>${warn}`;
+            }
+            return `<div style="font-size:0.7rem;color:var(--muted);" title="This day is still waiting for official closing data. It fills in automatically and then locks.">⏳ Waiting for: ${escapeHTML(waiting.join(', ') || 'closing prices')}</div>${warn}`;
           })()}
         </div>`,
         `<strong style="color:var(--brand); font-size:1rem;">${formatINR(item.netWorth)}</strong>`,
@@ -9049,6 +9053,135 @@ function renderNetWorthHistory() {
     "No net worth snapshots recorded yet.",
     12
   );
+}
+
+
+/* ── Official-close finalization ───────────────────────────────────────────
+   Each past day's record is recomputed from the OFFICIAL closing prices for that exact date
+   (Indian stocks close of D, US close of D in New York, the mutual-fund NAV dated D, USD/INR of D)
+   using the quantity you held on D, then locked as final. This removes any dependence on when the
+   app or the backend happened to fetch a price. Gold keeps the evening rate captured for the day. */
+const NWH_FINALIZE_KEY = 'lifeLedger_nwhFinalizeAt';
+const NWH_FINALIZE_DAYS = 10;
+const NWH_FINALIZE_METHOD = 'official-close-v1';
+const NWH_CLASS_DUE = { mutualFunds: 'mutual-fund NAV (published the next morning)', stocks: 'Indian stock close', usStocks: 'US close (about 2 am IST)' };
+
+function heldAsOfForClose(date, st) {
+  const owned = (list) => (list || []).filter((t) => !dateOfTxn(t) || dateOfTxn(t) <= date);
+  const bySymbol = (list, isUS) => {
+    const groups = {};
+    owned(list).forEach((t) => {
+      const sym = String(t.symbol || t.company || '').toUpperCase().replace(/\s*-EQ$/i, '').trim();
+      if (sym) (groups[sym] = groups[sym] || []).push(t);
+    });
+    return Object.entries(groups).map(([sym, txns]) => ({ key: sym, qty: calcStockCostBasis(txns).netQty, histKey: isUS ? sym : advisorYahooTicker(sym) })).filter((g) => g.qty > 0);
+  };
+  const mfGroups = {};
+  owned(st.mutualFunds).forEach((t) => { const k = t.fundName || 'Unknown'; (mfGroups[k] = mfGroups[k] || []).push(t); });
+  const mutualFunds = Object.entries(mfGroups).map(([name, txns]) => {
+    const code = String(parseInt(txns.find((t) => t.schemeCode || t.amfiCode)?.schemeCode || txns.find((t) => t.amfiCode)?.amfiCode, 10) || '');
+    return { key: name, qty: Math.max(0, calcMfCostBasis(txns).netUnits), histKey: code ? `mf:${code}` : null };
+  }).filter((g) => g.qty > 0);
+  return { mutualFunds, stocks: bySymbol(st.stocks, false), usStocks: bySymbol(st.usstocks, true) };
+}
+
+async function finalizeRecentNetWorthDays(opts = {}) {
+  const C = window.LifeLedgerNetWorthClose;
+  const PH = window.LifeLedgerPriceHistory;
+  if (!C || !PH || !(state.netWorthHistory || []).length) return 0;
+  const nowMs = Date.now();
+  try {
+    if (!opts.force && nowMs - parseInt(localStorage.getItem(NWH_FINALIZE_KEY) || '0', 10) < 20 * 60 * 1000) return 0;
+  } catch { /* ignore */ }
+
+  const today = istTodayISO(nowMs);
+  const floor = istTodayISO(nowMs - NWH_FINALIZE_DAYS * 86400000);
+  const rows = state.netWorthHistory.filter((e) => e.date < today && e.date >= floor
+    && !(e.audit && e.audit.method === NWH_FINALIZE_METHOD && e.final));
+  if (!rows.length) return 0;
+
+  const heldByDate = {};
+  const keys = new Set(['INR=X']);
+  rows.forEach((e) => {
+    const h = heldAsOfForClose(e.date, state);
+    heldByDate[e.date] = h;
+    ['mutualFunds', 'stocks', 'usStocks'].forEach((c) => h[c].forEach((x) => { if (x.histKey) keys.add(x.histKey); }));
+  });
+  try { localStorage.setItem(NWH_FINALIZE_KEY, String(nowMs)); } catch { /* ignore */ }
+  const hist = await PH.load([...keys], { network: true, maxAgeMs: 2 * 3600 * 1000 });
+  const fxSeries = PH.toSeries(hist['INR=X']) || getUsdInrRate();
+
+  let changed = 0;
+  const warnings = [];
+  rows.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach((row) => {
+    const held = heldByDate[row.date];
+    const withSeries = {};
+    ['mutualFunds', 'stocks', 'usStocks'].forEach((c) => {
+      withSeries[c] = held[c].map((x) => ({ key: x.key, qty: x.qty, series: x.histKey ? PH.toSeries(hist[x.histKey]) : null }));
+    });
+    const r = C.rebuildMarketClasses({ date: row.date, nowMs, held: withSeries, fx: fxSeries });
+
+    const next = { ...row };
+    const before = { mutualFunds: row.mutualFunds, stocks: row.stocks, usStocks: row.usStocks, netWorth: row.netWorth };
+    const settled = { ...(row.settled || {}) };
+    const changes = { ...(row.changes || {}) };
+    const closes = { ...((row.audit && row.audit.closes) || {}) };
+    const rowWarn = [];
+    const unverified = [];
+    ['mutualFunds', 'stocks', 'usStocks'].forEach((c) => {
+      // no usable price history for some holding of this class: leave the captured value and flags alone
+      if (r.missing[c].length > 0 && held[c].length > 0) { unverified.push(c); return; }
+      const captured = toNumber(row[c]);
+      const rebuilt = r.values[c];
+      if (captured > 0 && Math.abs(rebuilt - captured) / captured > 0.10) {
+        rowWarn.push(`${NWH_CLASS_LABELS[c]} differs by more than 10% from what was captured — kept the original`);
+        return;
+      }
+      next[c] = rebuilt;
+      changes[c] = r.changes[c];
+      settled[c] = r.settled[c];
+      closes[c] = r.asOf[c] || '';
+    });
+    // gold: the evening rate captured that day stands; it becomes final once the next day has begun
+    if (!(toNumber(row.gold) > 0) || settled.gold === undefined) settled.gold = toNumber(row.gold) > 0 ? !!row.settled?.gold : true;
+    if (!settled.gold && nowMs >= C.istMs(C.dayAfter(row.date), 12, 0)) settled.gold = true;
+
+    const otherAssets = toNumber(row.silver) + toNumber(row.crypto) + toNumber(row.fd) + toNumber(row.epf) + toNumber(row.ppf) + toNumber(row.bonds) + toNumber(row.bankSaving) + toNumber(row.others);
+    next.totalAssets = Number((toNumber(next.mutualFunds) + toNumber(next.stocks) + toNumber(next.usStocks) + toNumber(next.gold) + otherAssets).toFixed(2));
+    next.netWorth = Number((next.totalAssets - toNumber(row.totalLiabilities)).toFixed(2));
+    next.settled = settled;
+    next.changes = changes;
+    next.dayChange = Number(NWH_MARKET_CLASSES.reduce((sum, k) => sum + toNumber(changes[k]), 0).toFixed(2));
+    const marketValue = NWH_MARKET_CLASSES.reduce((sum, k) => sum + toNumber(next[k]), 0);
+    next.dayChangePct = marketValue - next.dayChange > 0 ? Number(((next.dayChange / (marketValue - next.dayChange)) * 100).toFixed(2)) : 0;
+    next.final = NWH_MARKET_CLASSES.every((k) => settled[k]) && rowWarn.length === 0;   // a flagged day is never called final
+    next.source = 'official-close';
+    next.audit = {
+      method: NWH_FINALIZE_METHOD, at: (row.audit && row.audit.at) || new Date().toISOString(), closes,
+      capturedBefore: (row.audit && row.audit.capturedBefore) || before,
+      ...(unverified.length ? { unverified } : {}),
+      ...(rowWarn.length ? { warnings: rowWarn } : {}),
+    };
+    if (rowWarn.length) warnings.push(`${row.date}: ${rowWarn.join('; ')}`);
+    if (JSON.stringify(next) !== JSON.stringify(row)) {
+      next.audit.at = new Date().toISOString();            // stamp only when something actually changed
+      const idx = state.netWorthHistory.findIndex((e) => e.id === row.id);
+      if (idx >= 0) { state.netWorthHistory[idx] = next; changed++; }
+    }
+  });
+
+  if (warnings.length) console.warn('[NetWorth] finalize warnings:', warnings);
+  if (changed > 0) {
+    persist();
+    if (activeFinanceTab === 'networthhistory') renderNetWorthHistory();
+    if (opts.toast !== false) toast(`✅ Net worth history: ${changed} day${changed > 1 ? 's' : ''} checked against official closing prices`);
+  }
+  return changed;
+}
+
+/** What a past or live record is still waiting for, in plain words. */
+function nwhWaitingFor(item) {
+  return NWH_MARKET_CLASSES.filter((c) => item.settled && item.settled[c] === false).map((c) => NWH_CLASS_DUE[c] || NWH_CLASS_LABELS[c]);
 }
 
 function downloadNetWorthHistoryCSV() {
@@ -9184,7 +9317,13 @@ function bindNetWorthHistoryEvents() {
   document.getElementById("nwhDownloadCsvBtn")?.addEventListener("click", downloadNetWorthHistoryCSV);
   document.getElementById("nwhDownloadCsvBtn2")?.addEventListener("click", downloadNetWorthHistoryCSV);
 
-  document.getElementById("nwhRefreshPricesBtn")?.addEventListener("click", () => refreshAllLivePrices(true));
+  document.getElementById("nwhRefreshPricesBtn")?.addEventListener("click", async () => {
+    await refreshAllLivePrices(true);
+    finalizeRecentNetWorthDays({ force: true });
+  });
+  // Also verify past days whenever the app is brought back to the foreground (throttled to every 20 min)
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(() => finalizeRecentNetWorthDays({ toast: false }), 4000); });
+  setInterval(() => { if (!document.hidden) finalizeRecentNetWorthDays({ toast: false }); }, 30 * 60 * 1000);
 
   document.getElementById("nwhClearAllBtn")?.addEventListener("click", clearAllNetWorthHistory);
   document.getElementById("nwhClearAllBtn2")?.addEventListener("click", clearAllNetWorthHistory);
