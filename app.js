@@ -9020,7 +9020,7 @@ function renderNetWorthHistory() {
               return `<div style="font-size:0.7rem;color:var(--muted);" title="Today's record is live. It is checked against the official closing prices and locked the next morning (mutual-fund NAVs are published overnight, the US market closes about 2 am IST).">🟡 Live — locks tomorrow morning</div>${warn}`;
             }
             if (item.audit && item.audit.warnings && item.audit.warnings.length) {
-              return `<div style="font-size:0.7rem;color:var(--negative,#dc2626);" title="${escapeHTML(item.audit.warnings.join('; '))}">⚠ Needs a look — a value differs a lot from the official close</div>`;
+              return `<div class="nwh-why" data-id="${escapeHTML(item.id)}" role="button" tabindex="0" style="font-size:0.7rem;color:var(--negative,#dc2626);cursor:pointer;text-decoration:underline;" title="Click to see which holding differs">⚠ Needs a look — click to see why</div>`;
             }
             if (item.final) {
               return `<div style="font-size:0.7rem;color:var(--positive,#16a34a);" title="${escapeHTML(closes ? 'Prices used (date of each official close): ' + closes : 'All prices were captured after their close.')}">✅ Final — official closing prices</div>${warn}`;
@@ -9067,22 +9067,28 @@ const NWH_FINALIZE_METHOD = 'official-close-v1';
 const NWH_CLASS_DUE = { mutualFunds: 'mutual-fund NAV (published the next morning)', stocks: 'Indian stock close', usStocks: 'US close (about 2 am IST)' };
 
 function heldAsOfForClose(date, st) {
+  // Mirrors the live totals exactly (calcStockTotalValue / captureCurrentNetWorthBreakdown):
+  // stocks per symbol|owner|demat, funds per fund|owner, and only groups with a positive quantity.
   const owned = (list) => (list || []).filter((t) => !dateOfTxn(t) || dateOfTxn(t) <= date);
-  const bySymbol = (list, isUS) => {
+  const stocksOf = (list, isUS) => {
     const groups = {};
     owned(list).forEach((t) => {
-      const sym = String(t.symbol || t.company || '').toUpperCase().replace(/\s*-EQ$/i, '').trim();
-      if (sym) (groups[sym] = groups[sym] || []).push(t);
+      if (!t.symbol && !t.company) return;
+      const key = `${(t.symbol || t.company || 'Unknown').toUpperCase()}|${t.owner || 'Me'}|${t.demat || ''}`;
+      (groups[key] = groups[key] || []).push(t);
     });
-    return Object.entries(groups).map(([sym, txns]) => ({ key: sym, qty: calcStockCostBasis(txns).netQty, histKey: isUS ? sym : advisorYahooTicker(sym) })).filter((g) => g.qty > 0);
+    return Object.entries(groups).map(([key, txns]) => {
+      const sym = String(txns[0].symbol || txns[0].company || '').toUpperCase().replace(/\s*-EQ$/i, '').trim();
+      return { key, name: txns[0].company || sym, qty: calcStockCostBasis(txns).netQty, histKey: isUS ? sym : advisorYahooTicker(sym), sym };
+    }).filter((g) => g.qty > 0);
   };
   const mfGroups = {};
-  owned(st.mutualFunds).forEach((t) => { const k = t.fundName || 'Unknown'; (mfGroups[k] = mfGroups[k] || []).push(t); });
-  const mutualFunds = Object.entries(mfGroups).map(([name, txns]) => {
+  owned(st.mutualFunds).forEach((t) => { const k = `${t.fundName || 'Unknown'}|${t.owner || 'Me'}`; (mfGroups[k] = mfGroups[k] || []).push(t); });
+  const mutualFunds = Object.entries(mfGroups).map(([key, txns]) => {
     const code = String(parseInt(txns.find((t) => t.schemeCode || t.amfiCode)?.schemeCode || txns.find((t) => t.amfiCode)?.amfiCode, 10) || '');
-    return { key: name, qty: Math.max(0, calcMfCostBasis(txns).netUnits), histKey: code ? `mf:${code}` : null };
+    return { key, name: txns[0].fundName || 'Unknown', qty: Math.max(0, calcMfCostBasis(txns).netUnits), histKey: code ? `mf:${code}` : null };
   }).filter((g) => g.qty > 0);
-  return { mutualFunds, stocks: bySymbol(st.stocks, false), usStocks: bySymbol(st.usstocks, true) };
+  return { mutualFunds, stocks: stocksOf(st.stocks, false), usStocks: stocksOf(st.usstocks, true) };
 }
 
 async function finalizeRecentNetWorthDays(opts = {}) {
@@ -9128,6 +9134,7 @@ async function finalizeRecentNetWorthDays(opts = {}) {
     const closes = { ...((row.audit && row.audit.closes) || {}) };
     const rowWarn = [];
     const unverified = [];
+    const warnDetail = [];
     ['mutualFunds', 'stocks', 'usStocks'].forEach((c) => {
       // no usable price history for some holding of this class: leave the captured value and flags alone
       if (r.missing[c].length > 0 && held[c].length > 0) { unverified.push(c); return; }
@@ -9135,6 +9142,17 @@ async function finalizeRecentNetWorthDays(opts = {}) {
       const rebuilt = r.values[c];
       if (captured > 0 && Math.abs(rebuilt - captured) / captured > 0.10) {
         rowWarn.push(`${NWH_CLASS_LABELS[c]} differs by more than 10% from what was captured — kept the original`);
+        const live = {};
+        if (c === 'stocks') collectNetStockHoldings(state.stocks, false).forEach((h) => { live[h.sym] = h.price; });
+        if (c === 'usStocks') collectNetStockHoldings(state.usstocks, true).forEach((h) => { live[h.sym] = h.price; });
+        const lines = withSeries[c].map((x, i) => {
+          const cl = C.closeOnOrBefore(x.series, row.date);
+          const meta = held[c][i];
+          const px = cl ? cl.value : null;
+          const appPx = c === 'mutualFunds' ? toNumber([...(state.mutualFunds || [])].reverse().find((t) => (t.fundName || 'Unknown') === meta.name && t.latestNav)?.latestNav) : live[meta.sym];
+          return { name: meta.name, qty: Math.round(x.qty * 1000) / 1000, closeDate: cl ? cl.date : '', close: px, appPrice: appPx || null, value: px ? Math.round(x.qty * px) : 0, histKey: meta.histKey };
+        }).sort((a, b) => b.value - a.value).slice(0, 6);
+        warnDetail.push({ cls: c, label: NWH_CLASS_LABELS[c], captured: Math.round(captured), rebuilt: Math.round(rebuilt), lines });
         return;
       }
       next[c] = rebuilt;
@@ -9160,7 +9178,7 @@ async function finalizeRecentNetWorthDays(opts = {}) {
       method: NWH_FINALIZE_METHOD, at: (row.audit && row.audit.at) || new Date().toISOString(), closes,
       capturedBefore: (row.audit && row.audit.capturedBefore) || before,
       ...(unverified.length ? { unverified } : {}),
-      ...(rowWarn.length ? { warnings: rowWarn } : {}),
+      ...(rowWarn.length ? { warnings: rowWarn, warnDetail } : {}),
     };
     if (rowWarn.length) warnings.push(`${row.date}: ${rowWarn.join('; ')}`);
     if (JSON.stringify(next) !== JSON.stringify(row)) {
@@ -9182,6 +9200,22 @@ async function finalizeRecentNetWorthDays(opts = {}) {
 /** What a past or live record is still waiting for, in plain words. */
 function nwhWaitingFor(item) {
   return NWH_MARKET_CLASSES.filter((c) => item.settled && item.settled[c] === false).map((c) => NWH_CLASS_DUE[c] || NWH_CLASS_LABELS[c]);
+}
+
+
+function showNetWorthWarning(id) {
+  const row = (state.netWorthHistory || []).find((e) => e.id === id);
+  const d = row && row.audit && row.audit.warnDetail;
+  if (!d || !d.length) { alert('No details are stored for this day.'); return; }
+  const f = (v) => '₹' + Math.round(toNumber(v)).toLocaleString('en-IN');
+  const text = [`Net worth for ${row.date}: something differs from the official closing prices.`, '']
+    .concat(d.flatMap((w) => [
+      `${w.label}: what was captured ${f(w.captured)} vs recomputed from official closes ${f(w.rebuilt)}.`,
+      ...w.lines.map((l) => `  • ${l.name}: ${l.qty} × ${l.close != null ? l.close : 'no price'}${l.closeDate ? ' (close of ' + l.closeDate + ')' : ''} = ${f(l.value)}${l.appPrice ? ` — the app currently shows ${l.appPrice}` : ''}`),
+      '',
+    ]))
+    .concat(['If a price or quantity above looks wrong (wrong ticker, missing scheme code, a split or a transfer between accounts), fix that holding; the day is re-checked automatically.']);
+  alert(text.join('\n'));
 }
 
 function downloadNetWorthHistoryCSV() {
@@ -9329,6 +9363,8 @@ function bindNetWorthHistoryEvents() {
   document.getElementById("nwhClearAllBtn2")?.addEventListener("click", clearAllNetWorthHistory);
 
   document.getElementById("nwhTableBody")?.addEventListener("click", (e) => {
+    const why = e.target.closest(".nwh-why");
+    if (why) { showNetWorthWarning(why.dataset.id); return; }
     const delBtn = e.target.closest(".delete-nwh-btn");
     if (delBtn && delBtn.dataset.id) {
       deleteNetWorthSnapshot(delBtn.dataset.id);
