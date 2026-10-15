@@ -462,7 +462,7 @@ runTest('resolveNseSymbol & parseMasterHoldingsWorkbook: resolves exact NSE tick
 
   const tril = res.stocks.find(s => s.company.includes('TRANS & RECTI'));
   assert.ok(tril, 'Transformers & Rectifiers should exist');
-  assert.strictEqual(tril.symbol, 'TRIL', 'ISIN INE763I01026 should resolve symbol to TRIL');
+  assert.strictEqual(tril.symbol, 'TARIL', 'ISIN INE763I01026 should resolve symbol to TARIL');
 
   const bajaj = res.stocks.find(s => s.company.includes('BAJAJ CONSUMER'));
   assert.ok(bajaj, 'Bajaj Consumer should exist');

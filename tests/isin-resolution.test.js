@@ -84,7 +84,7 @@ runTest('resolveNseSymbol resolves common stock ticker aliases', () => {
   assert.strictEqual(app.resolveNseSymbol('BHARTI', '', ''), 'BHARTIARTL');
   assert.strictEqual(app.resolveNseSymbol('GE', '', ''), 'GEVERNOVA');
   assert.strictEqual(app.resolveNseSymbol('R', '', ''), 'RRKABEL');
-  assert.strictEqual(app.resolveNseSymbol('TRANS', '', ''), 'TRIL');
+  assert.strictEqual(app.resolveNseSymbol('TRANS', '', ''), 'TARIL');
   assert.strictEqual(app.resolveNseSymbol('SBI', '', ''), 'SBIN');
   assert.strictEqual(app.resolveNseSymbol('BAJAJCORP', '', ''), 'BAJAJCON');
   assert.strictEqual(app.resolveNseSymbol('ICICIB22', '', ''), 'BHARAT22');
@@ -217,6 +217,7 @@ runTest('getIsinMapping resolves Gland Pharma (INE068V01023) and Shivalik Bimeta
 runTest('getExchangeTicker maps BHARAT22 to ICICIB22 for exchange quote fetching', () => {
   assert.strictEqual(app.getExchangeTicker('BHARAT22'), 'ICICIB22');
   assert.strictEqual(app.getExchangeTicker('NETFSILVER'), 'SILVERBEES');
+  assert.strictEqual(app.getExchangeTicker('TRIL'), 'TARIL', 'old TRIL rows are fetched under the real NSE symbol');
   assert.strictEqual(app.getExchangeTicker('BAJAJCORP'), 'BAJAJCON');
   assert.strictEqual(app.getExchangeTicker('GOLD1'), 'GOLDBEES');
   assert.strictEqual(app.getExchangeTicker('RELIANCE'), 'RELIANCE');

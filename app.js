@@ -2781,7 +2781,7 @@ const MASTER_ISIN_MAP = {
   "INE0CLI01024": { symbol: "RATEGAIN", company: "RateGain Travel Technologies Ltd", category: "Stock" },
   "INE101D01020": { symbol: "GRANULES", company: "Granules India Ltd", category: "Stock" },
   "INE034A01011": { symbol: "ARVIND", company: "Arvind Ltd", category: "Stock" },
-  "INE763I01026": { symbol: "TRIL", company: "Transformers & Rectifiers India Ltd", category: "Stock" },
+  "INE763I01026": { symbol: "TARIL", company: "Transformers & Rectifiers India Ltd", category: "Stock" },
   "INE068V01023": { symbol: "GLAND", company: "Gland Pharma Ltd", category: "Stock" },
   "INE386D01027": { symbol: "SBCL", company: "Shivalik Bimetal Controls Ltd", category: "Stock" },
 
@@ -2897,7 +2897,8 @@ const STOCK_EXCHANGE_TICKER_MAP = {
   "BHARAT22": "ICICIB22",
   "NETFSILVER": "SILVERBEES",
   "BAJAJCORP": "BAJAJCON",
-  "GOLD1": "GOLDBEES"
+  "GOLD1": "GOLDBEES",
+  "TRIL": "TARIL"   // Transformers & Rectifiers trades as TARIL on NSE; rows imported earlier still say TRIL
 };
 
 function getExchangeTicker(symbol) {
@@ -3081,7 +3082,7 @@ function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
       if (sym === "NETFSILVER") return "SILVERBEES";
       if (sym === "GE") return "GEVERNOVA";
       if (sym === "R") return "RRKABEL";
-      if (sym === "TRANS") return "TRIL";
+      if (sym === "TRANS" || sym === "TRIL") return "TARIL";
       if (sym === "SBI") return "SBIN";
       if (sym === "BAJAJCORP") return "BAJAJCON";
       if (sym === "ICICIB22") return "BHARAT22";
@@ -3111,7 +3112,7 @@ function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
   if (/MULTI COMMODITY|MCX/i.test(nameUpper)) return "MCX";
   if (/R R KABEL|RR KABEL/i.test(nameUpper)) return "RRKABEL";
   if (/RATEGAIN/i.test(nameUpper)) return "RATEGAIN";
-  if (/TRANS & RECTI|TRANSFORMERS & RECTIFIERS/i.test(nameUpper)) return "TRIL";
+  if (/TRANS & RECTI|TRANSFORMERS & RECTIFIERS/i.test(nameUpper)) return "TARIL";
   if (/BHARAT 22|BHARAT22/i.test(nameUpper)) return "BHARAT22";
   if (/NASDAQ 100|MON100/i.test(nameUpper)) return "MON100";
   if (/SMALLCAP 250|HDFCSML250/i.test(nameUpper)) return "HDFCSML250";
@@ -5994,7 +5995,7 @@ const defaultStockHoldings = [
   { id: "stk-gw-7", owner: "Wife", symbol: "ARVIND", company: "Arvind Ltd", exchange: "NSE", category: "Stock", quantity: 26, avgPrice: 510.37, currentPrice: 566.85, invested: 13269.62, currentValue: 14738.10, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
   { id: "stk-gw-8", owner: "Wife", symbol: "BAJAJCORP", company: "Bajaj Consumer Care Ltd", exchange: "NSE", category: "Stock", quantity: 20, avgPrice: 546.95, currentPrice: 538.25, invested: 10939.00, currentValue: 10765.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
   { id: "stk-gw-9", owner: "Wife", symbol: "HONASA", company: "Honasa Consumer Ltd (Mamaearth)", exchange: "NSE", category: "Stock", quantity: 36, avgPrice: 362.69, currentPrice: 467.40, invested: 13056.84, currentValue: 16826.40, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-10", owner: "Wife", symbol: "TRIL", company: "Transformers & Rectifiers India Ltd", exchange: "NSE", category: "Stock", quantity: 14, avgPrice: 534.42, currentPrice: 292.45, invested: 7481.88, currentValue: 4094.30, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
+  { id: "stk-gw-10", owner: "Wife", symbol: "TARIL", company: "Transformers & Rectifiers India Ltd", exchange: "NSE", category: "Stock", quantity: 14, avgPrice: 534.42, currentPrice: 292.45, invested: 7481.88, currentValue: 4094.30, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
   { id: "stk-gw-11", owner: "Wife", symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", exchange: "NSE", category: "ETF", quantity: 490, avgPrice: 263.68, currentPrice: 278.32, invested: 129203.20, currentValue: 136376.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
   { id: "stk-gw-12", owner: "Wife", symbol: "MID150BEES", company: "Nippon India ETF Midcap 150 BeES", exchange: "NSE", category: "ETF", quantity: 18, avgPrice: 206.60, currentPrice: 242.77, invested: 3718.80, currentValue: 4369.86, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
   { id: "stk-gw-13", owner: "Wife", symbol: "SILVERBEES", company: "Nippon India ETF Silver BeES", exchange: "NSE", category: "ETF", quantity: 50, avgPrice: 240.24, currentPrice: 225.76, invested: 12012.00, currentValue: 11288.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Silver ETF" },
