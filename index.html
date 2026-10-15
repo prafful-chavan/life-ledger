@@ -29,7 +29,7 @@
     <script src="ui-polish.js?v=1.0.3" defer></script>
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.69"></script>
+    <script defer src="app.js?v=1.0.70"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.3"></script>
     <script defer src="auth.js?v=1.0.44"></script>
@@ -39,11 +39,13 @@
     <script defer src="advisor-engine.js?v=2.0.2"></script>
     <script defer src="advisor-ai.js?v=2.0.0"></script>
     <script defer src="advisor-context.js?v=1.0.3"></script>
-    <script defer src="knowledge.js?v=1.0.1"></script>
+    <script defer src="knowledge.js?v=1.0.2"></script>
     <script defer src="knowledge-modules.js?v=1.0.0"></script>
     <script defer src="advisor.js?v=2.0.2"></script>
     <script defer src="spending-core.js?v=1.0.3"></script>
     <script defer src="spending-import.js?v=1.0.12"></script>
+    <script defer src="fitness-core.js?v=1.0.0"></script>
+    <script defer src="fitness-import.js?v=1.0.0"></script>
   </head>
   <body class="auth-locked">
     <div id="appLoading" class="app-loading hidden">
@@ -1660,6 +1662,31 @@
               <button class="secondary-button" type="button" id="btnWorkoutTemplates">Templates</button>
               <button class="primary-button" type="button" id="btnOpenActivityModal">+ Log Activity</button>
             </div>
+          </div>
+
+          <!-- ── Apple Health automatic import ── -->
+          <div class="card" id="fitnessImportCard" style="margin-bottom: 20px; padding: 14px 16px;">
+            <div style="display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+              <div>
+                <strong>🍎 Apple Health</strong>
+                <p class="muted-small" id="fitnessSyncStatus" style="margin: 4px 0 0;">Not checked yet.</p>
+              </div>
+              <button class="secondary-button" type="button" id="fitnessSyncNow">⟳ Import now</button>
+            </div>
+            <details style="margin-top: 10px;">
+              <summary style="cursor: pointer;">Set up automatic import (iPhone Shortcut, free)</summary>
+              <ol class="muted-small" style="margin: 10px 0 0 18px; line-height: 1.7;">
+                <li>In Apps Script run <code>fitnessSetupKey</code> once and copy the key it prints (keep it private).</li>
+                <li>On your iPhone open <b>Shortcuts</b> → <b>Automation</b> → <b>+</b> → <b>Time of Day</b> (e.g. 10:00 PM, daily) → <b>Run Immediately</b>.</li>
+                <li>Add <b>Find Health Samples</b> four times, each filtered to <b>Start Date is Today</b>, then <b>Calculate Statistics → Sum</b> for: <b>Steps</b>, <b>Walking + Running Distance</b> (km), <b>Cycling Distance</b> (km), <b>Active Energy</b> (kcal).</li>
+                <li>Add <b>Format Date</b> (current date, custom format <code>yyyy-MM-dd</code>).</li>
+                <li>Add <b>Get Contents of URL</b>: URL = the address below, Method <b>POST</b>, Request Body <b>JSON</b> with the fields <code>op</code> = <code>fitnessIngest</code>, <code>key</code> = your key, <code>date</code>, <code>steps</code>, <code>walkKm</code>, <code>cycleKm</code>, <code>activeKcal</code> (use the results from the steps above).</li>
+                <li>Allow Health access when iOS asks. Tap <b>Run</b> once to test, then press <b>Import now</b> here.</li>
+              </ol>
+              <p class="muted-small" style="margin: 10px 0 4px;">Upload address:</p>
+              <code id="fitnessUploadUrl" style="display: block; word-break: break-all; font-size: 12px;"></code>
+              <button class="secondary-button" type="button" id="fitnessCopyUrl" style="margin-top: 8px;">Copy address</button>
+            </details>
           </div>
 
           <!-- ── Quick Log Action Strip (iOS Mobile & Desktop Touch Friendly) ── -->

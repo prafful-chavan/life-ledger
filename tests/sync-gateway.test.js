@@ -35,6 +35,7 @@ function makeGatewayRuntime() {
     createFile: (name, content) => mkFile(name, content),
   };
   const locks = { n: 0 };
+  const props = new Map();
   const ctx = {
     console, JSON, Date, Math, String, Number, Array, Object,
     MimeType: { PLAIN_TEXT: "text/plain" },
@@ -44,7 +45,10 @@ function makeGatewayRuntime() {
       getFileById: (id) => fileApi(files.get(id)),
     },
     LockService: { getScriptLock: () => { locks.n++; return { waitLock() {}, releaseLock() {} }; } },
+    Logger: { log() {} },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props.get(k) || null, setProperty: (k, v) => props.set(k, v) }) },
     Utilities: {
+      getUuid: () => require("crypto").randomUUID(),
       DigestAlgorithm: { SHA_256: "sha256" },
       computeDigest: (_a, s) => [...require("crypto").createHash("sha256").update(s).digest()].map((b) => (b > 127 ? b - 256 : b)),
       formatDate: (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, ""),
@@ -54,8 +58,10 @@ function makeGatewayRuntime() {
   vm.createContext(ctx);
   vm.runInContext("function createJsonResponse(d){return ContentService.createTextOutput(JSON.stringify(d)).setMimeType(ContentService.MimeType.JSON);}", ctx);
   vm.runInContext(read("sync-gateway.gs"), ctx);
+  vm.runInContext(read("fitness-ingest.gs"), ctx);
   return {
-    files, locks,
+    files, locks, props,
+    run: (code) => vm.runInContext(code, ctx),
     call: (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).t),
     meta: () => JSON.parse(vm.runInContext("JSON.stringify(syncMeta_())", ctx)),
   };
@@ -190,6 +196,44 @@ function makeDevice(gw, name) {
   gw.call({ op: "push", token: anyToken, baseRev: 0, vault: { ciphertext: "x" } });
   gw.call({ op: "snapshotNow", token: anyToken });
   assert.strictEqual(gw.locks.n, before + 2, "push and snapshotNow still take the lock");
+
+  // ── Apple Health upload (iPhone Shortcut) ──
+  {
+    const key = gw.run("fitnessSetupKey()");
+    assert.ok(key.length >= 40, "a long random key is generated");
+    assert.strictEqual(gw.run("fitnessSetupKey()"), key, "running setup again keeps the same key");
+    const day = { date: "2026-10-15", steps: "8,234", walkKm: 5.9, cycleKm: 12.3, activeKcal: 540 };
+    assert.strictEqual(gw.call({ op: "fitnessIngest", key: "wrong", ...day }).error, "unauthorized");
+    assert.strictEqual(gw.call({ op: "fitnessIngest", ...day }).error, "unauthorized", "no key, no upload");
+    const ok = gw.call({ op: "fitnessIngest", key, ...day });
+    assert.ok(ok.ok && ok.saved === 1, JSON.stringify(ok));
+    // same day again replaces it; another day adds
+    gw.call({ op: "fitnessIngest", key, ...day, steps: 9000 });
+    gw.call({ op: "fitnessIngest", key, days: [{ date: "2026-10-14", steps: 4000 }, { date: "bad", steps: 1 }, { date: "2026-10-13" }] });
+    // reading needs the vault token, never the upload key
+    assert.strictEqual(gw.call({ op: "fitnessPull", token: "nope" }).ok, false, "wrong token cannot read");
+    assert.strictEqual(gw.call({ op: "fitnessPull", key }).ok, false, "the upload key cannot read");
+    // junk is cleaned, not stored
+    const junk = gw.call({ op: "fitnessIngest", key, date: "2026-10-12", steps: 99999999, walkKm: -3, workouts: "x" });
+    assert.strictEqual(junk.ok, false, "implausible numbers are rejected");
+    const stored = JSON.parse([...gw.files.values()].find((f) => f.name === "fitness.json").content);
+    assert.deepStrictEqual(Object.keys(stored.days).sort(), ["2026-10-14", "2026-10-15"]);
+    assert.strictEqual(stored.days["2026-10-15"].steps, 9000);
+    assert.strictEqual(stored.days["2026-10-15"].cycleKm, 12.3);
+    // A device that owns the vault (its token is on file) can read the days back
+    const owner = makeGatewayRuntime();
+    const tok = "t".repeat(64);
+    assert.ok(owner.call({ op: "push", token: tok, baseRev: 0, vault: { ciphertext: "c" } }).ok);
+    const k2 = owner.run("fitnessSetupKey()");
+    owner.call({ op: "fitnessIngest", key: k2, days: [{ date: "2026-10-14", steps: 4000 }, { date: "2026-10-15", steps: 9000, workouts: [{ type: "Cycling", minutes: 45, km: 12.3, kcal: 300 }] }] });
+    const back = owner.call({ op: "fitnessPull", token: tok });
+    assert.strictEqual(back.days.length, 2);
+    assert.strictEqual(back.days[1].workouts[0].type, "Cycling");
+    assert.strictEqual(owner.call({ op: "fitnessPull", token: tok, since: "2026-10-15" }).days.length, 1);
+    const before = owner.locks.n;
+    owner.call({ op: "fitnessPull", token: tok });
+    assert.strictEqual(owner.locks.n, before, "reading takes no lock");
+  }
 
   console.log("sync-gateway tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });
