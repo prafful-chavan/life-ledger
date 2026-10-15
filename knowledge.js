@@ -16,7 +16,7 @@
   const MAX_GROUPS = 200;
   const MAX_CHARS = 24000;
   const DATE_FIELDS = ["date", "purchaseDate", "at", "timestamp", "createdAt", "startDate", "dueDate", "day"];
-  const HIDDEN_KEYS = new Set(["spendingImport", "fitnessImport"]);           // internal bookkeeping, not knowledge
+  const HIDDEN_KEYS = new Set(["spendingImport"]);           // internal bookkeeping, not knowledge
   const DESCRIPTIONS = {
     expenses: "Every expense (Spending-app imports and manual): date, category, paidBy (Me/Wife/Both), amount, note.",
     income: "Salary and other income entries per person and month.",

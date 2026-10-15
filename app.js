@@ -36,7 +36,6 @@ const defaultData = {
   mfMonthlyTarget: { me: 100000, wife: 100000 },
   interviewTrackerEntries: [],
   spendingImport: { ids: [], file: "", importedAt: null },
-  fitnessImport: { ids: [], importedAt: null },
   advisor: { profile: {}, review: null },
   goldPrice: { price24k: 14955.27, price22k: 13709.00, prevClose24k: 14955.27, prevClose22k: 13709.00, lastFetched: null, source: "reference" },
   netWorthHistory: [],
@@ -1074,7 +1073,6 @@ function normalizeData(data) {
     spendingImport: data.spendingImport && Array.isArray(data.spendingImport.ids)
       ? data.spendingImport
       : { ids: [], file: "", importedAt: null },
-    fitnessImport: data.fitnessImport && Array.isArray(data.fitnessImport.ids) ? data.fitnessImport : { ids: [], importedAt: null },
     netWorthHistory: ensureIds(data.netWorthHistory || [], "nwh").map(normalizeNetWorthHistoryEntry),
   };
 }
