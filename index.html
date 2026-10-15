@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="Life Ledger" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Prafful's & Archana Life Ledger</title>
-    <link rel="stylesheet" href="styles.css?v=1.0.17" />
+    <link rel="stylesheet" href="styles.css?v=1.0.18" />
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -27,17 +27,17 @@
     <script src="ui-polish.js?v=1.0.3" defer></script>
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.56"></script>
+    <script defer src="app.js?v=1.0.57"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.2"></script>
     <script defer src="auth.js?v=1.0.44"></script>
     <script defer src="sync-ui.js?v=1.0.0"></script>
-    <script defer src="advisor-engine.js?v=1.0.0"></script>
-    <script defer src="advisor-ai.js?v=1.0.0"></script>
-    <script defer src="advisor-context.js?v=1.0.0"></script>
+    <script defer src="advisor-engine.js?v=2.0.1"></script>
+    <script defer src="advisor-ai.js?v=2.0.0"></script>
+    <script defer src="advisor-context.js?v=1.0.1"></script>
     <script defer src="knowledge.js?v=1.0.0"></script>
     <script defer src="knowledge-modules.js?v=1.0.0"></script>
-    <script defer src="advisor.js?v=1.0.4"></script>
+    <script defer src="advisor.js?v=2.0.1"></script>
     <script defer src="spending-core.js?v=1.0.3"></script>
     <script defer src="spending-import.js?v=1.0.11"></script>
   </head>
@@ -137,6 +137,10 @@
             <span aria-hidden="true">₹</span>
             <span>Finance</span>
           </button>
+          <button class="nav-item" type="button" data-view="advisor">
+            <span aria-hidden="true">🧭</span>
+            <span>Wealth Advisor</span>
+          </button>
           <button class="nav-item" type="button" data-view="career">
             <span aria-hidden="true">↗</span>
             <span>Career</span>
@@ -206,43 +210,15 @@
             </select>
           </div>
 
-          <!-- Wealth Advisor (live) -->
-          <section class="panel advisor-panel" id="advisorPanel" hidden aria-live="polite">
-            <div class="advisor-top">
-              <div id="advisorScoreWrap"></div>
-              <div class="advisor-titles">
-                <h3>🧭 Wealth Advisor <span class="advisor-live">● live</span></h3>
-                <p class="advisor-meta" id="advisorMeta"></p>
-                <p class="advisor-headline" id="advisorHeadline"></p>
-              </div>
-              <div class="advisor-actions">
-                <button class="secondary-button" type="button" id="advisorReviewBtn">✨ AI review</button>
-                <button class="secondary-button" type="button" id="advisorRefreshBtn" title="Re-run the analysis now">↻</button>
-                <button class="secondary-button" type="button" id="advisorProfileBtn" title="Your goals and risk profile">⚙ Profile</button>
-              </div>
+          <!-- Wealth Advisor (summary card; the full page is the "Wealth Advisor" view) -->
+          <section class="panel adv-card" id="advisorCard" hidden>
+            <div id="advCardScore"></div>
+            <div class="adv-card-text">
+              <h3>🧭 Wealth Advisor <span class="adv-live">● live</span></h3>
+              <p id="advCardSummary"></p>
+              <ul id="advCardMoves"></ul>
             </div>
-            <form id="advisorProfile" class="advisor-profile" hidden>
-              <label>Risk appetite
-                <select id="advRisk"><option value="conservative">Conservative</option><option value="moderate">Moderate</option><option value="moderate-aggressive">Moderate-aggressive</option><option value="aggressive">Aggressive</option></select>
-              </label>
-              <label>Horizon (years)<input id="advHorizon" type="number" min="1" max="60" step="1" /></label>
-              <label>Target equity %<input id="advTEquity" type="number" min="0" max="100" step="1" /></label>
-              <label>Target gold %<input id="advTGold" type="number" min="0" max="100" step="1" /></label>
-              <label>Target debt %<input id="advTDebt" type="number" min="0" max="100" step="1" /></label>
-              <label>Target cash %<input id="advTCash" type="number" min="0" max="100" step="1" /></label>
-              <label>Monthly investable (₹)<input id="advInvestable" type="number" min="0" step="1000" /></label>
-              <label>Monthly SIP target (₹, blank = from MF targets)<input id="advSip" type="number" min="0" step="1000" /></label>
-              <label>Emergency fund (months)<input id="advEmergency" type="number" min="1" max="24" step="1" /></label>
-              <label class="advisor-check"><input id="advAutoReview" type="checkbox" /> Refresh the AI review automatically when things change</label>
-              <div class="advisor-profile-actions">
-                <button class="primary-button" type="submit">Save profile</button>
-                <button class="secondary-button" type="button" id="advisorProfileCancel">Cancel</button>
-                <span id="advProfileMsg" class="muted-small"></span>
-              </div>
-            </form>
-            <div id="advisorBody"></div>
-            <p class="advisor-status" id="advisorStatus"></p>
-            <p class="advisor-disclaimer" id="advisorDisclaimer"></p>
+            <button class="primary-button" type="button" id="advOpenBtn">Open full advisor →</button>
           </section>
 
           <!-- AI Insights Banner -->
@@ -1142,6 +1118,86 @@
                 </table>
               </div>
             </section>
+          </div>
+        </section>
+
+        <section class="view" id="advisor" hidden aria-labelledby="advisorTitle">
+          <div class="adv">
+            <header class="panel adv-hero">
+              <div id="advScore"></div>
+              <div class="adv-hero-text">
+                <h2 id="advisorTitle">Your Wealth Advisor</h2>
+                <p class="adv-summary" id="advSummary">Looking at your money…</p>
+                <p class="adv-meta" id="advMeta"></p>
+              </div>
+              <div class="adv-hero-actions">
+                <button class="primary-button" type="button" id="advisorReviewBtn">✨ Get AI advice</button>
+                <button class="secondary-button" type="button" id="advisorRefreshBtn" title="Look at everything again">↻ Refresh</button>
+                <button class="secondary-button" type="button" id="advisorProfileBtn">⚙ About me & my goals</button>
+              </div>
+            </header>
+
+            <form class="panel adv-profile" id="advisorProfile" hidden>
+              <h3>About you</h3>
+              <p class="adv-help">This helps the advisor judge your money against <em>your</em> plan, not a generic one.</p>
+              <fieldset class="adv-risk">
+                <legend>How do you feel about ups and downs in your investments?</legend>
+                <label><input type="radio" name="advRisk" value="conservative" /> <strong>Safety first</strong><small>I want steady growth, even if it's slower.</small></label>
+                <label><input type="radio" name="advRisk" value="moderate" /> <strong>Balanced</strong><small>Some ups and downs are fine.</small></label>
+                <label><input type="radio" name="advRisk" value="moderate-aggressive" /> <strong>Growth</strong><small>I can wait out falls for better long-term growth.</small></label>
+                <label><input type="radio" name="advRisk" value="aggressive" /> <strong>Maximum growth</strong><small>I'm comfortable with big swings.</small></label>
+              </fieldset>
+              <div class="adv-fields">
+                <label>How many years can you leave this money invested?<input id="advHorizon" type="number" min="1" max="60" step="1" /></label>
+                <label>How much can you invest each month? (₹)<input id="advInvestable" type="number" min="0" step="1000" /></label>
+                <label>Your monthly SIP goal (₹) <small>leave empty to use your fund targets</small><input id="advSip" type="number" min="0" step="1000" /></label>
+                <label>Emergency cushion you want (months of spending)<input id="advEmergency" type="number" min="1" max="24" step="1" /></label>
+              </div>
+              <details class="adv-fine">
+                <summary>Fine-tune my ideal mix (optional)</summary>
+                <div class="adv-fields">
+                  <label>Shares & equity funds %<input id="advTEquity" type="number" min="0" max="100" step="1" /></label>
+                  <label>Gold %<input id="advTGold" type="number" min="0" max="100" step="1" /></label>
+                  <label>Safe money (FD, PPF, EPF, bonds, debt funds) %<input id="advTDebt" type="number" min="0" max="100" step="1" /></label>
+                  <label>Cash %<input id="advTCash" type="number" min="0" max="100" step="1" /></label>
+                </div>
+              </details>
+              <label class="adv-check"><input id="advAutoReview" type="checkbox" /> Update the AI advice automatically when things change</label>
+              <div class="adv-form-actions">
+                <button class="primary-button" type="submit">Save</button>
+                <button class="secondary-button" type="button" id="advisorProfileCancel">Cancel</button>
+                <span id="advProfileMsg" class="adv-help"></span>
+              </div>
+            </form>
+
+            <section class="panel">
+              <h3>How healthy is your money?</h3>
+              <div id="advPillars" class="adv-pillars"></div>
+            </section>
+
+            <section class="panel">
+              <h3>What to do next</h3>
+              <div id="advMoves"></div>
+            </section>
+
+            <div class="adv-two">
+              <section class="panel"><h3>👍 What's going well</h3><ul class="adv-list good" id="advGood"></ul></section>
+              <section class="panel"><h3>⚠️ What to watch</h3><ul class="adv-list watch" id="advWatch"></ul></section>
+            </div>
+
+            <section class="panel">
+              <h3>How is each investment doing?</h3>
+              <div class="adv-tabs" id="advTabs" role="tablist"></div>
+              <div id="advGroup"></div>
+            </section>
+
+            <section class="panel">
+              <h3>Ask Hey Prafful about your money</h3>
+              <div class="adv-ask" id="advAsk"></div>
+            </section>
+
+            <p class="adv-status" id="advisorStatus"></p>
+            <p class="adv-disclaimer" id="advisorDisclaimer"></p>
           </div>
         </section>
 

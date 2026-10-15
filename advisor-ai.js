@@ -10,30 +10,35 @@
   const CONF = ["low", "medium", "high"];
   const DISCLAIMER = "Educational analysis from your own data and public prices, not SEBI-registered investment advice. Markets can fall; check tax impact and your circumstances (or ask a CA/advisor) before acting.";
 
-  const SYSTEM_PROMPT = `You are the household's in-house analyst, combining three roles: a chartered accountant (tax-aware, cash-flow disciplined), an investment banker (valuation-sceptical, risk-first) and a portfolio manager (asset allocation, rebalancing, position sizing). You serve one Indian family building long-term, multi-generational wealth. Amounts are in INR.
+  const SYSTEM_PROMPT = `You are the household's personal wealth advisor, combining a chartered accountant (tax-aware, cash-flow disciplined), an investment banker (sceptical, risk-first) and a portfolio manager (spread, balance, position size). You advise one Indian family building long-term wealth. Amounts are in INR.
+
+WRITE FOR A BUSY NON-EXPERT
+- Short sentences, everyday words. If you must use a finance term, explain it in a few words.
+- Say "the market" instead of "benchmark", "yearly growth" instead of XIRR, "fall from its high" instead of drawdown, "balance" instead of rebalance, "very small investments" instead of dust.
+- Do not quote the health score number; the app already shows it. Do not repeat the same point in several places.
 
 HARD RULES
 1. Use ONLY the numbers in the supplied JSON. Never invent prices, returns, valuations, earnings, news, ratings or price targets. If something is not in the data, say it is unknown.
-2. Every action must cite one or more signal ids from "signals". Do not create actions that have no matching signal. Prioritise severity act, then watch, then info.
-3. Be concrete: name the holding, quote the supplied figures, and say what would change your view.
-4. Prefer disciplined long-term behaviour: SIP consistency, rebalancing with new money, staggered (tranche) buying, not averaging down on broken businesses, not chasing momentum, building the emergency fund and clearing expensive debt before adding risk.
+2. Every move must cite one or more signal ids from "signals". Do not create moves without a matching signal. Order by importance: urgent first.
+3. Be concrete: name the holding, use the supplied figures, say what would change your view.
+4. Prefer calm, long-term habits: regular SIPs, balancing with new money, buying a little at a time, not adding to a broken business just because it is cheaper, not chasing what is hot, building the emergency fund and clearing expensive loans before adding risk.
 5. Never recommend leverage, derivatives, penny stocks, intraday trading, crypto speculation or guaranteed returns. Do not predict the market.
-6. Tax facts (verify with a CA; rules change): listed equity shares and equity mutual funds — STCG 20% if sold within 12 months, LTCG 12.5% on gains above ₹1.25 lakh a year. Other assets follow different rules. Mention tax impact qualitatively when suggesting a sale; do not compute tax amounts.
-7. Treat all signals as inputs to a decision the human makes. Use wording like "consider", "review", "if the thesis still holds".
-8. Keep it short and plain. No hype.
+6. Tax (verify with a CA; rules change): listed shares and equity funds — 20% tax on gains if sold within 12 months, 12.5% on gains above ₹1.25 lakh a year after that. Mention tax in words when suggesting a sale; do not compute tax amounts.
+7. These are suggestions for a human to decide: use "consider", "look at", "if the reason you bought it still holds".
 
-Return ONLY a JSON object with this shape:
+Return ONLY a JSON object:
 {
-  "headline": "one sentence on the overall position",
-  "healthComment": "two sentences interpreting healthScore",
-  "actions": [
-    { "priority": 1, "signalIds": ["id from signals"], "action": "ADD|HOLD|REVIEW|TRIM|REBALANCE|PREPAY|BUILD", "asset": "holding or class", "summary": "one-line instruction", "rationale": "2-3 sentences using the supplied numbers", "risk": "one sentence", "confidence": "low|medium|high" }
+  "summary": "2-3 simple sentences on where the family stands",
+  "good": ["up to 4 short things that are going well"],
+  "watchOut": ["up to 4 short things to watch"],
+  "moves": [
+    { "priority": 1, "signalIds": ["id from signals"], "action": "ADD|HOLD|REVIEW|TRIM|REBALANCE|PREPAY|BUILD", "title": "plain headline", "whatToDo": "one clear step", "why": "2 simple sentences using the supplied numbers", "risk": "one sentence", "confidence": "low|medium|high" }
   ],
-  "watchlist": ["short things to monitor"],
-  "nextMonthPlan": ["3-5 concrete steps for the next month, e.g. SIP amounts, where new money should go"],
-  "taxNote": "one sentence of tax-aware caution relevant to the actions"
+  "perHolding": [ { "key": "holding key exactly as given", "comment": "one friendly sentence on how it is doing and what to do" } ],
+  "nextMonthPlan": ["3-5 concrete steps for next month"],
+  "taxNote": "one sentence of tax-aware caution relevant to the moves"
 }
-Give at most 8 actions, ordered by priority.`;
+Give at most 6 moves. Give perHolding notes for the 10 largest holdings and for any that are falling behind or need attention.`;
 
   const trunc = (s, n) => String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, n);
 
@@ -44,8 +49,11 @@ Give at most 8 actions, ordered by priority.`;
       asOf: result.asOf,
       healthScore: result.score,
       portfolio: result.metrics,
-      holdings: top,
+      pillars: (result.pillars || []).map((p) => ({ id: p.id, label: p.label, score: p.score, note: p.line })),
+      strengths: result.strengths || [],
+      holdings: top.map((h) => ({ ...h, verdict: h.verdict ? { status: h.verdict.label, headline: h.verdict.headline, suggestedMove: h.verdict.moveLabel } : undefined })),
       moreHoldings: Math.max(0, (result.holdings || []).length - top.length),
+      planSetByUser: Boolean(result.profileSet),
       cashFlow: input.cash,
       liabilities: input.liabilities,
       goals: input.goals,
@@ -62,38 +70,46 @@ Give at most 8 actions, ordered by priority.`;
   function validateReview(raw, result) {
     if (!raw || typeof raw !== "object") throw new Error("The AI answer was not a JSON object.");
     const byId = new Map((result.signals || []).map((s) => [s.id, s]));
+    const byKey = new Map((result.holdings || []).map((h) => [h.key, h]));
     const dropped = [];
-    const actions = [];
-    (Array.isArray(raw.actions) ? raw.actions : []).forEach((a, i) => {
+    const moves = [];
+    const rawMoves = Array.isArray(raw.moves) ? raw.moves : Array.isArray(raw.actions) ? raw.actions : [];
+    rawMoves.forEach((a, i) => {
       const ids = (Array.isArray(a && a.signalIds) ? a.signalIds : []).filter((id) => byId.has(id));
       const action = String((a && a.action) || "").toUpperCase();
       if (!ids.length) { dropped.push({ index: i, reason: "no valid signal id" }); return; }
       if (!ACTIONS.includes(action)) { dropped.push({ index: i, reason: "unknown action" }); return; }
       const primary = byId.get(ids[0]);
-      actions.push({
-        priority: Number.isFinite(Number(a.priority)) ? Math.max(1, Math.min(9, Math.round(Number(a.priority)))) : actions.length + 1,
+      moves.push({
+        priority: Number.isFinite(Number(a.priority)) ? Math.max(1, Math.min(9, Math.round(Number(a.priority)))) : moves.length + 1,
         signalIds: ids.slice(0, 4),
         action,
-        asset: trunc(a.asset || primary.assetKey || primary.title, 80),
-        summary: trunc(a.summary || primary.title, 200),
-        rationale: trunc(a.rationale, 600),
+        actionLabel: primary.actionLabel || action,
+        title: trunc(a.title || a.summary || primary.title, 160),
+        whatToDo: trunc(a.whatToDo || a.summary, 260),
+        why: trunc(a.why || a.rationale, 480),
         risk: trunc(a.risk, 240),
         confidence: CONF.includes(String(a.confidence).toLowerCase()) ? String(a.confidence).toLowerCase() : primary.confidence || "medium",
         severity: primary.severity,
         evidence: ids.slice(0, 4).flatMap((id) => byId.get(id).why || []).slice(0, 6), // numbers come from the engine, not the model
       });
     });
-    actions.sort((x, y) => x.priority - y.priority);
-    if (!actions.length && !(raw.headline || raw.nextMonthPlan)) throw new Error("The AI answer had nothing usable.");
+    moves.sort((x, y) => x.priority - y.priority);
+    const holdingNotes = {};
+    (Array.isArray(raw.perHolding) ? raw.perHolding : []).forEach((n) => {
+      if (n && byKey.has(n.key) && n.comment) holdingNotes[n.key] = trunc(n.comment, 280);
+    });
+    if (!moves.length && !(raw.summary || raw.headline || raw.nextMonthPlan)) throw new Error("The AI answer had nothing usable.");
     const list = (v, n, len) => (Array.isArray(v) ? v : []).slice(0, n).map((x) => trunc(x, len)).filter(Boolean);
     return {
       ok: true,
       dropped,
       review: {
-        headline: trunc(raw.headline, 240),
-        healthComment: trunc(raw.healthComment, 360),
-        actions: actions.slice(0, 8),
-        watchlist: list(raw.watchlist, 6, 200),
+        summary: trunc(raw.summary || raw.headline, 520),
+        good: list(raw.good, 4, 200),
+        watchOut: list(raw.watchOut, 4, 200),
+        moves: moves.slice(0, 6),
+        holdingNotes,
         nextMonthPlan: list(raw.nextMonthPlan, 6, 240),
         taxNote: trunc(raw.taxNote, 300),
         disclaimer: DISCLAIMER,

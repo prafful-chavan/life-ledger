@@ -151,9 +151,12 @@
     }
   }
 
+  // Well-known broad ETFs (their ticker, not their name, is usually all the app has)
+  const KNOWN_ETF = /^(QQQ|QQQM|SPY|VOO|VTI|VT|IVV|SCHD|VEA|VWO|IWM|DIA|XLK|XLF|XLV|VNQ|SOXX|SMH|BND|AGG|GLD|IAU|SLV|VGT|VYM|VIG|VXUS|ARKK|NIFTYBEES|BANKBEES|GOLDBEES|JUNIORBEES|LIQUIDBEES|SILVERBEES|MON100|MAFANG|N100|MID150BEES|HDFCNIFTY|ICICINIFTY)$/i;
+
   function kindOf(h) {
     const name = String(h.name || "").toLowerCase();
-    if (h.cls === "stock" || h.cls === "us") return /\betf\b|bees|etf/.test(name) ? "etf" : "stock";
+    if (h.cls === "stock" || h.cls === "us") return /\betf\b|bees|etf/.test(name) || KNOWN_ETF.test(String(h.symbol || "")) ? "etf" : "stock";
     if (h.cls === "mf") return /index|nifty|sensex|\betf\b|next 50|midcap 150|smallcap 250/.test(name) ? "index" : "active";
     return h.cls;
   }
@@ -165,10 +168,193 @@
     return null;
   }
 
+
+  // ── plain-language layer ──────────────────────────────────────────────────
+  const ACTION_LABEL = { ADD: "Add more", HOLD: "Hold", REVIEW: "Look closely", TRIM: "Reduce", REBALANCE: "Balance", PREPAY: "Pay off faster", BUILD: "Build up" };
+  const STATUS_LABEL = { great: "Doing great", good: "Doing well", ok: "Okay", weak: "Falling behind", poor: "Needs attention", safe: "Safe & steady", nodata: "Too new to judge" };
+  const STATUS_SCORE = { great: 100, good: 80, ok: 60, weak: 35, poor: 15, safe: 60, nodata: 55 };
+  const MOVE_LABEL = { keep_adding: "Keep investing regularly", hold: "Keep holding", watch: "Keep an eye on it", review: "Look at it closely", reduce: "Consider reducing", dont_add: "Don't add more now", none: "Nothing to do" };
+  const GROUP_LABEL = { mf: "Mutual funds", stock: "Indian stocks", us: "US stocks", gold: "Gold", safe: "Safe money", other: "Other" };
+
+  function groupKey(h) {
+    switch (h.cls) {
+      case "mf": return "mf";
+      case "stock": return "stock";
+      case "us": return "us";
+      case "gold": return "gold";
+      case "fd": case "epf": case "ppf": case "bonds": case "bank": return "safe";
+      default: return "other";
+    }
+  }
+
+  const signed = (v, d = 1) => (v >= 0 ? "+" : "−") + Math.abs(Math.round(v * 10 ** d) / 10 ** d) + "%";
+  const plainPct = (v) => Math.abs(Math.round(v * 10) / 10) + "%";
+
+  /** One honest, plain-English judgement per holding. */
+  function verdictFor(h, ctx) {
+    const reasons = [];
+    const g = groupKey(h);
+    const m = h.mom;
+    const hasHistory = m && h.historyDays >= CFG.minHistoryDays;
+    let status = "nodata";
+    let move = "hold";
+
+    if (g === "safe") {
+      return { status: "safe", label: STATUS_LABEL.safe, move: "none", moveLabel: MOVE_LABEL.none,
+        headline: h.cls === "bank" ? "Cash you can reach quickly." : "Steady, low-risk money.",
+        reasons: [h.cls === "bank" ? "Good for emergencies, but it earns little — keep only what you need here." : "Grows slowly and safely. Good for stability, not for beating inflation by a lot."] };
+    }
+    if (g === "other") {
+      return { status: "ok", label: STATUS_LABEL.ok, move: "watch", moveLabel: MOVE_LABEL.watch,
+        headline: "Not tracked against market prices.", reasons: ["Keep it small compared with your core investments, and update its value now and then."] };
+    }
+
+    const bench = h.relative1y;
+    const r1y = m && m.r1y;
+    if (hasHistory) {
+      if (bench != null) {
+        if (bench >= 8 && (m.r6m || 0) > 0) status = "great";
+        else if (bench >= 2) status = "good";
+        else if (bench > -5) status = "ok";
+        else if (bench > -10) status = "weak";
+        else status = (m.r6m || 0) < 0 ? "poor" : "weak";
+        const who = g === "us" ? "the US market (S&P 500)" : g === "gold" ? "gold" : "the Indian market (Nifty 50)";
+        if (g === "gold") reasons.push(`Gold moved ${signed(r1y)} in the last year.`);
+        else reasons.push(`${signed(r1y)} in the last year, ${bench >= 0 ? "about " + plainPct(bench) + " better than" : "about " + plainPct(bench) + " worse than"} ${who}.`);
+      } else if (r1y != null) {
+        status = r1y >= 15 ? "good" : r1y >= 5 ? "ok" : r1y >= -10 ? "weak" : "poor";
+        reasons.push(`${signed(r1y)} in the last year.`);
+      }
+      if (m.drawdown != null && m.drawdown <= -20 && h.kind !== "index") {
+        reasons.push(`It is ${plainPct(m.drawdown)} below its highest price of the past year.`);
+        if (m.drawdown <= CFG.stockActDrawdown && (m.r6m || 0) < 0 && (h.cls === "stock" || h.cls === "us")) status = "poor";
+        else if (status === "great" || status === "good") status = "ok";
+      }
+      if (m.r3m != null && m.r6m != null && Math.abs(m.r3m) >= 1) reasons.push(`Last 3 months ${signed(m.r3m)}, last 6 months ${signed(m.r6m)}.`);
+    } else if (h.ageDays != null && h.ageDays < 180) {
+      reasons.push("You started investing in this only recently, so it is too early to judge it.");
+    } else if (h.xirr != null) {
+      status = h.xirr >= 12 ? "good" : h.xirr >= 8 ? "ok" : "weak";
+      reasons.push(`Your money in it has grown about ${plainPct(h.xirr)} a year since you started.`);
+      reasons.push("Price history for this one is not available yet, so it could not be compared with the market.");
+    } else if (h.returnPct != null) {
+      reasons.push(`Up ${plainPct(h.returnPct)} versus what you paid.`.replace("Up", h.returnPct >= 0 ? "Up" : "Down"));
+      reasons.push("Price history is not available yet, so I can't compare it with the market.");
+    }
+
+    if (h.returnPct != null && hasHistory) reasons.push(`Compared with what you paid: ${h.returnPct >= 0 ? "up " : "down "}${plainPct(h.returnPct)}.`);
+    if (h.weight >= 10) reasons.push(`It makes up ${Math.round(h.weight)}% of your investments.`);
+    if (h.kind === "index" && (status === "ok" || status === "good")) reasons.unshift("A market-wide fund: it is meant to move with the market, and it is.");
+
+    // what to do about it
+    if (status === "poor") move = "review";
+    else if (status === "weak") move = "watch";
+    else if ((status === "good" || status === "great") && h.kind === "index") move = "keep_adding";
+    else move = "hold";
+    if ((h.cls === "stock" || h.cls === "us") && h.weight >= CFG.concentrationAct) move = "dont_add";
+    if (h.kind === "stock" && m && m.vsMa200 != null && m.vsMa200 >= CFG.extendedAboveMa200 && h.weight >= 8) move = "dont_add";
+    if (status === "nodata") move = "hold";
+
+    const heads = {
+      great: "Beating the market comfortably.", good: "Doing better than the market.", ok: "Moving about in line with the market.",
+      weak: "Lagging behind the market.", poor: "Doing badly — worth a close look.", nodata: "Not enough price history to judge yet.",
+    };
+    return { status, label: STATUS_LABEL[status], move, moveLabel: MOVE_LABEL[move], headline: heads[status], reasons: reasons.slice(0, 4) };
+  }
+
+  function groupSummaries(items, total) {
+    const order = ["mf", "stock", "us", "gold", "safe", "other"];
+    return order.map((k) => {
+      const list = items.filter((h) => groupKey(h) === k);
+      if (!list.length) return null;
+      const value = list.reduce((s, h) => s + num(h.value), 0);
+      const invested = list.reduce((s, h) => s + num(h.invested), 0);
+      // better verdict first; within the same verdict, the stronger 1-year / growth figure first
+      const rank = (h) => STATUS_SCORE[h.verdict.status] * 1000 + (h.relative1y != null ? h.relative1y : h.mom && h.mom.r1y != null ? h.mom.r1y : h.xirr != null ? h.xirr : h.returnPct != null ? h.returnPct : 0);
+      const judged = list.filter((h) => !["safe", "nodata"].includes(h.verdict.status));
+      const sorted = judged.slice().sort((a, b) => rank(b) - rank(a));
+      const counts = { great: 0, good: 0, ok: 0, weak: 0, poor: 0, nodata: 0, safe: 0 };
+      list.forEach((h) => { counts[h.verdict.status]++; });
+      return {
+        key: k, label: GROUP_LABEL[k], count: list.length, value: r2(value), invested: r2(invested),
+        returnPct: invested > 0 && k !== "safe" ? r1((value / invested - 1) * 100) : null,
+        weight: r1(pct(value, total)), counts,
+        best: sorted.slice(0, 3).map((h) => h.key),
+        worst: sorted.slice(-3).reverse().filter((h) => ["weak", "poor"].includes(h.verdict.status)).map((h) => h.key),
+        keys: list.slice().sort((a, b) => num(b.value) - num(a.value)).map((h) => h.key),
+      };
+    }).filter(Boolean);
+  }
+
+  function pillarList(ctx) {
+    const { items, total, cash, liabilities, emergencyMonths, profile, signals, allocPct, mfThisMonth } = ctx;
+    const P = [];
+    const lvl = (s) => (s >= 75 ? "good" : s >= 50 ? "ok" : "weak");
+
+    // 1) safety net
+    if (emergencyMonths != null) {
+      const need = profile.emergencyMonths;
+      const sc = Math.max(0, Math.min(100, Math.round((emergencyMonths / need) * 100)));
+      P.push({ id: "safety", label: "Safety net", emoji: "🛡️", weight: 25, score: sc, level: lvl(sc),
+        line: emergencyMonths >= need ? `Your savings cover about ${r1(emergencyMonths)} months of spending. That is a strong cushion.` : `Your savings cover about ${r1(emergencyMonths)} months of spending. Aim for ${need}.` });
+    }
+    // 2) debt
+    {
+      const high = liabilities.filter((l) => num(l.rate) >= CFG.debtActRate);
+      const mid = liabilities.filter((l) => num(l.rate) >= CFG.debtWatchRate && num(l.rate) < CFG.debtActRate);
+      const emi = liabilities.reduce((s, l) => s + num(l.emi), 0);
+      const income = num(cash.monthlyIncome);
+      const burden = income > 0 ? (emi / income) * 100 : null;
+      let sc = 100;
+      sc -= high.length * 35; sc -= mid.length * 12;
+      if (burden != null && burden > 30) sc -= Math.min(30, (burden - 30) * 1.5);
+      sc = Math.max(0, Math.min(100, Math.round(sc)));
+      const bits = [];
+      if (!liabilities.length) bits.push("You have no loans on record. Nice.");
+      else {
+        bits.push(`${liabilities.length} loan${liabilities.length > 1 ? "s" : ""}, EMIs ${inr(emi)} a month${burden != null ? ` (${Math.round(burden)}% of your income)` : ""}.`);
+        if (high.length) bits.push(`${high.map((l) => l.name).join(", ")} costs a lot in interest.`);
+      }
+      P.push({ id: "debt", label: "Debt", emoji: "💳", weight: 20, score: sc, level: lvl(sc), line: bits.join(" ") });
+    }
+    // 3) spread
+    {
+      const top5 = items.slice().sort((a, b) => b.weight - a.weight).slice(0, 5).reduce((s, h) => s + h.weight, 0);
+      const bigStock = items.filter((h) => h.kind === "stock").sort((a, b) => b.weight - a.weight)[0];
+      let sc = 100;
+      if (items.length > 8 && top5 > 60) sc -= Math.min(35, (top5 - 60) * 1.2);
+      if (bigStock && bigStock.weight > CFG.concentrationWatch) sc -= Math.min(25, (bigStock.weight - CFG.concentrationWatch) * 2);
+      if (ctx.profileSet) ["equity", "gold", "debt", "cash"].forEach((k) => { const d = Math.abs(allocPct[k] - num(profile.target[k])); if (d > CFG.driftPP) sc -= Math.min(10, (d - CFG.driftPP) * 0.5); });
+      sc = Math.max(0, Math.min(100, Math.round(sc)));
+      const line = `Your five biggest investments are ${Math.round(top5)}% of your money.` + (bigStock && bigStock.weight > CFG.concentrationWatch ? ` ${bigStock.name} alone is ${Math.round(bigStock.weight)}%.` : "");
+      P.push({ id: "spread", label: "Spread", emoji: "🧺", weight: 15, score: sc, level: lvl(sc), line });
+    }
+    // 4) growth (how your holdings are performing, weighted by size)
+    {
+      const market = items.filter((h) => ["mf", "stock", "us", "gold"].includes(groupKey(h)));
+      const mv = market.reduce((s, h) => s + num(h.value), 0);
+      if (mv > 0) {
+        const sc = Math.round(market.reduce((s, h) => s + STATUS_SCORE[h.verdict.status] * num(h.value), 0) / mv);
+        const good = market.filter((h) => ["great", "good"].includes(h.verdict.status)).length;
+        const bad = market.filter((h) => ["weak", "poor"].includes(h.verdict.status)).length;
+        P.push({ id: "growth", label: "Growth", emoji: "📈", weight: 25, score: sc, level: lvl(sc), line: `${good} of your ${market.length} investments are doing well, ${bad} are falling behind.` });
+      }
+    }
+    // 5) saving habit
+    if (cash.savingsRate != null) {
+      const sr = cash.savingsRate;
+      let sc = sr >= 30 ? 100 : sr >= 20 ? 75 : sr >= 10 ? 45 : 20;
+      if (num(profile.sipTarget) > 0 && num(mfThisMonth) < num(profile.sipTarget) * 0.9) sc = Math.max(0, sc - 10);
+      P.push({ id: "habit", label: "Saving habit", emoji: "🌱", weight: 15, score: sc, level: lvl(sc), line: `You save about ${r1(sr)}% of your income. ${sr >= 30 ? "That is excellent." : sr >= 20 ? "Good — a little more will speed things up." : "Try to raise this; it matters more than picking investments."}` });
+    }
+    return P;
+  }
+
   // ── main entry ────────────────────────────────────────────────────────────
   function analyze(input) {
     const now = input.now || iso(Date.now());
     const profile = { ...DEFAULT_PROFILE, ...(input.profile || {}), target: { ...DEFAULT_PROFILE.target, ...((input.profile || {}).target || {}) } };
+    const profileSet = Boolean(input.profileSet);
     const holdings = (input.holdings || []).filter((h) => num(h.value) > 0);
     const series = input.series || {};
     const bench = input.benchmarks || {};
@@ -176,7 +362,7 @@
     const liabilities = (input.liabilities || []).filter((l) => num(l.value) > 0);
     const goals = input.goals || [];
     const signals = [];
-    const add = (s) => signals.push({ confidence: "medium", ...s });
+    const add = (s) => signals.push({ confidence: "medium", actionLabel: ACTION_LABEL[s.action] || s.action, ...s });
 
     const total = holdings.reduce((s, h) => s + num(h.value), 0);
     const invested = holdings.reduce((s, h) => s + num(h.invested), 0);
@@ -187,20 +373,21 @@
       const mom = sr ? momentum(sr, now) : null;
       const bm = bench[benchmarkFor(h)];
       const bmMom = bm ? momentum(bm, now) : null;
-      const group = groupOf(h);
       const flows = h.flows && h.flows.length ? xirr(h.flows, num(h.value), now) : null;
       return {
         ...h,
-        group,
+        group: groupOf(h),
         kind: kindOf(h),
         weight: pct(num(h.value), total),
         returnPct: num(h.invested) > 0 ? (num(h.value) / num(h.invested) - 1) * 100 : null,
         xirr: flows,
+        ageDays: h.flows && h.flows.length ? Math.round((new Date(now) - Math.min(...h.flows.map((f) => new Date(f.date).getTime()))) / DAY) : null,
         mom,
         relative1y: mom && bmMom && mom.r1y != null && bmMom.r1y != null ? mom.r1y - bmMom.r1y : null,
         historyDays: mom ? mom.days : 0,
       };
     });
+    items.forEach((h) => { h.verdict = verdictFor(h, {}); });
 
     // allocation (hybrid counts half equity / half debt)
     const alloc = { equity: 0, gold: 0, debt: 0, cash: 0, other: 0 };
@@ -209,162 +396,175 @@
       else alloc[h.group] += num(h.value);
     });
     const allocPct = Object.fromEntries(Object.entries(alloc).map(([k, v]) => [k, pct(v, total)]));
-
+    const tgt = profile.target;
     const confOf = (h) => (h.historyDays >= 300 ? "high" : h.historyDays >= CFG.minHistoryDays ? "medium" : "low");
 
-    // R1 emergency fund
+    // ── things to act on, in plain words ──────────────────────────────────
+    // emergency fund
     const monthlyExpenses = num(cash.monthlyExpenses);
     const liquid = items.filter((h) => h.cls === "bank" || h.cls === "fd").reduce((s, h) => s + num(h.value), 0);
     const emergencyMonths = monthlyExpenses > 0 ? liquid / monthlyExpenses : null;
-    if (emergencyMonths != null) {
-      if (emergencyMonths < CFG.emergencyActMonths) {
-        add({ id: "emergency-fund", severity: "act", action: "BUILD", title: "Emergency fund is thin", confidence: "high",
-          why: [`Liquid savings ${inr(liquid)} cover ${r1(emergencyMonths)} months of expenses (target ${profile.emergencyMonths}).`, `Build this before adding new equity.`] });
-      } else if (emergencyMonths < profile.emergencyMonths * CFG.emergencyWatchFrac) {
-        add({ id: "emergency-fund", severity: "watch", action: "BUILD", title: "Emergency fund below target", confidence: "high",
-          why: [`Liquid savings cover ${r1(emergencyMonths)} months (target ${profile.emergencyMonths}); shortfall ≈ ${inr(profile.emergencyMonths * monthlyExpenses - liquid)}.`] });
-      }
+    if (emergencyMonths != null && emergencyMonths < profile.emergencyMonths) {
+      const short = profile.emergencyMonths * monthlyExpenses - liquid;
+      add({ id: "emergency-fund", severity: emergencyMonths < CFG.emergencyActMonths ? "act" : "watch", action: "BUILD", confidence: "high",
+        title: "Build a bigger emergency cushion",
+        why: [`Your bank savings and FDs would cover about ${r1(emergencyMonths)} months of spending. A safe target is ${profile.emergencyMonths} months — about ${inr(short)} more.`,
+          "Do this before putting more money into shares or funds. It protects you from having to sell investments at a bad time."] });
     }
 
-    // R2 debt cost
+    // expensive loans
     liabilities.forEach((l) => {
       const rate = num(l.rate);
       if (!(rate > 0)) return;
       const yearly = (num(l.value) * rate) / 100;
       if (rate >= CFG.debtActRate) {
-        add({ id: "debt-" + l.name, severity: "act", action: "PREPAY", title: `Prepay “${l.name}”`, confidence: "high", assetKey: l.name,
-          why: [`Costs ${rate}% a year (${inr(yearly)} interest on ${inr(l.value)}) — above what equity can reliably beat after tax.`, "Extra surplus is better used here before new risk assets."] });
+        add({ id: "debt-" + l.name, severity: "act", action: "PREPAY", assetKey: l.name, confidence: "high",
+          title: `Pay off “${l.name}” faster`,
+          why: [`It charges ${rate}% a year — about ${inr(yearly)} in interest on ${inr(l.value)}.`, "Shares and funds rarely beat that after tax, so spare money is better used here first."] });
       } else if (rate >= CFG.debtWatchRate) {
-        add({ id: "debt-" + l.name, severity: "watch", action: "REVIEW", title: `Consider part-prepaying “${l.name}”`, confidence: "high", assetKey: l.name,
-          why: [`Costs ${rate}% a year (${inr(yearly)} interest); a guaranteed saving comparable to a good debt fund.`] });
+        add({ id: "debt-" + l.name, severity: "watch", action: "REVIEW", assetKey: l.name, confidence: "high",
+          title: `Consider paying part of “${l.name}” early`,
+          why: [`It charges ${rate}% a year (about ${inr(yearly)} interest). Paying it down is a guaranteed saving, similar to a good safe investment.`] });
       }
     });
 
-    // R3 concentration + dust
+    // one stock too big
     items.filter((h) => h.kind === "stock").forEach((h) => {
       if (h.weight >= CFG.concentrationWatch) {
-        add({ id: "conc-" + h.key, severity: h.weight >= CFG.concentrationAct ? "act" : "watch", action: "TRIM", assetKey: h.key,
-          title: `${h.name} is ${r1(h.weight)}% of your portfolio`, confidence: "high",
-          why: [`A single stock above ${CFG.concentrationWatch}% adds company-specific risk.`, "Direct new money elsewhere or trim in stages (check tax on gains first)."] });
+        add({ id: "conc-" + h.key, severity: h.weight >= CFG.concentrationAct ? "act" : "watch", action: "TRIM", assetKey: h.key, confidence: "high",
+          title: `${h.name} is a big part of your money (${Math.round(h.weight)}%)`,
+          why: ["If one company has a bad year, it hurts your whole portfolio a lot.", "Avoid adding more. If it keeps growing, reduce slowly (check the tax on your gains first)."] });
       }
     });
     const dust = items.filter((h) => h.weight < CFG.dustPct && (h.cls === "stock" || h.cls === "us" || h.cls === "mf"));
     if (dust.length >= CFG.dustCount) {
-      add({ id: "dust", severity: "info", action: "REVIEW", title: `${dust.length} tiny positions (<${CFG.dustPct}% each)`,
-        why: [`They add tracking effort but hardly move returns: ${dust.slice(0, 4).map((h) => h.name).join(", ")}…`, "Consider consolidating into your best holdings."] });
+      add({ id: "dust", severity: "info", action: "REVIEW", title: `You hold ${dust.length} very small investments`,
+        why: [`Each is under ${CFG.dustPct}% of your money, so even a big jump barely changes your wealth.`, "Too many small ones are hard to follow. Keep your best ideas and fold the rest into them over time."] });
     }
 
-    // R4 allocation drift
-    const tgt = profile.target;
-    [["equity", "Equity"], ["gold", "Gold"], ["debt", "Debt"], ["cash", "Cash"]].forEach(([k, label]) => {
-      const drift = allocPct[k] - num(tgt[k]);
-      if (Math.abs(drift) >= CFG.driftPP) {
-        const over = drift > 0;
-        add({ id: "drift-" + k, severity: "watch", action: "REBALANCE", assetKey: k,
-          title: `${label} is ${over ? "over" : "under"} target by ${r1(Math.abs(drift))} pp`, confidence: "high",
-          why: [`Now ${r1(allocPct[k])}% vs target ${tgt[k]}%.`, over ? "Steer new money to the other classes rather than selling." : `Direct fresh investments here (≈ ${inr((Math.abs(drift) / 100) * total)} to reach target).`] });
-      }
-    });
+    // balance vs the plan (only once you have told me your plan)
+    if (profileSet) {
+      [["equity", "shares and equity funds"], ["gold", "gold"], ["debt", "safe/fixed-income money"], ["cash", "cash"]].forEach(([k, label]) => {
+        const drift = allocPct[k] - num(tgt[k]);
+        if (Math.abs(drift) >= CFG.driftPP) {
+          const over = drift > 0;
+          add({ id: "drift-" + k, severity: "watch", action: "REBALANCE", assetKey: k, confidence: "high",
+            title: `You hold ${over ? "more" : "less"} ${label} than your plan`,
+            why: [`Now ${r1(allocPct[k])}% of your money; your plan says ${tgt[k]}%.`, over ? "No need to sell. Put new money into the other areas until it evens out." : `Put new money here until it reaches your plan (about ${inr((Math.abs(drift) / 100) * total)} more).`] });
+        }
+      });
+    }
 
-    // R5/R6/R7 per-holding trend signals (need history)
+    // per-holding trend calls (need price history)
     items.forEach((h) => {
       const m = h.mom;
       if (!m || h.historyDays < CFG.minHistoryDays) return;
       const conf = confOf(h);
-      const mention = (parts) => parts.filter(Boolean);
       if (h.kind === "stock") {
         if (m.drawdown != null && m.drawdown <= CFG.stockActDrawdown && (m.r6m || 0) < 0 && (h.relative1y == null || h.relative1y <= CFG.stockActRelative)) {
           add({ id: "trend-" + h.key, severity: "act", action: "REVIEW", assetKey: h.key, confidence: conf,
-            title: `${h.name}: deep, persistent weakness — re-check the thesis`,
-            why: mention([`Down ${r1(Math.abs(m.drawdown))}% from its 52-week high; 6-month return ${r1(m.r6m)}%.`,
-              h.relative1y != null ? `Lagging Nifty by ${r1(Math.abs(h.relative1y))} pp over a year.` : null,
-              h.returnPct != null ? `Your position: ${r1(h.returnPct)}% vs cost.` : null,
-              "If the business reason you bought it no longer holds, this is an exit candidate; if it holds, do not average down blindly."]) });
+            title: `${h.name} has fallen a lot — check why you own it`,
+            why: [`It is ${plainPct(m.drawdown)} below its highest price of the past year, and ${plainPct(m.r6m)} lower than 6 months ago.`,
+              h.relative1y != null ? `It is also doing ${plainPct(h.relative1y)} worse than the market over a year.` : null,
+              h.returnPct != null ? `Versus what you paid: ${h.returnPct >= 0 ? "up" : "down"} ${plainPct(h.returnPct)}.` : null,
+              "If the reason you bought it no longer holds, selling may be sensible. If it still holds, don't buy more just because it looks cheaper."].filter(Boolean) });
         } else if (m.drawdown != null && m.drawdown <= CFG.stockWatchDrawdown) {
           add({ id: "trend-" + h.key, severity: "watch", action: "REVIEW", assetKey: h.key, confidence: conf,
-            title: `${h.name} has corrected ${r1(Math.abs(m.drawdown))}%`,
-            why: mention([`52-week drawdown ${r1(m.drawdown)}%; 3-month ${r1(m.r3m)}%.`, "Add only if the thesis is intact and the position is below your intended weight."]) });
+            title: `${h.name} is down ${plainPct(m.drawdown)} from its high`,
+            why: [`Last 3 months: ${signed(m.r3m)}.`, "Add more only if the reason you bought it still holds and it is a small part of your money."] });
         }
       }
-      if ((h.kind === "index" || h.kind === "etf") && h.group !== "gold" && m.drawdown != null && m.drawdown <= CFG.indexBuyDrawdown && h.group === "equity" && allocPct.equity <= num(tgt.equity) + 3) {
+      if ((h.kind === "index" || h.kind === "etf") && h.group === "equity" && m.drawdown != null && m.drawdown <= CFG.indexBuyDrawdown && allocPct.equity <= num(tgt.equity) + 3) {
         add({ id: "dip-" + h.key, severity: "info", action: "ADD", assetKey: h.key, confidence: conf,
-          title: `${h.name} is ${r1(Math.abs(m.drawdown))}% below its 52-week high`,
-          why: [`Broad, diversified instruments recover with the market over long horizons; staggering buys (tranches) reduces timing risk.`, `Weight today ${r1(h.weight)}% of the portfolio.`] });
+          title: `${h.name} is ${plainPct(m.drawdown)} below its recent high`,
+          why: ["Funds that follow the whole market usually recover over many years.", "If you have spare money, adding a little every month (instead of all at once) is a calm way to buy."] });
       }
       if (h.kind === "active" && h.relative1y != null && h.group === "equity") {
-        if (h.relative1y <= CFG.underperformAct && (m.r6m || 0) < (bench.nifty ? returnOver(bench.nifty, now, 182) ?? 0 : 0)) {
+        const niftyR6 = bench.nifty ? returnOver(bench.nifty, now, 182) : null;
+        if (h.relative1y <= CFG.underperformAct && (m.r6m || 0) < (niftyR6 == null ? 0 : niftyR6)) {
           add({ id: "lag-" + h.key, severity: "act", action: "REVIEW", assetKey: h.key, confidence: conf,
-            title: `${h.name} is lagging the market badly`,
-            why: [`1-year return ${r1(m.r1y)}% vs Nifty gap of ${r1(h.relative1y)} pp, and still behind over 6 months.`, "Compare with its category peers or a low-cost index fund; switching has tax and exit-load implications."] });
+            title: `${h.name} is clearly behind the market`,
+            why: [`Last year it gave ${signed(m.r1y)}; the market did ${plainPct(h.relative1y)} better. It is still behind over 6 months.`, "Compare it with other funds of the same kind, or with a plain Nifty index fund. Switching can have tax and exit-fee costs."] });
         } else if (h.relative1y <= CFG.underperformWatch) {
           add({ id: "lag-" + h.key, severity: "watch", action: "REVIEW", assetKey: h.key, confidence: conf,
-            title: `${h.name} trails Nifty by ${r1(Math.abs(h.relative1y))} pp (1y)`, why: [`1-year ${r1(m.r1y)}%. Watch another quarter before acting.`] });
+            title: `${h.name} is a little behind the market`,
+            why: [`Last year: ${signed(m.r1y)}, about ${plainPct(h.relative1y)} less than the market. Give it another quarter before deciding.`] });
         }
       }
       if ((h.kind === "stock" || h.kind === "etf") && m.vsMa200 != null && m.vsMa200 >= CFG.extendedAboveMa200 && h.weight >= 8) {
         add({ id: "ext-" + h.key, severity: "info", action: "HOLD", assetKey: h.key, confidence: conf,
-          title: `${h.name} looks stretched`, why: [`${r1(m.vsMa200)}% above its 200-day average and ${r1(h.weight)}% of your portfolio.`, "Avoid adding here; partial profit-booking is reasonable if it is above your intended weight."] });
+          title: `${h.name} has risen very fast`,
+          why: [`Its price is ${plainPct(m.vsMa200)} above its usual level of the past 200 days, and it is ${Math.round(h.weight)}% of your money.`, "Avoid adding more now. Taking a little profit is a fair choice if it is bigger than you intended."] });
       }
     });
 
-    // R10 gold timing vs target
+    // gold timing
     const goldBm = bench.gold ? momentum(bench.gold, now) : null;
     if (goldBm && goldBm.days >= CFG.minHistoryDays) {
       if (goldBm.drawdown != null && goldBm.drawdown <= CFG.goldDrop && allocPct.gold < num(tgt.gold)) {
         add({ id: "gold-dip", severity: "info", action: "ADD", assetKey: "gold", confidence: goldBm.days >= 300 ? "high" : "medium",
-          title: `Gold is ${r1(Math.abs(goldBm.drawdown))}% off its high and you are under target`,
-          why: [`Gold ${r1(allocPct.gold)}% vs target ${tgt.gold}%.`, "A staggered purchase (SGB/ETF) lifts it toward target at a lower price."] });
+          title: `Gold is ${plainPct(goldBm.drawdown)} below its recent high`,
+          why: [`You hold ${r1(allocPct.gold)}% in gold; your plan says ${tgt.gold}%.`, "Buying a little at a time (gold ETF or SGB) brings you closer to your plan at a lower price."] });
       } else if ((goldBm.r1y || 0) > 30 && allocPct.gold > num(tgt.gold) + 3) {
         add({ id: "gold-run", severity: "info", action: "HOLD", assetKey: "gold", confidence: "medium",
-          title: "Gold has run hard and is above target",
-          why: [`1-year gold return ${r1(goldBm.r1y)}%; allocation ${r1(allocPct.gold)}% vs target ${tgt.gold}%.`, "Hold; avoid adding more."] });
+          title: "Gold has risen sharply and is now above your plan",
+          why: [`Gold gave ${signed(goldBm.r1y)} in a year; you hold ${r1(allocPct.gold)}% (plan: ${tgt.gold}%).`, "Hold what you have; avoid buying more for now."] });
       }
     }
 
-    // R9 SIP discipline, R11 savings rate / idle cash
+    // saving habit and SIPs
     if (num(profile.sipTarget) > 0 && num(input.mfThisMonth) < num(profile.sipTarget) * 0.9) {
-      add({ id: "sip-gap", severity: "watch", action: "ADD", title: "This month's SIP is behind target", confidence: "high",
-        why: [`Invested ${inr(input.mfThisMonth)} of ${inr(profile.sipTarget)} so far this month.`, "Consistency matters more than timing for generational wealth."] });
+      add({ id: "sip-gap", severity: "watch", action: "ADD", confidence: "high", title: "This month's SIP is behind target",
+        why: [`You have invested ${inr(input.mfThisMonth)} of your ${inr(profile.sipTarget)} target so far this month.`, "Investing regularly matters more than picking the perfect moment."] });
     }
     if (cash.savingsRate != null) {
       if (cash.savingsRate < CFG.lowSavingsRate) {
-        add({ id: "savings-low", severity: "watch", action: "BUILD", title: `Savings rate is ${r1(cash.savingsRate)}%`, confidence: "high",
-          why: [`Income ${inr(cash.monthlyIncome)}, expenses ${inr(cash.monthlyExpenses)} (6-month average).`, "Aim for 30%+: it is the biggest lever on long-term wealth.", cash.topCategories && cash.topCategories[0] ? `Largest spend: ${cash.topCategories[0][0]} (${inr(cash.topCategories[0][1])}/month).` : null].filter(Boolean) });
+        add({ id: "savings-low", severity: "watch", action: "BUILD", confidence: "high", title: `You save only ${r1(cash.savingsRate)}% of your income`,
+          why: [`Average income ${inr(cash.monthlyIncome)} a month, spending ${inr(cash.monthlyExpenses)} (last 6 months).`, "Saving 30% or more is the biggest thing you can do for long-term wealth.", cash.topCategories && cash.topCategories[0] ? `Your biggest spend: ${cash.topCategories[0][0]} (${inr(cash.topCategories[0][1])} a month).` : null].filter(Boolean) });
       } else if (cash.savingsRate >= CFG.highSavingsRate && allocPct.cash > CFG.idleCashPct) {
-        add({ id: "idle-cash", severity: "info", action: "ADD", title: "Strong savings, but cash is idle", confidence: "medium",
-          why: [`Savings rate ${r1(cash.savingsRate)}% yet cash is ${r1(allocPct.cash)}% of the portfolio (target ${tgt.cash}%).`, "Deploy beyond the emergency fund gradually via SIP/STP."] });
+        add({ id: "idle-cash", severity: "info", action: "ADD", confidence: "medium", title: "You save well, but a lot of cash is sitting idle",
+          why: [`Cash is ${r1(allocPct.cash)}% of your money while your savings rate is ${r1(cash.savingsRate)}%.`, "Once your emergency fund is full, move the extra into investments gradually."] });
       }
     }
 
-    // goals
+    // goals — only the ones that look genuinely hard
     goals.forEach((g) => {
       const need = num(g.target) - num(g.saved);
       if (need <= 0 || !g.dueDate) return;
       const months = Math.max(0, (new Date(g.dueDate) - new Date(now)) / (30.44 * DAY));
       if (months <= 0) {
-        add({ id: "goal-" + g.name, severity: "watch", action: "REVIEW", title: `Goal “${g.name}” is past its date`, why: [`Still ${inr(need)} short of ${inr(g.target)}.`] });
+        add({ id: "goal-" + g.name, severity: "info", action: "REVIEW", title: `The goal “${g.name}” has passed its date`, why: [`You are still ${inr(need)} short of ${inr(g.target)}. Set a new date or amount.`] });
       } else {
         const perMonth = need / months;
-        if (cash.monthlyIncome && perMonth > num(cash.monthlyIncome) * 0.15) {
-          add({ id: "goal-" + g.name, severity: "watch", action: "REVIEW", title: `Goal “${g.name}” needs ${inr(perMonth)}/month`,
-            why: [`${inr(need)} to go in ${Math.round(months)} months — over 15% of monthly income; extend the date or lift the target gradually.`] });
+        if (cash.monthlyIncome && perMonth > num(cash.monthlyIncome) * 0.25) {
+          add({ id: "goal-" + g.name, severity: "info", action: "REVIEW", title: `The goal “${g.name}” needs ${inr(perMonth)} a month`,
+            why: [`${inr(need)} to go in ${Math.round(months)} months — that is over a quarter of your income. Consider a later date or a smaller target.`] });
         }
       }
     });
 
-    // diversification note
-    const top5 = items.slice().sort((a, b) => b.weight - a.weight).slice(0, 5).reduce((s, h) => s + h.weight, 0);
-
-    // health score
-    const sev = { act: 0, watch: 0, info: 0 };
-    signals.forEach((s) => { sev[s.severity] = (sev[s.severity] || 0) + 1; });
-    const score = Math.max(0, Math.min(100, Math.round(100 - sev.act * 9 - sev.watch * 4)));
-
     const order = { act: 0, watch: 1, info: 2 };
     signals.sort((a, b) => order[a.severity] - order[b.severity]);
 
+    // ── pillars, score, strengths ─────────────────────────────────────────
+    const pillars = pillarList({ items, total, cash, liabilities, emergencyMonths, profile, profileSet, signals, allocPct, mfThisMonth: input.mfThisMonth });
+    const wsum = pillars.reduce((s, p) => s + p.weight, 0);
+    const score = wsum ? Math.round(pillars.reduce((s, p) => s + p.score * p.weight, 0) / wsum) : 0;
+
+    const strengths = [];
+    if (emergencyMonths != null && emergencyMonths >= profile.emergencyMonths) strengths.push(`Your emergency cushion covers ${r1(emergencyMonths)} months of spending.`);
+    if (cash.savingsRate != null && cash.savingsRate >= 30) strengths.push(`You save about ${r1(cash.savingsRate)}% of your income — that is excellent.`);
+    if (!liabilities.some((l) => num(l.rate) >= CFG.debtWatchRate)) strengths.push(liabilities.length ? "None of your loans is very expensive." : "You have no loans.");
+    const winners = items.filter((h) => ["great", "good"].includes(h.verdict.status) && groupKey(h) !== "safe");
+    if (winners.length) strengths.push(`${winners.length} of your investments are beating or matching the market well${winners.length <= 3 ? ": " + winners.map((h) => h.name).join(", ") : ""}.`);
+    if (invested > 0 && total / invested > 1) strengths.push(`Overall, your money has grown ${r1((total / invested - 1) * 100)}% beyond what you put in.`);
+
+    const groups = groupSummaries(items, total);
+    const top5 = items.slice().sort((a, b) => b.weight - a.weight).slice(0, 5).reduce((s, h) => s + h.weight, 0);
+
     return {
       asOf: now,
+      profileSet,
       metrics: {
         total: r2(total), invested: r2(invested),
         returnPct: invested > 0 ? r1((total / invested - 1) * 100) : null,
@@ -375,8 +575,11 @@
         emergencyMonths: emergencyMonths != null ? r1(emergencyMonths) : null,
         savingsRate: cash.savingsRate != null ? r1(cash.savingsRate) : null,
       },
+      pillars,
+      strengths,
+      groups,
       holdings: items.map((h) => ({
-        key: h.key, name: h.name, cls: h.cls, kind: h.kind, group: h.group, owner: h.owner,
+        key: h.key, name: h.name, cls: h.cls, kind: h.kind, group: h.group, groupKey: groupKey(h), owner: h.owner,
         value: r2(h.value), invested: r2(num(h.invested)), weight: r1(h.weight),
         returnPct: h.returnPct != null ? r1(h.returnPct) : null,
         xirr: h.xirr != null ? r1(h.xirr) : null,
@@ -388,11 +591,13 @@
         vsMa200: h.mom && h.mom.vsMa200 != null ? r1(h.mom.vsMa200) : null,
         vs1yBenchmark: h.relative1y != null ? r1(h.relative1y) : null,
         historyDays: h.historyDays,
+        verdict: h.verdict,
       })),
+      liabilities: liabilities.map((l) => ({ name: l.name, owner: l.owner, value: num(l.value), emi: num(l.emi), rate: num(l.rate), yearlyInterest: num(l.rate) > 0 ? Math.round((num(l.value) * num(l.rate)) / 100) : null })),
       signals,
       score,
     };
   }
 
-  return { analyze, xirr, momentum, returnOver, annualVol, groupOf, kindOf, benchmarkFor, DEFAULT_PROFILE, CFG };
+  return { analyze, xirr, momentum, returnOver, annualVol, groupOf, kindOf, benchmarkFor, verdictFor, ACTION_LABEL, STATUS_LABEL, MOVE_LABEL, GROUP_LABEL, DEFAULT_PROFILE, CFG };
 });

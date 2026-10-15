@@ -34,9 +34,16 @@
     if (m.savingsRate != null) L.push(`SAVINGS RATE (6-month average): ${m.savingsRate}%.`);
 
     const hs = (result.holdings || []).slice().sort((x, y) => y.value - x.value).slice(0, 40);
-    L.push("\nHOLDINGS (top 40 by value): name | class/kind | value | weight | invested | return | XIRR | 1m / 3m / 6m / 1y | drawdown | vs Nifty 1y | history days");
+    if ((result.pillars || []).length) {
+      L.push("\nHEALTH PILLARS (0-100): " + result.pillars.map((p) => `${p.label} ${p.score} — ${p.line}`).join(" | "));
+    }
+    if ((result.strengths || []).length) L.push("GOING WELL: " + result.strengths.join(" "));
+    if ((result.groups || []).length) {
+      L.push("\nBY TYPE: " + result.groups.map((g) => `${g.label}: ${g.count} holdings, ${inr(g.value)} (${g.weight}% of portfolio)${g.returnPct != null ? `, ${pc(g.returnPct)} vs paid` : ""}`).join(" | "));
+    }
+    L.push("\nHOLDINGS (top 40 by value): name | class/kind | VERDICT | value | weight | invested | return | XIRR | 1m / 3m / 6m / 1y | drawdown | vs Nifty 1y | history days");
     hs.forEach((h) => {
-      L.push(`- ${h.name} | ${h.cls}/${h.kind} | ${inr(h.value)} | ${h.weight}% | ${inr(h.invested)} | ${pc(h.returnPct)} | ${h.xirr != null ? pc(h.xirr) : "n/a"} | ${[h.r1m, h.r3m, h.r6m, h.r1y].map((v) => (v == null ? "n/a" : pc(v))).join(" / ")} | ${h.drawdown != null ? h.drawdown + "%" : "n/a"} | ${h.vs1yBenchmark != null ? (h.vs1yBenchmark >= 0 ? "+" : "") + h.vs1yBenchmark + "pp" : "n/a"} | ${h.historyDays}`);
+      L.push(`- ${h.name} | ${h.cls}/${h.kind} | ${h.verdict ? h.verdict.label + " (" + h.verdict.moveLabel + ")" : "n/a"} | ${inr(h.value)} | ${h.weight}% | ${inr(h.invested)} | ${pc(h.returnPct)} | ${h.xirr != null ? pc(h.xirr) : "n/a"} | ${[h.r1m, h.r3m, h.r6m, h.r1y].map((v) => (v == null ? "n/a" : pc(v))).join(" / ")} | ${h.drawdown != null ? h.drawdown + "%" : "n/a"} | ${h.vs1yBenchmark != null ? (h.vs1yBenchmark >= 0 ? "+" : "") + h.vs1yBenchmark + "pp" : "n/a"} | ${h.historyDays}`);
     });
     if ((result.holdings || []).length > hs.length) L.push(`(+${result.holdings.length - hs.length} smaller positions not listed)`);
 

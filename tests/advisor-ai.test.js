@@ -6,9 +6,10 @@ const result = {
   metrics: { total: 1000000, allocation: { equity: 70 } },
   holdings: Array.from({ length: 40 }, (_, i) => ({ key: "h" + i, name: "H" + i, value: 1000 - i })),
   signals: [
-    { id: "conc-AAA", severity: "act", action: "TRIM", title: "AAA is 20%", why: ["A single stock above 10% adds risk."], confidence: "high", assetKey: "AAA" },
-    { id: "drift-equity", severity: "watch", action: "REBALANCE", title: "Equity over target", why: ["Now 70% vs 65%."], confidence: "high" },
+    { id: "conc-AAA", severity: "act", action: "TRIM", actionLabel: "Reduce", title: "AAA is 20%", why: ["A single stock above 10% adds risk."], confidence: "high", assetKey: "AAA" },
+    { id: "drift-equity", severity: "watch", action: "REBALANCE", actionLabel: "Balance", title: "Equity over target", why: ["Now 70% vs 65%."], confidence: "high" },
   ],
+  pillars: [{ id: "safety", label: "Safety net", score: 80, line: "ok" }], strengths: ["Good savings"], profileSet: true,
 };
 const input = { cash: { monthlyIncome: 100 }, liabilities: [], goals: [], profile: {}, mfThisMonth: 1234.7 };
 
@@ -22,32 +23,39 @@ JSON.parse(JSON.stringify(brief));
 assert.ok(!/email|phone|account number/i.test(JSON.stringify(brief)), "no identifiers in the brief");
 
 // a good answer is accepted; evidence comes from the engine, not the model
-const good = { headline: "Equity-heavy with one concentrated stock", healthComment: "Fine overall.", actions: [
-  { priority: 2, signalIds: ["drift-equity"], action: "rebalance", asset: "Equity", summary: "Steer new SIPs to debt/gold", rationale: "Equity is 70% vs 65% target.", risk: "Cash drag.", confidence: "high" },
-  { priority: 1, signalIds: ["conc-AAA"], action: "TRIM", asset: "AAA", summary: "Trim in stages", rationale: "20% of portfolio.", risk: "Tax on gains.", confidence: "medium", evidence: ["MODEL MADE THIS UP: stock will double"] },
-], nextMonthPlan: ["Keep the SIP", "Add to debt"], taxNote: "Check STCG before selling." };
+const good = { summary: "Solid base, one stock is too big.", good: ["You save well"], watchOut: ["AAA is large"], moves: [
+  { priority: 2, signalIds: ["drift-equity"], action: "rebalance", title: "Put new money elsewhere", whatToDo: "Steer new SIPs to debt/gold", why: "Equity is 70% vs your 65% plan.", risk: "Cash drag.", confidence: "high" },
+  { priority: 1, signalIds: ["conc-AAA"], action: "TRIM", title: "AAA is too big", whatToDo: "Reduce in stages", why: "20% of your money.", risk: "Tax on gains.", confidence: "medium", evidence: ["MODEL MADE THIS UP: stock will double"] },
+], perHolding: [{ key: "h1", comment: "Doing fine; keep holding." }, { key: "not-real", comment: "invented" }], nextMonthPlan: ["Keep the SIP", "Add to debt"], taxNote: "Check STCG before selling." };
 let v = AI.validateReview(good, result);
-assert.strictEqual(v.review.actions.length, 2);
-assert.strictEqual(v.review.actions[0].action, "TRIM", "sorted by priority");
+assert.strictEqual(v.review.moves.length, 2);
+assert.strictEqual(v.review.moves[0].action, "TRIM", "sorted by priority");
+assert.strictEqual(v.review.moves[0].actionLabel, "Reduce", "friendly label comes from the engine");
 assert.ok(!JSON.stringify(v.review).includes("MODEL MADE THIS UP"), "model-supplied evidence is ignored");
-assert.deepStrictEqual(JSON.parse(JSON.stringify(v.review.actions[0].evidence)), ["A single stock above 10% adds risk."]);
-assert.strictEqual(v.review.actions[1].action, "REBALANCE", "action names are normalised");
+assert.deepStrictEqual(JSON.parse(JSON.stringify(v.review.moves[0].evidence)), ["A single stock above 10% adds risk."]);
+assert.strictEqual(v.review.moves[1].action, "REBALANCE", "action names are normalised");
+assert.deepStrictEqual(JSON.parse(JSON.stringify(Object.keys(v.review.holdingNotes))), ["h1"], "notes for unknown holdings are dropped");
+assert.strictEqual(v.review.summary, "Solid base, one stock is too big.");
 assert.ok(v.review.disclaimer.includes("not SEBI"));
+// the earlier schema (actions/headline) still loads
+v = AI.validateReview({ headline: "Old style", actions: [{ signalIds: ["conc-AAA"], action: "TRIM", summary: "Trim", rationale: "r" }] }, result);
+assert.strictEqual(v.review.summary, "Old style");
+assert.strictEqual(v.review.moves[0].title, "Trim");
 
-// invented or ungrounded actions are dropped
-v = AI.validateReview({ headline: "x", actions: [
-  { signalIds: ["made-up"], action: "ADD", asset: "XYZ" },
+// invented or ungrounded moves are dropped
+v = AI.validateReview({ summary: "x", moves: [
+  { signalIds: ["made-up"], action: "ADD", title: "XYZ" },
   { signalIds: [], action: "ADD" },
   { signalIds: ["conc-AAA"], action: "MOONSHOT" },
-  { signalIds: ["conc-AAA"], action: "TRIM", rationale: "r".repeat(5000) },
+  { signalIds: ["conc-AAA"], action: "TRIM", why: "r".repeat(5000) },
 ] }, result);
-assert.strictEqual(v.review.actions.length, 1);
+assert.strictEqual(v.review.moves.length, 1);
 assert.strictEqual(v.dropped.length, 3);
-assert.ok(v.review.actions[0].rationale.length <= 600, "overlong text is trimmed");
+assert.ok(v.review.moves[0].why.length <= 480, "overlong text is trimmed");
 
 // junk is an error, not a crash
 assert.throws(() => AI.validateReview(null, result));
-assert.throws(() => AI.validateReview({ actions: [{ signalIds: ["nope"], action: "ADD" }] }, result));
+assert.throws(() => AI.validateReview({ moves: [{ signalIds: ["nope"], action: "ADD" }] }, result));
 
 // fingerprint: stable for noise, changes for real movement
 const fp = AI.fingerprint(result);
@@ -56,4 +64,6 @@ assert.notStrictEqual(AI.fingerprint({ ...result, metrics: { total: 1030000 } })
 assert.notStrictEqual(AI.fingerprint({ ...result, signals: result.signals.slice(1) }), fp, "a different signal set matters");
 
 assert.ok(AI.SYSTEM_PROMPT.includes("Never invent prices"));
+assert.ok(AI.SYSTEM_PROMPT.includes("BUSY NON-EXPERT") && AI.SYSTEM_PROMPT.includes("Do not quote the health score"));
+assert.ok(brief.pillars && brief.strengths && brief.planSetByUser === true);
 console.log("advisor-ai tests passed");

@@ -30,7 +30,7 @@ const base = (over = {}) => ({
   ],
   series: {}, benchmarks: { nifty: ramp(100, 110) },
   cash: { monthlyIncome: 150000, monthlyExpenses: 30000, savingsRate: 60, topCategories: [["Rent", 20000]] },
-  liabilities: [], goals: [], profile: {}, mfThisMonth: 0,
+  liabilities: [], goals: [], profile: {}, profileSet: true, mfThisMonth: 0,
   ...over,
 });
 const ids = (r) => r.signals.map((s) => s.id);
@@ -73,16 +73,16 @@ r = A.analyze(base({ holdings: [H({ key: "BANK", cls: "bank", name: "Savings", v
 assert.strictEqual(find(r, "conc-AAA").action, "TRIM");
 assert.strictEqual(find(r, "conc-AAA").severity, "act");
 const drift = find(r, "drift-equity");
-assert.ok(drift && drift.title.includes("over"));
-assert.ok(find(r, "drift-debt").title.includes("under"));
+assert.ok(drift && drift.title.includes("more"));
+assert.ok(find(r, "drift-debt").title.includes("less"));
 
 // ── trend signals need history ────────────────────────────────────────
 const deepFall = peakThen(100, 200, 110);
 r = A.analyze(base({ holdings: [...base().holdings, H({ key: "FALL", cls: "stock", name: "Falling Co", value: 100000, invested: 150000 })], series: { FALL: deepFall }, benchmarks: { nifty: ramp(100, 112) } }));
 assert.strictEqual(find(r, "trend-FALL").severity, "act");
 assert.strictEqual(find(r, "trend-FALL").action, "REVIEW");
-assert.ok(find(r, "trend-FALL").why.join(" ").includes("exit candidate"), "explains what would justify an exit");
-assert.ok(find(r, "trend-FALL").title.includes("thesis"));
+assert.ok(find(r, "trend-FALL").why.join(" ").includes("selling may be sensible"), "explains when selling would make sense");
+assert.ok(find(r, "trend-FALL").title.includes("check why you own it"));
 
 const shortHistory = series(60, (i) => 200 - i); // only 60 days
 r = A.analyze(base({ holdings: [...base().holdings, H({ key: "NEW", cls: "stock", name: "New Co", value: 100000 })], series: { NEW: shortHistory } }));
@@ -121,5 +121,82 @@ assert.strictEqual(bad.signals[0].severity, "act", "urgent signals come first");
 // output is plain data (safe to send to an AI or store)
 JSON.parse(JSON.stringify(bad));
 assert.ok(bad.metrics.allocation.equity > 90);
+
+// ── v2: plain-language verdict for every holding ──────────────────────
+{
+  const rich = A.analyze(base({
+    holdings: [
+      H({ key: "BANK", cls: "bank", name: "Savings", value: 50000 }),
+      H({ key: "FD1", cls: "fd", name: "FD", value: 200000 }),
+      H({ key: "GOLD1", cls: "gold", name: "Gold (SGB)", value: 100000 }),
+      H({ key: "IDX", cls: "mf", name: "Nifty 50 Index Fund", value: 300000, invested: 250000 }),
+      H({ key: "WIN", cls: "mf", name: "Star Flexi Cap Fund", value: 150000, invested: 100000 }),
+      H({ key: "LAG", cls: "mf", name: "Sleepy Active Fund", value: 100000, invested: 100000 }),
+      H({ key: "FALL", cls: "stock", name: "Falling Co", value: 60000, invested: 110000 }),
+      H({ key: "NEWF", cls: "mf", name: "Brand New Fund", value: 40000, invested: 40000, flows: [{ date: "2026-09-15", amount: -40000 }] }),
+      H({ key: "OLDF", cls: "mf", name: "Steady Old Fund", value: 150000, invested: 100000, flows: [{ date: "2023-10-15", amount: -100000 }] }),
+    ],
+    series: { IDX: ramp(100, 112), WIN: ramp(100, 140), LAG: flat(100), FALL: peakThen(100, 200, 110) },
+    benchmarks: { nifty: ramp(100, 112), gold: ramp(100, 130) },
+  }));
+  const v = (k) => rich.holdings.find((h) => h.key === k).verdict;
+  assert.strictEqual(v("WIN").status, "great", "a fund far ahead of Nifty is doing great");
+  assert.ok(v("WIN").reasons.join(" ").includes("better than the Indian market"));
+  assert.strictEqual(v("IDX").status, "ok", "an index fund tracks the market");
+  assert.ok(v("IDX").reasons[0].includes("market-wide fund"));
+  assert.strictEqual(v("LAG").status, "weak", "flat while the market rises = falling behind (not losing money)");
+  assert.strictEqual(v("LAG").move, "watch");
+  assert.strictEqual(v("FALL").status, "poor");
+  assert.strictEqual(v("FALL").move, "review");
+  assert.strictEqual(v("BANK").status, "safe");
+  assert.strictEqual(v("FD1").moveLabel, "Nothing to do");
+  assert.strictEqual(v("NEWF").status, "nodata", "no price history and no XIRR yet");
+  assert.ok(v("NEWF").label === "Too new to judge");
+  assert.strictEqual(v("OLDF").status, "good", "no price feed, but 14%+ a year since 2023 is judged on its own growth");
+  assert.ok(v("OLDF").reasons[0].includes("grown about"));
+  // verdict text is plain English: no jargon words
+  const allText = JSON.stringify(rich.holdings.map((h) => h.verdict));
+  ["XIRR", "drawdown", "REBALANCE", " pp ", "tranche"].forEach((w) => assert.ok(!allText.includes(w), "no jargon: " + w));
+
+  // group summaries
+  const g = (k) => rich.groups.find((x) => x.key === k);
+  assert.strictEqual(g("mf").count, 5);
+  assert.strictEqual(g("stock").count, 1);
+  assert.strictEqual(g("safe").count, 2);
+  assert.strictEqual(g("mf").best[0], "WIN", "best performer listed first");
+  assert.ok(g("mf").worst.includes("LAG"));
+  assert.ok(g("safe").returnPct === null, "safe money has no market return");
+
+  // pillars and the score that comes from them
+  assert.deepStrictEqual(rich.pillars.map((p) => p.id), ["safety", "debt", "spread", "growth", "habit"]);
+  rich.pillars.forEach((p) => { assert.ok(p.score >= 0 && p.score <= 100 && p.line.length > 10); });
+  assert.ok(rich.strengths.length >= 2);
+  assert.ok(rich.strengths.some((t) => t.includes("beating or matching")));
+}
+
+// drift is only judged against a plan the user has actually set
+{
+  const skewed = base({ holdings: [H({ key: "B", cls: "bank", name: "Savings", value: 100000 }), H({ key: "I", cls: "mf", name: "Nifty Index", value: 900000 })], profileSet: false });
+  assert.ok(!A.analyze(skewed).signals.some((s) => s.id.startsWith("drift-")), "no plan set → no judgement about allocation");
+  assert.ok(A.analyze({ ...skewed, profileSet: true }).signals.some((s) => s.id.startsWith("drift-")));
+}
+
+// goals only nag when they look genuinely hard, and in plain words
+{
+  const r2 = A.analyze(base({ goals: [{ name: "Easy", target: 100000, saved: 0, dueDate: "2030-01-01" }, { name: "Hard", target: 5000000, saved: 0, dueDate: "2027-10-15" }] }));
+  assert.ok(!find(r2, "goal-Easy"));
+  assert.ok(find(r2, "goal-Hard").title.includes("a month"));
+}
+
+// every signal carries a friendly action label
+A.analyze(base({ liabilities: [{ name: "PL", value: 300000, rate: 14 }] })).signals.forEach((s) => assert.ok(s.actionLabel && s.actionLabel !== s.action));
+
+// broad ETFs are recognised from the ticker, so they are not treated as risky single stocks
+assert.strictEqual(A.kindOf({ cls: "us", name: "QQQM Inc", symbol: "QQQM" }), "etf");
+assert.strictEqual(A.kindOf({ cls: "stock", name: "TCS Ltd", symbol: "TCS" }), "stock");
+{
+  const e = A.analyze(base({ holdings: [...base().holdings.filter((h) => h.key !== "TCS"), H({ key: "us:QQQM", cls: "us", symbol: "QQQM", name: "QQQM Inc", value: 150000 })] }));
+  assert.ok(!e.signals.some((s) => s.id === "conc-us:QQQM"), "a broad ETF is not flagged as a concentrated stock");
+}
 
 console.log("advisor-engine tests passed");

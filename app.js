@@ -4613,6 +4613,7 @@ function buildAdvisorInput() {
 
   return {
     now, holdings, cash, profile, mfThisMonth,
+    profileSet: Boolean(state.advisor?.profile?.target),
     liabilities: (state.liabilities || []).map((l) => ({ name: l.name, owner: l.owner, value: toNumber(l.value), emi: toNumber(l.emi), rate: toNumber(l.rate) })),
     goals: (state.goals || []).map((g) => ({ name: g.name, target: toNumber(g.target), saved: toNumber(g.saved), dueDate: g.dueDate })),
     series: {}, benchmarks: {},
@@ -14483,6 +14484,7 @@ function viewTitle(view) {
     {
       dashboard: "Your growth dashboard",
       finance: "Money, salary, and net worth",
+      advisor: "Your wealth advisor",
       career: "Career Roadmaps",
       goals: "Goals Tracker",
       todo: "To-Do List & Keep Notes",
