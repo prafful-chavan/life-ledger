@@ -95,6 +95,25 @@
     return { toAdd, handledIds, alreadyImported, matchedExisting, skippedFuture };
   }
 
+  /**
+   * Mirror step: imported rows (this source's id prefix) that are no longer in the Spending backup were
+   * edited or deleted there. Returns them as `stale` — the caller decides whether it is safe to remove them.
+   * Rows you typed in yourself never carry the import prefix, so they are never candidates.
+   */
+  function planRemovals(existing, incoming, idPrefix, opts) {
+    const have = new Set((incoming || []).map((e) => e.id));
+    const mine = (existing || []).filter((e) => typeof e.id === "string" && e.id.startsWith(idPrefix));
+    const stale = mine.filter((e) => !have.has(e.id));
+    const limit = opts && Number.isFinite(opts.limit) ? opts.limit : Math.max(20, Math.ceil(mine.length * 0.02));
+    return {
+      stale,
+      total: mine.length,
+      limit,
+      large: stale.length > limit,                                                   // unusually many: ask, never auto-apply
+      tooFewRows: mine.length >= 20 && (incoming || []).length < mine.length * 0.5,  // backup looks incomplete
+    };
+  }
+
   const baseId = (id) => String(id).replace(IMPORTED_ID, "");
 
   /**
@@ -124,5 +143,5 @@
     };
   }
 
-  return { overlapRatio, baseId, monthTotal, resetSource, coreDataToISODate, rowsToExpenses, planImport, hash32, ID_PREFIX };
+  return { overlapRatio, baseId, monthTotal, resetSource, coreDataToISODate, rowsToExpenses, planImport, planRemovals, hash32, ID_PREFIX };
 });

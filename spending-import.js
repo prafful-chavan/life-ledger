@@ -155,18 +155,51 @@
       if (!ok) { summary.push(src.label + ": import cancelled"); return; }
     }
 
+    // Mirror the Spending app: rows imported earlier that it no longer has were edited or deleted there.
+    // (An edit arrives above as a new row, so removing the old one makes it a clean replacement.)
+    const rem = Core.planRemovals(state.expenses || [], incoming, src.idPrefix);
+    const prevDevices = src.key === "me" ? (prev.sources || {}).meDevices : ((prev.sources || {}).wife || {}).devices;
+    let removeIds = [];
+    let removeNote = "";
+    if (rem.stale.length) {
+      const sample = rem.stale.slice(0, 5).map((e) => "  • " + e.date + "  ₹" + Number(e.amount).toLocaleString("en-IN") + "  " + (e.category || "")).join("\n");
+      if (prevDevices && files.length < prevDevices) {
+        removeNote = " — " + rem.stale.length + " expense(s) are not in the backup, left untouched because a device's backup is missing";
+      } else if (rem.tooFewRows) {
+        removeNote = " — " + rem.stale.length + " expense(s) are not in the backup, left untouched because the backup looks incomplete";
+      } else if (rem.large && !manual) {
+        removeNote = " — " + rem.stale.length + " expenses differ from your Spending app; tap “Import now” to review them";
+      } else if (rem.large && !confirm(
+        src.label + ": " + rem.stale.length + " expenses in Life Ledger are no longer in the Spending backup (edited or deleted there).\n\n" +
+        "Remove them so Life Ledger matches the Spending app exactly?\n\n" + sample + (rem.stale.length > 5 ? "\n  … and " + (rem.stale.length - 5) + " more" : "") +
+        "\n\nA restore point is saved first (Settings → Version history).")) {
+        removeNote = " — " + rem.stale.length + " differing expenses left as they are";
+      } else {
+        try {
+          await Sync.snapshotNow();   // restore point before anything is removed
+          removeIds = rem.stale.map((e) => e.id);
+        } catch (err) {
+          removeNote = " — could not save a restore point, so nothing was removed (" + err.message + ")";
+        }
+      }
+    }
+
     const live = app.getState();
-    live.expenses = (live.expenses || []).concat(plan.toAdd);
+    const gone = new Set(removeIds);
+    live.expenses = (live.expenses || []).filter((e) => !gone.has(e.id)).concat(plan.toAdd);
     const cur = live.spendingImport || { ids: [], file: "", importedAt: null };
-    const baseIds = wiped ? (cur.ids || []).filter((id) => !id.startsWith(src.idPrefix)) : (cur.ids || []);
+    // A removed row's id is forgotten, so the same content can come back later if it reappears in the Spending app.
+    const baseIds = (wiped ? (cur.ids || []).filter((id) => !id.startsWith(src.idPrefix)) : (cur.ids || [])).filter((id) => !gone.has(id));
     const next = { ...cur, ids: baseIds.concat(plan.handledIds) };
     const at = new Date().toISOString();
-    if (src.key === "me") { next.file = fileKey; next.importedAt = at; next.sources = { ...(cur.sources || {}), meFileHash: fileKey }; }
-    else next.sources = { ...(next.sources || cur.sources || {}), wife: { file: fileKey, importedAt: at } };
+    if (src.key === "me") { next.file = fileKey; next.importedAt = at; next.sources = { ...(cur.sources || {}), meFileHash: fileKey, meDevices: files.length }; }
+    else next.sources = { ...(next.sources || cur.sources || {}), wife: { file: fileKey, importedAt: at, devices: files.length } };
     live.spendingImport = next;
     app.renderAll();
     await app.saveData(true);
-    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") + " — " + describeBackup(file, latestTxn) + (files.length > 1 ? " (merged " + files.length + " device backups)" : ""));
+    summary.push(src.label + ": " + (plan.toAdd.length ? plan.toAdd.length + " new expense" + (plan.toAdd.length === 1 ? "" : "s") : "no new expenses") +
+      (removeIds.length ? ", " + removeIds.length + " removed (edited or deleted in the Spending app)" : "") +
+      removeNote + " — " + describeBackup(file, latestTxn) + (files.length > 1 ? " (merged " + files.length + " device backups)" : ""));
   }
 
   async function resetWife() {

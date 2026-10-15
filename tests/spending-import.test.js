@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 const vm = require("vm");
 const { DatabaseSync } = require("node:sqlite");
+const Core = require("../spending-core.js");
 const root = path.join(__dirname, "..");
 const read = (f) => fs.readFileSync(path.join(root, f), "utf8");
 
@@ -32,7 +33,7 @@ function harness(files, opts) {
     LifeLedgerAuth: { isUnlocked: () => true },
     LifeLedgerSync: {
       isConfigured: () => true,
-      snapshotNow: async () => { win.__snapshots = (win.__snapshots || 0) + 1; },
+      snapshotNow: async () => { if (opts && opts.failSnapshot) throw new Error("drive busy"); win.__snapshots = (win.__snapshots || 0) + 1; },
       onStatus() {},
       call: async (op, extra) => {
         const f = files[(extra && extra.source) || "me"];
@@ -165,10 +166,11 @@ function harness(files, opts) {
 
   // Earlier imports tagged "Both" are switched to "Me" once
   const h7 = harness({ me: { hash: "h1", bytes: mine } });
-  h7.state.expenses = [{ id: "sp-old", date: "2026-10-01", amount: 1, paidBy: "Both" }, { id: "exp-x", date: "2026-10-01", amount: 2, paidBy: "Both" }];
-  h7.state.spendingImport = { ids: ["sp-old"], file: "", importedAt: null };
+  const milkId = Core.rowsToExpenses([{ amount: 100, date: day("2026-10-01"), name: "Milk", category: "Groceries" }])[0].id;
+  h7.state.expenses = [{ id: milkId, date: "2026-10-01", amount: 100, paidBy: "Both" }, { id: "exp-x", date: "2026-10-01", amount: 2, paidBy: "Both" }];
+  h7.state.spendingImport = { ids: [milkId], file: "", importedAt: null };
   await h7.win.LifeLedgerSpending.run({ manual: false });
-  assert.strictEqual(h7.state.expenses.find((e) => e.id === "sp-old").paidBy, "Me");
+  assert.strictEqual(h7.state.expenses.find((e) => e.id === milkId).paidBy, "Me");
   assert.strictEqual(h7.state.expenses.find((e) => e.id === "exp-x").paidBy, "Both", "manual entries untouched");
 
   // Rebuild: wipes every expense (any origin, any duplicates) and imports both sources fresh
@@ -222,6 +224,83 @@ function harness(files, opts) {
   h10.win.LifeLedgerSpending.autoCheck();                           // inside the 30-minute throttle
   await new Promise((r) => setTimeout(r, 300));
   assert.strictEqual(h10.state.expenses.length, 2, "throttled: no second Dropbox check so soon");
+
+  // ── Mirror: whatever the Spending app has is what Life Ledger has ──
+  const two = makeBackup([{ amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }, { amount: 250, date: day("2026-10-02"), name: "Bus", cat: 2 }, { amount: 75, date: day("2026-10-03"), name: "Tea", cat: 1 }]);
+  const mf = { me: { hash: "m1", bytes: two } };
+  const hm = harness(mf);
+  await hm.win.LifeLedgerSpending.run({ manual: true });
+  hm.state.expenses.push({ id: "exp-mine", date: "2026-10-04", amount: 9, paidBy: "Me", category: "Other", note: "typed by hand" });
+  // In the Spending app: Milk edited (100 → 120), Bus deleted, Tea untouched
+  mf.me = { hash: "m2", bytes: makeBackup([{ amount: 120, date: day("2026-10-01"), name: "Milk", cat: 1 }, { amount: 75, date: day("2026-10-03"), name: "Tea", cat: 1 }]) };
+  await hm.win.LifeLedgerSpending.run({ manual: true });
+  const amounts = hm.state.expenses.filter((e) => e.id.startsWith("sp-")).map((e) => e.amount).sort((a, b) => a - b);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(amounts)), [75, 120], "edit replaced the old row, deletion removed it");
+  assert.ok(hm.state.expenses.some((e) => e.id === "exp-mine"), "what you typed in yourself is never removed");
+  assert.strictEqual(hm.win.__snapshots, 1, "a restore point is saved before removing");
+  assert.ok(/1 new expense, 2 removed/.test(hm.els.spendingSyncStatus.textContent), hm.els.spendingSyncStatus.textContent);
+  assert.strictEqual(hm.state.spendingImport.ids.length, 2, "removed rows are forgotten, not remembered forever");
+  // the deleted row comes back in the Spending app later → it is imported again
+  mf.me = { hash: "m3", bytes: makeBackup([{ amount: 120, date: day("2026-10-01"), name: "Milk", cat: 1 }, { amount: 75, date: day("2026-10-03"), name: "Tea", cat: 1 }, { amount: 250, date: day("2026-10-02"), name: "Bus", cat: 2 }]) };
+  await hm.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(hm.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 3, "a row that reappears is added again");
+  // an automatic check mirrors small changes too, silently
+  mf.me = { hash: "m4", bytes: makeBackup([{ amount: 120, date: day("2026-10-01"), name: "Milk", cat: 1 }, { amount: 75, date: day("2026-10-03"), name: "Tea", cat: 1 }]) };
+  hm.ls.setItem("lifeLedgerSpendingLastCheck", "0");
+  hm.win.LifeLedgerSpending.autoCheck();
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(hm.state.expenses.filter((e) => e.id.startsWith("sp-")).length, 2, "automatic check removed the deleted row");
+
+  // A deleted-here row stays deleted even though it is still in the backup (unchanged behaviour)
+  const hd = harness({ me: { hash: "d1", bytes: two } });
+  await hd.win.LifeLedgerSpending.run({ manual: true });
+  hd.state.expenses = hd.state.expenses.filter((e) => e.amount !== 250);
+  await hd.win.LifeLedgerSpending.run({ manual: true });
+  assert.ok(!hd.state.expenses.some((e) => e.amount === 250));
+
+  // A backup that looks incomplete never wipes your data (e.g. half the rows missing)
+  const bigRows = Array.from({ length: 60 }, (_, i) => ({ amount: 10 + i, date: day("2026-09-" + String((i % 27) + 1).padStart(2, "0")), name: "Row " + i, cat: 1 }));
+  const bf = { me: { hash: "b1", bytes: makeBackup(bigRows) } };
+  const hb = harness(bf);
+  await hb.win.LifeLedgerSpending.run({ manual: true });
+  bf.me = { hash: "b2", bytes: makeBackup(bigRows.slice(0, 20)) };   // 40 rows "missing"
+  await hb.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(hb.state.expenses.length, 60, "nothing removed from a suspiciously small backup");
+  assert.ok(/incomplete/.test(hb.els.spendingSyncStatus.textContent), hb.els.spendingSyncStatus.textContent);
+
+  // Many differences found by an automatic check wait for you; a manual check asks (confirm is yes in this test)
+  const mid = Array.from({ length: 100 }, (_, i) => ({ amount: 10 + i, date: day("2026-08-" + String((i % 27) + 1).padStart(2, "0")), name: "M" + i, cat: 1 }));
+  const mf2 = { me: { hash: "c1", bytes: makeBackup(mid) } };
+  const hc = harness(mf2);
+  await hc.win.LifeLedgerSpending.run({ manual: true });
+  mf2.me = { hash: "c2", bytes: makeBackup(mid.slice(30)) };          // 30 rows gone (> 20 limit), 70 remain
+  hc.ls.setItem("lifeLedgerSpendingLastCheck", "0");
+  hc.win.LifeLedgerSpending.autoCheck();
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(hc.state.expenses.length, 100, "automatic check does not remove a large batch");
+  assert.ok(/Import now/.test(hc.els.spendingSyncStatus.textContent));
+  await hc.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(hc.state.expenses.length, 70, "after you confirm, the 30 are removed");
+
+  // A device whose backup went missing must not look like "everything there was deleted"
+  const da = makeBackup([{ amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }, { amount: 40, date: day("2026-10-12"), name: "Only on A", cat: 1 }]);
+  const db2 = makeBackup([{ amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }, { amount: 90, date: day("2026-10-13"), name: "Only on B", cat: 1 }]);
+  const mfd = { me: { devices: [{ hash: "a1", bytes: da }, { hash: "b1", bytes: db2 }] } };
+  const hdv = harness(mfd);
+  await hdv.win.LifeLedgerSpending.run({ manual: true });
+  mfd.me = { devices: [{ hash: "a2", bytes: da }] };                 // device B stopped backing up
+  await hdv.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(hdv.state.expenses.length, 3, "rows that only device B had are kept");
+  assert.ok(/missing/.test(hdv.els.spendingSyncStatus.textContent), hdv.els.spendingSyncStatus.textContent);
+
+  // If the restore point cannot be saved, nothing is removed
+  const sf = { me: { hash: "s1", bytes: two } };
+  const hs = harness(sf, { failSnapshot: true });
+  await hs.win.LifeLedgerSpending.run({ manual: true });
+  sf.me = { hash: "s2", bytes: makeBackup([{ amount: 100, date: day("2026-10-01"), name: "Milk", cat: 1 }]) };
+  await hs.win.LifeLedgerSpending.run({ manual: true });
+  assert.strictEqual(hs.state.expenses.length, 3);
+  assert.ok(/restore point/.test(hs.els.spendingSyncStatus.textContent));
 
   console.log("spending-import tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

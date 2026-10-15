@@ -84,4 +84,19 @@ assert.strictEqual(wp.matchedExisting, 0);
   assert.strictEqual(C.overlapRatio(other, mine.map((e) => e.id)), 0);
 }
 
+// planRemovals: imported rows missing from the backup are candidates; hand-typed rows never are
+{
+  const incoming = [{ id: "sp-a" }, { id: "sp-b" }];
+  const existing = [{ id: "sp-a" }, { id: "sp-gone" }, { id: "spw-x" }, { id: "exp-hand" }];
+  const r = C.planRemovals(existing, incoming, "sp-");
+  assert.deepStrictEqual(r.stale.map((e) => e.id), ["sp-gone"], "only this source's missing row; wife's and typed rows are ignored");
+  assert.strictEqual(r.large, false);
+  assert.strictEqual(r.tooFewRows, false, "small data sets don't trigger the incomplete-backup guard");
+  const many = Array.from({ length: 100 }, (_, i) => ({ id: "sp-" + i }));
+  assert.strictEqual(C.planRemovals(many, many.slice(0, 40), "sp-").tooFewRows, true, "most of the rows missing looks like an incomplete backup");
+  assert.strictEqual(C.planRemovals(many, many.slice(0, 75), "sp-").large, true, "25 of 100 is more than the batch limit");
+  assert.strictEqual(C.planRemovals(many, many.slice(0, 85), "sp-").large, false, "a handful of edits is applied automatically");
+  assert.strictEqual(C.planRemovals(null, null, "sp-").stale.length, 0, "bad input never throws");
+}
+
 console.log("spending-core tests passed");
