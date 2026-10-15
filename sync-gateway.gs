@@ -69,8 +69,10 @@ function syncHandle_(req) {
   var op = req && req.op;
   if (!op) return { ok: false, error: "missing op" };
   if (!req.token) return { ok: false, error: "missing token" };
-  var lock = LockService.getScriptLock();
-  lock.waitLock(25000);
+  // Only writes need the global lock. Reads (pull, backups) and the slow Dropbox lookups must NOT hold it,
+  // or one device's spending import makes every other device's sync wait and time out.
+  var lock = (op === "push" || op === "snapshotNow") ? LockService.getScriptLock() : null;
+  if (lock) lock.waitLock(25000);
   try {
     var folder = syncFolder_();
     var state = syncReadState_(folder);
@@ -137,7 +139,7 @@ function syncHandle_(req) {
   } catch (err) {
     return { ok: false, error: String(err && err.message || err) };
   } finally {
-    lock.releaseLock();
+    if (lock) lock.releaseLock();
   }
 }
 

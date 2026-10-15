@@ -34,6 +34,7 @@ function makeGatewayRuntime() {
     getFiles() { const l = [...files.values()].map(fileApi); let i = 0; return { hasNext: () => i < l.length, next: () => l[i++] }; },
     createFile: (name, content) => mkFile(name, content),
   };
+  const locks = { n: 0 };
   const ctx = {
     console, JSON, Date, Math, String, Number, Array, Object,
     MimeType: { PLAIN_TEXT: "text/plain" },
@@ -42,7 +43,7 @@ function makeGatewayRuntime() {
       createFolder: () => folder,
       getFileById: (id) => fileApi(files.get(id)),
     },
-    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    LockService: { getScriptLock: () => { locks.n++; return { waitLock() {}, releaseLock() {} }; } },
     Utilities: {
       DigestAlgorithm: { SHA_256: "sha256" },
       computeDigest: (_a, s) => [...require("crypto").createHash("sha256").update(s).digest()].map((b) => (b > 127 ? b - 256 : b)),
@@ -54,7 +55,7 @@ function makeGatewayRuntime() {
   vm.runInContext("function createJsonResponse(d){return ContentService.createTextOutput(JSON.stringify(d)).setMimeType(ContentService.MimeType.JSON);}", ctx);
   vm.runInContext(read("sync-gateway.gs"), ctx);
   return {
-    files,
+    files, locks,
     call: (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).t),
     meta: () => JSON.parse(vm.runInContext("JSON.stringify(syncMeta_())", ctx)),
   };
@@ -178,6 +179,17 @@ function makeDevice(gw, name) {
   const t = (await mac.Sync.listBackups.call(mac.Sync).catch(() => null));
   assert.ok(Array.isArray(t));
   assert.ok(cur >= 4);
+
+  // Only writes take the global script lock; reads and slow Dropbox lookups must never queue behind it
+  const before = gw.locks.n;
+  const anyToken = "0".repeat(64);
+  gw.call({ op: "pull", token: anyToken, sinceRev: 0 });
+  gw.call({ op: "listBackups", token: anyToken });
+  gw.call({ op: "spendingMeta", token: anyToken, source: "me" });
+  assert.strictEqual(gw.locks.n, before, "pull / listBackups / spending ops take no lock");
+  gw.call({ op: "push", token: anyToken, baseRev: 0, vault: { ciphertext: "x" } });
+  gw.call({ op: "snapshotNow", token: anyToken });
+  assert.strictEqual(gw.locks.n, before + 2, "push and snapshotNow still take the lock");
 
   console.log("sync-gateway tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });
