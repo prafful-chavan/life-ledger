@@ -120,3 +120,14 @@ prioritised review from those numbers only; every action must cite a real signal
 Setup: add `advisor-history.gs` to the Apps Script project, replace `stock-price-proxy.gs` (adds `?history=`),
 Deploy → New version. Set your goals under Dashboard → Wealth Advisor → Profile. Educational analytics, not
 SEBI-registered investment advice.
+
+## Hey Prafful — knowing everything, now and in future
+
+The chat agent does not rely on a fixed prompt. It has tools (`knowledge.js`) that read the app's data directly:
+`list_sources`, `query_data` (filter / group by field or year-quarter-month-week-day / sum-avg-count-min-max over the
+FULL history), `get_module`, `get_object` and `calculate` (exact maths). Every list stored in the app state is
+discovered automatically — a new section that keeps an array of records in `state` is queryable with no extra code.
+
+To give a new feature a hand-written briefing, register a module (see `knowledge-modules.js`):
+`LifeLedgerKnowledge.registerModule({ id, title, description, build: (state, args) => "text" })`.
+Add a line to `DESCRIPTIONS` in `knowledge.js` if you want the new list to carry a friendly explanation.

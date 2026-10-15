@@ -297,18 +297,28 @@
     setInterval(() => { if (!document.hidden) schedule({ history: false }); }, 10 * 60 * 1000);
   });
 
-  // Give the Hey Prafful chat the full portfolio briefing (holdings metrics, signals, trends, debts, goals).
-  function registerChatContext() {
+  // Give Hey Prafful the full picture: portfolio briefing in every context, plus tools that query ANY
+  // list in the app (see knowledge.js). New features are discovered automatically.
+  function portfolioText() {
     const Ctx = window.LifeLedgerAdvisorContext;
-    if (!window.LifeLedgerAI?.setContextProvider || !Ctx) return;
-    window.LifeLedgerAI.setContextProvider(() => {
-      const app = window.LifeLedgerApp;
-      if (!app || !Engine()) return "";
-      const inp = input || app.getAdvisorInput();
-      const res = result || Engine().analyze(inp);
-      const rev = stored();
-      return Ctx.build({ result: res, input: inp, extras: app.getAdvisorExtras(), review: rev && rev.review });
-    });
+    const app = window.LifeLedgerApp;
+    if (!app || !Engine() || !Ctx) return "";
+    const inp = input || app.getAdvisorInput();
+    const res = result || Engine().analyze(inp);
+    const rev = stored();
+    return Ctx.build({ result: res, input: inp, extras: app.getAdvisorExtras(), review: rev && rev.review });
+  }
+
+  function registerChatContext() {
+    const AIm = window.LifeLedgerAI;
+    if (!AIm) return;
+    if (AIm.setContextProvider && window.LifeLedgerAdvisorContext) AIm.setContextProvider(() => portfolioText());
+    const K = window.LifeLedgerKnowledge;
+    const KM = window.LifeLedgerKnowledgeModules;
+    if (K && KM && AIm.attachKnowledge) {
+      AIm.attachKnowledge(K, () => window.LifeLedgerApp.getState());
+      KM.register(K, () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10), () => portfolioText());
+    }
   }
   window.addEventListener("load", registerChatContext);
 

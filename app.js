@@ -1751,14 +1751,14 @@ function bindChat() {
       const watchdog = setTimeout(() => {
         if (isFinished) return;
         isFinished = true;
-        console.warn("[AI Agent] Stream timed out after 60s");
+        console.warn("[AI Agent] Stream timed out after 120s");
         window.LifeLedgerAI?.cancelRequest?.();
         streamBubble.remove();
         const fallback = answerQuestion(question);
         addChat("assistant", fallback + "\n\n_⚠️ AI response timed out. Please check your API key or network connection._");
         input.disabled = false;
         input.focus();
-      }, 60000);
+      }, 120000);
 
       window.LifeLedgerAI.streamAgent(
         question,

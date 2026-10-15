@@ -476,7 +476,10 @@ ${studiesText("ETL", wifeStudies)}
   function setContextProvider(fn) { contextProvider = typeof fn === "function" ? fn : null; }
 
   function buildDataContext(state) {
-    const base = buildBaseContext(state);
+    let base = buildBaseContext(state);
+    if (knowledge) {
+      try { base = `${base}\n\n${knowledge.catalogText(state)}`; } catch (err) { console.warn("[AI Agent] catalog failed:", err); }
+    }
     if (!contextProvider) return base;
     try {
       const extra = contextProvider(state);
@@ -982,6 +985,7 @@ PERSONALITY & RULES:
   }
 
   function streamAI(userMessage, dataContext, chatHistory = [], onChunk, onDone, onError) {
+    if (canUseTools()) return streamWithTools(userMessage, dataContext, chatHistory, onChunk, onDone, onError);
     const provider = getActiveProvider();
     const hasGemini = Boolean(getGeminiKey());
     const hasOpenRouter = Boolean(getOpenRouterKey());
@@ -1005,6 +1009,148 @@ PERSONALITY & RULES:
       }
       onError(new Error("No OpenRouter API key. Please add your key in Settings."));
     }
+  }
+
+
+  // ─── Tool-calling agent (the model queries the app's data itself) ───────────
+
+  let knowledge = null;
+  let getStateFn = null;
+  function attachKnowledge(k, getState) { knowledge = k || null; getStateFn = typeof getState === "function" ? getState : null; }
+
+  const TOOL_GUIDE = `TOOLS: you can query the app's data yourself. Use them whenever a question involves history older than the context shows, totals across years, comparisons, streaks, rankings, or any what-if arithmetic.
+• list_sources shows every list in the app (finance, fitness, habits, career, goals, tasks, interviews, net worth…) with fields and date ranges — new features appear there automatically.
+• query_data filters, groups (by field or year/quarter/month/week/day) and aggregates over the FULL history. Prefer grouping with metrics over pulling raw rows.
+• get_module returns rich briefings (e.g. portfolio analysis). get_object reads single settings/targets. calculate does exact maths — use it for every projection or percentage instead of mental arithmetic.
+• You may call several tools, then combine sources (e.g. spending vs workouts vs savings). If a tool returns nothing or an error, say so and adjust; never invent data.`;
+
+  function toGeminiSchema(node) {
+    if (Array.isArray(node)) return node.map(toGeminiSchema);
+    if (node && typeof node === "object") {
+      const out = {};
+      for (const [k, v] of Object.entries(node)) out[k] = k === "type" && typeof v === "string" ? v.toUpperCase() : toGeminiSchema(v);
+      return out;
+    }
+    return node;
+  }
+
+  function describeCall(name, args) {
+    const a = args || {};
+    if (name === "query_data") return `Checking your ${a.source || "data"}`;
+    if (name === "get_module") return `Reading ${a.id || "a briefing"}`;
+    if (name === "get_object") return `Reading ${a.name || "settings"}`;
+    if (name === "calculate") return "Calculating";
+    return "Checking what data I have";
+  }
+
+  function emitText(text, onChunk, onDone) {
+    // The answer arrives whole after the tool rounds; reveal it progressively like a stream.
+    let i = 0;
+    const step = Math.max(40, Math.ceil(text.length / 40));
+    (function tick() {
+      i = Math.min(text.length, i + step);
+      onChunk(text.slice(0, i));
+      if (i < text.length) setTimeout(tick, 12); else onDone(text);
+    })();
+  }
+
+  const MAX_TOOL_ROUNDS = 6;
+  const TOOL_DEADLINE_MS = 100000;
+
+  async function geminiToolLoop(userMessage, dataContext, chatHistory, onStatus, signal) {
+    const state = getStateFn ? getStateFn() : {};
+    const systemText = `${SYSTEM_PROMPT}\n\n${TOOL_GUIDE}\n\n[CURRENT LIFE DATA CONTEXT]\n=========================================\n${dataContext}\n=========================================`;
+    const contents = buildGeminiContents(userMessage, chatHistory);
+    const model = getGeminiModel();
+    const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(getGeminiKey())}`;
+    const tools = [{ functionDeclarations: knowledge.TOOL_SPECS.map((t) => ({ name: t.name, description: t.description, parameters: toGeminiSchema(t.parameters) })) }];
+    const started = Date.now();
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const useTools = round < MAX_TOOL_ROUNDS && Date.now() - started < TOOL_DEADLINE_MS;
+      const body = { systemInstruction: { parts: [{ text: systemText }] }, contents, generationConfig: { temperature: 0.6, maxOutputTokens: 8192 } };
+      if (useTools) body.tools = tools;
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 429) throw new Error("Gemini rate limit exceeded. Please wait a few seconds and try again.");
+        if (res.status === 401 || res.status === 403) throw new Error("Invalid Gemini API key. Verify your key at aistudio.google.com/app/apikey");
+        throw new Error(`Gemini API error (${res.status}): ${errText.slice(0, 160)}`);
+      }
+      const data = await res.json();
+      const cand = data?.candidates?.[0];
+      if (!cand) throw new Error(data?.promptFeedback?.blockReason ? `Gemini safety block: ${data.promptFeedback.blockReason}` : "No response generated by Gemini.");
+      const parts = cand.content?.parts || [];
+      const calls = parts.filter((p) => p.functionCall);
+      if (!calls.length || !useTools) {
+        const text = parts.map((p) => p.text || "").join("").trim();
+        if (!text) throw new Error("Empty response from Gemini.");
+        return text;
+      }
+      contents.push({ role: "model", parts });
+      const responses = calls.map((c) => {
+        onStatus(describeCall(c.functionCall.name, c.functionCall.args));
+        const result = knowledge.runTool(c.functionCall.name, c.functionCall.args || {}, state);
+        return { functionResponse: { name: c.functionCall.name, response: result && typeof result === "object" ? result : { value: result } } };
+      });
+      contents.push({ role: "user", parts: responses });
+    }
+    throw new Error("The agent could not finish within its tool budget.");
+  }
+
+  async function openRouterToolLoop(userMessage, dataContext, chatHistory, onStatus, signal) {
+    const state = getStateFn ? getStateFn() : {};
+    const messages = buildOpenRouterMessages(userMessage, `${dataContext}`, chatHistory);
+    messages[0].content = `${SYSTEM_PROMPT}\n\n${TOOL_GUIDE}\n\n[CURRENT LIFE DATA CONTEXT]\n=========================================\n${dataContext}\n=========================================`;
+    const tools = knowledge.TOOL_SPECS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
+    const started = Date.now();
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const useTools = round < MAX_TOOL_ROUNDS && Date.now() - started < TOOL_DEADLINE_MS;
+      const body = { model: getOpenRouterModel(), messages, temperature: 0.6, max_tokens: 8192 };
+      if (useTools) body.tools = tools;
+      const res = await fetch(OPENROUTER_ENDPOINT, {
+        method: "POST", signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getOpenRouterKey()}`, "HTTP-Referer": APP_REFERER, "X-Title": APP_TITLE },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`OpenRouter error ${res.status}: ${(await res.text()).slice(0, 160)}`);
+      const msg = (await res.json())?.choices?.[0]?.message;
+      if (!msg) throw new Error("No response from OpenRouter.");
+      const calls = msg.tool_calls || [];
+      if (!calls.length || !useTools) {
+        const text = String(msg.content || "").trim();
+        if (!text) throw new Error("Empty response from OpenRouter.");
+        return text;
+      }
+      messages.push({ role: "assistant", content: msg.content || "", tool_calls: calls });
+      for (const c of calls) {
+        let args = {};
+        try { args = JSON.parse(c.function.arguments || "{}"); } catch { /* malformed: run with no args */ }
+        onStatus(describeCall(c.function.name, args));
+        messages.push({ role: "tool", tool_call_id: c.id, content: JSON.stringify(knowledge.runTool(c.function.name, args, state)) });
+      }
+    }
+    throw new Error("The agent could not finish within its tool budget.");
+  }
+
+  function canUseTools() {
+    if (!knowledge || !getStateFn) return false;
+    return getActiveProvider() === "gemini" ? Boolean(getGeminiKey()) : Boolean(getOpenRouterKey());
+  }
+
+  function streamWithTools(userMessage, dataContext, chatHistory, onChunk, onDone, onError) {
+    if (activeController) { activeController.abort(); activeController = null; }
+    const controller = new AbortController();
+    activeController = controller;
+    const onStatus = (label) => { try { onChunk(`_🔎 ${label}…_`); } catch { /* ignore */ } };
+    onStatus("Thinking");
+    const loop = getActiveProvider() === "gemini" ? geminiToolLoop : openRouterToolLoop;
+    loop(userMessage, dataContext, chatHistory, onStatus, controller.signal)
+      .then((text) => { if (activeController === controller) activeController = null; emitText(text, onChunk, onDone); })
+      .catch((err) => {
+        if (activeController === controller) activeController = null;
+        if (err && err.name === "AbortError") return;
+        onError(err);
+      });
   }
 
   // ─── Public API ──────────────────────────────────────────────────────────────
@@ -1151,6 +1297,8 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     cancelRequest,
     buildDataContext,
     setContextProvider,
+    attachKnowledge,
+    streamWithTools,
     generateStructured,
     parseJsonLoose,
   };
