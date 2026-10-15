@@ -6503,4 +6503,15 @@ body[data-theme="dark"] .metric-card .label {
     min-height: 44px;
   }
   .view .action-btn, .view .quick-contribute-btn, .view .log-habit-btn { min-width: 44px; }
+
+  /* Log Activity form: swipeable type tabs and a Save bar that stays in reach */
+  #actTypeTabs { flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #actTypeTabs::-webkit-scrollbar { display: none; }
+  #actTypeTabs .act-tab-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 13px; }
+  #activityLoggerForm .modal-actions {
+    position: sticky; bottom: 0; z-index: 2;
+    background: var(--panel);
+    margin-bottom: 0 !important;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom)) !important;
+  }
 }

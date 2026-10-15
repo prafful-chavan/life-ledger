@@ -16,7 +16,7 @@
     <meta name="apple-mobile-web-app-title" content="Life Ledger" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Prafful's & Archana Life Ledger</title>
-    <link rel="stylesheet" href="styles.css?v=1.0.19" />
+    <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -29,7 +29,7 @@
     <script src="ui-polish.js?v=1.0.3" defer></script>
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.70"></script>
+    <script defer src="app.js?v=1.0.71"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.3"></script>
     <script defer src="auth.js?v=1.0.44"></script>
@@ -2669,6 +2669,7 @@
             Activity Name / Title
             <input type="text" id="actLogTitle" placeholder="e.g. Morning Walk, Highway Ride" />
           </label>
+          <p class="muted-small full-span" id="actPrefillHint" hidden style="margin: 0 0 4px;"></p>
 
           <!-- Steps Specific Section -->
           <div class="full-span act-field-group" id="groupStepsFields">

@@ -213,3 +213,34 @@ if (failedTests > 0) {
 } else {
   console.log('🎉 ALL EXERCISE TRACKING TESTS PASSED SUCCESSFULLY!');
 }
+
+runTest('getActivityDefaults: the log form starts from your last entry of that kind', () => {
+  const acts = [
+    { id: "a1", type: "cycling", date: "2026-10-10", title: "Morning Highway Ride", distanceKm: 24.5, durationMin: 70, intensity: "High" },
+    { id: "a2", type: "cycling", date: "2026-10-13", title: "Cycling Ride", distanceKm: 18, durationMin: 55, intensity: "Moderate" },
+    { id: "a3", type: "steps", date: "2026-10-14", steps: 9100, distanceKm: 6.4, durationMin: 0 },
+  ];
+  const c = app.getActivityDefaults("cycling", acts, "2026-10-15");
+  assert.strictEqual(c.distanceKm, 18);
+  assert.strictEqual(c.durationMin, 55);
+  assert.strictEqual(c.from.date, "2026-10-13", "most recent ride wins");
+  const s = app.getActivityDefaults("steps", acts, "2026-10-15");
+  assert.strictEqual(s.steps, 9100);
+  assert.strictEqual(s.durationMin, 45, "a steps entry with no duration keeps the starter duration");
+  assert.strictEqual(s.title, "");
+  // first time ever → the old starters
+  const none = app.getActivityDefaults("running", [], "2026-10-15");
+  assert.strictEqual(none.distanceKm, 5); assert.strictEqual(none.durationMin, 30); assert.strictEqual(none.from, null);
+  assert.strictEqual(app.getActivityDefaults("cycling", [], "2026-10-15").distanceKm, 20);
+  // a custom title carries over, imported-looking ones don't
+  assert.strictEqual(app.getActivityDefaults("cycling", [acts[0]], "2026-10-15").title, "Morning Highway Ride");
+  // bad data never produces NaN/zero
+  const bad = app.getActivityDefaults("cycling", [{ type: "cycling", date: "2026-10-12", distanceKm: "abc", durationMin: -3 }], "2026-10-15");
+  assert.strictEqual(bad.distanceKm, 20); assert.strictEqual(bad.durationMin, 60);
+});
+
+runTest('findStepsEntryFor: spots a second steps entry for the same day', () => {
+  const acts = [{ id: "s", type: "steps", date: "2026-10-15", steps: 5000 }, { id: "c", type: "cycling", date: "2026-10-15" }];
+  assert.strictEqual(app.findStepsEntryFor("2026-10-15", acts).id, "s");
+  assert.strictEqual(app.findStepsEntryFor("2026-10-14", acts), null);
+});
