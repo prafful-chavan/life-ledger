@@ -59,19 +59,26 @@
    * fx:   USD→INR series (INR=X) or a plain number
    * Returns per-class value, day change, whether it is final, and the date of the close actually used.
    */
+  const MAX_ESTIMATED_SHARE = 0.02; // up to 2% of a class may be priced from today's price when a series is unavailable
+
   function rebuildMarketClasses({ date, nowMs, held, fx }) {
-    const out = { values: {}, changes: {}, settled: {}, asOf: {}, missing: {} };
+    const out = { values: {}, changes: {}, settled: {}, asOf: {}, missing: {}, estimated: {} };
     const fxClose = typeof fx === "number" ? { value: fx, date } : closeOnOrBefore(fx, date);
     const fxPrev = typeof fx === "number" ? fx : fxClose && fxClose.prevValue;
 
     ["mutualFunds", "stocks", "usStocks"].forEach((cls) => {
       const list = (held && held[cls]) || [];
-      let value = 0, change = 0, usedDate = "";
+      let value = 0, change = 0, usedDate = "", estimatedValue = 0;
       const missing = [];
+      const estimated = [];
       list.forEach((h) => {
         const c = closeOnOrBefore(h.series, date);
-        if (!c || !(c.value > 0)) { missing.push(h.key); return; }
         const mult = cls === "usStocks" ? (fxClose ? fxClose.value : 0) : 1;
+        if (!c || !(c.value > 0)) {
+          // no usable history: fall back to the app's own current price, if there is one (counted as an estimate)
+          if (h.fallback > 0 && mult > 0) { const v = h.qty * h.fallback * mult; value += v; estimatedValue += v; estimated.push(h.key); return; }
+          missing.push(h.key); return;
+        }
         if (!(mult > 0)) { missing.push(h.key); return; }
         value += h.qty * c.value * mult;
         if (c.prevValue > 0) change += h.qty * (c.value - c.prevValue) * mult;
@@ -81,12 +88,28 @@
       out.changes[cls] = r2(change);
       out.asOf[cls] = usedDate || "";
       out.missing[cls] = missing;
+      out.estimated[cls] = estimated;
+      const estimatedOk = value > 0 ? estimatedValue / value <= MAX_ESTIMATED_SHARE : estimated.length === 0;
       if (!list.length) out.settled[cls] = true;
-      else out.settled[cls] = missing.length === 0 && classComplete(cls, date, nowMs, list.map((h) => h.series));
+      else out.settled[cls] = missing.length === 0 && estimatedOk && classComplete(cls, date, nowMs, list.filter((h) => h.series).map((h) => h.series));
+      if (!estimatedOk) missing.push(...estimated);   // too much of the class would be a guess: treat as unverifiable
     });
     void fxPrev;
     return out;
   }
 
-  return { rebuildMarketClasses, closeOnOrBefore, classComplete, isBusinessDay, prevBusinessDay, istMs, dayAfter };
+  /**
+   * Rows of `list` that were held on `dateISO`. A holdings list imported from a broker (no transaction
+   * type, every row stamped with the same import date) says "this is what I hold now", not "I bought
+   * this today", so those rows count as held on earlier days too. Real dated purchases use their date.
+   */
+  function ownedAsOf(list, dateISO, dateOf) {
+    const rows = list || [];
+    const counts = {};
+    rows.forEach((t) => { if (!t.transactionType) { const d = dateOf(t); if (d) counts[d] = (counts[d] || 0) + 1; } });
+    const snap = new Set(Object.keys(counts).filter((d) => counts[d] >= 5 && counts[d] >= 0.6 * rows.length));
+    return rows.filter((t) => { const d = dateOf(t); return !d || d <= dateISO || (snap.has(d) && !t.transactionType); });
+  }
+
+  return { ownedAsOf, rebuildMarketClasses, closeOnOrBefore, classComplete, isBusinessDay, prevBusinessDay, istMs, dayAfter };
 });

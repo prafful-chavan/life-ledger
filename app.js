@@ -8711,7 +8711,7 @@ function dateOfTxn(t) {
 function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
   const dayRecords = (records || []).filter(r => r.date === date).sort((a, b) => new Date(a.ts) - new Date(b.ts));
   if (dayRecords.length === 0) return null;
-  const owned = (list) => (list || []).filter(t => !dateOfTxn(t) || dateOfTxn(t) <= date);
+  const owned = (list) => (typeof window !== 'undefined' && window.LifeLedgerNetWorthClose ? window.LifeLedgerNetWorthClose.ownedAsOf(list, date, dateOfTxn) : (list || []).filter(t => !dateOfTxn(t) || dateOfTxn(t) <= date));
 
   // Net holdings on `date`
   const groupNet = (list, keyFn, netFn) => {
@@ -9023,7 +9023,7 @@ function renderNetWorthHistory() {
               return `<div class="nwh-why" data-id="${escapeHTML(item.id)}" role="button" tabindex="0" style="font-size:0.7rem;color:var(--negative,#dc2626);cursor:pointer;text-decoration:underline;" title="Click to see which holding differs">⚠ Needs a look — click to see why</div>`;
             }
             if (item.final) {
-              return `<div style="font-size:0.7rem;color:var(--positive,#16a34a);" title="${escapeHTML(closes ? 'Prices used (date of each official close): ' + closes : 'All prices were captured after their close.')}">✅ Final — official closing prices</div>${warn}`;
+              return `<div style="font-size:0.7rem;color:var(--positive,#16a34a);" title="${escapeHTML((closes ? 'Prices used (date of each official close): ' + closes : 'All prices were captured after their close.') + (item.audit && item.audit.estimated ? ' · Estimated from today\'s price (no price history): ' + item.audit.estimated.join(', ') : ''))}">✅ Final — official closing prices${item.audit && item.audit.estimated ? ` (${item.audit.estimated.length} small estimate${item.audit.estimated.length > 1 ? 's' : ''})` : ''}</div>${warn}`;
             }
             return `<div style="font-size:0.7rem;color:var(--muted);" title="This day is still waiting for official closing data. It fills in automatically and then locks.">⏳ Waiting for: ${escapeHTML(waiting.join(', ') || 'closing prices')}</div>${warn}`;
           })()}
@@ -9069,7 +9069,7 @@ const NWH_CLASS_DUE = { mutualFunds: 'mutual-fund NAV (published the next mornin
 function heldAsOfForClose(date, st) {
   // Mirrors the live totals exactly (calcStockTotalValue / captureCurrentNetWorthBreakdown):
   // stocks per symbol|owner|demat, funds per fund|owner, and only groups with a positive quantity.
-  const owned = (list) => (list || []).filter((t) => !dateOfTxn(t) || dateOfTxn(t) <= date);
+  const owned = (list) => (typeof window !== 'undefined' && window.LifeLedgerNetWorthClose ? window.LifeLedgerNetWorthClose.ownedAsOf(list, date, dateOfTxn) : (list || []).filter((t) => !dateOfTxn(t) || dateOfTxn(t) <= date));
   const stocksOf = (list, isUS) => {
     const groups = {};
     owned(list).forEach((t) => {
@@ -9117,13 +9117,19 @@ async function finalizeRecentNetWorthDays(opts = {}) {
   const hist = await PH.load([...keys], { network: true, maxAgeMs: 2 * 3600 * 1000 });
   const fxSeries = PH.toSeries(hist['INR=X']) || getUsdInrRate();
 
+  // The app's own current price per holding: used only to estimate a holding that has no price history
+  const fallbackPrices = { mutualFunds: {}, stocks: {}, usStocks: {} };
+  collectNetStockHoldings(state.stocks, false).forEach((h) => { if (!fallbackPrices.stocks[h.sym]) fallbackPrices.stocks[h.sym] = h.price; });
+  collectNetStockHoldings(state.usstocks, true).forEach((h) => { if (!fallbackPrices.usStocks[h.sym]) fallbackPrices.usStocks[h.sym] = h.price; });
+  (state.mutualFunds || []).forEach((t) => { if (toNumber(t.latestNav) > 0) fallbackPrices.mutualFunds[t.fundName || 'Unknown'] = toNumber(t.latestNav); });
+
   let changed = 0;
   const warnings = [];
   rows.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach((row) => {
     const held = heldByDate[row.date];
     const withSeries = {};
     ['mutualFunds', 'stocks', 'usStocks'].forEach((c) => {
-      withSeries[c] = held[c].map((x) => ({ key: x.key, qty: x.qty, series: x.histKey ? PH.toSeries(hist[x.histKey]) : null }));
+      withSeries[c] = held[c].map((x) => ({ key: x.key, qty: x.qty, series: x.histKey ? PH.toSeries(hist[x.histKey]) : null, fallback: fallbackPrices[c][x.sym || x.name] || 0 }));
     });
     const r = C.rebuildMarketClasses({ date: row.date, nowMs, held: withSeries, fx: fxSeries });
 
@@ -9135,6 +9141,7 @@ async function finalizeRecentNetWorthDays(opts = {}) {
     const rowWarn = [];
     const unverified = [];
     const warnDetail = [];
+    const estimatedHoldings = [];
     ['mutualFunds', 'stocks', 'usStocks'].forEach((c) => {
       // no usable price history for some holding of this class: leave the captured value and flags alone
       if (r.missing[c].length > 0 && held[c].length > 0) { unverified.push(c); return; }
@@ -9159,6 +9166,7 @@ async function finalizeRecentNetWorthDays(opts = {}) {
       changes[c] = r.changes[c];
       settled[c] = r.settled[c];
       closes[c] = r.asOf[c] || '';
+      if (r.estimated[c] && r.estimated[c].length) estimatedHoldings.push(...r.estimated[c].map((k) => `${NWH_CLASS_LABELS[c]}: ${k}`));
     });
     // gold: the evening rate captured that day stands; it becomes final once the next day has begun
     if (!(toNumber(row.gold) > 0) || settled.gold === undefined) settled.gold = toNumber(row.gold) > 0 ? !!row.settled?.gold : true;
@@ -9178,6 +9186,7 @@ async function finalizeRecentNetWorthDays(opts = {}) {
       method: NWH_FINALIZE_METHOD, at: (row.audit && row.audit.at) || new Date().toISOString(), closes,
       capturedBefore: (row.audit && row.audit.capturedBefore) || before,
       ...(unverified.length ? { unverified } : {}),
+      ...(estimatedHoldings.length ? { estimated: estimatedHoldings } : {}),
       ...(rowWarn.length ? { warnings: rowWarn, warnDetail } : {}),
     };
     if (rowWarn.length) warnings.push(`${row.date}: ${rowWarn.join('; ')}`);

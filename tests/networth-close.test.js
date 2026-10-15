@@ -69,4 +69,36 @@ assert.strictEqual(r.values.stocks, 32000);
 assert.strictEqual(r.asOf.stocks, "2026-10-16");
 assert.strictEqual(r.settled.stocks, true);
 
+// ── imported holdings lists vs real dated purchases ──────────────────
+{
+  const dateOf = (t) => String(t.purchaseDate || t.date || "").slice(0, 10);
+  const imported = Array.from({ length: 35 }, (_, i) => ({ symbol: "S" + i, quantity: 10, purchaseDate: "2026-10-15" })); // all stamped with the import day
+  assert.strictEqual(C.ownedAsOf(imported, "2026-10-12", dateOf).length, 35, "a holdings import counts as held on earlier days");
+  const trades = [
+    { symbol: "A", quantity: 1, transactionType: "BUY", purchaseDate: "2026-10-01" },
+    { symbol: "B", quantity: 1, transactionType: "BUY", purchaseDate: "2026-10-14" },
+  ];
+  assert.deepStrictEqual(C.ownedAsOf(trades, "2026-10-10", dateOf).map((t) => t.symbol), ["A"], "real trades use their own date");
+  const lots = Array.from({ length: 6 }, (_, i) => ({ symbol: "L" + i, purchaseDate: "2026-0" + (i + 1) + "-10" }));  // no type but distinct dates (US lots)
+  assert.strictEqual(C.ownedAsOf(lots, "2026-03-31", dateOf).length, 3, "distinct dates are honoured even without a type");
+  const mixed = imported.concat([{ symbol: "NEW", quantity: 1, transactionType: "BUY", purchaseDate: "2026-10-14" }]);
+  assert.strictEqual(C.ownedAsOf(mixed, "2026-10-12", dateOf).length, 35, "a trade made after the day is excluded");
+  assert.strictEqual(C.ownedAsOf([{ symbol: "X" }], "2026-10-12", dateOf).length, 1, "undated rows are always held");
+}
+
+// ── a holding with no price history is estimated only while it is a small part of the class ──
+{
+  const big = { key: "BIG", qty: 100, series: ser([["2026-10-13", 100], ["2026-10-14", 110]]) };
+  const tiny = { key: "TRIL", qty: 10, series: null, fallback: 50 };           // 500 vs 11,000 → 4.3%
+  let r2 = C.rebuildMarketClasses({ date: "2026-10-14", nowMs: ist("2026-10-15", 9), held: { stocks: [big, { ...tiny, qty: 3 }] }, fx: 85 });
+  assert.strictEqual(r2.values.stocks, 11000 + 150, "official close for the priced holding + today's price for the unpriced one");
+  assert.deepStrictEqual(r2.estimated.stocks, ["TRIL"]);
+  assert.strictEqual(r2.settled.stocks, true, "≤2% estimated: the class can still lock");
+  r2 = C.rebuildMarketClasses({ date: "2026-10-14", nowMs: ist("2026-10-15", 9), held: { stocks: [big, tiny] }, fx: 85 });
+  assert.strictEqual(r2.settled.stocks, false, "too much of the class would be a guess");
+  assert.ok(r2.missing.stocks.includes("TRIL"));
+  r2 = C.rebuildMarketClasses({ date: "2026-10-14", nowMs: ist("2026-10-15", 9), held: { stocks: [big, { key: "X", qty: 1, series: null }] }, fx: 85 });
+  assert.deepStrictEqual(r2.missing.stocks, ["X"], "no fallback price at all → still missing");
+}
+
 console.log("networth-close tests passed");
