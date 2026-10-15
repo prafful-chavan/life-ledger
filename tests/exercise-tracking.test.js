@@ -244,3 +244,31 @@ runTest('findStepsEntryFor: spots a second steps entry for the same day', () => 
   assert.strictEqual(app.findStepsEntryFor("2026-10-15", acts).id, "s");
   assert.strictEqual(app.findStepsEntryFor("2026-10-14", acts), null);
 });
+
+runTest('repairPhantomSteps: rides/runs/strength lose the hidden starter steps, walks keep theirs', () => {
+  const list = [
+    { id: "r1", type: "cycling", date: "2026-10-02", steps: 8000, distanceKm: 9.1, durationMin: 40 },
+    { id: "r2", type: "running", date: "2026-10-03", steps: 8000, distanceKm: 5 },
+    { id: "r3", type: "workout", date: "2026-10-04", steps: 8000 },
+    { id: "w1", type: "steps", date: "2026-10-06", steps: 9100 },
+    { id: "o1", type: "other", date: "2026-10-07", steps: 3000 },
+    { id: "r4", type: "cycling", date: "2026-10-08", distanceKm: 10 },
+  ];
+  const { list: out, fixed } = app.repairPhantomSteps(list);
+  assert.strictEqual(fixed, 3);
+  assert.ok(out.filter((a) => ["cycling", "running", "workout"].includes(a.type)).every((a) => a.steps === undefined));
+  assert.strictEqual(out.find((a) => a.id === "w1").steps, 9100);
+  assert.strictEqual(out.find((a) => a.id === "o1").steps, 3000);
+  assert.strictEqual(out.find((a) => a.id === "r1").distanceKm, 9.1, "nothing else about the ride changes");
+  assert.strictEqual(list[0].steps, 8000, "input isn't mutated");
+  // Running it again changes nothing
+  assert.strictEqual(app.repairPhantomSteps(out).fixed, 0);
+  // Your real October: 3 walks + 7 rides  → 28,100 steps, not 84,100
+  const oct = [
+    ...[9100, 10100, 8900].map((s, i) => ({ id: "w" + i, type: "steps", date: "2026-10-1" + i, steps: s })),
+    ...Array.from({ length: 7 }, (_, i) => ({ id: "c" + i, type: "cycling", date: "2026-10-0" + (i + 1), steps: 8000, distanceKm: 9 })),
+  ];
+  const total = (l) => l.reduce((t, a) => t + (a.steps || 0), 0);
+  assert.strictEqual(total(oct), 84100);
+  assert.strictEqual(total(app.repairPhantomSteps(oct).list), 28100);
+});
