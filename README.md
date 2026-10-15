@@ -109,3 +109,14 @@ run `dropboxExchangeCode`, then `dropboxTest`. Redeploy a new version.
 Wife's backup (separate Dropbox account): in the Dropbox app console enable additional users, have her
 open the link from `dropboxAuthUrl` and Allow, save the code as `DROPBOX_AUTH_CODE_WIFE`, run
 `dropboxExchangeCodeWife`, then `dropboxTestWife`. Her rows import as paid by "Wife" (ids `spw-…`).
+
+## Wealth Advisor (dashboard)
+
+Live portfolio analysis on the dashboard. `advisor-engine.js` computes returns, XIRR, drawdown, trend vs
+Nifty/S&P/gold, concentration, allocation drift, emergency-fund months, debt cost, savings rate and goal gaps
+and turns them into graded signals with evidence. An AI model (Gemini free by default, or OpenRouter) writes the
+prioritised review from those numbers only; every action must cite a real signal id (`advisor-ai.js` validates it).
+
+Setup: add `advisor-history.gs` to the Apps Script project, replace `stock-price-proxy.gs` (adds `?history=`),
+Deploy → New version. Set your goals under Dashboard → Wealth Advisor → Profile. Educational analytics, not
+SEBI-registered investment advice.

@@ -538,6 +538,11 @@ function batchResolveViaGoogleFinance(symbolsList, isUS) {
 }
 
 function doGet(e) {
+  // Advisor: daily price history for holdings and benchmarks (public market data)
+  if (e && e.parameter && e.parameter.history) {
+    return createJsonResponse(readHistory(e.parameter.history, e.parameter.days));
+  }
+
   // Sync gateway: fresh devices ask whether a vault exists (no secrets returned)
   if (e && e.parameter && e.parameter.syncMeta) {
     return createJsonResponse(syncMeta_());

@@ -1032,6 +1032,70 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     }
   }
 
+
+  // ─── Structured (JSON) generation — used by the portfolio advisor ───────────
+
+  function parseJsonLoose(text) {
+    let t = String(text || "").trim();
+    t = t.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    const first = t.indexOf("{");
+    const last = t.lastIndexOf("}");
+    if (first === -1 || last === -1) throw new Error("The AI did not return JSON.");
+    return JSON.parse(t.slice(first, last + 1));
+  }
+
+  /**
+   * One-shot call that must return a JSON object. Independent of the chat's in-flight request.
+   * opts: { system, user, temperature, maxTokens }
+   */
+  async function generateStructured(opts) {
+    const provider = getActiveProvider();
+    const hasGemini = Boolean(getGeminiKey());
+    const hasOpenRouter = Boolean(getOpenRouterKey());
+    const useGemini = provider === "gemini" ? hasGemini || !hasOpenRouter : !hasOpenRouter && hasGemini;
+    if (!hasGemini && !hasOpenRouter) throw new Error("Add a Gemini (free) or OpenRouter key in Settings to enable the AI review.");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90000);
+    try {
+      let text;
+      if (useGemini) {
+        const model = getGeminiModel();
+        const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(getGeminiKey())}`;
+        const generationConfig = { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 8192, responseMimeType: "application/json" };
+        if (/2\.5-flash/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        const res = await fetch(url, {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          body: JSON.stringify({ systemInstruction: { parts: [{ text: opts.system }] }, contents: [{ role: "user", parts: [{ text: opts.user }] }], generationConfig }),
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          if (res.status === 429) throw new Error("Gemini free-tier limit reached for now — the review will retry later.");
+          if (res.status === 401 || res.status === 403) throw new Error("Invalid Gemini API key.");
+          throw new Error(`Gemini error ${res.status}: ${body.slice(0, 160)}`);
+        }
+        const data = await res.json();
+        const cand = data?.candidates?.[0];
+        if (!cand) throw new Error(data?.promptFeedback?.blockReason ? `Gemini blocked the request: ${data.promptFeedback.blockReason}` : "Gemini returned no answer.");
+        text = (cand.content?.parts || []).map((p) => p.text || "").join("");
+      } else {
+        const res = await fetch(OPENROUTER_ENDPOINT, {
+          method: "POST", signal: controller.signal,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getOpenRouterKey()}`, "HTTP-Referer": APP_REFERER, "X-Title": APP_TITLE },
+          body: JSON.stringify({
+            model: getOpenRouterModel(), temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens || 8192,
+            response_format: { type: "json_object" },
+            messages: [{ role: "system", content: opts.system }, { role: "user", content: opts.user }],
+          }),
+        });
+        if (!res.ok) throw new Error(`OpenRouter error ${res.status}: ${(await res.text()).slice(0, 160)}`);
+        text = (await res.json())?.choices?.[0]?.message?.content || "";
+      }
+      return parseJsonLoose(text);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // ─── Expose Module ───────────────────────────────────────────────────────────
   const LifeLedgerAI = {
     askAgent,
@@ -1061,6 +1125,8 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     buildOpenRouterMessages,
     cancelRequest,
     buildDataContext,
+    generateStructured,
+    parseJsonLoose,
   };
 
   if (typeof window !== "undefined") {

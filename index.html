@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="Life Ledger" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Prafful's & Archana Life Ledger</title>
-    <link rel="stylesheet" href="styles.css?v=1.0.15" />
+    <link rel="stylesheet" href="styles.css?v=1.0.17" />
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -23,15 +23,18 @@
     <script defer src="vault-store.js?v=1.0.8"></script>
     <script defer src="drive-sync.js?v=1.0.42"></script>
     <script defer src="interview-db.js?v=1.0.8"></script>
-    <script defer src="ai-agent.js?v=1.0.42"></script>
+    <script defer src="ai-agent.js?v=1.0.43"></script>
     <script src="ui-polish.js?v=1.0.3" defer></script>
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.53"></script>
+    <script defer src="app.js?v=1.0.54"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.2"></script>
     <script defer src="auth.js?v=1.0.44"></script>
     <script defer src="sync-ui.js?v=1.0.0"></script>
+    <script defer src="advisor-engine.js?v=1.0.0"></script>
+    <script defer src="advisor-ai.js?v=1.0.0"></script>
+    <script defer src="advisor.js?v=1.0.2"></script>
     <script defer src="spending-core.js?v=1.0.3"></script>
     <script defer src="spending-import.js?v=1.0.11"></script>
   </head>
@@ -199,6 +202,45 @@
               <option value="">Loading...</option>
             </select>
           </div>
+
+          <!-- Wealth Advisor (live) -->
+          <section class="panel advisor-panel" id="advisorPanel" hidden aria-live="polite">
+            <div class="advisor-top">
+              <div id="advisorScoreWrap"></div>
+              <div class="advisor-titles">
+                <h3>🧭 Wealth Advisor <span class="advisor-live">● live</span></h3>
+                <p class="advisor-meta" id="advisorMeta"></p>
+                <p class="advisor-headline" id="advisorHeadline"></p>
+              </div>
+              <div class="advisor-actions">
+                <button class="secondary-button" type="button" id="advisorReviewBtn">✨ AI review</button>
+                <button class="secondary-button" type="button" id="advisorRefreshBtn" title="Re-run the analysis now">↻</button>
+                <button class="secondary-button" type="button" id="advisorProfileBtn" title="Your goals and risk profile">⚙ Profile</button>
+              </div>
+            </div>
+            <form id="advisorProfile" class="advisor-profile" hidden>
+              <label>Risk appetite
+                <select id="advRisk"><option value="conservative">Conservative</option><option value="moderate">Moderate</option><option value="moderate-aggressive">Moderate-aggressive</option><option value="aggressive">Aggressive</option></select>
+              </label>
+              <label>Horizon (years)<input id="advHorizon" type="number" min="1" max="60" step="1" /></label>
+              <label>Target equity %<input id="advTEquity" type="number" min="0" max="100" step="1" /></label>
+              <label>Target gold %<input id="advTGold" type="number" min="0" max="100" step="1" /></label>
+              <label>Target debt %<input id="advTDebt" type="number" min="0" max="100" step="1" /></label>
+              <label>Target cash %<input id="advTCash" type="number" min="0" max="100" step="1" /></label>
+              <label>Monthly investable (₹)<input id="advInvestable" type="number" min="0" step="1000" /></label>
+              <label>Monthly SIP target (₹, blank = from MF targets)<input id="advSip" type="number" min="0" step="1000" /></label>
+              <label>Emergency fund (months)<input id="advEmergency" type="number" min="1" max="24" step="1" /></label>
+              <label class="advisor-check"><input id="advAutoReview" type="checkbox" /> Refresh the AI review automatically when things change</label>
+              <div class="advisor-profile-actions">
+                <button class="primary-button" type="submit">Save profile</button>
+                <button class="secondary-button" type="button" id="advisorProfileCancel">Cancel</button>
+                <span id="advProfileMsg" class="muted-small"></span>
+              </div>
+            </form>
+            <div id="advisorBody"></div>
+            <p class="advisor-status" id="advisorStatus"></p>
+            <p class="advisor-disclaimer" id="advisorDisclaimer"></p>
+          </section>
 
           <!-- AI Insights Banner -->
           <div class="ai-insights-banner" id="aiInsightsBanner" style="display: none;">

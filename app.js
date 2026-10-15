@@ -36,6 +36,7 @@ const defaultData = {
   mfMonthlyTarget: { me: 100000, wife: 100000 },
   interviewTrackerEntries: [],
   spendingImport: { ids: [], file: "", importedAt: null },
+  advisor: { profile: {}, review: null },
   goldPrice: { price24k: 14955.27, price22k: 13709.00, prevClose24k: 14955.27, prevClose22k: 13709.00, lastFetched: null, source: "reference" },
   netWorthHistory: [],
 };
@@ -623,6 +624,9 @@ if (typeof window !== "undefined") {
     bootstrap: bootstrapApp,
     // Lightweight refresh used by multi-device sync: swap state and re-render only
     // (no price refresh, no first-run wiring).
+    getAdvisorInput: () => buildAdvisorInput(),
+    getAdvisorState: () => state.advisor || { profile: {}, review: null },
+    setAdvisorState: (patch) => { state.advisor = { ...(state.advisor || { profile: {}, review: null }), ...patch }; return saveData(true); },
     applyRemoteData(data) {
       state = normalizeData(data || defaultData);
       renderAll();
@@ -666,6 +670,7 @@ function saveData(immediate = false, kind = null) {
     try {
       if (typeof window !== 'undefined' && window.LifeLedgerAuth) {
         await window.LifeLedgerAuth.saveAppData(state);
+        try { window.dispatchEvent(new CustomEvent("ll:data-changed")); } catch { /* ignore */ }
       }
       failedSaveRetryPending = false;
     } catch (error) {
@@ -1060,6 +1065,7 @@ function normalizeData(data) {
     mfMonthlyTarget: data.mfMonthlyTarget || { me: 100000, wife: 100000 },
     interviewPrep: data.interviewPrep || { mastered: [], flagged: [], customProjects: [] },
     interviewTrackerEntries: ensureIds(data.interviewTrackerEntries || [], "itv"),
+    advisor: data.advisor && typeof data.advisor === "object" ? data.advisor : { profile: {}, review: null },
     spendingImport: data.spendingImport && Array.isArray(data.spendingImport.ids)
       ? data.spendingImport
       : { ids: [], file: "", importedAt: null },
@@ -4496,6 +4502,119 @@ function calculatePortfolio1DayChange() {
     changePct,
     hasData,
     classes
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ADVISOR BRIDGE — turns the app's data into the advisor engine's input
+   ══════════════════════════════════════════════════════════════════════ */
+
+function advisorYahooTicker(sym) {
+  const t = getExchangeTicker(sym);
+  return /\.[A-Z]{1,3}$/.test(t) ? t : `${t}.NS`;
+}
+
+function buildAdvisorInput() {
+  const now = istTodayISO();
+  const holdings = [];
+  const usdInr = getUsdInrRate();
+  const dateOf = (t) => String(t.purchaseDate || t.date || "").slice(0, 10);
+
+  // Mutual funds (grouped per scheme across owners; dated cash flows enable XIRR)
+  const mf = {};
+  (state.mutualFunds || []).forEach((t) => {
+    const k = t.fundName || "Unknown";
+    (mf[k] = mf[k] || []).push(t);
+  });
+  Object.entries(mf).forEach(([name, txns]) => {
+    const basis = calcMfCostBasis(txns);
+    if (!(basis.netUnits > 0)) return;
+    const nav = toNumber([...txns].reverse().find((t) => t.latestNav)?.latestNav || txns[txns.length - 1].nav);
+    if (!(nav > 0)) return;
+    const code = String(parseInt(txns.find((t) => t.schemeCode || t.amfiCode)?.schemeCode || txns.find((t) => t.amfiCode)?.amfiCode, 10) || "");
+    const owners = [...new Set(txns.map((t) => normalizeOwner(t.owner)))];
+    holdings.push({
+      key: `mf:${name}`, cls: "mf", name, owner: owners.length > 1 ? "Both" : owners[0],
+      value: basis.netUnits * nav, invested: basis.invested,
+      histKey: code ? `mf:${code}` : null,
+      flows: txns.filter((t) => dateOf(t) && toNumber(t.invested) > 0)
+        .map((t) => ({ date: dateOf(t), amount: isRedemption(t) ? toNumber(t.invested) : -toNumber(t.invested) })),
+    });
+  });
+
+  // Direct stocks, ETFs (India and US)
+  const addStocks = (list, isUS) => {
+    const byPrice = {};
+    collectNetStockHoldings(list, isUS).forEach((h) => { if (!byPrice[h.sym]) byPrice[h.sym] = h; });
+    const groups = {};
+    (list || []).forEach((s) => {
+      const sym = String(s.symbol || s.company || "").toUpperCase().replace(/\s*-EQ$/i, "").trim();
+      if (sym) (groups[sym] = groups[sym] || []).push(s);
+    });
+    Object.entries(groups).forEach(([sym, txns]) => {
+      const basis = calcStockCostBasis(txns);
+      const priced = byPrice[sym];
+      if (!(basis.netQty > 0) || !priced || !(priced.price > 0)) return;
+      const fx = isUS ? usdInr : 1;
+      const owners = [...new Set(txns.map((t) => normalizeOwner(t.owner)))];
+      holdings.push({
+        key: `${isUS ? "us" : "in"}:${sym}`, cls: isUS ? "us" : "stock", name: txns[0].company || sym, symbol: sym,
+        owner: owners.length > 1 ? "Both" : owners[0],
+        value: basis.netQty * priced.price * fx, invested: basis.invested * fx,
+        histKey: isUS ? sym : advisorYahooTicker(sym),
+      });
+    });
+  };
+  addStocks(state.stocks, false);
+  addStocks(state.usstocks, true);
+
+  // Gold
+  const goldValue = calcGoldTotalValue();
+  if (goldValue > 0) {
+    const goldCost = (state.gold || []).reduce((t, g) => t + toNumber(g.invested), 0);
+    holdings.push({ key: "gold:all", cls: "gold", name: "Gold (physical / SGB)", owner: "Both", value: goldValue, invested: goldCost || goldValue });
+  }
+
+  // Everything else (FD, EPF, PPF, bonds, silver, crypto, bank savings, other)
+  const simple = { fd: "fd", epf: "epf", ppf: "ppf", bonds: "bonds", silver: "silver", crypto: "crypto", banksaving: "bank", others: "others" };
+  Object.entries(simple).forEach(([stateKey, cls]) => {
+    (state[stateKey] || []).forEach((item) => {
+      const value = toNumber(item.value);
+      if (value > 0) holdings.push({ key: `${stateKey}:${item.id}`, cls, name: item.name || cls.toUpperCase(), owner: normalizeOwner(item.owner), value, invested: value });
+    });
+  });
+
+  // Cash flow: average of the last 6 complete months
+  const [cy, cm] = now.split("-").map(Number);
+  const months = [];
+  for (let i = 1; i <= 6; i++) {
+    const d = new Date(Date.UTC(cy, cm - 1 - i, 1));
+    months.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  const inMonths = (arr) => (arr || []).filter((x) => months.includes(toMonthKey(x.date)));
+  const income = sum(inMonths(state.income), "amount") / 6;
+  const expenseRows = inMonths(state.expenses);
+  const expenses = sum(expenseRows, "amount") / 6;
+  const byCat = {};
+  expenseRows.forEach((e) => { byCat[e.category || "General"] = (byCat[e.category || "General"] || 0) + toNumber(e.amount) / 6; });
+  const cash = {
+    monthlyIncome: Math.round(income), monthlyExpenses: Math.round(expenses),
+    savingsRate: income > 0 ? ((income - expenses) / income) * 100 : null,
+    topCategories: Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => [k, Math.round(v)]),
+  };
+
+  const thisMonth = now.slice(0, 7);
+  const mfThisMonth = (state.mutualFunds || []).filter((t) => !isRedemption(t) && toMonthKey(t.purchaseDate || t.date) === thisMonth)
+    .reduce((t, x) => t + toNumber(x.invested), 0);
+
+  const profile = { ...(state.advisor?.profile || {}) };
+  if (!profile.sipTarget) profile.sipTarget = toNumber(state.mfMonthlyTarget?.me) + toNumber(state.mfMonthlyTarget?.wife);
+
+  return {
+    now, holdings, cash, profile, mfThisMonth,
+    liabilities: (state.liabilities || []).map((l) => ({ name: l.name, owner: l.owner, value: toNumber(l.value), emi: toNumber(l.emi), rate: toNumber(l.rate) })),
+    goals: (state.goals || []).map((g) => ({ name: g.name, target: toNumber(g.target), saved: toNumber(g.saved), dueDate: g.dueDate })),
+    series: {}, benchmarks: {},
   };
 }
 
@@ -8490,6 +8609,7 @@ function recordDailyNetWorthSnapshot(options = {}) {
   if (activeFinanceTab === "networthhistory") {
     renderNetWorthHistory();
   }
+  try { window.dispatchEvent(new CustomEvent("ll:prices-updated", { detail: { source: options.source || "daily" } })); } catch { /* ignore */ }
   return snapshot;
 }
 
