@@ -2209,6 +2209,32 @@ function bindAiSettings() {
   updateAiModeBadge();
 }
 
+// ── AI insights banner ────────────────────────────────────────────────────────────────────────────
+// The banner used to ask Gemini on every launch (burning the free-tier quota and sending your data each time).
+// Now the last insights are reused for six hours, and an error or quota message pauses new requests.
+const AI_INSIGHTS_KEY = "lifeLedgerAiInsights:v1";
+const AI_INSIGHTS_BACKOFF_KEY = "lifeLedgerAiInsightsBackoff";
+const AI_INSIGHTS_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const AI_INSIGHTS_ERROR_PAUSE_MS = 15 * 60 * 1000;
+const AI_INSIGHTS_QUOTA_PAUSE_MS = 60 * 60 * 1000;
+
+/** "cache" = fresh enough, show it; "stale" = paused, show the old text; "skip" = paused and nothing to show; "fetch" = ask. */
+function insightsPlan(now, cached, backoffUntil) {
+  const hasText = Boolean(cached && cached.text);
+  if (hasText && now - Number(cached.at || 0) < AI_INSIGHTS_MAX_AGE_MS) return "cache";
+  if (now < Number(backoffUntil || 0)) return hasText ? "stale" : "skip";
+  return "fetch";
+}
+
+function showAiInsights(banner, content, text) {
+  banner.style.display = "";
+  content.innerHTML = String(text)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/_(.+?)_/g, "<em>$1</em>")
+    .replace(/\n/g, "<br>");
+}
+
 // Load AI insights on dashboard (called after bootstrap)
 async function loadAiInsights() {
   if (!window.LifeLedgerAI?.isAiAvailable()) return;
@@ -2216,20 +2242,29 @@ async function loadAiInsights() {
   const content = document.getElementById("aiInsightsContent");
   if (!banner || !content) return;
 
+  let cached = null;
+  let backoffUntil = 0;
+  try {
+    cached = JSON.parse(localStorage.getItem(AI_INSIGHTS_KEY) || "null");
+    backoffUntil = Number(localStorage.getItem(AI_INSIGHTS_BACKOFF_KEY)) || 0;
+  } catch { /* storage unavailable: fall through to a normal fetch */ }
+
+  const plan = insightsPlan(Date.now(), cached, backoffUntil);
+  if (plan === "cache" || plan === "stale") { showAiInsights(banner, content, cached.text); return; }
+  if (plan === "skip") { banner.style.display = "none"; return; }
+
   banner.style.display = "";
   content.innerHTML = '<span class="ai-insights-loading">Analyzing your data...</span>';
-
   try {
     const insights = await window.LifeLedgerAI.generateInsights(state);
-    // Convert markdown-like formatting to HTML
-    content.innerHTML = insights
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/_(.+?)_/g, "<em>$1</em>")
-      .replace(/\n/g, "<br>");
+    showAiInsights(banner, content, insights);
+    try { localStorage.setItem(AI_INSIGHTS_KEY, JSON.stringify({ at: Date.now(), text: insights })); } catch { /* ignore */ }
   } catch (error) {
     console.warn("[AI Insights] Failed:", error.message);
-    banner.style.display = "none";
+    const pause = /429|limit|quota|rate|too many/i.test(String(error.message)) ? AI_INSIGHTS_QUOTA_PAUSE_MS : AI_INSIGHTS_ERROR_PAUSE_MS;
+    try { localStorage.setItem(AI_INSIGHTS_BACKOFF_KEY, String(Date.now() + pause)); } catch { /* ignore */ }
+    if (cached && cached.text) showAiInsights(banner, content, cached.text);
+    else banner.style.display = "none";
   }
 }
 
@@ -16719,6 +16754,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getActivityDefaults,
     repairPhantomSteps,
     goalNeedPerMonth,
+    insightsPlan,
     findStepsEntryFor,
     calcCyclingSpeed,
     calcRunningPace,
