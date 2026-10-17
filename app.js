@@ -477,8 +477,41 @@ if (typeof document !== "undefined") {
 
 let isAppInitialized = false;
 
+// ── Gemini key shared across devices ────────────────────────────────────────
+// The key lives inside the vault (state.advisor.aiKeys) so it syncs like everything else; each device
+// keeps a local copy for the AI client and a timestamp so the newest write wins.
+const AI_KEY_AT = "lifeLedger_geminiKeyAt";
+function aiKeyLocalAt() { try { return Number(localStorage.getItem(AI_KEY_AT) || 0); } catch { return 0; } }
+function setAiKeyLocalAt(at) { try { localStorage.setItem(AI_KEY_AT, String(at)); } catch { /* ignore */ } }
+
+function pushGeminiKeyToVault(key) {
+  const k = String(key || "").trim();
+  const cur = state.advisor || { profile: {}, review: null };
+  if ((cur.aiKeys?.gemini || "") === k) return;
+  const at = Date.now();
+  setAiKeyLocalAt(at);
+  state.advisor = { ...cur, aiKeys: { ...(cur.aiKeys || {}), gemini: k, geminiAt: at } };
+  saveData(true);
+}
+
+/** Vault → this device (newer wins). On first run, this device's existing key moves into the vault. */
+function reconcileGeminiKey() {
+  const ai = window.LifeLedgerAI;
+  if (!ai?.getGeminiKey) return;
+  const v = state.advisor?.aiKeys;
+  const local = ai.getGeminiKey();
+  if (v && v.geminiAt && v.geminiAt > aiKeyLocalAt()) {
+    ai.setGeminiKey(v.gemini || "");
+    setAiKeyLocalAt(v.geminiAt);
+    updateAiModeBadge?.();
+  } else if (local && !(v && v.gemini)) {
+    pushGeminiKeyToVault(local);
+  }
+}
+
 function bootstrapApp(initialState) {
   state = normalizeData(initialState || defaultData);
+  reconcileGeminiKey();
   if (!isAppInitialized) {
     bindTheme();
     bindNavigation();
@@ -631,6 +664,7 @@ if (typeof window !== "undefined") {
     setAdvisorState: (patch) => { state.advisor = { ...(state.advisor || { profile: {}, review: null }), ...patch }; return saveData(true); },
     applyRemoteData(data) {
       state = normalizeData(data || defaultData);
+      reconcileGeminiKey();
       renderAll();
     },
     saveData: saveData,
@@ -2166,6 +2200,7 @@ function bindAiSettings() {
     const oModel = openrouterModelSelect?.value || "google/gemini-2.5-flash";
 
     window.LifeLedgerAI?.setGeminiKey(gKey);
+    pushGeminiKeyToVault(gKey);
     window.LifeLedgerAI?.setGeminiModel(gModel);
     window.LifeLedgerAI?.setOpenRouterKey(oKey);
     window.LifeLedgerAI?.setOpenRouterModel(oModel);
@@ -2189,8 +2224,9 @@ function bindAiSettings() {
     const activeProv = window.LifeLedgerAI?.getProvider() || "gemini";
     if (activeProv === "gemini") {
       window.LifeLedgerAI?.setGeminiKey("");
+      pushGeminiKeyToVault("");
       if (geminiKeyInput) geminiKeyInput.value = "";
-      toast("Google Gemini API key cleared.");
+      toast("Google Gemini API key cleared on all your devices.");
     } else {
       window.LifeLedgerAI?.setOpenRouterKey("");
       if (openrouterKeyInput) openrouterKeyInput.value = "";

@@ -81,6 +81,28 @@
     }
   }
 
+
+  // Each Gemini model has its own free quota. Try the chosen model first; if it is rate-limited,
+  // overloaded or missing, quietly fall through to the next one so the answer still arrives.
+  const GEMINI_FALLBACKS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
+  function geminiModelChain() {
+    const first = getGeminiModel();
+    return [first, ...GEMINI_FALLBACKS.filter((m) => m !== first)];
+  }
+
+  /** method: "generateContent" | "streamGenerateContent"; makeInit(model) → fetch init. Returns { res, model }. */
+  async function fetchGeminiWithFallback(method, makeInit) {
+    const key = encodeURIComponent(getGeminiKey());
+    const extra = method === "streamGenerateContent" ? "alt=sse&" : "";
+    let last = null;
+    for (const model of geminiModelChain()) {
+      const res = await fetch(`${GEMINI_API_BASE}/${encodeURIComponent(model)}:${method}?${extra}key=${key}`, makeInit(model));
+      if (res.ok || ![429, 503, 404].includes(res.status)) return { res, model };
+      last = { res, model };
+    }
+    return last;
+  }
+
   function getOpenRouterKey() {
     const store = getStorage();
     return (store.getItem("lifeLedger_openrouterKey") || "").trim();
@@ -671,17 +693,15 @@ PERSONALITY & RULES:
     const controller = new AbortController();
     activeController = controller;
 
-    const model = getGeminiModel();
-    const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const payload = buildGeminiPayload(userMessage, dataContext, chatHistory);
 
     try {
-      const response = await fetch(url, {
+      const { res: response } = await fetchGeminiWithFallback("generateContent", () => ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal
-      });
+      }));
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -735,17 +755,15 @@ PERSONALITY & RULES:
     const controller = new AbortController();
     activeController = controller;
 
-    const model = getGeminiModel();
-    const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
     const payload = buildGeminiPayload(userMessage, dataContext, chatHistory);
 
     try {
-      const response = await fetch(url, {
+      const { res: response } = await fetchGeminiWithFallback("streamGenerateContent", () => ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal
-      });
+      }));
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -1252,13 +1270,13 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     try {
       let text;
       if (useGemini) {
-        const model = getGeminiModel();
-        const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(getGeminiKey())}`;
-        const generationConfig = { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 8192, responseMimeType: "application/json" };
-        if (/2\.5-flash/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-        const res = await fetch(url, {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-          body: JSON.stringify({ systemInstruction: { parts: [{ text: opts.system }] }, contents: [{ role: "user", parts: [{ text: opts.user }] }], generationConfig }),
+        const { res } = await fetchGeminiWithFallback("generateContent", (model) => {
+          const generationConfig = { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 8192, responseMimeType: "application/json" };
+          if (/2\.5-flash/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+          return {
+            method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+            body: JSON.stringify({ systemInstruction: { parts: [{ text: opts.system }] }, contents: [{ role: "user", parts: [{ text: opts.user }] }], generationConfig }),
+          };
         });
         if (!res.ok) {
           const body = await res.text();
@@ -1304,6 +1322,7 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     setGeminiKey,
     getGeminiModel,
     setGeminiModel,
+    geminiModelChain,
     getOpenRouterKey,
     setOpenRouterKey,
     getOpenRouterModel,
