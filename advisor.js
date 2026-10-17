@@ -344,6 +344,7 @@
     $("advSummary").textContent = rv.review && rv.review.summary ? rv.review.summary : ruleSummary();
     const when = new Date().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
     $("advMeta").textContent = `Live · ${result.holdings.length} investments · ${inr(result.metrics.total)} · updated ${when}` + (result.profileSet ? "" : " · Tell me about your goals (⚙) so I can judge against your plan");
+    $("advisor")?.classList.toggle("is-thinking", Boolean(aiRunning));
     renderKpis();
     renderPillars();
     renderMoves(rv);

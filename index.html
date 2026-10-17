@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.4" />
-    <link rel="stylesheet" href="layout.css?v=1.6.2" />
+    <link rel="stylesheet" href="layout.css?v=1.7.0" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -35,7 +35,7 @@
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
     <script defer src="hero-series.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.78"></script>
+    <script defer src="app.js?v=1.0.79"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.1"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
@@ -49,7 +49,7 @@
     <script defer src="advisor-context.js?v=1.0.3"></script>
     <script defer src="knowledge.js?v=1.0.2"></script>
     <script defer src="knowledge-modules.js?v=1.0.0"></script>
-    <script defer src="advisor.js?v=2.0.5"></script>
+    <script defer src="advisor.js?v=2.0.6"></script>
     <script defer src="spending-core.js?v=1.0.4"></script>
     <script defer src="spending-import.js?v=1.0.13"></script>
   </head>
@@ -1180,7 +1180,7 @@
               <div id="advScore"></div>
               <div class="adv-hero-text">
                 <h2 id="advisorTitle">Your Wealth Advisor</h2>
-                <p class="adv-summary" id="advSummary">Looking at your money…</p>
+                <p class="adv-summary" id="advSummary"><span class="skel skel-line"></span><span class="skel skel-line short"></span></p>
                 <p class="adv-meta" id="advMeta"></p>
               </div>
               <div class="adv-hero-actions">
@@ -1188,7 +1188,7 @@
                 <button class="secondary-button" type="button" id="advisorRefreshBtn" title="Look at everything again">↻ Refresh</button>
                 <button class="secondary-button" type="button" id="advisorProfileBtn">⚙ About me & my goals</button>
               </div>
-              <div class="adv-kpis" id="advKpis" aria-label="Portfolio at a glance"></div>
+              <div class="adv-kpis" id="advKpis" aria-label="Portfolio at a glance"><div class="adv-kpi"><span class="skel skel-line tiny"></span><b class="skel skel-line mid"></b></div><div class="adv-kpi"><span class="skel skel-line tiny"></span><b class="skel skel-line mid"></b></div><div class="adv-kpi"><span class="skel skel-line tiny"></span><b class="skel skel-line mid"></b></div><div class="adv-kpi"><span class="skel skel-line tiny"></span><b class="skel skel-line mid"></b></div><div class="adv-kpi"><span class="skel skel-line tiny"></span><b class="skel skel-line mid"></b></div></div>
             </header>
 
             <form class="panel adv-profile" id="advisorProfile" hidden>
@@ -1226,12 +1226,12 @@
 
             <section class="panel">
               <h3>How healthy is your money?</h3>
-              <div id="advPillars" class="adv-pillars"></div>
+              <div id="advPillars" class="adv-pillars"><div class="adv-pillar"><span class="skel skel-line tiny"></span><span class="skel skel-bar"></span></div><div class="adv-pillar"><span class="skel skel-line tiny"></span><span class="skel skel-bar"></span></div><div class="adv-pillar"><span class="skel skel-line tiny"></span><span class="skel skel-bar"></span></div><div class="adv-pillar"><span class="skel skel-line tiny"></span><span class="skel skel-bar"></span></div></div>
             </section>
 
             <section class="panel">
               <h3>What to do next</h3>
-              <div id="advMoves"></div>
+              <div id="advMoves"><div class="adv-move"><span class="skel skel-dot"></span><div><span class="skel skel-line mid"></span><span class="skel skel-line"></span></div></div><div class="adv-move"><span class="skel skel-dot"></span><div><span class="skel skel-line mid"></span><span class="skel skel-line"></span></div></div><div class="adv-move"><span class="skel skel-dot"></span><div><span class="skel skel-line mid"></span><span class="skel skel-line"></span></div></div></div>
             </section>
 
             <div class="adv-two">

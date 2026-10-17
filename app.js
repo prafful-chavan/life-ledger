@@ -7689,32 +7689,37 @@ function reportUnpricedHoldings() {
 async function refreshAllLivePrices(force = true) {
   toast('🔄 Refreshing all live prices (Mutual Funds, Indian Stocks, US Stocks & Gold)…');
   const results = { mf: 0, stocks: 0, usstocks: 0, gold: 0 };
-  await refreshUsdInrRate();
+  document.body.classList.add("prices-refreshing");   // drives the shimmer on the headline numbers
+  try {
+    await refreshUsdInrRate();
   
-  const promises = [
-    (async () => {
-      if (typeof refreshMutualFundNAVs === 'function') {
-        results.mf = await refreshMutualFundNAVs(force, true).catch(e => { console.warn('[Refresh All] MF NAV error:', e); return 0; });
-      }
-    })(),
-    (async () => {
-      if (typeof refreshStockPrices === 'function') {
-        results.stocks = await refreshStockPrices(force, true).catch(e => { console.warn('[Refresh All] Indian Stock price error:', e); return 0; });
-      }
-    })(),
-    (async () => {
-      if (typeof refreshUsStockPrices === 'function') {
-        results.usstocks = await refreshUsStockPrices(force, true).catch(e => { console.warn('[Refresh All] US Stock price error:', e); return 0; });
-      }
-    })(),
-    (async () => {
-      if (typeof fetchLiveGoldPrice === 'function') {
-        results.gold = await fetchLiveGoldPrice(force).catch(e => { console.warn('[Refresh All] Gold price error:', e); return 0; });
-      }
-    })()
-  ];
+    const promises = [
+      (async () => {
+        if (typeof refreshMutualFundNAVs === 'function') {
+          results.mf = await refreshMutualFundNAVs(force, true).catch(e => { console.warn('[Refresh All] MF NAV error:', e); return 0; });
+        }
+      })(),
+      (async () => {
+        if (typeof refreshStockPrices === 'function') {
+          results.stocks = await refreshStockPrices(force, true).catch(e => { console.warn('[Refresh All] Indian Stock price error:', e); return 0; });
+        }
+      })(),
+      (async () => {
+        if (typeof refreshUsStockPrices === 'function') {
+          results.usstocks = await refreshUsStockPrices(force, true).catch(e => { console.warn('[Refresh All] US Stock price error:', e); return 0; });
+        }
+      })(),
+      (async () => {
+        if (typeof fetchLiveGoldPrice === 'function') {
+          results.gold = await fetchLiveGoldPrice(force).catch(e => { console.warn('[Refresh All] Gold price error:', e); return 0; });
+        }
+      })()
+    ];
 
-  await Promise.allSettled(promises);
+    await Promise.allSettled(promises);
+  } finally {
+    document.body.classList.remove("prices-refreshing");
+  }
   recalculateGoldHoldingsValues();
   renderAll();
   try {
