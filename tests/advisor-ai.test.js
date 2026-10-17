@@ -59,9 +59,17 @@ assert.throws(() => AI.validateReview({ moves: [{ signalIds: ["nope"], action: "
 
 // fingerprint: stable for noise, changes for real movement
 const fp = AI.fingerprint(result);
-assert.strictEqual(AI.fingerprint({ ...result, metrics: { total: 1000200 } }), fp, "0.02% move is noise");
-assert.notStrictEqual(AI.fingerprint({ ...result, metrics: { total: 1030000 } }), fp, "3% move matters");
+assert.strictEqual(AI.fingerprint({ ...result, metrics: { ...result.metrics, total: 1000200 } }), fp, "0.02% move is noise");
+assert.notStrictEqual(AI.fingerprint({ ...result, metrics: { ...result.metrics, total: 1030000 } }), fp, "3% move matters");
 assert.notStrictEqual(AI.fingerprint({ ...result, signals: result.signals.slice(1) }), fp, "a different signal set matters");
+{
+  const m = { total: 1000000, allocation: { equity: 45.4, gold: 17.6 } };
+  const base = AI.fingerprint({ ...result, metrics: m });
+  assert.strictEqual(AI.fingerprint({ ...result, metrics: { ...m, allocation: { equity: 45.1, gold: 17.8 } } }), base, "fractions of a % are noise");
+  assert.notStrictEqual(AI.fingerprint({ ...result, metrics: { ...m, allocation: { equity: 43.3, gold: 19.8 } } }), base, "a real shift in the asset mix refreshes the advice");
+  const g = (title) => ({ ...result, metrics: m, signals: [...result.signals, { id: "goal-X", severity: "info", title }] });
+  assert.notStrictEqual(AI.fingerprint(g("needs ₹6,15,385 a month")), AI.fingerprint(g("needs ₹6,58,162 a month")), "goal figures matter");
+}
 
 assert.ok(AI.SYSTEM_PROMPT.includes("Never invent prices"));
 assert.ok(AI.SYSTEM_PROMPT.includes("BUSY NON-EXPERT") && AI.SYSTEM_PROMPT.includes("Do not quote the health score"));

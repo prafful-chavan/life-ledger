@@ -122,7 +122,10 @@ Give at most 6 moves. Give perHolding notes for the 10 largest holdings and for 
     const total = result.metrics ? result.metrics.total : 0;
     const bucket = Math.round(Math.log(Math.max(total, 1)) / Math.log(1.005));
     const sig = (result.signals || []).map((s) => `${s.id}:${s.severity}`).sort().join("|");
-    return `${result.asOf}#${bucket}#${sig}`;
+    // Numbers the written advice quotes: asset mix (whole %) and what each goal needs a month. Day-to-day price noise stays out.
+    const alloc = result.metrics && result.metrics.allocation ? Object.keys(result.metrics.allocation).sort().map((k) => `${k}${Math.round(result.metrics.allocation[k])}`).join(",") : "";
+    const goals = (result.signals || []).filter((s) => /^goal-/.test(s.id)).map((s) => s.title).sort().join("|");
+    return `${result.asOf}#${bucket}#${sig}#${alloc}#${goals}`;
   }
 
   return { SYSTEM_PROMPT, DISCLAIMER, buildBrief, validateReview, fingerprint, ACTIONS };
