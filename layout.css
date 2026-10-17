@@ -93,6 +93,59 @@
 #exercise .split-grid { grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr); gap: 16px; align-items: start; }
 #exercise .split-grid > :last-child { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow: auto; }
 
+/* ── Dashboard hero + advisor side by side ──────────────────────────────────── */
+#dashboard.view.active {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+#dashboard > * { grid-column: span 12; margin: 0 !important; min-width: 0; }
+#dashboard > .hero-card { grid-column: span 8; }
+#dashboard > #advisorCard:not([hidden]) { grid-column: span 4; }
+#dashboard:has(#advisorCard[hidden]) > .hero-card { grid-column: span 12; }
+#dashboard > #advisorCard { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+#dashboard > #advisorCard .primary-button { margin-top: auto; width: 100%; }
+
+.hero-card { display: flex; flex-direction: column; gap: 16px; padding: 24px; }
+.hero-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.hero-label { font-size: 11px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.hero-value { margin-top: 6px; font-size: clamp(32px, 3.6vw, 48px); line-height: 1.05; font-weight: 650; letter-spacing: -0.03em; color: var(--ink); overflow-wrap: anywhere; }
+.hero-delta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; font-size: 14px; }
+.hero-pill { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; font-weight: 650; font-size: 13px; }
+.hero-pill.up { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.hero-pill.down { color: var(--negative); background: color-mix(in srgb, var(--negative) 14%, transparent); }
+.hero-note { color: var(--muted); font-size: 13px; }
+
+.hero-ranges { display: inline-flex; padding: 4px; gap: 2px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.hero-ranges button { min-height: 34px; min-width: 40px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; font-family: inherit; }
+.hero-ranges button:hover { color: var(--ink); }
+.hero-ranges button.active { background: var(--panel-soft); color: var(--ink); font-weight: 650; }
+
+.hero-chart { position: relative; height: 200px; touch-action: pan-y; cursor: crosshair; }
+.hero-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hero-cross { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); pointer-events: none; }
+.hero-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 22%, transparent); pointer-events: none; }
+.hero-tip { position: absolute; top: -6px; transform: translateX(-50%); padding: 6px 10px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+
+.hero-foot { display: flex; flex-wrap: wrap; gap: 12px 28px; padding-top: 14px; border-top: 1px solid var(--line); }
+.hero-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hero-stat-label { font-size: 12px; color: var(--muted); }
+.hero-stat-value { font-size: 15px; font-weight: 650; }
+.hero-stat-value.up { color: var(--good); }
+.hero-stat-value.down { color: var(--negative); }
+
+@media (max-width: 1080px) {
+  #dashboard > .hero-card,
+  #dashboard > #advisorCard:not([hidden]) { grid-column: span 12; }
+}
+@media (max-width: 680px) {
+  .hero-card { padding: 18px; }
+  .hero-chart { height: 150px; }
+  .hero-ranges { width: 100%; justify-content: space-between; }
+  .hero-ranges button { flex: 1; }
+}
+
 /* ── Tablet (≤1080) ─────────────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
   #exercise > .panel:has(#streakCalendarGrid),

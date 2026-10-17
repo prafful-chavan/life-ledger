@@ -4693,6 +4693,137 @@ function buildAdvisorExtras() {
   };
 }
 
+// ── Dashboard hero: net worth, today's change, trend chart ──────────────────────────────────────
+let heroRange = (() => { try { return localStorage.getItem("lifeLedgerHeroRange") || "1M"; } catch { return "1M"; } })();
+let heroBound = false;
+let heroPoints = [];
+
+function renderHeroCard(nw, day) {
+  const card = document.getElementById("heroCard");
+  const HS = typeof window !== "undefined" ? window.LifeLedgerHeroSeries : null;
+  if (!card || !HS) return;
+  const valueEl = document.getElementById("heroValue");
+  const deltaEl = document.getElementById("heroDelta");
+  const foot = document.getElementById("heroFoot");
+  valueEl.textContent = formatINR(nw.netWorth);
+
+  deltaEl.innerHTML = "";
+  if (day.has) {
+    const up = day.change >= 0;
+    const pill = document.createElement("span");
+    pill.className = "hero-pill " + (up ? "up" : "down");
+    pill.textContent = `${up ? "▲" : "▼"} ${formatINR(Math.abs(day.change))} · ${Math.abs(day.pct).toFixed(2)}%`;
+    const note = document.createElement("span");
+    note.className = "hero-note";
+    note.textContent = day.prevDate ? `vs ${formatDate(day.prevDate)}` : "market move today";
+    deltaEl.append(pill, note);
+  } else {
+    const note = document.createElement("span");
+    note.className = "hero-note";
+    note.textContent = "Refresh prices to see today's change";
+    deltaEl.append(note);
+  }
+
+  document.querySelectorAll("#heroRanges button").forEach((b) => {
+    const on = b.dataset.range === heroRange;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+
+  const today = istTodayISO();
+  heroPoints = HS.buildSeries(state.netWorthHistory || [], nw.netWorth, today, heroRange);
+  drawHeroChart(heroPoints);
+
+  const sum = HS.summarize(heroPoints);
+  const stat = (label, value, cls) => `<div class="hero-stat"><span class="hero-stat-label">${label}</span><span class="hero-stat-value ${cls || ""}">${value}</span></div>`;
+  const rangeLabel = heroRange === "All" ? "All time" : `Last ${heroRange}`;
+  foot.innerHTML =
+    stat(rangeLabel, sum ? `${sum.change >= 0 ? "+" : "−"}${formatINR(Math.abs(sum.change))}${sum.pct == null ? "" : ` (${sum.pct >= 0 ? "+" : "−"}${Math.abs(sum.pct).toFixed(1)}%)`}` : "—", sum ? (sum.change >= 0 ? "up" : "down") : "") +
+    stat("Assets", formatINR(nw.totalAssets)) +
+    stat("Liabilities", formatINR(nw.liabilities));
+
+  if (!heroBound) {
+    heroBound = true;
+    document.getElementById("heroRanges").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-range]");
+      if (!b) return;
+      heroRange = b.dataset.range;
+      try { localStorage.setItem("lifeLedgerHeroRange", heroRange); } catch { /* ignore */ }
+      renderHeroCard(getNetWorthSummary(), heroDayInfo(getNetWorthSummary()));
+    });
+    const wrap = document.getElementById("heroChartWrap");
+    wrap.addEventListener("pointermove", (e) => showHeroTip(e, wrap));
+    wrap.addEventListener("pointerleave", hideHeroTip);
+    wrap.addEventListener("pointerdown", (e) => showHeroTip(e, wrap));
+  }
+}
+
+function heroDayInfo(nw) {
+  const has = Boolean(nw.delta);
+  const change = has ? nw.delta.change : nw.marketMove;
+  const pct = has ? nw.delta.pct : nw.marketMovePct;
+  const hasData = has || Boolean(nw.snapshot && (nw.marketMove || nw.marketMovePct));
+  return { has: hasData, change: change || 0, pct: pct || 0, prevDate: has ? nw.prevDate : null };
+}
+
+function heroGeometry(points) {
+  const W = 640, H = 200, padT = 14, padB = 22;
+  const vals = points.map((p) => p.value);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) { min -= 1; max += 1; }
+  const span = max - min;
+  min -= span * 0.08; max += span * 0.08;
+  const x = (i) => (points.length === 1 ? W / 2 : (i / (points.length - 1)) * W);
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
+  return { W, H, padT, padB, min, max, x, y };
+}
+
+function drawHeroChart(points) {
+  const svg = document.getElementById("heroChart");
+  if (!svg) return;
+  hideHeroTip();
+  if (points.length < 2) {
+    svg.innerHTML = `<text x="320" y="104" text-anchor="middle" style="fill:var(--muted);font-size:14px">Net worth history builds up day by day</text>`;
+    return;
+  }
+  const g = heroGeometry(points);
+  const line = points.map((p, i) => `${i ? "L" : "M"}${g.x(i).toFixed(1)} ${g.y(p.value).toFixed(1)}`).join(" ");
+  const area = `${line} L${g.x(points.length - 1).toFixed(1)} ${g.H} L0 ${g.H} Z`;
+  const grid = [0.25, 0.5, 0.75].map((f) => { const yy = (g.padT + f * (g.H - g.padT - g.padB)).toFixed(1); return `<line x1="0" x2="${g.W}" y1="${yy}" y2="${yy}" style="stroke:var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"></line>`; }).join("");
+  svg.innerHTML = `
+    <defs><linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:var(--brand);stop-opacity:0.26"></stop>
+      <stop offset="1" style="stop-color:var(--brand);stop-opacity:0"></stop>
+    </linearGradient></defs>
+    ${grid}
+    <path d="${area}" fill="url(#heroFill)"></path>
+    <path d="${line}" fill="none" style="stroke:var(--brand)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>`;
+}
+
+function showHeroTip(e, wrap) {
+  if (heroPoints.length < 2) return;
+  const r = wrap.getBoundingClientRect();
+  const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  const i = Math.round(frac * (heroPoints.length - 1));
+  const p = heroPoints[i];
+  const g = heroGeometry(heroPoints);
+  const leftPct = (g.x(i) / g.W) * 100;
+  const topPct = (g.y(p.value) / g.H) * 100;
+  const cross = document.getElementById("heroCross");
+  const dot = document.getElementById("heroDot");
+  const tip = document.getElementById("heroTip");
+  cross.style.left = leftPct + "%";
+  dot.style.left = leftPct + "%";
+  dot.style.top = topPct + "%";
+  tip.textContent = `${formatDate(p.date)} · ${formatINR(p.value)}`;
+  tip.style.left = Math.min(82, Math.max(18, leftPct)) + "%";
+  cross.hidden = dot.hidden = tip.hidden = false;
+}
+
+function hideHeroTip() {
+  ["heroCross", "heroDot", "heroTip"].forEach((id) => { const el = document.getElementById(id); if (el) el.hidden = true; });
+}
+
 function renderMetrics() {
   const metrics = calculateMetrics();
   const nw = getNetWorthSummary();
@@ -4709,6 +4840,9 @@ function renderMetrics() {
   const hasDayData = hasDelta || Boolean(nw.snapshot && (nw.marketMove || nw.marketMovePct));
   const marketHint = nw.marketMove ? ` · market move ${nw.marketMove >= 0 ? '+' : '−'}${formatINR(Math.abs(nw.marketMove))}` : '';
 
+  renderHeroCard(nw, { has: hasDayData, change: dayChange || 0, pct: dayPct || 0, prevDate: hasDelta ? nw.prevDate : null });
+
+  // Net worth and its day change live in the hero card; the grid keeps the monthly numbers.
   [
     {
       label: "Net worth",
@@ -4743,7 +4877,7 @@ function renderMetrics() {
         ? `${formatINR(metrics.monthIncome - metrics.monthExpenses)} left (est. savings)`
         : `${formatINR(metrics.monthIncome - metrics.monthExpenses)} left this month`,
     },
-  ].forEach((metric) => {
+  ].slice(2).forEach((metric) => {
     const card = document.createElement("article");
     card.className = "metric-card";
     if (metric.customBorder) {
