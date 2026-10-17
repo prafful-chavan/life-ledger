@@ -1,0 +1,198 @@
+/**
+ * Life Ledger — "Private Ledger" theme layer.
+ * Loaded AFTER styles.css. It only re-points design tokens and a few hard-coded colours, so layout and
+ * behaviour are untouched. To go back to the old look, remove the <link> to this file in index.html.
+ *
+ * One brand (emerald) in both modes; graphite surfaces in dark, paper in light; gains emerald, losses coral.
+ */
+
+:root {
+  --bg: #F5F6F3;
+  --panel: #FFFFFF;
+  --panel-translucent: rgba(255, 255, 255, 0.94);
+  --panel-soft: #EEF1ED;
+  --input-bg: #FFFFFF;
+  --ink: #0E1513;
+  --ink-2: #3A4641;
+  --muted: #5F6C66;
+  --line: #E2E6E2;
+  --brand: #0B7A5C;
+  --brand-strong: #075A44;
+  --brand-rgb: 11, 122, 92;
+  --on-brand: #FFFFFF;
+  --primary: var(--brand);
+  --accent: #B7791F;
+  --accent-2: #2B5FD9;
+  --danger: #C2410C;
+  --negative: #C2410C;
+  --good: #0B7A5C;
+  --watch: #A16207;
+  --info: #2B5FD9;
+  --shadow: 0 1px 2px rgba(14, 21, 19, 0.05), 0 8px 24px rgba(14, 21, 19, 0.05);
+  --sidebar-bg: rgba(255, 255, 255, 0.86);
+  --top-glow: rgba(11, 122, 92, 0.05);
+  --empty-bg: rgba(238, 241, 237, 0.7);
+  --modal-backdrop: rgba(14, 21, 19, 0.45);
+  --modal-shadow: 0 30px 90px rgba(14, 21, 19, 0.25);
+  --on-ink: #FFFFFF;
+  --chart-income: #0B7A5C;
+  --chart-expense: #D9622B;
+  --card-solid: #FFFFFF;
+  --radius: 12px;
+  --radius-card: 18px;
+  font-family: Geist, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body[data-theme="dark"] {
+  --bg: #0A0D0C;
+  --panel: #111614;
+  --panel-translucent: rgba(17, 22, 20, 0.82);
+  --panel-soft: #1A221F;
+  --input-bg: #0D1110;
+  --ink: #EDF2EF;
+  --ink-2: #B4C0BA;
+  --muted: #8A9892;
+  --line: rgba(255, 255, 255, 0.08);
+  --brand: #3FD3A2;
+  --brand-strong: #7FE6C3;
+  --brand-rgb: 63, 211, 162;
+  --on-brand: #04140E;
+  --accent: #F5C451;
+  --accent-2: #7AA7FF;
+  --danger: #FF8A65;
+  --negative: #FF8A65;
+  --good: #3FD3A2;
+  --watch: #F5C451;
+  --info: #7AA7FF;
+  --shadow: none;
+  --sidebar-bg: rgba(10, 13, 12, 0.88);
+  --top-glow: rgba(63, 211, 162, 0.035);
+  --empty-bg: rgba(26, 34, 31, 0.6);
+  --modal-backdrop: rgba(5, 8, 7, 0.82);
+  --modal-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 30px 80px rgba(0, 0, 0, 0.6);
+  --on-ink: #0A0D0C;
+  --chart-income: #3FD3A2;
+  --chart-expense: #FF8A65;
+  --card-solid: #111614;
+}
+
+body[data-theme="dark"]::before {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(63, 211, 162, 0.035) 0%, transparent 55%),
+    #0A0D0C;
+}
+
+/* Numbers line up in columns and read as figures, everywhere */
+body {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Cards: a touch more room and rounder corners */
+.metric-card,
+.panel {
+  border-radius: var(--radius-card);
+}
+
+.metric-card .label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metric-card .value {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+h1, h2, h3 { letter-spacing: -0.015em; }
+
+/* Metric numbers: solid ink instead of the dark-mode rainbow gradient */
+body[data-theme="dark"] .metric-card .value,
+body[data-theme="dark"] .metric-card.compact-metric .value {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: var(--ink);
+  font-weight: 650;
+}
+.metric-card .value { color: var(--ink); }
+
+/* Select dropdowns follow the surface */
+body[data-theme="dark"] select option { background-color: #111614; color: #EDF2EF; }
+body[data-theme="light"] select option { background-color: #FFFFFF; color: #0E1513; }
+body[data-theme="dark"] th { background: var(--panel-soft); }
+
+/* Text on a brand fill follows the mode (white on deep green, near-black on bright emerald) */
+.brand-mark,
+.filter-chip.active,
+.act-tab-btn.active,
+.active-metric-chip,
+.activity-type-tabs button.active,
+.activity-type-tabs button[aria-selected="true"],
+.btn-add-set:hover,
+.btn-checkin-today:hover,
+.pagination button.active,
+.sync-log-badge,
+.adv-num,
+.adv-tab.active {
+  color: var(--on-brand) !important;
+}
+
+.brand-mark { background: var(--brand); }
+
+/* Chat: one accent instead of purple → teal */
+.chat-message.user,
+.chat-send-btn {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.chat-message.user strong { color: var(--on-brand); }
+
+/* Hey Prafful: purple/teal accents become the brand */
+.chat-header-avatar {
+  background: var(--brand);
+  box-shadow: none;
+}
+.chat-message.user,
+.chat-send-btn {
+  background: var(--brand);
+  box-shadow: none;
+  color: var(--on-brand);
+}
+.chip:hover {
+  background: rgba(var(--brand-rgb), 0.1);
+  border-color: rgba(var(--brand-rgb), 0.45);
+  box-shadow: none;
+}
+.chat-input-bar input:focus { border-color: var(--brand); }
+
+/* Sidebar: calm icons, one accent for the page you're on (was six different colours) */
+.nav-list .nav-item[data-view] span:first-child {
+  color: var(--muted);
+  background: var(--panel-soft);
+}
+.nav-list .nav-item.active[data-view] span:first-child {
+  color: var(--on-brand);
+  background: var(--brand);
+}
+body[data-theme] .nav-item.active[data-view] {
+  border-color: transparent;
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+
+/* Gains and losses */
+.positive, .gain, .text-positive { color: var(--good); }
+.negative, .loss, .text-negative { color: var(--negative); }
+
+/* Phone: tab bar and chat follow the new surfaces */
+@media (max-width: 680px) {
+  .nav-list {
+    background: var(--panel-translucent);
+  }
+  body[data-theme] .nav-item.active[data-view] { color: var(--brand); background: transparent; }
+}
