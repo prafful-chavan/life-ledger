@@ -7,79 +7,79 @@
  */
 
 :root {
-  --bg: #F5F6F3;
+  --bg: #F4F5F8;
   --panel: #FFFFFF;
   --panel-translucent: rgba(255, 255, 255, 0.94);
-  --panel-soft: #EEF1ED;
+  --panel-soft: #EEF0F5;
   --input-bg: #FFFFFF;
-  --ink: #0E1513;
-  --ink-2: #3A4641;
-  --muted: #5F6C66;
-  --line: #E2E6E2;
-  --brand: #0B7A5C;
-  --brand-strong: #075A44;
-  --brand-rgb: 11, 122, 92;
+  --ink: #12141C;
+  --ink-2: #3B4152;
+  --muted: #646B7D;
+  --line: #E3E6EE;
+  --brand: #2F5BE0;
+  --brand-strong: #2347B8;
+  --brand-rgb: 47, 91, 224;
   --on-brand: #FFFFFF;
   --primary: var(--brand);
   --accent: #B7791F;
-  --accent-2: #2B5FD9;
-  --danger: #C2410C;
-  --negative: #C2410C;
-  --good: #0B7A5C;
+  --accent-2: #7C3AED;
+  --danger: #D1403A;
+  --negative: #D1403A;
+  --good: #0F8A5F;
   --watch: #A16207;
-  --info: #2B5FD9;
-  --shadow: 0 1px 2px rgba(14, 21, 19, 0.05), 0 8px 24px rgba(14, 21, 19, 0.05);
-  --sidebar-bg: rgba(255, 255, 255, 0.86);
-  --top-glow: rgba(11, 122, 92, 0.05);
-  --empty-bg: rgba(238, 241, 237, 0.7);
-  --modal-backdrop: rgba(14, 21, 19, 0.45);
-  --modal-shadow: 0 30px 90px rgba(14, 21, 19, 0.25);
+  --info: #2F5BE0;
+  --shadow: 0 1px 2px rgba(18, 20, 28, 0.04), 0 8px 24px rgba(18, 20, 28, 0.05);
+  --sidebar-bg: rgba(255, 255, 255, 0.88);
+  --top-glow: rgba(47, 91, 224, 0.04);
+  --empty-bg: rgba(238, 240, 245, 0.7);
+  --modal-backdrop: rgba(18, 20, 28, 0.45);
+  --modal-shadow: 0 30px 90px rgba(18, 20, 28, 0.25);
   --on-ink: #FFFFFF;
-  --chart-income: #0B7A5C;
-  --chart-expense: #D9622B;
+  --chart-income: #0F8A5F;
+  --chart-expense: #E4572E;
   --card-solid: #FFFFFF;
   --radius: 12px;
-  --radius-card: 18px;
+  --radius-card: 16px;
   font-family: Geist, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 body[data-theme="dark"] {
-  --bg: #0A0D0C;
-  --panel: #111614;
-  --panel-translucent: rgba(17, 22, 20, 0.82);
-  --panel-soft: #1A221F;
-  --input-bg: #0D1110;
-  --ink: #EDF2EF;
-  --ink-2: #B4C0BA;
-  --muted: #8A9892;
+  --bg: #0B0C10;
+  --panel: #14151B;
+  --panel-translucent: rgba(20, 21, 27, 0.84);
+  --panel-soft: #1D1F27;
+  --input-bg: #101117;
+  --ink: #ECEDF2;
+  --ink-2: #B6BAC8;
+  --muted: #8D93A4;
   --line: rgba(255, 255, 255, 0.08);
-  --brand: #3FD3A2;
-  --brand-strong: #7FE6C3;
-  --brand-rgb: 63, 211, 162;
-  --on-brand: #04140E;
+  --brand: #6C8EFF;
+  --brand-strong: #9DB4FF;
+  --brand-rgb: 108, 142, 255;
+  --on-brand: #0B1020;
   --accent: #F5C451;
-  --accent-2: #7AA7FF;
-  --danger: #FF8A65;
-  --negative: #FF8A65;
-  --good: #3FD3A2;
+  --accent-2: #B79CFF;
+  --danger: #FF7A85;
+  --negative: #FF7A85;
+  --good: #3DD6A0;
   --watch: #F5C451;
-  --info: #7AA7FF;
+  --info: #6C8EFF;
   --shadow: none;
-  --sidebar-bg: rgba(10, 13, 12, 0.88);
-  --top-glow: rgba(63, 211, 162, 0.035);
-  --empty-bg: rgba(26, 34, 31, 0.6);
-  --modal-backdrop: rgba(5, 8, 7, 0.82);
+  --sidebar-bg: rgba(11, 12, 16, 0.9);
+  --top-glow: rgba(108, 142, 255, 0.03);
+  --empty-bg: rgba(29, 31, 39, 0.6);
+  --modal-backdrop: rgba(4, 5, 8, 0.82);
   --modal-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 30px 80px rgba(0, 0, 0, 0.6);
-  --on-ink: #0A0D0C;
-  --chart-income: #3FD3A2;
+  --on-ink: #0B0C10;
+  --chart-income: #3DD6A0;
   --chart-expense: #FF8A65;
-  --card-solid: #111614;
+  --card-solid: #14151B;
 }
 
 body[data-theme="dark"]::before {
   background:
-    radial-gradient(circle at 50% 0%, rgba(63, 211, 162, 0.035) 0%, transparent 55%),
-    #0A0D0C;
+    radial-gradient(circle at 50% 0%, rgba(108, 142, 255, 0.04) 0%, transparent 55%),
+    #0B0C10;
 }
 
 /* Numbers line up in columns and read as figures, everywhere */
@@ -122,8 +122,8 @@ body[data-theme="dark"] .metric-card.compact-metric .value {
 .metric-card .value { color: var(--ink); }
 
 /* Select dropdowns follow the surface */
-body[data-theme="dark"] select option { background-color: #111614; color: #EDF2EF; }
-body[data-theme="light"] select option { background-color: #FFFFFF; color: #0E1513; }
+body[data-theme="dark"] select option { background-color: #14151B; color: #ECEDF2; }
+body[data-theme="light"] select option { background-color: #FFFFFF; color: #12141C; }
 body[data-theme="dark"] th { background: var(--panel-soft); }
 
 /* Text on a brand fill follows the mode (white on deep green, near-black on bright emerald) */

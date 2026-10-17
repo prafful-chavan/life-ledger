@@ -1,0 +1,121 @@
+/**
+ * Life Ledger — layout layer (loaded after theme.css).
+ * Purpose: no dead space. Cards in a row share a row-height that their content actually fills, rows are
+ * composed from a 12-column grid, long names truncate instead of wrapping one word per line, and every
+ * screen reflows cleanly from a 27" monitor down to a phone.
+ */
+
+/* ── Page frame ─────────────────────────────────────────────────────────────── */
+.main-content { max-width: 1480px; margin-inline: auto; }
+
+.topbar { align-items: center; gap: 16px 24px; margin-bottom: 20px; }
+.topbar-actions {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center;
+}
+.topbar-actions > button {
+  min-height: 40px; padding: 0 14px; font-size: 13px; font-weight: 650; white-space: nowrap;
+}
+.topbar-actions .danger-button {
+  background: transparent; border-color: transparent; color: var(--muted); font-weight: 600;
+}
+.topbar-actions .danger-button:hover { color: var(--danger); background: var(--panel-soft); }
+
+.section-heading { align-items: flex-end; gap: 12px 24px; margin-bottom: 16px; }
+.section-heading h2 { font-size: 26px; line-height: 32px; margin: 0; }
+.section-heading p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+
+/* ── Stat cards: always fill the row, never leave an empty slot ─────────────── */
+.metric-grid,
+.metric-grid.exercise-stats-grid {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 16px !important;
+  margin-bottom: 16px !important;
+}
+.metric-grid > * { flex: 1 1 200px; min-width: 0; }
+.metric-card { min-height: 0; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+.metric-card .value { margin: 6px 0 2px; font-size: clamp(20px, 1.9vw, 28px); line-height: 1.15; overflow-wrap: anywhere; }
+.metric-card .hint { margin-top: auto; font-size: 12.5px; }
+
+/* Side-by-side cards keep their own height (a short card never stretches into an empty box) */
+.split-grid,
+.career-grid,
+.goals-layout { align-items: start; gap: 16px; }
+
+/* ── Dashboard: 12-column composition ───────────────────────────────────────── */
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+.dashboard-layout > .panel { grid-column: span 12; margin: 0; display: flex; flex-direction: column; min-width: 0; }
+.dashboard-layout > .panel > :last-child { flex: 1 1 auto; }
+.dashboard-layout > .large-panel { grid-column: span 8; min-height: 0; }       /* Income vs expenses */
+.dashboard-layout > :nth-child(2) { grid-column: span 4; }                      /* Expense mix */
+.dashboard-layout > .dash-masonry { grid-column: span 12; columns: 2; column-gap: 16px; }   /* Net worth, Today focus, Goals, Habits flow in two columns */
+.dash-masonry > .panel { display: block; break-inside: avoid; margin: 0 0 16px; }
+.dashboard-layout > :nth-child(4) { grid-column: span 12; }                     /* Exercise consistency */
+
+.chart-area { min-height: 0; display: flex; align-items: center; }
+.chart-area > svg { width: 100%; height: auto; display: block; }
+
+/* Expense mix: donut on top, tidy legend below (names truncate, values align right) */
+.donut-wrap { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 20px; align-items: start; }
+.donut { width: 168px; height: 168px; }
+.legend-list { width: 100%; gap: 0; }
+.legend-row {
+  padding: 10px 2px; border: 0; border-radius: 0; background: transparent;
+  border-bottom: 1px solid var(--line);
+}
+.legend-row:last-child { border-bottom: 0; }
+.legend-name { flex: 1 1 auto; font-weight: 600; font-size: 14px; }
+.legend-name > :not(:first-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.legend-row .amount { font-weight: 650; font-size: 14px; }
+
+/* Lists inside cards: compact rows, no boxes within boxes */
+.focus-list, .stack-list { gap: 8px; }
+
+/* ── Exercise: composed rows instead of one tall column ─────────────────────── */
+#exercise.view.active {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+#exercise > * { grid-column: span 12; margin: 0 !important; min-width: 0; }
+#exercise > .panel:has(#streakCalendarGrid) { grid-column: span 5; }
+#exercise > .panel:has(#exercise7DayChartWrapper) { grid-column: span 7; display: flex; flex-direction: column; }
+#exercise > .panel:has(#exercise7DayChartWrapper) #exercise7DayChartWrapper { flex: 1 1 auto; min-height: 200px; }
+.streak-calendar-wrapper { max-width: none; }
+#streakCalendarGrid { gap: 6px !important; }
+.streak-cal-day { width: 100%; max-width: 44px; margin-inline: auto; font-size: 12px; }
+#exercise .split-grid { grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr); gap: 16px; align-items: start; }
+#exercise .split-grid > :last-child { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow: auto; }
+
+/* ── Tablet (≤1080) ─────────────────────────────────────────────────────────── */
+@media (max-width: 1080px) {
+  #exercise > .panel:has(#streakCalendarGrid),
+  #exercise > .panel:has(#exercise7DayChartWrapper) { grid-column: span 12; }
+  .streak-calendar-wrapper { max-width: 460px; margin-inline: auto; }
+  .dashboard-layout > .panel,
+  .dashboard-layout > .large-panel,
+  .dashboard-layout > :nth-child(n) { grid-column: span 12; }
+  .dashboard-layout > :nth-child(2) { grid-column: span 12; }
+  .donut-wrap { grid-template-columns: 168px minmax(0, 1fr); justify-items: stretch; align-items: center; }
+  #exercise .split-grid { grid-template-columns: minmax(0, 1fr); }
+  #exercise .split-grid > :last-child { position: static; max-height: none; }
+}
+
+/* ── Phone (≤680) ───────────────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .dashboard-layout > :nth-child(n) { grid-column: span 12; }
+  .dashboard-layout > .dash-masonry { columns: 1; }
+  .donut-wrap { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .metric-grid, .metric-grid.exercise-stats-grid { gap: 12px !important; }
+  .metric-grid > * { flex: 1 1 calc(50% - 6px); }
+  .metric-card { padding: 14px 16px; }
+  .section-heading h2 { font-size: 22px; line-height: 28px; }
+  .topbar-actions { justify-content: flex-start; }
+  .topbar-actions > button { min-height: 44px; }
+}
