@@ -10776,6 +10776,24 @@ function getGoalCategoryConfig(category) {
   return { emoji: "✨", class: "cat-other" };
 }
 
+/**
+ * What a goal needs to finish on time. months = whole months left (at least 1 while it isn't overdue),
+ * perMonth = remaining ÷ months. Overdue goals ask for the whole remainder now.
+ */
+function goalNeedPerMonth(goal, today) {
+  const target = toNumber(goal && goal.target);
+  const saved = toNumber(goal && goal.saved);
+  const remaining = Math.max(0, target - saved);
+  if (!(target > 0) || remaining === 0) return { remaining: 0, months: 0, perMonth: 0, done: true };
+  const due = goal.dueDate ? new Date(String(goal.dueDate).slice(0, 10) + "T00:00:00Z") : null;
+  const now = new Date(String(today || istTodayISO()).slice(0, 10) + "T00:00:00Z");
+  if (!due || Number.isNaN(due.getTime())) return { remaining, months: null, perMonth: null, done: false };
+  const monthsExact = (due - now) / (30.4375 * 86400000);
+  if (monthsExact <= 0) return { remaining, months: 0, perMonth: remaining, done: false, overdue: true };
+  const months = Math.max(1, Math.ceil(monthsExact));
+  return { remaining, months, perMonth: Math.ceil(remaining / months), done: false };
+}
+
 function renderGoals() {
   const container = document.getElementById("goalsGrid");
   if (!container) return;
@@ -10815,6 +10833,14 @@ function renderGoals() {
   const statProgressEl = document.getElementById("goalStatProgress");
   const statProgressPercentEl = document.getElementById("goalStatProgressPercent");
 
+  const statMonthlyEl = document.getElementById("goalStatMonthly");
+  if (statMonthlyEl) {
+    const plans = state.goals.map((g) => goalNeedPerMonth(g)).filter((p) => !p.done && p.perMonth != null);
+    const monthly = plans.reduce((s, p) => s + p.perMonth, 0);
+    statMonthlyEl.textContent = plans.length ? formatINR(monthly) : "—";
+    const sub = document.getElementById("goalStatMonthlySub");
+    if (sub) sub.textContent = plans.length ? `to finish ${plans.length} goal${plans.length === 1 ? "" : "s"} on time` : "Set due dates to see this";
+  }
   if (statActiveEl) statActiveEl.textContent = activeCount;
   if (statCompletedEl) statCompletedEl.textContent = completedCount;
   if (statProgressEl) statProgressEl.textContent = `${formatINR(totalSaved)} / ${formatINR(totalTarget)}`;
@@ -10915,9 +10941,16 @@ function renderGoals() {
         <div class="goal-progress-bar-track">
           <div class="goal-progress-bar-fill" style="width: ${progress}%"></div>
         </div>
-        <div style="font-size:12px; font-weight:700; color:var(--muted); margin-bottom: 14px;">
+        <div style="font-size:12px; font-weight:700; color:var(--muted); margin-bottom: 10px;">
           Target: ${formatINR(goal.target || 0)} ${goal.dueDate ? `by ${formatDate(goal.dueDate)}` : ""}
         </div>
+        ${(() => {
+          const plan = goalNeedPerMonth(goal);
+          if (plan.done) return "";
+          const togo = `<span><b>${formatINR(plan.remaining)}</b> to go</span>`;
+          const per = plan.perMonth == null ? "" : plan.overdue ? `<span class="goal-need-warn">Overdue — needs the full amount now</span>` : `<span><b>${formatINR(plan.perMonth)}</b> a month for ${plan.months} month${plan.months === 1 ? "" : "s"}</span>`;
+          return `<div class="goal-need">${togo}${per}</div>`;
+        })()}
       </div>
       
       <div class="goal-quick-contribute">
@@ -10945,6 +10978,19 @@ function renderGoals() {
 
     container.append(card);
   });
+
+  if (filtered.length === state.goals.length) container.append(makeAddTile("New goal", "Plan the next milestone", () => document.querySelector('#goals .section-heading [data-kind="goal"]')?.click()));
+}
+
+function makeAddTile(title, hint, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "add-tile";
+  b.innerHTML = `<span class="add-tile-plus" aria-hidden="true">+</span><strong></strong><small></small>`;
+  b.querySelector("strong").textContent = title;
+  b.querySelector("small").textContent = hint;
+  b.addEventListener("click", onClick);
+  return b;
 }
 
 let todoFilter = "all";
@@ -13674,6 +13720,7 @@ function renderHabitsView() {
 
       grid.append(card);
     });
+    grid.append(makeAddTile("Add habit", "Build a new daily routine", () => document.getElementById("btnLogHabitManual")?.click()));
   }
 }
 
@@ -16653,6 +16700,7 @@ if (typeof module !== 'undefined' && module.exports) {
     calcCaloriesBurned,
     getActivityDefaults,
     repairPhantomSteps,
+    goalNeedPerMonth,
     findStepsEntryFor,
     calcCyclingSpeed,
     calcRunningPace,

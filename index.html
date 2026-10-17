@@ -20,8 +20,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
-    <link rel="stylesheet" href="theme.css?v=1.1.1" />
-    <link rel="stylesheet" href="layout.css?v=1.4.2" />
+    <link rel="stylesheet" href="theme.css?v=1.1.4" />
+    <link rel="stylesheet" href="layout.css?v=1.5.0" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -35,7 +35,7 @@
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
     <script defer src="hero-series.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.75"></script>
+    <script defer src="app.js?v=1.0.76"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.1"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
@@ -1560,6 +1560,11 @@
             <div class="goal-stat-card">
               <div class="stat-label">Completed Goals</div>
               <div class="stat-value" id="goalStatCompleted">0</div>
+            </div>
+            <div class="goal-stat-card">
+              <div class="stat-label">Needed each month</div>
+              <div class="stat-value" id="goalStatMonthly">—</div>
+              <div class="stat-sub" id="goalStatMonthlySub"></div>
             </div>
             <div class="goal-stat-card highlight">
               <div class="stat-label">Overall Progression</div>

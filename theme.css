@@ -47,6 +47,10 @@
 }
 
 body[data-theme="dark"] {
+  /* aliases must be re-declared here: a var() on :root would freeze the light-mode value for the whole page */
+  --primary: var(--brand);
+  --text: var(--ink);
+  --positive: var(--good);
   --bg: #0B0C10;
   --panel: #14151B;
   --panel-translucent: rgba(20, 21, 27, 0.84);
@@ -199,3 +203,25 @@ body[data-theme] .nav-item.active[data-view] {
   }
   body[data-theme] .nav-item.active[data-view] { color: var(--brand); background: transparent; }
 }
+
+/* ── Light mode: darker shades of the same hues so coloured text stays readable on white ─────────── */
+body[data-theme="light"] .goal-badge.cat-finance { color: #0B7A5C; }
+body[data-theme="light"] .goal-badge.cat-career { color: #1D4ED8; }
+body[data-theme="light"] .goal-badge.cat-travel { color: #0F766E; }
+body[data-theme="light"] .goal-badge.cat-health { color: #C2410C; }
+body[data-theme="light"] .goal-badge.cat-personal { color: #6D28D9; }
+body[data-theme="light"] .goal-badge.cat-other { color: #4B5563; }
+body[data-theme="light"] .badge-priority.high { color: #B91C1C; }
+body[data-theme="light"] .badge-priority.medium { color: #8A5A00; }
+body[data-theme="light"] .badge-priority.low { color: #0369A1; }
+body[data-theme="light"] .rings-center-val { color: #C2410C; }
+body[data-theme="light"] .act-metric-tag.tag-cal { color: #C2410C; }
+body[data-theme="light"] .act-metric-tag.tag-dist { color: #0E7490; }
+body[data-theme="light"] .act-metric-tag.tag-speed { color: #6D28D9; }
+body[data-theme="light"] .streak-cal-day.active { color: #2E7D32; }
+body[data-theme="light"] .pr-item-value { color: #2E7D32; }
+/* inline-styled amber / green text (habit streaks, "best" counters) */
+body[data-theme="light"] [style*="color: #f59e0b"], body[data-theme="light"] [style*="color:#f59e0b"] { color: #8A5600 !important; }
+body[data-theme="light"] [style*="color: #10b981"], body[data-theme="light"] [style*="color:#10b981"] { color: #0B7A5C !important; }
+body[data-theme="light"] [style*="color: #f97316"], body[data-theme="light"] [style*="color:#f97316"] { color: #C2410C !important; }
+body[data-theme="light"] .chat-status-badge { color: #15803D; }

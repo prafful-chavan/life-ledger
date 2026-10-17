@@ -305,6 +305,27 @@
   .adv-tabs { width: 100%; }
 }
 
+/* ── Goals & Habits ────────────────────────────────────────────────────────── */
+.goals-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.goal-stat-card { padding: 18px 20px; border-radius: var(--radius-card); }
+.goal-stat-card .stat-label { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.goal-stat-card .stat-value { margin-top: 8px; font-size: clamp(20px, 1.9vw, 28px); font-weight: 650; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.goal-stat-card .stat-sub { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+.goal-card { border-radius: var(--radius-card); }
+.goal-need { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--panel-soft); font-size: 12.5px; color: var(--muted); }
+.goal-need b { color: var(--ink); font-weight: 650; }
+.goal-need-warn { color: var(--negative); font-weight: 600; }
+
+.add-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 180px; padding: 20px;
+  border: 1.5px dashed var(--line); border-radius: var(--radius-card); background: transparent; color: var(--muted);
+  font: inherit; font-family: inherit; text-align: center; cursor: pointer; transition: border-color .15s, color .15s, background .15s;
+}
+.add-tile:hover, .add-tile:focus-visible { border-color: var(--brand); color: var(--ink); background: color-mix(in srgb, var(--brand) 6%, transparent); outline: none; }
+.add-tile-plus { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--panel-soft); color: var(--brand); font-size: 24px; line-height: 1; font-weight: 400; }
+.add-tile strong { font-size: 15px; color: var(--ink); font-weight: 650; }
+.add-tile small { font-size: 12.5px; }
+
 /* ── Tablet (≤1080) ─────────────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
   #exercise > .panel:has(#streakCalendarGrid),
