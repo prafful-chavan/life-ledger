@@ -453,6 +453,9 @@ body.prices-refreshing #topbarRefreshAllBtn::before {
 .dh-row.warn .dh-icon { background: color-mix(in srgb, var(--negative) 18%, transparent); color: var(--negative); }
 .dh-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 
+.hero-asof { margin-top: 4px; font-size: 12px; color: var(--muted); }
+body.prices-refreshing .hero-asof::after { content: " · updating…"; }
+
 /* goals that follow holdings */
 .goal-follows { justify-content: flex-start; font-size: 12px; font-weight: 700; color: var(--muted); }
 

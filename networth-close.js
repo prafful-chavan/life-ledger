@@ -115,8 +115,11 @@
    * Today's value for a class is locked at its close. But if a LATER price fetch (itself taken after the close) is
    * on file, it supersedes the lock — otherwise a price correction made the same evening could never show up.
    */
-  function keepLock(prevSettled, prevAsOfISO, liveSettled, liveFetchedAt) {
+  function keepLock(prevSettled, prevAsOfISO, liveSettled, liveFetchedAt, extra) {
     if (!prevSettled) return false;
+    // A class locked while the household held none of it (value 0, no price time) must open up as soon as something
+    // is added; otherwise a first-ever holding added later the same day would not count until tomorrow.
+    if (extra && extra.heldNow && !prevAsOfISO && !num(extra.lockedValue)) return false;
     const lockedAt = Date.parse(prevAsOfISO || "") || 0;
     const newer = num(liveFetchedAt) > lockedAt + 60000;
     return !(liveSettled && newer);

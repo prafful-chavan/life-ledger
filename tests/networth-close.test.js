@@ -111,4 +111,12 @@ assert.strictEqual(r.settled.stocks, true);
   assert.strictEqual(K(true, "2026-10-17T15:40:00Z", true, Date.parse("2026-10-17T15:40:00Z")), true, "same fetch → keep");
   assert.strictEqual(K(true, "", true, 0), true, "no timestamps → keep");
 }
+
+// a class locked while empty opens up once something is held (first holding added later the same day)
+{
+  const K = require("../networth-close.js").keepLock;
+  assert.strictEqual(K(true, "", false, 0, { heldNow: true, lockedValue: 0 }), false, "was empty, now held → not locked");
+  assert.strictEqual(K(true, "", false, 0, { heldNow: false, lockedValue: 0 }), true, "still empty → stays locked");
+  assert.strictEqual(K(true, "2026-10-17T02:02:10.642Z", false, 0, { heldNow: true, lockedValue: 1559288 }), true, "a real locked close is kept");
+}
 console.log("networth-close tests passed");

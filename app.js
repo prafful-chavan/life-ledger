@@ -541,6 +541,7 @@ function ensureInterviewDb() {
 
 function bootstrapApp(initialState) {
   state = normalizeData(initialState || defaultData);
+  recalculateGoldHoldingsValues();   // normalizeData priced gold with the PREVIOUS state's rate; redo it with this state's
   reconcileGeminiKey();
   if (!isAppInitialized) {
     bindTheme();
@@ -695,6 +696,7 @@ if (typeof window !== "undefined") {
     setAdvisorState: (patch) => { state.advisor = { ...(state.advisor || { profile: {}, review: null }), ...patch }; return saveData(true); },
     applyRemoteData(data) {
       state = normalizeData(data || defaultData);
+      recalculateGoldHoldingsValues();   // normalizeData priced gold with the PREVIOUS state's rate; redo it with this state's
       reconcileGeminiKey();
       renderAll();
     },
@@ -1792,6 +1794,7 @@ function bindImports() {
     try {
       const text = await file.text();
       state = normalizeData(JSON.parse(text));
+      recalculateGoldHoldingsValues();   // normalizeData priced gold with the PREVIOUS state's rate; redo it with this state's
       await saveData(true);
       renderAll();
       toast("Backup restored.");
@@ -2395,6 +2398,7 @@ async function resetData(scope) {
 
   if (scope === "all") {
     state = normalizeData(defaultData);
+    recalculateGoldHoldingsValues();   // normalizeData priced gold with the PREVIOUS state's rate; redo it with this state's
   } else {
     config.keys.forEach((key) => {
       state[key] = [];
@@ -4831,6 +4835,17 @@ function renderHeroCard(nw, day) {
     note.className = "hero-note";
     note.textContent = "Refresh prices to see today's change";
     deltaEl.append(note);
+  }
+
+  // How fresh are the prices behind this number? (the oldest price time among the market asset classes)
+  const asOfEl = document.getElementById("heroAsOf");
+  if (asOfEl) {
+    const times = Object.values((nw.snapshot && nw.snapshot.asOf) || {}).map((v) => Date.parse(v)).filter((t) => Number.isFinite(t) && t > 0);
+    if (times.length) {
+      const oldest = Math.min(...times);
+      const fmt = new Date(oldest).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+      asOfEl.textContent = `Prices as of ${fmt.replace(/\b(am|pm)\b/i, (m) => m.toLowerCase())}`;
+    } else asOfEl.textContent = "";
   }
 
   document.querySelectorAll("#heroRanges button").forEach((b) => {
@@ -8157,37 +8172,6 @@ async function fetchLiveGoldPrice(force = false) {
     }
   }
 
-  // 0b. GoodReturns Mumbai (same source as INDmoney) through public CORS gateways
-  try {
-    const grUrl = 'https://www.goodreturns.in/gold-rates/mumbai.html';
-    const gateways = [
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(grUrl)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(grUrl)}`
-    ];
-    for (const gw of gateways) {
-      try {
-        const res = await fetch(gw, { signal: AbortSignal.timeout(4000) });
-        if (!res.ok) continue;
-        const gr = parseGoodReturnsGold(await res.text());
-        if (!gr) continue;
-        state.goldPrice = {
-          price24k: gr.price24k,
-          price22k: Number((gr.price24k * (22 / 24)).toFixed(2)),
-          prevClose24k: gr.prevClose24k,
-          prevClose22k: gr.prevClose22k,
-          lastFetched: new Date().toISOString(),
-          source: "goodreturns-mumbai"
-        };
-        recalculateGoldHoldingsValues();
-        persist();
-        renderGold();
-        return state.goldPrice.price24k;
-      } catch {}
-    }
-  } catch (e) {
-    console.warn("[Gold API] GoodReturns attempt failed:", e);
-  }
-
   // 1. Configured custom Gold API or Stock Proxy URL
   const customGoldUrl = typeof localStorage !== "undefined" ? localStorage.getItem(GOLD_API_URL_KEY)?.trim() : "";
   const stockProxyUrl = typeof localStorage !== "undefined" ? localStorage.getItem(STOCK_PROXY_URL_KEY)?.trim()?.replace(/^["']|["']$/g, '').replace(/\?+$/, '') : "";
@@ -8252,6 +8236,38 @@ async function fetchLiveGoldPrice(force = false) {
     } catch (e) {
       console.warn("[Gold API] Proxy fetch failed for " + pUrl + ":", e.message);
     }
+  }
+
+  // Fallback: GoodReturns Mumbai (same source) through public CORS gateways. These relays are slow and flaky, so they only run
+  // when your own proxy (above) could not answer.
+  try {
+    const grUrl = 'https://www.goodreturns.in/gold-rates/mumbai.html';
+    const gateways = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(grUrl)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(grUrl)}`
+    ];
+    for (const gw of gateways) {
+      try {
+        const res = await fetch(gw, { signal: AbortSignal.timeout(4000) });
+        if (!res.ok) continue;
+        const gr = parseGoodReturnsGold(await res.text());
+        if (!gr) continue;
+        state.goldPrice = {
+          price24k: gr.price24k,
+          price22k: Number((gr.price24k * (22 / 24)).toFixed(2)),
+          prevClose24k: gr.prevClose24k,
+          prevClose22k: gr.prevClose22k,
+          lastFetched: new Date().toISOString(),
+          source: "goodreturns-mumbai"
+        };
+        recalculateGoldHoldingsValues();
+        persist();
+        renderGold();
+        return state.goldPrice.price24k;
+      } catch {}
+    }
+  } catch (e) {
+    console.warn("[Gold API] GoodReturns attempt failed:", e);
   }
 
   // 2. Direct real-time endpoint: api.gold-api.com (LBMA spot converted using live USD/INR FX)
@@ -8904,7 +8920,7 @@ function buildTodaySnapshot(options = {}) {
     const liveSettled = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
     const NWC = typeof window !== "undefined" ? window.LifeLedgerNetWorthClose : undefined;
     const keep = NWC?.keepLock
-      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt)
+      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt, { heldNow: live.held, lockedValue: existing ? existing[cls] : 0 })
       : Boolean(prevSettled[cls]);
     if (keep) {
       // Locked at its close earlier today (and nothing newer after the close): keep that value and gain/loss
