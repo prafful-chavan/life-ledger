@@ -168,22 +168,15 @@ var ISIN_TO_TICKER = {
   "INE918I01018": "LTIM",
   "INE982F01036": "POLYCAB",
 
-  // Broker CSV Ticker Aliases
-  "ICICIB22": "BHARAT22",
+  // Broker CSV ticker aliases: nickname → real NSE ticker. Never the other way round (that rewrote valid tickers into ones Yahoo does not have).
   "BHARAT22": "ICICIB22",
-  "SILVERBEES": "NETFSILVER",
   "NETFSILVER": "SILVERBEES",
-  "BAJAJCON": "BAJAJCORP",
   "BAJAJCORP": "BAJAJCON",
-  "GOLDBEES": "GOLD1",
   "GOLD1": "GOLDBEES",
-  "JINDALSTEL": "JINDALSTEEL",
   "JINDALSTEEL": "JINDALSTEL",
-  "RATEGAIN": "RATEGAINTR",
   "RATEGAINTR": "RATEGAIN",
   "GEVERNOVA": "GE T&D",
   "GE T&D": "GEVERNOVA",
-  "BHARTIARTL": "BHARTI",
   "BHARTI": "BHARTIARTL",
   "SBI": "SBIN",
   "TRANS": "TARIL",
@@ -939,6 +932,9 @@ function assignResultsWithAliases(results, canonicalSym, rawOrig, item) {
   if (canonicalSym === "SILVERBEES") results["NETFSILVER"] = item;
   if (canonicalSym === "BAJAJCON") results["BAJAJCORP"] = item;
   if (canonicalSym === "GOLDBEES") results["GOLD1"] = item;
+  if (canonicalSym === "JINDALSTEL") results["JINDALSTEEL"] = item;
+  if (canonicalSym === "RATEGAIN") results["RATEGAINTR"] = item;
+  if (canonicalSym === "BHARTIARTL") results["BHARTI"] = item;
   if (canonicalSym === "GLAND") results["INE068V01023"] = item;
   if (canonicalSym === "SBCL") results["INE386D01027"] = item;
 }

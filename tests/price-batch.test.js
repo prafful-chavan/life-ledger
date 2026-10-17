@@ -127,3 +127,36 @@ const chart = (price, closes, extCloses) => (kind) => ({ chart: { result: [{
 }
 
 console.log("price-batch tests passed");
+
+// ── Real tickers must never be rewritten to ones Yahoo doesn't have (this was leaving holdings unpriced/wrong) ──
+{
+  const real = {
+    "SILVERBEES.NS": chart(199.94, [195, 198, 199.94]), "BAJAJCON.NS": chart(472, [460, 470, 472]), "JINDALSTEL.NS": chart(1045.2, [1000, 1040, 1045.2]),
+    "GOLDBEES.NS": chart(120.2, [118, 119, 120.2]), "ICICIB22.NS": chart(108.39, [105, 107, 108.39]), "RATEGAIN.NS": chart(827.2, [800, 820, 827.2]), "BHARTIARTL.NS": chart(1905, [1880, 1900, 1905]),
+  };
+  const rt = makeRuntime(real);
+  const r = rt.get({ symbols: "SILVERBEES,BAJAJCON,JINDALSTEL,GOLDBEES,ICICIB22,RATEGAIN,BHARTIARTL" });
+  assert.strictEqual(rt.calls.fetchAll.length, 1, "all seven in one parallel batch");
+  assert.strictEqual(rt.calls.fetch.length, 0, "none needed the slow path");
+  assert.strictEqual(r.SILVERBEES.price, 199.94);
+  assert.strictEqual(r.BAJAJCON.price, 472);
+  assert.strictEqual(r.JINDALSTEL.price, 1045.2);
+  assert.strictEqual(r.GOLDBEES.price, 120.2, "GOLDBEES is priced as GOLDBEES, not as GOLD1");
+  assert.strictEqual(r.ICICIB22.price, 108.39);
+  assert.strictEqual(r.RATEGAIN.price, 827.2);
+  assert.strictEqual(r.BHARTIARTL.price, 1905);
+  // the old names still find the same quote
+  assert.strictEqual(r.NETFSILVER.price, 199.94);
+  assert.strictEqual(r.BAJAJCORP.price, 472);
+  assert.strictEqual(r.JINDALSTEEL.price, 1045.2);
+  assert.strictEqual(r.GOLD1.price, 120.2);
+  assert.strictEqual(r.BHARAT22.price, 108.39);
+  // and asking by the nickname still resolves to the real ticker
+  const rt2 = makeRuntime(real);
+  const r2 = rt2.get({ symbols: "NETFSILVER,BAJAJCORP,BHARTI,GOLD1" });
+  assert.strictEqual(r2.SILVERBEES.price, 199.94);
+  assert.strictEqual(r2.BAJAJCON.price, 472);
+  assert.strictEqual(r2.BHARTIARTL.price, 1905);
+  assert.strictEqual(r2.GOLDBEES.price, 120.2);
+}
+console.log("price-alias tests passed");
