@@ -139,7 +139,10 @@
   function groupOf(h) {
     const name = String(h.name || "").toLowerCase();
     switch (h.cls) {
-      case "stock": case "us": return "equity";
+      case "stock": case "us":
+        if (/gold|silver/.test(name)) return "gold";                     // Gold BeES / Silver BeES held as a "stock"
+        if (/liquid|overnight|gilt|g-sec|\bbond\b|bharat bond|treasury/.test(name)) return "debt";
+        return "equity";
       case "gold": case "silver": return "gold";
       case "fd": case "epf": case "ppf": case "bonds": return "debt";
       case "bank": return "cash";
@@ -554,6 +557,15 @@
       }
     }
 
+    // A goal named after an investment bucket often has a hand-typed "saved" figure that has drifted from reality.
+    const staleGoalNote = (g) => {
+      const n = String(g.name || "").toLowerCase();
+      const bucket = /mutual fund|\bmf\b|sip/.test(n) ? "mf" : /stock|equity|share/.test(n) ? "stock" : /gold/.test(n) ? "gold" : null;
+      if (!bucket) return null;
+      const actual = items.filter((h) => (bucket === "gold" ? groupOf(h) === "gold" : groupKey(h) === bucket)).reduce((a, h) => a + num(h.value), 0);
+      if (actual > num(g.saved) * 1.1) return `Heads up: you recorded ${inr(g.saved)} saved, but your ${bucket === "mf" ? "mutual funds are" : bucket === "gold" ? "gold is" : "stocks are"} worth ${inr(actual)} now. Update the saved amount so this is accurate.`;
+      return null;
+    };
     // goals — only the ones that look genuinely hard
     goals.forEach((g) => {
       const need = num(g.target) - num(g.saved);
@@ -565,7 +577,8 @@
         const perMonth = need / months;
         if (cash.monthlyIncome && perMonth > num(cash.monthlyIncome) * 0.25) {
           add({ id: "goal-" + g.name, severity: "info", action: "REVIEW", title: `The goal “${g.name}” needs ${inr(perMonth)} a month`,
-            why: [`${inr(need)} to go in ${Math.round(months)} months — that is over a quarter of your income. Consider a later date or a smaller target.`] });
+            why: [`${inr(need)} to go in ${Math.round(months)} months — that is over a quarter of your income. Consider a later date or a smaller target.`,
+              staleGoalNote(g)].filter(Boolean) });
         }
       }
     });
@@ -581,7 +594,8 @@
     const strengths = [];
     if (emergencyMonths != null && emergencyMonths >= profile.emergencyMonths) strengths.push(`Your emergency cushion covers ${r1(emergencyMonths)} months of spending.`);
     if (cash.savingsRate != null && cash.savingsRate >= 30) strengths.push(`You save about ${r1(cash.savingsRate)}% of your income — that is excellent.`);
-    if (!liabilities.some((l) => num(l.rate) >= CFG.debtWatchRate)) strengths.push(liabilities.length ? "None of your loans is very expensive." : "You have no loans.");
+    if (!liabilities.length) strengths.push("You have no loans.");
+    else if (liabilities.every((l) => num(l.rate) > 0) && !liabilities.some((l) => num(l.rate) >= CFG.debtWatchRate)) strengths.push("None of your loans is very expensive.");
     const winners = items.filter((h) => ["great", "good"].includes(h.verdict.status) && groupKey(h) !== "safe");
     if (winners.length) strengths.push(`${winners.length} of your investments are beating or matching the market well${winners.length <= 3 ? ": " + winners.map((h) => h.name).join(", ") : ""}.`);
     if (invested > 0 && total / invested > 1) strengths.push(`Overall, your money has grown ${r1((total / invested - 1) * 100)}% beyond what you put in.`);

@@ -235,4 +235,33 @@ assert.strictEqual(A.kindOf({ cls: "stock", name: "TCS Ltd", symbol: "TCS" }), "
   assert.ok(dp.score < 100 && dp.line.includes("Add the interest rate"));
 }
 
+// ── audit fixes ───────────────────────────────────────────────────────
+{
+  // Gold/Silver ETFs held as "stocks" count as gold, not equity; liquid ETFs count as debt
+  const hs = [
+    H({ key: "BANK", cls: "bank", name: "Savings", value: 50000 }),
+    H({ key: "GOLDBEES", cls: "stock", name: "Nippon India ETF Gold BeES", value: 100000 }),
+    H({ key: "SILVERBEES", cls: "stock", name: "Nippon India ETF Silver BeES", value: 50000 }),
+    H({ key: "LIQUIDBEES", cls: "stock", name: "Nippon India ETF Liquid BeES", value: 50000 }),
+    H({ key: "NIFTYBEES", cls: "stock", name: "Nippon India ETF Nifty 50 BeES", value: 750000 }),
+  ];
+  const a = A.analyze(base({ holdings: hs }));
+  assert.strictEqual(a.metrics.allocation.gold, 15, "gold + silver ETFs");
+  assert.strictEqual(a.metrics.allocation.debt, 5, "liquid ETF");
+  assert.strictEqual(a.metrics.allocation.equity, 75, "only the Nifty ETF is equity");
+
+  // "None of your loans is very expensive" only when every loan's rate is known
+  const unknown = A.analyze(base({ liabilities: [{ name: "Car Loan", value: 40000, rate: 0, emi: 0 }] }));
+  assert.ok(!unknown.strengths.some((t) => /loans/i.test(t)), "no praise for a loan of unknown cost");
+  const known = A.analyze(base({ liabilities: [{ name: "Car Loan", value: 40000, rate: 7, emi: 5000 }] }));
+  assert.ok(known.strengths.some((t) => /None of your loans/.test(t)));
+
+  // A "Mutual Fund" goal with stale saved money gets a heads-up with the real value
+  const g = A.analyze(base({
+    holdings: [H({ key: "X", cls: "mf", name: "Flexi Cap Fund", value: 4000000 }), H({ key: "BANK", cls: "bank", name: "Savings", value: 100000 })],
+    goals: [{ name: "Mutual Fund Portfolio", target: 10000000, saved: 2000000, dueDate: "2027-10-15" }],
+  }));
+  const sig = find(g, "goal-Mutual Fund Portfolio");
+  assert.ok(sig && sig.why.some((w) => /Heads up/.test(w) && /40,00,000/.test(w)), "stale goal note");
+}
 console.log("advisor-engine tests passed");
