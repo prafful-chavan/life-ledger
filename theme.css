@@ -26,10 +26,10 @@
   --radius-small: 8px;
   --accent: #B7791F;
   --accent-2: #7C3AED;
-  --danger: #D1403A;
-  --negative: #D1403A;
-  --good: #0F8A5F;
-  --watch: #A16207;
+  --danger: #BF342E;
+  --negative: #BF342E;
+  --good: #0A7350;
+  --watch: #8F5506;
   --info: #2F5BE0;
   --shadow: 0 1px 2px rgba(18, 20, 28, 0.04), 0 8px 24px rgba(18, 20, 28, 0.05);
   --sidebar-bg: rgba(255, 255, 255, 0.88);
@@ -225,3 +225,19 @@ body[data-theme="light"] [style*="color: #f59e0b"], body[data-theme="light"] [st
 body[data-theme="light"] [style*="color: #10b981"], body[data-theme="light"] [style*="color:#10b981"] { color: #0B7A5C !important; }
 body[data-theme="light"] [style*="color: #f97316"], body[data-theme="light"] [style*="color:#f97316"] { color: #C2410C !important; }
 body[data-theme="light"] .chat-status-badge { color: #15803D; }
+
+/* ── Contrast pass (measured with an automated scan in both themes; text now clears 4.5:1 on its own background) ── */
+body[data-theme="light"] .badge-difficulty.easy { color: #0A7A55; }
+body[data-theme="light"] .badge-difficulty.intermediate { color: #7A4F00; }
+body[data-theme="light"] .badge-difficulty.hard { color: #A82014; }
+body[data-theme="dark"] .badge-difficulty.hard { color: #F87171; }
+body[data-theme="light"] .badge-priority.low { color: #025C8E; }
+body[data-theme="dark"] .badge-priority.high { color: #FF8A80; }
+body[data-theme="light"] .badge-category, body[data-theme="light"] .habit-badge, body[data-theme="light"] .badge-category * { color: #565D70; }
+body[data-theme="dark"] .badge-category { color: #A5ABBC; }
+body[data-theme="light"] .streak-cal-day.active { color: #256B29; }
+/* small secondary text that was dimmed with opacity as well as a muted colour */
+.streak-cal-header span, .adv-tab small, .adv-disclaimer { opacity: 1 !important; }
+.adv-disclaimer { color: var(--muted); }
+body[data-theme="light"] .status-dot.good { color: #0A7350; }
+body[data-theme="light"] [data-diff-btn="Intermediate"] { color: #B4300F !important; }

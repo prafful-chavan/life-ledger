@@ -510,6 +510,35 @@ function reconcileGeminiKey() {
   }
 }
 
+// ── Load heavy files only when they are needed ────────────────────────────────
+// The spreadsheet reader (~930 KB) is only needed for imports and the interview question bank (~1 MB) only for
+// Career, so neither delays the first screen any more.
+const XLSX_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+const INTERVIEW_DB_URL = "interview-db.js?v=1.0.8";
+const scriptLoads = {};
+function loadScriptOnce(src) {
+  if (typeof document === "undefined") return Promise.reject(new Error("no document"));
+  if (!scriptLoads[src]) {
+    scriptLoads[src] = new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src;
+      el.async = true;
+      el.onload = () => resolve();
+      el.onerror = () => { delete scriptLoads[src]; el.remove(); reject(new Error(`Could not load ${src}`)); };
+      document.head.appendChild(el);
+    });
+  }
+  return scriptLoads[src];
+}
+async function ensureXlsx() {
+  if (typeof window !== "undefined" && window.XLSX) return;
+  try { await loadScriptOnce(XLSX_URL); } catch { /* callers show their own offline message */ }
+}
+function ensureInterviewDb() {
+  if (typeof window === "undefined" || window.LifeLedgerInterviewQuestions) return Promise.resolve();
+  return loadScriptOnce(INTERVIEW_DB_URL).then(() => { try { renderCareerOnly(); } catch { /* career view not ready */ } }).catch(() => {});
+}
+
 function bootstrapApp(initialState) {
   state = normalizeData(initialState || defaultData);
   reconcileGeminiKey();
@@ -537,6 +566,7 @@ function bootstrapApp(initialState) {
   }
 
   renderAll();
+  try { performance.mark("ll:first-render"); } catch { /* timing is optional */ }
   try {
     recordDailyNetWorthSnapshot({ source: "fresh-today" });
   } catch (err) {
@@ -1685,6 +1715,7 @@ function bindCareerTabs() {
 }
 
 async function importBuiltInMasterSheet() {
+  await ensureXlsx();
   if (!window.XLSX) {
     throw new Error("Excel support needs internet once to load the SheetJS parser.");
   }
@@ -3870,6 +3901,7 @@ async function syncHoldingsFromDrive() {
     console.log(`[app.js] Found holdings workbook: "${fileData.filename}" (Modified: ${fileData.modifiedTime})`);
     toast(`📥 Parsing all tabs from "${fileData.filename}"...`);
 
+    await ensureXlsx();
     const holdingsData = parseMasterHoldingsWorkbook(fileData.buffer);
 
     const mfCount = holdingsData.mutualFunds?.length || 0;
@@ -3941,6 +3973,7 @@ async function parseImportFile(file, selectedKind) {
   }
 
   if (["xlsx", "xls"].includes(extension)) {
+    await ensureXlsx();
     if (!window.XLSX) {
       throw new Error("Excel support needs internet once to load the SheetJS parser. Export CSV from Excel if you are offline.");
     }
@@ -9761,7 +9794,7 @@ function renderCareer() {
 }
 
 function getFilteredQuestions() {
-  if (!window.LifeLedgerInterviewQuestions) return [];
+  if (!window.LifeLedgerInterviewQuestions) { ensureInterviewDb(); return []; }
   return window.LifeLedgerInterviewQuestions.filter((q) => {
     const matchesSearch = !interviewSearchQuery || 
       q.question.toLowerCase().includes(interviewSearchQuery) || 
@@ -15239,6 +15272,7 @@ function scheduleHealthBadge() {
 if (typeof document !== "undefined") {
   document.addEventListener("click", (e) => {
     if (e.target.closest('[data-open-modal="dataHealthModal"]') || e.target.closest("#dataHealthRerun")) renderDataHealth();
+    if (e.target.closest('[data-open-modal="importModal"]')) ensureXlsx();   // start fetching the spreadsheet reader as the dialog opens
   });
 }
 
