@@ -264,4 +264,10 @@ assert.strictEqual(A.kindOf({ cls: "stock", name: "TCS Ltd", symbol: "TCS" }), "
   const sig = find(g, "goal-Mutual Fund Portfolio");
   assert.ok(sig && sig.why.some((w) => /Heads up/.test(w) && /40,00,000/.test(w)), "stale goal note");
 }
+
+// Goal "needs per month" uses the same whole-months-rounded-up rule as the Goals page
+{
+  const g = A.analyze(base({ goals: [{ name: "MF", target: 10000000, saved: 2000000, dueDate: "2027-10-22" }] }));
+  assert.ok(/6,15,385/.test(find(g, "goal-MF").title), "80L over 13 months");
+}
 console.log("advisor-engine tests passed");

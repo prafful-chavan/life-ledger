@@ -570,11 +570,13 @@
     goals.forEach((g) => {
       const need = num(g.target) - num(g.saved);
       if (need <= 0 || !g.dueDate) return;
-      const months = Math.max(0, (new Date(g.dueDate) - new Date(now)) / (30.44 * DAY));
+      // Same rule as the Goals page (goalNeedPerMonth): whole months rounded up, so both pages show the same figure.
+      const monthsExact = (new Date(String(g.dueDate).slice(0, 10)) - new Date(String(now).slice(0, 10))) / (30.4375 * DAY);
+      const months = monthsExact <= 0 ? 0 : Math.max(1, Math.ceil(monthsExact));
       if (months <= 0) {
         add({ id: "goal-" + g.name, severity: "info", action: "REVIEW", title: `The goal “${g.name}” has passed its date`, why: [`You are still ${inr(need)} short of ${inr(g.target)}. Set a new date or amount.`] });
       } else {
-        const perMonth = need / months;
+        const perMonth = Math.ceil(need / months);
         if (cash.monthlyIncome && perMonth > num(cash.monthlyIncome) * 0.25) {
           add({ id: "goal-" + g.name, severity: "info", action: "REVIEW", title: `The goal “${g.name}” needs ${inr(perMonth)} a month`,
             why: [`${inr(need)} to go in ${Math.round(months)} months — that is over a quarter of your income. Consider a later date or a smaller target.`,

@@ -12421,8 +12421,11 @@ function renderExerciseView() {
   let totalMinutes = 0;
   let totalSessions = monthActivities.length;
 
+  let walkKm = 0;
   monthActivities.forEach((act) => {
     totalSteps += toNumber(act.steps) || 0;
+    // Prefer the distance you logged for a walk; estimate from steps only when it is missing
+    if (toNumber(act.steps) > 0) walkKm += toNumber(act.distanceKm) > 0 ? toNumber(act.distanceKm) : toNumber(act.steps) * 0.00075;
     totalCalories += toNumber(act.caloriesBurned) || 0;
     totalMinutes += toNumber(act.durationMin) || 0;
     if (act.type === "cycling") {
@@ -12437,7 +12440,7 @@ function renderExerciseView() {
   const avgDailySteps = Math.round(totalSteps / daysInMonth);
   const avgDailyCalories = Math.round(totalCalories / daysInMonth);
   const avgCyclingSpeed = cyclingDurationMin > 0 ? (totalCyclingKm / (cyclingDurationMin / 60)).toFixed(1) : "0";
-  const stepKmApprox = (totalSteps * 0.00075).toFixed(1);
+  const stepKmApprox = walkKm.toFixed(1);
 
   // Update Monthly Cards
   const elSteps = document.getElementById("monthTotalSteps");

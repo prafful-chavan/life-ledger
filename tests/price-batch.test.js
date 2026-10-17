@@ -126,6 +126,26 @@ const chart = (price, closes, extCloses) => (kind) => ({ chart: { result: [{
   assert.ok(rt.calls.fetch.length >= 1);
 }
 
+
+// 4) Today's daily candle can come back empty: "previous close" must still be the last PRIOR session, not two days old
+{
+  const DAY = 86400, t0 = Date.UTC(2026, 9, 12, 4) / 1000; // 12 Oct 04:00 UTC ~ 09:30 IST
+  const stamps = [0, 1, 2, 3, 4].map((i) => t0 + i * DAY); // 12..16 Oct
+  const body = (closes, regTime) => () => ({ chart: { result: [{
+    meta: { regularMarketPrice: 263.9, chartPreviousClose: 250, gmtoffset: 19800, regularMarketTime: regTime },
+    timestamp: stamps,
+    indicators: { quote: [{ close: closes }] },
+  }] } });
+  const rt = makeRuntime({
+    "NIFTYBEES.NS": body([255, 257.78, 261.51, null, null].slice(0, 3).concat([null, null]), stamps[4]),   // 15 Oct = 261.51 is the real previous session
+    "WIPRO.NS": body([160, 161.8, 170.92, 174.05, 184.4], stamps[4]),                                       // normal day, last candle filled
+  });
+  const r = rt.get({ symbols: "NIFTYBEES,WIPRO" });
+  assert.strictEqual(r.NIFTYBEES.prevClose, 261.51, "empty latest candle → last prior session's close");
+  assert.strictEqual(r.WIPRO.prevClose, 174.05, "normal case unchanged");
+  assert.ok(Math.abs(r.NIFTYBEES.changePct - ((263.9 - 261.51) / 261.51) * 100) < 1e-9);
+}
+
 console.log("price-batch tests passed");
 
 // ── Real tickers must never be rewritten to ones Yahoo doesn't have (this was leaving holdings unpriced/wrong) ──

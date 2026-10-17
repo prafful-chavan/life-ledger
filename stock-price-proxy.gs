@@ -978,6 +978,21 @@ function parseYahooChart(sym, us, json, ext) {
   }
   var prevClose = closes.length >= 2 ? closes[closes.length - 2] : Number(meta.chartPreviousClose || meta.previousClose || price);
 
+  // Yahoo sometimes leaves the latest session's candle empty. Then "second-to-last close" would be two days old,
+  // so pick the last close from a session BEFORE the session the live price belongs to.
+  var stamps = (result.timestamp || []);
+  var offset = Number(meta.gmtoffset) || 0;
+  if (stamps.length === rawCloses.length && stamps.length) {
+    var latestStamp = Number(meta.regularMarketTime) || stamps[stamps.length - 1];
+    var latestDay = Math.floor((latestStamp + offset) / 86400);
+    for (var k = stamps.length - 1; k >= 0; k--) {
+      if (rawCloses[k] !== null && Number(rawCloses[k]) > 0 && Math.floor((stamps[k] + offset) / 86400) < latestDay) {
+        prevClose = Number(rawCloses[k]);
+        break;
+      }
+    }
+  }
+
   var source = "yahoo-chart";
   if (us) {
     var extResult = ext && ext.chart && ext.chart.result && ext.chart.result[0];
