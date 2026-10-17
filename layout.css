@@ -280,6 +280,9 @@
 .adv-h .adv-chip, .adv-h.great .adv-chip, .adv-h.good .adv-chip, .adv-h.weak .adv-chip, .adv-h.poor .adv-chip {
   color: var(--tone); border: 0; background: color-mix(in srgb, var(--tone) 15%, transparent); padding: 4px 10px; font-weight: 650;
 }
+.adv-h { display: flex; flex-direction: column; }
+.adv-h-move { margin-top: auto; }
+.adv-fold { display: flex; justify-content: center; margin-top: 16px; }
 .adv-h-top strong { font-size: 15px; font-weight: 650; }
 .adv-h-nums b { font-size: 15px; font-weight: 650; }
 .adv-h-move { border-top: 1px solid var(--line); border-style: solid none none; padding-top: 10px; color: var(--ink); }

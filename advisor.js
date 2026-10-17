@@ -41,6 +41,7 @@
   let timer = null;
   let activeTab = "mf";
   let sortMode = "attention";
+  const expandedTabs = new Set();
   let shownSignalIds = [];
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -294,7 +295,13 @@
       ${g.key !== "safe" && g.key !== "other" ? `<div><b>${good} doing well · ${bad} falling behind</b><span>Out of ${g.count}</span></div>` : ""}
     </div>`;
     const sorter = g.key === "safe" ? "" : `<div class="adv-sort">Show: <button type="button" data-sort="attention" class="${sortMode === "attention" ? "active" : ""}">Needs a look first</button><button type="button" data-sort="best" class="${sortMode === "best" ? "active" : ""}">Best first</button></div>`;
-    box.innerHTML = strip + sorter + `<div class="adv-holdings">${list.map((h) => holdingCard(h, rv.review && rv.review.holdingNotes)).join("")}</div>`;
+    // Long lists show the nine that matter most first (the order follows "Needs a look first / Best first")
+    const FOLD = 9;
+    const folds = list.length > FOLD + 3;
+    const open = !folds || expandedTabs.has(activeTab);
+    const shown = open ? list : list.slice(0, FOLD);
+    const more = folds ? `<div class="adv-fold"><button type="button" class="secondary-button" data-${open ? "less" : "more"}>${open ? "Show fewer" : `Show ${list.length - FOLD} more`}</button></div>` : "";
+    box.innerHTML = strip + sorter + `<div class="adv-holdings">${shown.map((h) => holdingCard(h, rv.review && rv.review.holdingNotes)).join("")}</div>` + more;
   }
 
   function renderCard(rv) {
@@ -401,7 +408,12 @@
     }));
     $("advOpenBtn")?.addEventListener("click", () => document.querySelector('.nav-item[data-view="advisor"]')?.click());
     $("advTabs")?.addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) { activeTab = b.dataset.tab; render(); } });
-    $("advGroup")?.addEventListener("click", (e) => { const b = e.target.closest("[data-sort]"); if (b) { sortMode = b.dataset.sort; render(); } });
+    $("advGroup")?.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-sort]");
+      if (b) { sortMode = b.dataset.sort; render(); return; }
+      if (e.target.closest("[data-more]")) { expandedTabs.add(activeTab); render(); }
+      else if (e.target.closest("[data-less]")) { expandedTabs.delete(activeTab); render(); }
+    });
     const ask = $("advAsk");
     if (ask) { ask.innerHTML = ASK.map((q) => `<button type="button">${esc(q)}</button>`).join(""); ask.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) askHeyPrafful(b.textContent); }); }
 
