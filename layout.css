@@ -420,6 +420,27 @@ body.prices-refreshing #topbarRefreshAllBtn::before {
   body.prices-refreshing .adv-kpi b, .is-thinking .adv-summary, body.prices-refreshing #topbarRefreshAllBtn::before { animation: none !important; }
 }
 
+/* ── Data health ── */
+.dh-card { max-width: 640px; }
+.dh-lead { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+.dh-body { display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
+.dh-summary { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; padding: 12px 14px; border-radius: 12px; background: var(--panel-soft); }
+.dh-summary.ok strong { color: var(--positive); }
+.dh-summary.warn strong { color: var(--negative); }
+.dh-summary span { color: var(--muted); font-size: 13px; }
+.dh-row { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.dh-row h3 { margin: 0 0 2px; font-size: 15px; }
+.dh-row p { margin: 0; color: var(--muted); font-size: 13px; }
+.dh-row ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.dh-icon { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 800; background: var(--panel-soft); color: var(--muted); }
+.dh-row.ok .dh-icon { background: color-mix(in srgb, var(--positive) 18%, transparent); color: var(--positive); }
+.dh-row.warn { border-color: color-mix(in srgb, var(--negative) 45%, var(--line)); }
+.dh-row.warn .dh-icon { background: color-mix(in srgb, var(--negative) 18%, transparent); color: var(--negative); }
+.dh-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+/* goals that follow holdings */
+.goal-follows { justify-content: flex-start; font-size: 12px; font-weight: 700; color: var(--muted); }
+
 /* ── Tablet (≤1080) ─────────────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
   #exercise > .panel:has(#streakCalendarGrid),

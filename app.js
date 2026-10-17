@@ -290,6 +290,7 @@ const fieldsByKind = {
     ["owner", "Owner", "select"], // Me, Wife, Both
     ["target", "Target amount or score", "number"],
     ["saved", "Current progress", "number"],
+    ["track", "Progress comes from", "select"],
     ["dueDate", "Due date", "date"],
   ],
   task: [
@@ -694,6 +695,7 @@ function persist() {
 }
 
 function saveData(immediate = false, kind = null) {
+  goalLiveCache.at = 0;
   if (!kind || kind === "expense" || kind === "expenses" || kind === "income") {
     invalidateExpenseCache();
   }
@@ -2461,6 +2463,8 @@ function buildQuickAddForm(kind, editId = null) {
           "stock", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others"
         ].includes(kind));
         options = needsBoth ? ["Me", "Wife", "Both"] : ["Me", "Wife"];
+      } else if (name === "track") {
+        options = GOAL_TRACK_OPTIONS;
       } else if (name === "transactionType") {
         options = ["PURCHASE", "REDEMPTION"];
       } else if (name === "status") {
@@ -4723,7 +4727,7 @@ function buildAdvisorInput() {
     now, holdings, cash, profile, mfThisMonth,
     profileSet: Boolean(state.advisor?.profile?.target),
     liabilities: (state.liabilities || []).map((l) => ({ name: l.name, owner: l.owner, value: toNumber(l.value), emi: toNumber(l.emi), rate: toNumber(l.rate) })),
-    goals: (state.goals || []).map((g) => ({ name: g.name, target: toNumber(g.target), saved: toNumber(g.saved), dueDate: g.dueDate })),
+    goals: liveGoals().map((g) => ({ name: g.name, target: toNumber(g.target), saved: toNumber(g.saved), dueDate: g.dueDate })),
     series: {}, benchmarks: {},
   };
 }
@@ -5244,7 +5248,7 @@ function renderDashboardAnalysis() {
       // Calculate overall progress stats
       let totalTarget = 0;
       let totalSaved = 0;
-      state.goals.forEach(g => {
+      liveGoals().forEach(g => {
         totalTarget += (g.target || 0);
         totalSaved += (g.saved || 0);
       });
@@ -5268,7 +5272,7 @@ function renderDashboardAnalysis() {
       goalContainer.append(statsBanner);
 
       // List top 3 upcoming, active goals
-      const activeGoals = state.goals
+      const activeGoals = liveGoals()
         .filter(g => (g.saved || 0) < (g.target || 1) || (g.target || 0) === 0)
         .sort((a, b) => new Date(a.dueDate || "2999-12-31") - new Date(b.dueDate || "2999-12-31"))
         .slice(0, 3);
@@ -10879,6 +10883,42 @@ function getGoalCategoryConfig(category) {
  * What a goal needs to finish on time. months = whole months left (at least 1 while it isn't overdue),
  * perMonth = remaining ÷ months. Overdue goals ask for the whole remainder now.
  */
+// ── Goals that follow your holdings ──────────────────────────────────────────
+// A goal can take its "saved" amount from live holdings instead of a hand-typed number, so it never goes stale.
+const GOAL_TRACK_OPTIONS = ["Entered by me", "Mutual funds", "Stocks & ETFs", "Gold", "All my assets"];
+const GOAL_TRACK_BUCKET = { "Mutual funds": "mf", "Stocks & ETFs": "stocks", "Gold": "gold", "All my assets": "all" };
+let goalLiveCache = { at: 0, list: null, src: null };
+
+function goalTrackedValue(goal) {
+  const bucket = GOAL_TRACK_BUCKET[goal && goal.track];
+  if (!bucket) return null;
+  const owner = goal.owner || "Both";
+  const mine = (list) => (owner === "Both" ? list || [] : (list || []).filter((x) => (x.owner || "Me") === owner));
+  if (bucket === "mf") return calcMfTotalValue(mine(state.mutualFunds));
+  if (bucket === "stocks") return calcStockTotalValue(mine(state.stocks));
+  if (bucket === "gold") {
+    return mine(state.gold).reduce((t, i) => {
+      const v = toNumber(i.value);
+      if (v > 0) return t + v;
+      const w = toNumber(i.weightGrams || i.weight);
+      return w > 0 ? t + w * getCaratGoldRate(i.carat) : t;
+    }, 0);
+  }
+  return getNetWorthSummary().totalAssets;   // "All my assets" is always the whole family
+}
+
+/** state.goals with `saved` replaced by the live figure for goals that follow holdings (copies; state is untouched). */
+function liveGoals() {
+  const now = Date.now();
+  if (goalLiveCache.src === state.goals && goalLiveCache.list && now - goalLiveCache.at < 1500) return goalLiveCache.list;
+  const list = (state.goals || []).map((g) => {
+    const v = goalTrackedValue(g);
+    return v == null ? g : { ...g, saved: Math.round(v), tracked: true };
+  });
+  goalLiveCache = { at: now, list, src: state.goals };
+  return list;
+}
+
 function goalNeedPerMonth(goal, today) {
   const target = toNumber(goal && goal.target);
   const saved = toNumber(goal && goal.saved);
@@ -10916,7 +10956,7 @@ function renderGoals() {
   let totalTarget = 0;
   let totalSaved = 0;
 
-  state.goals.forEach(goal => {
+  liveGoals().forEach(goal => {
     const isCompleted = (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
     if (isCompleted) {
       completedCount++;
@@ -10934,7 +10974,7 @@ function renderGoals() {
 
   const statMonthlyEl = document.getElementById("goalStatMonthly");
   if (statMonthlyEl) {
-    const plans = state.goals.map((g) => goalNeedPerMonth(g)).filter((p) => !p.done && p.perMonth != null);
+    const plans = liveGoals().map((g) => goalNeedPerMonth(g)).filter((p) => !p.done && p.perMonth != null);
     const monthly = plans.reduce((s, p) => s + p.perMonth, 0);
     statMonthlyEl.textContent = plans.length ? formatINR(monthly) : "—";
     const sub = document.getElementById("goalStatMonthlySub");
@@ -10949,7 +10989,7 @@ function renderGoals() {
   }
 
   // Now apply filtering
-  let filtered = state.goals.filter(goal => {
+  let filtered = liveGoals().filter(goal => {
     // Search
     if (searchVal) {
       const name = String(goal.name || "").toLowerCase();
@@ -11052,23 +11092,25 @@ function renderGoals() {
         })()}
       </div>
       
-      <div class="goal-quick-contribute">
+      ${goal.tracked ? `<div class="goal-quick-contribute goal-follows"><span>🔗 Follows your ${escapeHTML(String(goal.track).toLowerCase())} automatically</span></div>` : `<div class="goal-quick-contribute">
         <span>Add progress:</span>
         <form class="quick-contribute-form" data-id="${goal.id}">
           <input type="number" class="quick-contribute-input" placeholder="Amount" required min="1" step="any" inputmode="decimal" />
           <button type="submit" class="quick-contribute-btn">+</button>
         </form>
-      </div>
+      </div>`}
     `;
 
-    // Bind quick contribute form
+    // Bind quick contribute form (not present for goals that follow holdings)
     const quickForm = card.querySelector(".quick-contribute-form");
-    quickForm.addEventListener("submit", async (e) => {
+    quickForm?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const input = quickForm.querySelector(".quick-contribute-input");
       const amount = toNumber(input.value);
       if (amount > 0) {
-        goal.saved = (goal.saved || 0) + amount;
+        const real = state.goals.find((g) => g.id === goal.id) || goal;
+        real.saved = (real.saved || 0) + amount;
+        goalLiveCache.at = 0;
         renderGoalsOnly();
         toast(`Added ${formatINR(amount)} to "${goal.name}". Progress updated! 🎯`);
         saveData(true, "goal");
@@ -13904,7 +13946,7 @@ function answerQuestion(question) {
   const wifeHabits = state.habits.filter((h) => h.owner === "Wife" || h.owner === "Both");
   const myGoals = state.goals.filter((g) => (g.owner || "Me") === "Me" || g.owner === "Both");
   const wifeGoals = state.goals.filter((g) => g.owner === "Wife" || g.owner === "Both");
-  const sortedGoals = [...state.goals].sort((a, b) => new Date(a.dueDate || "2999-01-01") - new Date(b.dueDate || "2999-01-01"));
+  const sortedGoals = [...liveGoals()].sort((a, b) => new Date(a.dueDate || "2999-01-01") - new Date(b.dueDate || "2999-01-01"));
   const nextGoal = sortedGoals[0];
   const weakestMyTopic = [...myStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
   const weakestWifeTopic = [...wifeStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
@@ -13980,7 +14022,7 @@ function answerQuestion(question) {
     if (/bank/.test(q)) return `**Bank Savings total**: **${formatINR(bankSavingVal)}** across **${state.banksaving.length}** entries.`;
     if (/income|salary|earn/.test(q)) return `**Total income entries**: **${state.income.length}** totalling **${formatINR(totalAllIncome)}** (all time). This month: **${formatINR(metrics.monthIncome)}**.`;
     if (/expense|spend|kharcha/.test(q)) return `**Total expense entries**: **${state.expenses.length}** totalling **${formatINR(totalAllExpenses)}** (all time). This month: **${formatINR(metrics.monthExpenses)}**.`;
-    if (/goal/.test(q)) return `**Goals**: **${state.goals.length}** tracked. ${state.goals.filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0).length} completed.`;
+    if (/goal/.test(q)) return `**Goals**: **${state.goals.length}** tracked. ${liveGoals().filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0).length} completed.`;
     if (/task|todo/.test(q)) return `**Tasks**: **${state.tasks.length}** total. **${pendingTasks.length}** pending, **${doneTasks.length}** done.`;
     if (/habit/.test(q)) return `**Habits**: **${state.habits.length}** tracked. Best streak: **${[...state.habits].sort((a, b) => (b.streak || 0) - (a.streak || 0))[0]?.name || "none"}**.`;
     if (/stud|topic|career|roadmap/.test(q)) return `**Career/Study topics**: **${state.studies.length}** total. DevOps: **${myStudies.length}**, ETL: **${wifeStudies.length}**.`;
@@ -14118,7 +14160,7 @@ function answerQuestion(question) {
   // ─── GOALS ──────────────────────────────────────────────────────────────────
   if (/goal|target|dream|ambition|lakshya/.test(q)) {
     if (!state.goals.length) return "No goals tracked yet. Add goals like house, vacation, emergency fund with a target and due date.";
-    const completed = state.goals.filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0);
+    const completed = liveGoals().filter((g) => toNumber(g.saved) >= toNumber(g.target) && toNumber(g.target) > 0);
     const lines = sortedGoals.map((g) => {
       const pct = toNumber(g.target) > 0 ? Math.round((toNumber(g.saved) / toNumber(g.target)) * 100) : 0;
       return `• **${g.name}** (${g.owner || "Me"}): ${formatINR(toNumber(g.saved))} / ${formatINR(toNumber(g.target))} — **${pct}%** done, due ${formatDate(g.dueDate)}`;
@@ -15131,6 +15173,44 @@ function cssVar(name) {
 function capitalize(value) {
   const text = String(value || "");
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// ── Data health ───────────────────────────────────────────────────────────────
+function renderDataHealth() {
+  const body = document.getElementById("dataHealthBody");
+  if (!body) return;
+  const DH = window.LifeLedgerDataHealth;
+  if (!DH) { body.textContent = "The checker did not load. Refresh the page."; return; }
+  let advisorTotal = null;
+  try { advisorTotal = window.LifeLedgerAdvisor?.analyze(buildAdvisorInput())?.metrics?.total ?? null; } catch { /* advisor optional */ }
+  const nw = getNetWorthSummary();
+  const result = DH.run({
+    state,
+    now: todayISO(),
+    reported: { netWorth: nw.netWorth, totalAssets: nw.totalAssets, usStocksInr: nw.snapshot?.usStocks, advisorTotal },
+    categoryKey: window.LifeLedgerSpendingCore?.categoryKey,
+  });
+  const icon = { ok: "✓", info: "i", warn: "!" };
+  const head = result.counts.warn
+    ? `${result.counts.warn} thing${result.counts.warn > 1 ? "s" : ""} to look at`
+    : result.counts.info ? "All good — a few notes" : "Everything adds up";
+  const order = { warn: 0, info: 1, ok: 2 };
+  const rows = [...result.checks].sort((x, y) => order[x.status] - order[y.status]).map((c) => `
+    <article class="dh-row ${c.status}">
+      <span class="dh-icon" aria-hidden="true">${icon[c.status]}</span>
+      <div>
+        <h3>${escapeHTML(c.title)}</h3>
+        <p>${escapeHTML(c.detail || "")}</p>
+        ${c.items && c.items.length ? `<ul>${c.items.map((i) => `<li>${escapeHTML(i)}</li>`).join("")}</ul>` : ""}
+      </div>
+    </article>`).join("");
+  body.innerHTML = `<div class="dh-summary ${result.counts.warn ? "warn" : "ok"}"><strong>${head}</strong><span>${result.counts.ok} passed · ${result.counts.info} notes · ${result.counts.warn} to fix</span></div>${rows}`;
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (e) => {
+    if (e.target.closest('[data-open-modal="dataHealthModal"]') || e.target.closest("#dataHealthRerun")) renderDataHealth();
+  });
 }
 
 function viewTitle(view) {
@@ -16788,6 +16868,9 @@ async function renderMfInsightsPanel() {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    liveGoals,
+    goalTrackedValue,
+    __setStateForTest: (next) => { state = next; goalLiveCache.at = 0; },
     parseCSV,
     toNumber,
     generateUUID,

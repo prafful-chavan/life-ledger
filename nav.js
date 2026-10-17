@@ -52,6 +52,7 @@
       { id: "act:refresh", label: "Refresh all prices", keywords: ["live prices", "update", "nav", "stocks"], icon: "money", run: () => $("#topbarRefreshAllBtn")?.click() },
       { id: "act:theme", label: document.body.dataset.theme === "dark" ? "Switch to light mode" : "Switch to dark mode", keywords: ["theme", "appearance", "dark", "light"], icon: "theme", run: () => $("#themeToggle")?.click() },
       { id: "act:settings", label: "Open settings", keywords: ["preferences", "keys", "gemini", "dropbox", "spending import"], icon: "settings", run: () => $("#settingsButton")?.click() },
+      { id: "act:health", label: "Data health check", keywords: ["audit", "verify", "numbers", "reconcile", "check data", "errors"], icon: "settings", run: () => $('[data-open-modal="dataHealthModal"]')?.click() },
       { id: "act:upload", label: "Upload a sheet", keywords: ["import", "excel", "csv", "xlsx"], icon: "money", run: () => $('[data-open-modal="importModal"]')?.click() },
       { id: "act:log", label: "Notifications log", keywords: ["sync log", "issues", "history"], icon: "settings", run: () => $('[data-open-modal="syncLogModal"]')?.click() },
     ];
