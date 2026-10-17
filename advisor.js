@@ -35,7 +35,14 @@
   let running = false;
   let rerun = false;
   let aiRunning = false;
-  let aiBackoffUntil = 0;
+  const BACKOFF_KEY = "lifeLedgerAdvisorBackoff";
+  const QUOTA_BACKOFF_MS = 60 * 60 * 1000;
+  // The pause after an AI error is remembered across reloads, so reopening the app never retries into a rate limit.
+  let aiBackoffUntil = (() => { try { return Number(localStorage.getItem(BACKOFF_KEY)) || 0; } catch { return 0; } })();
+  function setBackoff(ms) {
+    aiBackoffUntil = Date.now() + ms;
+    try { localStorage.setItem(BACKOFF_KEY, String(aiBackoffUntil)); } catch { /* ignore */ }
+  }
   let lastError = "";
   let histStatus = "";
   let timer = null;
@@ -127,7 +134,7 @@
       lastError = "";
     } catch (err) {
       lastError = err.message;
-      aiBackoffUntil = Date.now() + AI_ERROR_BACKOFF_MS;
+      setBackoff(/429|limit|quota|rate|too many/i.test(String(err.message)) ? QUOTA_BACKOFF_MS : AI_ERROR_BACKOFF_MS);
     } finally {
       aiRunning = false;
       render();
