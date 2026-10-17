@@ -307,6 +307,20 @@
     $("advCardMoves").innerHTML = moves.map((t) => `<li>${esc(t)}</li>`).join("");
   }
 
+  function renderKpis() {
+    const el = $("advKpis");
+    if (!el) return;
+    const m = result.metrics;
+    const tiles = [
+      ["Portfolio value", inr(m.total), ""],
+      ["You invested", inr(m.invested), ""],
+      ["Overall return", signedPct(m.returnPct), cls(m.returnPct)],
+      ["Positions", String(m.positions), ""],
+      ["Top 5 holdings", m.top5Weight + "% of portfolio", ""],
+    ];
+    el.innerHTML = tiles.map(([label, value, tone]) => `<div class="adv-kpi"><span>${esc(label)}</span><b class="${tone}">${esc(value)}</b></div>`).join("");
+  }
+
   function render() {
     if (!result) return;
     const rv = currentReview();
@@ -316,6 +330,7 @@
     $("advSummary").textContent = rv.review && rv.review.summary ? rv.review.summary : ruleSummary();
     const when = new Date().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
     $("advMeta").textContent = `Live · ${result.holdings.length} investments · ${inr(result.metrics.total)} · updated ${when}` + (result.profileSet ? "" : " · Tell me about your goals (⚙) so I can judge against your plan");
+    renderKpis();
     renderPillars();
     renderMoves(rv);
     renderGoodWatch(rv);
