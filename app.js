@@ -5441,7 +5441,7 @@ function renderSalaryCards() {
     row.innerHTML = `
       <div>
         <div class="stack-title">${escapeHTML(person)}</div>
-        <div class="stack-meta">${escapeHTML(latestRow?.source || "Salary")} • ${formatDate(latestRow?.date)} • ${formatPercent(growth)} tracked net growth</div>
+        <div class="stack-meta">${escapeHTML(latestRow?.source || "Salary")} • ${formatDate(latestRow?.date)} • ${formatPercent(growth)} since ${formatDate(sorted[0]?.date)}</div>
       </div>
       <div class="stack-value">${formatINR(latest)}</div>
     `;
@@ -15077,7 +15077,7 @@ function viewTitle(view) {
       advisor: "Your wealth advisor",
       career: "Career Roadmaps",
       goals: "Goals Tracker",
-      todo: "To-Do List & Keep Notes",
+      todo: "Your tasks and notes",
       exercise: "Exercise & Workout Tracker",
       habits: "Habit Tracker & Streaks",
       assistant: "Ask your dashboard",

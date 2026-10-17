@@ -303,7 +303,7 @@
     </div>`;
     const sorter = g.key === "safe" ? "" : `<div class="adv-sort">Show: <button type="button" data-sort="attention" class="${sortMode === "attention" ? "active" : ""}">Needs a look first</button><button type="button" data-sort="best" class="${sortMode === "best" ? "active" : ""}">Best first</button></div>`;
     // Long lists show the nine that matter most first (the order follows "Needs a look first / Best first")
-    const FOLD = 9;
+    const FOLD = window.matchMedia && window.matchMedia("(max-width: 680px)").matches ? 4 : 9;
     const folds = list.length > FOLD + 3;
     const open = !folds || expandedTabs.has(activeTab);
     const shown = open ? list : list.slice(0, FOLD);
