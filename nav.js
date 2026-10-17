@@ -268,6 +268,61 @@
     d.addEventListener("click", (e) => { if (e.target.closest(".menu-item")) setTimeout(() => { d.open = false; }, 0); });
   }
 
+  // ── Finance: seventeen tabs become seven sections (+ a chip row for sections with several tabs) ──
+  const FGROUPS = [
+    { id: "overview", label: "Overview", tabs: ["overview"] },
+    { id: "networth", label: "Net worth", tabs: ["networthhistory"] },
+    { id: "salary", label: "Salary", tabs: ["income"] },
+    { id: "expenses", label: "Expenses", tabs: ["expenses"] },
+    { id: "invest", label: "Investments", tabs: ["mutualfunds", "stocks", "usstocks", "gold", "silver", "crypto", "bonds"] },
+    { id: "savings", label: "Savings", tabs: ["fd", "epf", "ppf", "banksaving", "others"] },
+    { id: "liab", label: "Liabilities", tabs: ["liabilities"] },
+  ];
+
+  function bindFinanceGroups() {
+    const tabs = $("#finance .tabs");
+    if (!tabs || $("#financeGroups")) return;
+    const bar = document.createElement("div");
+    bar.className = "fgroups";
+    bar.id = "financeGroups";
+    bar.setAttribute("role", "tablist");
+    bar.setAttribute("aria-label", "Finance sections");
+    const lastTab = {};
+    FGROUPS.forEach((g) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "fgroup";
+      b.dataset.group = g.id;
+      b.textContent = g.label;
+      b.addEventListener("click", () => {
+        const target = lastTab[g.id] || g.tabs[0];
+        $(`.tab-button[data-finance-tab="${target}"]`, tabs)?.click();
+      });
+      bar.append(b);
+    });
+    tabs.before(bar);
+    tabs.classList.add("fsubtabs");
+
+    const sync = () => {
+      const active = $(".tab-button.active", tabs)?.dataset.financeTab || "overview";
+      const group = FGROUPS.find((g) => g.tabs.includes(active)) || FGROUPS[0];
+      lastTab[group.id] = active;
+      $$(".fgroup", bar).forEach((b) => {
+        const on = b.dataset.group === group.id;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", String(on));
+      });
+      $$(".tab-button", tabs).forEach((b) => {
+        const i = group.tabs.indexOf(b.dataset.financeTab);
+        b.hidden = i < 0;
+        b.style.order = i < 0 ? "99" : String(i);
+      });
+      tabs.hidden = group.tabs.length < 2;
+    };
+    sync();
+    new MutationObserver(sync).observe(tabs, { attributes: true, subtree: true, attributeFilter: ["class"] });
+  }
+
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); bar && !bar.hidden ? close() : openBar(); }
     else if (e.key === "Escape") { closeMore(); const d = $("#topbarMore"); if (d && d.open) d.open = false; }
@@ -277,6 +332,7 @@
     $("#cmdkTrigger")?.addEventListener("click", openBar);
     buildTabs();
     bindMoreMenu();
+    bindFinanceGroups();
   });
 
   window.LifeLedgerNav = { open: openBar, close, goToView };

@@ -5347,7 +5347,32 @@ function renderTodayFocus() {
   });
 }
 
+function renderFinanceSummary() {
+  const el = document.getElementById("financeSummary");
+  if (!el) return;
+  const nw = getNetWorthSummary();
+  const m = calculateMetrics();
+  const saved = m.monthIncome - m.monthExpenses;
+  const cards = [
+    { label: "Net worth", value: formatINR(nw.netWorth), hint: "Assets − liabilities" },
+    { label: "Total assets", value: formatINR(nw.totalAssets), hint: "Investments, savings, gold and more" },
+    { label: "Liabilities", value: formatINR(nw.liabilities), hint: nw.liabilities > 0 ? "Outstanding loans and dues" : "Debt free" },
+    { label: m.isFallbackIncome ? `Saved (${m.fallbackMonthLabel})` : "Saved this month", value: formatINR(saved), hint: `${m.savingsRate}% of income`, tone: saved >= 0 ? "up" : "down" },
+  ];
+  el.innerHTML = "";
+  cards.forEach((c) => {
+    const card = document.createElement("article");
+    card.className = "metric-card";
+    card.innerHTML = `<div class="label"></div><div class="value ${c.tone || ""}"></div><div class="hint"></div>`;
+    card.querySelector(".label").textContent = c.label;
+    card.querySelector(".value").textContent = c.value;
+    card.querySelector(".hint").textContent = c.hint;
+    el.append(card);
+  });
+}
+
 function renderFinance() {
+  renderFinanceSummary();
   renderSalaryCards();
   renderSalaryProgression();
   renderBudgetPulse();
@@ -5387,6 +5412,24 @@ function renderSalaryCards() {
     `;
     container.append(row);
   });
+
+  // Household total: what comes in each month and year, so the card is as informative as it is tall
+  const latestByPerson = Object.values(people).map((entries) => {
+    const last = entries.slice().sort((x, y) => new Date(x.date) - new Date(y.date)).at(-1);
+    return toNumber(last?.netSalary || last?.amount || 0);
+  });
+  const monthlyTotal = latestByPerson.reduce((s, v) => s + v, 0);
+  if (latestByPerson.length > 1 && monthlyTotal > 0) {
+    [["Household · per month", "Combined latest net salary", monthlyTotal], ["Household · per year", "Latest monthly net × 12", monthlyTotal * 12]].forEach(([title, meta, value]) => {
+      const row = document.createElement("div");
+      row.className = "stack-row stack-total";
+      row.innerHTML = `<div><div class="stack-title"></div><div class="stack-meta"></div></div><div class="stack-value"></div>`;
+      row.querySelector(".stack-title").textContent = title;
+      row.querySelector(".stack-meta").textContent = meta;
+      row.querySelector(".stack-value").textContent = formatINR(value);
+      container.append(row);
+    });
+  }
 }
 
 function renderSalaryProgression() {

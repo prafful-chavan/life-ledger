@@ -21,6 +21,9 @@
   --brand-rgb: 47, 91, 224;
   --on-brand: #FFFFFF;
   --primary: var(--brand);
+  --text: var(--ink);
+  --positive: var(--good);
+  --radius-small: 8px;
   --accent: #B7791F;
   --accent-2: #7C3AED;
   --danger: #D1403A;
