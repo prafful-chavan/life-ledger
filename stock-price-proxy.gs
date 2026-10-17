@@ -659,10 +659,11 @@ function doGet(e) {
   // Primary: Yahoo chart (accurate prev close + extended-hours price).
   // GOOGLEFINANCE is only a fallback: it can return multi-day-stale quotes for some ETFs.
   var pendingUs = [];
+  var usBatch = fetchYahooBatch(usSymbols, true);   // all US quotes in parallel
   for (var u = 0; u < usSymbols.length; u++) {
     var usSym = usSymbols[u];
     var rawOrigUs = isinOrigMap[usSym] || usSym;
-    var yUs = fetchViaYahooFinance(usSym, true);
+    var yUs = usBatch[usSym] || fetchViaYahooFinance(usSym, true);
     if (yUs && yUs.price > 0) {
       assignResultsWithAliases(results, usSym, rawOrigUs, yUs);
     } else {
@@ -705,12 +706,13 @@ function doGet(e) {
 
   // ─── Step 2: Resolve Indian Symbols ───────────────────────────────────────
   var pendingIndian = [];
+  var indianBatch = fetchYahooBatch(indianSymbols, false);   // all Indian quotes in parallel
   for (var ind = 0; ind < indianSymbols.length; ind++) {
     var symInd = indianSymbols[ind];
     var rawOrigInd = isinOrigMap[symInd] || symInd;
 
-    // Fast-tier 1: Direct Yahoo Finance Chart API (< 150ms)
-    var yItem = fetchViaYahooFinance(symInd, false);
+    // Fast-tier 1: Yahoo Finance chart API, fetched in parallel above (one-by-one only for misses)
+    var yItem = indianBatch[symInd] || fetchViaYahooFinance(symInd, false);
     if (yItem && yItem.price > 0) {
       var metaInd = isinMetaMap[symInd] || isinMetaMap[rawOrigInd];
       if (metaInd) {
@@ -948,72 +950,148 @@ function assignResultsWithAliases(results, canonicalSym, rawOrig, item) {
  * - For US symbols the latest pre/post-market trade is used as the price when it is
  *   newer than the regular close, matching what INDmoney / broker apps display.
  */
+function yahooSymbolFor(symbol, isUS) {
+  var sym = String(symbol || "").toUpperCase().trim();
+  var yahooSym = sym;
+  var us = !!isUS;
+  if (sym.indexOf(":") !== -1) {
+    yahooSym = sym.split(":")[1];
+  } else if (isUS || isLikelyUS(sym)) {
+    yahooSym = sym;
+    us = true;
+  } else {
+    yahooSym = sym + ".NS";
+  }
+  return { sym: sym, yahooSym: yahooSym, us: us };
+}
+
+/** Turns Yahoo's daily (5d) and, for US, extended-hours (5m) chart JSON into one quote, or null. */
+function parseYahooChart(sym, us, json, ext) {
+  var result = json && json.chart && json.chart.result && json.chart.result[0];
+  var meta = result && result.meta;
+  if (!meta || !(Number(meta.regularMarketPrice) > 0)) return null;
+
+  var price = Number(meta.regularMarketPrice);
+  var regularPrice = price;
+
+  // Daily closes (drop nulls); last entry is the latest session
+  var closes = [];
+  var rawCloses = (result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close) || [];
+  for (var c = 0; c < rawCloses.length; c++) {
+    if (rawCloses[c] !== null && Number(rawCloses[c]) > 0) closes.push(Number(rawCloses[c]));
+  }
+  var prevClose = closes.length >= 2 ? closes[closes.length - 2] : Number(meta.chartPreviousClose || meta.previousClose || price);
+
+  var source = "yahoo-chart";
+  if (us) {
+    var extResult = ext && ext.chart && ext.chart.result && ext.chart.result[0];
+    var extCloses = (extResult && extResult.indicators && extResult.indicators.quote && extResult.indicators.quote[0] && extResult.indicators.quote[0].close) || [];
+    for (var e = extCloses.length - 1; e >= 0; e--) {
+      if (extCloses[e] !== null && Number(extCloses[e]) > 0) {
+        if (Number(extCloses[e]) !== regularPrice) source = "yahoo-chart-extended";
+        price = Number(extCloses[e]);
+        break;
+      }
+    }
+  }
+
+  var change = price - prevClose;
+  var changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+  return {
+    symbol: sym,
+    price: price,
+    regularPrice: regularPrice,
+    prevClose: prevClose,
+    change: change,
+    changePct: changePct,
+    date: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm a"),
+    source: source
+  };
+}
+
 function fetchViaYahooFinance(symbol, isUS) {
   try {
-    var sym = String(symbol || "").toUpperCase().trim();
-    var yahooSym = sym;
-    var us = !!isUS;
-    if (sym.indexOf(":") !== -1) {
-      yahooSym = sym.split(":")[1];
-    } else if (isUS || isLikelyUS(sym)) {
-      yahooSym = sym;
-      us = true;
-    } else {
-      yahooSym = sym + ".NS";
-    }
-
+    var m = yahooSymbolFor(symbol, isUS);
     var hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
     for (var h = 0; h < hosts.length; h++) {
       try {
-        var base = "https://" + hosts[h] + "/v8/finance/chart/" + encodeURIComponent(yahooSym);
+        var base = "https://" + hosts[h] + "/v8/finance/chart/" + encodeURIComponent(m.yahooSym);
         var json = yahooChartJson(base + "?interval=1d&range=5d");
-        var result = json && json.chart && json.chart.result && json.chart.result[0];
-        var meta = result && result.meta;
-        if (!meta || !(Number(meta.regularMarketPrice) > 0)) continue;
-
-        var price = Number(meta.regularMarketPrice);
-        var regularPrice = price;
-
-        // Daily closes (drop nulls); last entry is the latest session
-        var closes = [];
-        var rawCloses = (result.indicators && result.indicators.quote && result.indicators.quote[0] && result.indicators.quote[0].close) || [];
-        for (var c = 0; c < rawCloses.length; c++) {
-          if (rawCloses[c] !== null && Number(rawCloses[c]) > 0) closes.push(Number(rawCloses[c]));
-        }
-        var prevClose = closes.length >= 2 ? closes[closes.length - 2] : Number(meta.chartPreviousClose || meta.previousClose || price);
-
-        var source = "yahoo-chart";
-        if (us) {
-          var ext = yahooChartJson(base + "?interval=5m&range=1d&includePrePost=true");
-          var extResult = ext && ext.chart && ext.chart.result && ext.chart.result[0];
-          var extCloses = (extResult && extResult.indicators && extResult.indicators.quote && extResult.indicators.quote[0] && extResult.indicators.quote[0].close) || [];
-          for (var e = extCloses.length - 1; e >= 0; e--) {
-            if (extCloses[e] !== null && Number(extCloses[e]) > 0) {
-              if (Number(extCloses[e]) !== regularPrice) source = "yahoo-chart-extended";
-              price = Number(extCloses[e]);
-              break;
-            }
-          }
-        }
-
-        var change = price - prevClose;
-        var changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-        return {
-          symbol: sym,
-          price: price,
-          regularPrice: regularPrice,
-          prevClose: prevClose,
-          change: change,
-          changePct: changePct,
-          date: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd MMM yyyy, hh:mm a"),
-          source: source
-        };
+        var ext = null;
+        if (m.us && json) ext = yahooChartJson(base + "?interval=5m&range=1d&includePrePost=true");
+        var item = parseYahooChart(m.sym, m.us, json, ext);
+        if (item) return item;
       } catch (errHost) {}
     }
   } catch (e) {
     Logger.log("Yahoo Finance API fallback error for " + symbol + ": " + e);
   }
   return null;
+}
+
+var YAHOO_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Accept": "application/json,text/html,application/xhtml+xml,*/*;q=0.8"
+};
+var YAHOO_QUOTE_CACHE_SECONDS = 60;
+var YAHOO_BATCH_SIZE = 30;
+
+/**
+ * Prices for many symbols at once: every Yahoo request goes out in parallel (UrlFetchApp.fetchAll) instead of one
+ * after another, and each quote is cached for a minute so several devices opening the app together share the work.
+ * Returns { SYMBOL: quote } for the symbols that resolved; the caller falls back to the slower path for the rest.
+ */
+function fetchYahooBatch(symbols, isUS) {
+  var out = {};
+  var list = [];
+  for (var i = 0; i < (symbols || []).length; i++) { if (list.indexOf(symbols[i]) === -1) list.push(symbols[i]); }
+  if (!list.length) return out;
+
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  var keyOf = function (s) { return "yq:" + (isUS ? "u:" : "i:") + s; };
+  var cached = {};
+  if (cache) { try { cached = cache.getAll(list.map(keyOf)) || {}; } catch (e2) { cached = {}; } }
+
+  var todo = [];
+  for (var a = 0; a < list.length; a++) {
+    var hit = cached[keyOf(list[a])];
+    if (hit) { try { out[list[a]] = JSON.parse(hit); continue; } catch (e3) { /* refetch */ } }
+    todo.push(list[a]);
+  }
+
+  var toCache = {};
+  for (var off = 0; off < todo.length; off += YAHOO_BATCH_SIZE) {
+    var chunk = todo.slice(off, off + YAHOO_BATCH_SIZE);
+    var requests = [];
+    var meta = [];
+    for (var c = 0; c < chunk.length; c++) {
+      var m = yahooSymbolFor(chunk[c], isUS);
+      var base = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(m.yahooSym);
+      requests.push({ url: base + "?interval=1d&range=5d", muteHttpExceptions: true, headers: YAHOO_HEADERS });
+      meta.push({ sym: chunk[c], us: m.us, kind: "day" });
+      if (m.us) {
+        requests.push({ url: base + "?interval=5m&range=1d&includePrePost=true", muteHttpExceptions: true, headers: YAHOO_HEADERS });
+        meta.push({ sym: chunk[c], us: true, kind: "ext" });
+      }
+    }
+    var responses = [];
+    try { responses = UrlFetchApp.fetchAll(requests); } catch (e4) { Logger.log("fetchAll failed: " + e4); responses = []; }
+    var days = {};
+    var exts = {};
+    for (var r = 0; r < responses.length; r++) {
+      var json = null;
+      try { if (responses[r].getResponseCode() === 200) json = JSON.parse(responses[r].getContentText()); } catch (e5) { json = null; }
+      if (meta[r].kind === "day") days[meta[r].sym] = json; else exts[meta[r].sym] = json;
+    }
+    for (var k = 0; k < chunk.length; k++) {
+      var us = yahooSymbolFor(chunk[k], isUS).us;
+      var item = parseYahooChart(String(chunk[k]).toUpperCase().trim(), us, days[chunk[k]], exts[chunk[k]]);
+      if (item) { out[chunk[k]] = item; toCache[keyOf(chunk[k])] = JSON.stringify(item); }
+    }
+  }
+  if (cache && Object.keys(toCache).length) { try { cache.putAll(toCache, YAHOO_QUOTE_CACHE_SECONDS); } catch (e6) { /* cache is optional */ } }
+  return out;
 }
 
 function yahooChartJson(url) {
