@@ -326,6 +326,57 @@
 .add-tile strong { font-size: 15px; color: var(--ink); font-weight: 650; }
 .add-tile small { font-size: 12.5px; }
 
+/* ── Career & Interview Tracker ────────────────────────────────────────────── */
+#career > .tabs {
+  display: flex; gap: 2px; padding: 4px; margin: 0 0 16px; width: fit-content; max-width: 100%;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow-x: auto; scrollbar-width: none;
+}
+#career > .tabs::-webkit-scrollbar { display: none; }
+#career > .tabs .tab-button { min-height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; }
+#career > .tabs .tab-button:hover { color: var(--ink); }
+#career > .tabs .tab-button.active { background: var(--panel-soft); color: var(--ink); font-weight: 650; box-shadow: inset 0 0 0 1px var(--line); }
+
+.itv-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.itv-stat-card { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: var(--radius-card); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.itv-stat-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 13px; font-size: 20px; background: var(--panel-soft); }
+.itv-stat-card:nth-child(2) .itv-stat-icon { background: color-mix(in srgb, var(--good) 15%, transparent); }
+.itv-stat-card:nth-child(3) .itv-stat-icon { background: color-mix(in srgb, var(--watch) 18%, transparent); }
+.itv-stat-card:nth-child(4) .itv-stat-icon { background: color-mix(in srgb, var(--negative) 15%, transparent); }
+.itv-stat-val { font-size: clamp(22px, 2vw, 30px); font-weight: 650; letter-spacing: -0.02em; color: var(--ink); }
+.itv-stat-lbl { font-size: 12.5px; color: var(--muted); }
+
+.itv-action-bar { gap: 10px; margin-bottom: 14px; }
+.itv-entries-list { display: flex; flex-direction: column; gap: 10px; }
+.itv-entry-card, .itv-entry-card.feedback-positive, .itv-entry-card.feedback-negative, .itv-entry-card.feedback-hold, .itv-entry-card.feedback-pending {
+  border: 1px solid var(--line); border-left-width: 1px; border-radius: 16px; box-shadow: none;
+}
+.itv-entry-card:hover { border-color: color-mix(in srgb, var(--brand) 35%, var(--line)); transform: none; box-shadow: none; }
+.itv-feedback-pill { border: 0 !important; font-weight: 650; }
+.itv-feedback-pill.positive { color: var(--good); background: color-mix(in srgb, var(--good) 15%, transparent); }
+.itv-feedback-pill.negative { color: var(--negative); background: color-mix(in srgb, var(--negative) 14%, transparent); }
+.itv-feedback-pill.hold { color: var(--watch); background: color-mix(in srgb, var(--watch) 16%, transparent); }
+.itv-feedback-pill.pending { color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
+body[data-theme="light"] .itv-feedback-pill.hold { color: #8A5A00; }
+.itv-more { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; padding: 18px 0 4px; color: var(--muted); font-size: 13px; }
+
+/* ── To-Do & notes: cards flow in columns (no half-empty last row), search matches the rest ─────── */
+#pinnedNotesGrid, #otherNotesGrid { display: block; column-width: 280px; column-gap: 16px; }
+#pinnedNotesGrid > *, #otherNotesGrid > * { break-inside: avoid; margin: 0 0 16px; }
+#todoSearch {
+  min-height: 40px; width: min(260px, 100%) !important; padding: 0 12px !important; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--ink); font-size: 14px;
+}
+#todoSearch:focus { outline: none; border-color: var(--brand); }
+.keep-card { border-radius: var(--radius-card); }
+
+@media (max-width: 680px) {
+  .itv-stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .itv-stat-card { padding: 12px; gap: 10px; }
+  .itv-stat-icon { width: 36px; height: 36px; flex-basis: 36px; font-size: 17px; }
+  .itv-stat-lbl { font-size: 11.5px; }
+  .itv-action-bar .itv-search { flex: 1 1 100%; }
+}
+
 /* ── Tablet (≤1080) ─────────────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
   #exercise > .panel:has(#streakCalendarGrid),

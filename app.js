@@ -9856,6 +9856,9 @@ function renderInterviewQuestions() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 let itvSearchQuery = "";
+const ITV_PAGE = 25;
+let itvShown = ITV_PAGE;
+let itvListSignature = "";
 let itvFeedbackFilter = "";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -9953,15 +9956,30 @@ function renderInterviewTracker() {
     return matchQ && matchF;
   });
 
+  // A new search or filter starts again from the first page
+  const signature = `${q}|${ff}`;
+  if (signature !== itvListSignature) { itvListSignature = signature; itvShown = ITV_PAGE; }
+
   list.innerHTML = "";
+  list.parentElement?.querySelector(".itv-more")?.remove();
 
   if (filtered.length === 0) {
     if (emptyState) emptyState.style.display = "";
   } else {
     if (emptyState) emptyState.style.display = "none";
-    filtered.forEach(entry => {
+    filtered.slice(0, itvShown).forEach(entry => {
       list.appendChild(buildItvCard(entry));
     });
+    if (filtered.length > itvShown) {
+      const more = document.createElement("div");
+      more.className = "itv-more";
+      const left = filtered.length - itvShown;
+      more.innerHTML = `<span class="itv-more-count"></span><button type="button" class="secondary-button"></button>`;
+      more.querySelector(".itv-more-count").textContent = `Showing ${itvShown} of ${filtered.length}`;
+      more.querySelector("button").textContent = `Show ${Math.min(ITV_PAGE, left)} more`;
+      more.querySelector("button").addEventListener("click", () => { itvShown += ITV_PAGE; renderInterviewTracker(); });
+      list.after(more);
+    }
   }
 }
 
