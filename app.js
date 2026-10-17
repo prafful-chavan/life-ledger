@@ -4476,6 +4476,7 @@ function renderAll() {
   renderHabitsView();
   renderDashboardAnalysis();
   renderChat();
+  scheduleHealthBadge();
 }
 
 // Net holdings per symbol|owner|broker (FIFO-aware) with live price, previous close and fetch time.
@@ -15176,20 +15177,26 @@ function capitalize(value) {
 }
 
 // ── Data health ───────────────────────────────────────────────────────────────
-function renderDataHealth() {
-  const body = document.getElementById("dataHealthBody");
-  if (!body) return;
+function computeDataHealth() {
   const DH = window.LifeLedgerDataHealth;
-  if (!DH) { body.textContent = "The checker did not load. Refresh the page."; return; }
+  if (!DH) return null;
   let advisorTotal = null;
   try { advisorTotal = window.LifeLedgerAdvisor?.analyze(buildAdvisorInput())?.metrics?.total ?? null; } catch { /* advisor optional */ }
   const nw = getNetWorthSummary();
-  const result = DH.run({
+  return DH.run({
     state,
     now: todayISO(),
     reported: { netWorth: nw.netWorth, totalAssets: nw.totalAssets, usStocksInr: nw.snapshot?.usStocks, advisorTotal },
     categoryKey: window.LifeLedgerSpendingCore?.categoryKey,
   });
+}
+
+function renderDataHealth() {
+  const body = document.getElementById("dataHealthBody");
+  if (!body) return;
+  const result = computeDataHealth();
+  if (!result) { body.textContent = "The checker did not load. Refresh the page."; return; }
+  updateHealthBadge(result);
   const icon = { ok: "✓", info: "i", warn: "!" };
   const head = result.counts.warn
     ? `${result.counts.warn} thing${result.counts.warn > 1 ? "s" : ""} to look at`
@@ -15205,6 +15212,28 @@ function renderDataHealth() {
       </div>
     </article>`).join("");
   body.innerHTML = `<div class="dh-summary ${result.counts.warn ? "warn" : "ok"}"><strong>${head}</strong><span>${result.counts.ok} passed · ${result.counts.info} notes · ${result.counts.warn} to fix</span></div>${rows}`;
+}
+
+/** Dashboard chip, ⋯ dot and menu count: only real problems ("to fix") are surfaced; notes stay inside the check. */
+function updateHealthBadge(result) {
+  const warns = result ? result.counts.warn : 0;
+  const chip = document.getElementById("healthChip");
+  if (chip) {
+    chip.hidden = warns === 0;
+    chip.textContent = `🩺 ${warns} to fix`;
+  }
+  document.getElementById("topbarMore")?.classList.toggle("has-dot", warns > 0);
+  const item = document.querySelector('[data-open-modal="dataHealthModal"].menu-item');
+  if (item) item.textContent = warns > 0 ? `🩺 Data health (${warns} to fix)` : "🩺 Data health";
+}
+
+let healthBadgeTimer = null;
+function scheduleHealthBadge() {
+  if (typeof document === "undefined") return;
+  clearTimeout(healthBadgeTimer);
+  healthBadgeTimer = setTimeout(() => {
+    try { const r = computeDataHealth(); if (r) updateHealthBadge(r); } catch { /* the badge is optional */ }
+  }, 1500);
 }
 
 if (typeof document !== "undefined") {

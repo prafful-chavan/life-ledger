@@ -420,6 +420,21 @@ body.prices-refreshing #topbarRefreshAllBtn::before {
   body.prices-refreshing .adv-kpi b, .is-thinking .adv-summary, body.prices-refreshing #topbarRefreshAllBtn::before { animation: none !important; }
 }
 
+/* Advisor on phones: sections marked data-adv-collapse start closed; tap the title to open */
+@media (max-width: 680px) {
+  #advisor [data-adv-collapse] > h3 { display: flex; justify-content: space-between; align-items: center; cursor: pointer; margin-bottom: 0; }
+  #advisor [data-adv-collapse] > h3::after { content: "+"; font-size: 20px; font-weight: 600; color: var(--muted); }
+  #advisor [data-adv-collapse].is-open > h3 { margin-bottom: 10px; }
+  #advisor [data-adv-collapse].is-open > h3::after { content: "−"; }
+  #advisor [data-adv-collapse]:not(.is-open) > :not(h3) { display: none; }
+}
+
+/* Data health badge */
+.section-heading .health-chip, .health-chip { width: auto !important; flex: 0 0 auto; align-self: flex-start; border: 1px solid color-mix(in srgb, var(--negative) 45%, var(--line)); background: color-mix(in srgb, var(--negative) 10%, var(--panel)); color: var(--negative); font-weight: 700; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+.health-chip[hidden] { display: none; }
+.topbar-more.has-dot > summary { position: relative; }
+.topbar-more.has-dot > summary::after { content: ""; position: absolute; top: 6px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--negative); box-shadow: 0 0 0 2px var(--panel); }
+
 /* ── Data health ── */
 .dh-card { max-width: 640px; }
 .dh-lead { margin: 0 0 12px; color: var(--muted); font-size: 14px; }

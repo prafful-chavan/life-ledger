@@ -49,6 +49,8 @@
   let activeTab = "mf";
   let sortMode = "attention";
   const expandedTabs = new Set();
+  let movesExpanded = false;
+  const isPhone = () => Boolean(window.matchMedia && window.matchMedia("(max-width: 680px)").matches);
   let shownSignalIds = [];
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -199,7 +201,12 @@
     let html = "";
     let shown = [];
     if (rv.review && rv.review.moves.length) {
-      html += rv.review.moves.map((m, i) => moveCard(i + 1, m)).join("");
+      // On a phone, show the first few steps and keep the rest one tap away
+      const MOVES_SHOWN = 3;
+      const foldMoves = isPhone() && rv.review.moves.length > MOVES_SHOWN + 1;
+      const visible = foldMoves && !movesExpanded ? rv.review.moves.slice(0, MOVES_SHOWN) : rv.review.moves;
+      html += visible.map((m, i) => moveCard(i + 1, m)).join("");
+      if (foldMoves) html += `<div class="adv-fold"><button type="button" class="secondary-button" data-moves-${movesExpanded ? "less" : "more"}>${movesExpanded ? "Show fewer steps" : `Show ${rv.review.moves.length - MOVES_SHOWN} more steps`}</button></div>`;
       shown = rv.review.moves.flatMap((m) => m.signalIds);
       if (rv.review.nextMonthPlan && rv.review.nextMonthPlan.length) html += `<details class="adv-more"><summary>Plan for next month</summary><ul class="adv-list">${rv.review.nextMonthPlan.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>`;
       if (rv.review.taxNote) html += `<p class="adv-small">🧾 ${esc(rv.review.taxNote)}</p>`;
@@ -303,7 +310,7 @@
     </div>`;
     const sorter = g.key === "safe" ? "" : `<div class="adv-sort">Show: <button type="button" data-sort="attention" class="${sortMode === "attention" ? "active" : ""}">Needs a look first</button><button type="button" data-sort="best" class="${sortMode === "best" ? "active" : ""}">Best first</button></div>`;
     // Long lists show the nine that matter most first (the order follows "Needs a look first / Best first")
-    const FOLD = window.matchMedia && window.matchMedia("(max-width: 680px)").matches ? 4 : 9;
+    const FOLD = isPhone() ? 4 : 9;
     const folds = list.length > FOLD + 3;
     const open = !folds || expandedTabs.has(activeTab);
     const shown = open ? list : list.slice(0, FOLD);
@@ -421,6 +428,17 @@
       if (b) { sortMode = b.dataset.sort; render(); return; }
       if (e.target.closest("[data-more]")) { expandedTabs.add(activeTab); render(); }
       else if (e.target.closest("[data-less]")) { expandedTabs.delete(activeTab); render(); }
+    });
+    $("advMoves")?.addEventListener("click", (e) => {
+      if (e.target.closest("[data-moves-more]")) { movesExpanded = true; render(); }
+      else if (e.target.closest("[data-moves-less]")) { movesExpanded = false; render(); }
+    });
+    // Tap a section title to open/close it (the sections marked data-adv-collapse are only collapsed on phones, via CSS)
+    document.querySelectorAll("#advisor [data-adv-collapse] > h3").forEach((h) => {
+      h.setAttribute("role", "button"); h.tabIndex = 0;
+      const toggle = () => h.parentElement.classList.toggle("is-open");
+      h.addEventListener("click", toggle);
+      h.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
     });
     const ask = $("advAsk");
     if (ask) { ask.innerHTML = ASK.map((q) => `<button type="button">${esc(q)}</button>`).join(""); ask.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) askHeyPrafful(b.textContent); }); }
