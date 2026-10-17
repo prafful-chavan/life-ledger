@@ -143,5 +143,26 @@
     };
   }
 
-  return { overlapRatio, baseId, monthTotal, resetSource, coreDataToISODate, rowsToExpenses, planImport, planRemovals, hash32, ID_PREFIX };
+  // ── category spelling variants ─────────────────────────────────────────
+  // "EMI- Car…" vs "EMI - Car…" or "Gromming" vs "Grooming" are one category; the most-used spelling wins.
+  const CATEGORY_TYPOS = { gromming: "grooming" };
+  function categoryKey(c) {
+    const k = String(c == null ? "" : c).toLowerCase().replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+    return CATEGORY_TYPOS[k] || k;
+  }
+  /** → { normalisedKey: displayName } built from how often each spelling is used. */
+  function categoryCanon(expenses) {
+    const counts = {};
+    (expenses || []).forEach((x) => {
+      const r = String((x && x.category) || "").replace(/\s+/g, " ").trim();
+      if (!r) return;
+      const k = categoryKey(r);
+      (counts[k] = counts[k] || {})[r] = (counts[k][r] || 0) + 1;
+    });
+    const map = {};
+    Object.keys(counts).forEach((k) => { map[k] = Object.entries(counts[k]).sort((a, b) => b[1] - a[1])[0][0]; });
+    return map;
+  }
+
+  return { categoryKey, categoryCanon, overlapRatio, baseId, monthTotal, resetSource, coreDataToISODate, rowsToExpenses, planImport, planRemovals, hash32, ID_PREFIX };
 });

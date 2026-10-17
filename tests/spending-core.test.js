@@ -99,4 +99,17 @@ assert.strictEqual(wp.matchedExisting, 0);
   assert.strictEqual(C.planRemovals(null, null, "sp-").stale.length, 0, "bad input never throws");
 }
 
+
+// ── category spelling variants merge ──
+{
+  const ex = (category, n = 1) => Array.from({ length: n }, () => ({ category }));
+  const list = [...ex("EMI - Car, Home, policy", 32), ...ex("EMI- Car, Home, policy", 6), ...ex("Grooming", 93), ...ex("Gromming", 16), ...ex("Groceries", 5), ...ex("", 2)];
+  const canon = C.categoryCanon(list);
+  const show = (c) => canon[C.categoryKey(c)] || c;
+  assert.strictEqual(show("EMI- Car, Home, policy"), "EMI - Car, Home, policy", "most-used spelling wins");
+  assert.strictEqual(show("Gromming"), "Grooming", "known typo joins the right category");
+  assert.strictEqual(show("Groceries"), "Groceries");
+  assert.strictEqual(Object.keys(canon).length, 3, "no empty category, 3 real ones");
+  assert.deepStrictEqual(C.categoryCanon(null), {});
+}
 console.log("spending-core tests passed");

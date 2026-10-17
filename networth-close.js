@@ -111,5 +111,16 @@
     return rows.filter((t) => { const d = dateOf(t); return !d || d <= dateISO || (snap.has(d) && !t.transactionType); });
   }
 
-  return { ownedAsOf, rebuildMarketClasses, closeOnOrBefore, classComplete, isBusinessDay, prevBusinessDay, istMs, dayAfter };
+  /**
+   * Today's value for a class is locked at its close. But if a LATER price fetch (itself taken after the close) is
+   * on file, it supersedes the lock — otherwise a price correction made the same evening could never show up.
+   */
+  function keepLock(prevSettled, prevAsOfISO, liveSettled, liveFetchedAt) {
+    if (!prevSettled) return false;
+    const lockedAt = Date.parse(prevAsOfISO || "") || 0;
+    const newer = num(liveFetchedAt) > lockedAt + 60000;
+    return !(liveSettled && newer);
+  }
+
+  return { keepLock, ownedAsOf, rebuildMarketClasses, closeOnOrBefore, classComplete, isBusinessDay, prevBusinessDay, istMs, dayAfter };
 });

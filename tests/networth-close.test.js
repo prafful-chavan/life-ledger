@@ -101,4 +101,14 @@ assert.strictEqual(r.settled.stocks, true);
   assert.deepStrictEqual(r2.missing.stocks, ["X"], "no fallback price at all → still missing");
 }
 
+
+// ── keepLock: a newer after-close fetch replaces an earlier lock ──────
+{
+  const K = require("../networth-close.js").keepLock;
+  assert.strictEqual(K(false, "", true, 5), false, "not locked → nothing to keep");
+  assert.strictEqual(K(true, "2026-10-17T02:02:10.642Z", false, Date.parse("2026-10-17T15:40:00Z")), true, "newer fetch is not after the close → keep the lock");
+  assert.strictEqual(K(true, "2026-10-17T02:02:10.642Z", true, Date.parse("2026-10-17T15:40:00Z")), false, "newer after-close fetch replaces the lock");
+  assert.strictEqual(K(true, "2026-10-17T15:40:00Z", true, Date.parse("2026-10-17T15:40:00Z")), true, "same fetch → keep");
+  assert.strictEqual(K(true, "", true, 0), true, "no timestamps → keep");
+}
 console.log("networth-close tests passed");

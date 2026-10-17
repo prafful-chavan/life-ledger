@@ -4705,7 +4705,7 @@ function buildAdvisorInput() {
   const expenseRows = inMonths(state.expenses);
   const expenses = sum(expenseRows, "amount") / 6;
   const byCat = {};
-  expenseRows.forEach((e) => { byCat[e.category || "General"] = (byCat[e.category || "General"] || 0) + toNumber(e.amount) / 6; });
+  expenseRows.forEach((e) => { byCat[catOf(e)] = (byCat[catOf(e)] || 0) + toNumber(e.amount) / 6; });
   const cash = {
     monthlyIncome: Math.round(income), monthlyExpenses: Math.round(expenses),
     savingsRate: income > 0 ? ((income - expenses) / income) * 100 : null,
@@ -4746,7 +4746,7 @@ function buildAdvisorExtras() {
   }
   const mtdKey = keyOf(0);
   const catThis = {};
-  (state.expenses || []).filter((x) => toMonthKey(x.date) === mtdKey).forEach((e) => { catThis[e.category || "General"] = (catThis[e.category || "General"] || 0) + toNumber(e.amount); });
+  (state.expenses || []).filter((x) => toMonthKey(x.date) === mtdKey).forEach((e) => { catThis[catOf(e)] = (catThis[catOf(e)] || 0) + toNumber(e.amount); });
 
   const nwHistory = (state.netWorthHistory || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30)
     .map((h) => ({ date: h.date, netWorth: Math.round(h.netWorth), assets: Math.round(h.totalAssets), liabilities: Math.round(h.totalLiabilities) }));
@@ -4937,7 +4937,7 @@ function renderMetrics() {
       hint: `${metrics.incomePeople} income owner${metrics.incomePeople === 1 ? "" : "s"} tracked`,
     },
     {
-      label: "This month expenses",
+      label: metrics.isFallbackIncome ? `Expenses (${metrics.fallbackMonthLabel})` : "This month expenses",
       value: formatINR(metrics.monthExpenses),
       hint: `${metrics.topExpenseCategory || "No"} is the biggest category`,
     },
@@ -5178,7 +5178,7 @@ function renderSalaryProgressionChart(svg, rows) {
 
 function renderExpenseMix() {
   const currentExpenses = state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
-  const byCategory = groupSum(currentExpenses, (expense) => expense.category || "General", "amount");
+  const byCategory = groupSum(currentExpenses, (expense) => catOf(expense), "amount");
   const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((sum, [, value]) => sum + value, 0);
   const donut = document.getElementById("expenseDonut");
@@ -5557,7 +5557,7 @@ function renderSalaryProgression() {
 function renderBudgetPulse() {
   const container = document.getElementById("budgetPulse");
   const currentExpenses = state.expenses.filter((expense) => isCurrentMonth(expense.date));
-  const categories = Object.entries(groupSum(currentExpenses, (expense) => expense.category || "General", "amount")).sort(
+  const categories = Object.entries(groupSum(currentExpenses, (expense) => catOf(expense), "amount")).sort(
     (a, b) => b[1] - a[1]
   );
   container.innerHTML = "";
@@ -5642,7 +5642,7 @@ function getExpenseMonthIndex() {
     const bucket = byMonth.get(key);
     const amount = toNumber(expense.amount);
     bucket.total += amount;
-    const category = expense.category || "General";
+    const category = catOf(expense);
     bucket.categories[category] = (bucket.categories[category] || 0) + amount;
     bucket.rows.push(expense);
   });
@@ -5721,7 +5721,7 @@ function renderExpenseExplorer(refreshMonthList = true) {
   const total = sum(filteredRows, "amount");
   const categoryMap = {};
   filteredRows.forEach(item => {
-    const cat = item.category || "General";
+    const cat = catOf(item);
     categoryMap[cat] = (categoryMap[cat] || 0) + toNumber(item.amount);
   });
   const categories = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
@@ -8863,8 +8863,13 @@ function buildTodaySnapshot(options = {}) {
   const asOf = {};
   NWH_MARKET_CLASSES.forEach((cls) => {
     const live = dayChangeMetrics.classes[cls];
-    if (prevSettled[cls]) {
-      // Locked at its close earlier today: keep that value and gain/loss
+    const liveSettled = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
+    const NWC = typeof window !== "undefined" ? window.LifeLedgerNetWorthClose : undefined;
+    const keep = NWC?.keepLock
+      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt)
+      : Boolean(prevSettled[cls]);
+    if (keep) {
+      // Locked at its close earlier today (and nothing newer after the close): keep that value and gain/loss
       breakdown[cls] = toNumber(existing[cls]);
       changes[cls] = toNumber(prevChanges[cls]);
       asOf[cls] = prevAsOf[cls] || '';
@@ -8872,7 +8877,7 @@ function buildTodaySnapshot(options = {}) {
       return;
     }
     changes[cls] = live.held && live.hasChange ? Number(live.change.toFixed(2)) : 0;
-    settled[cls] = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
+    settled[cls] = liveSettled;
     asOf[cls] = live.fetchedAt ? new Date(live.fetchedAt).toISOString() : '';
   });
 
@@ -13881,11 +13886,11 @@ function answerQuestion(question) {
   // ─── DATA READERS (always fresh from state) ───────────────────────────────
   const monthExpenseRows = state.expenses.filter((e) => isTargetDashboardMonth(e.date));
   const topMonthExpenses = Object.entries(
-    groupSum(monthExpenseRows, (e) => e.category || "General", "amount")
+    groupSum(monthExpenseRows, (e) => catOf(e), "amount")
   ).sort((a, b) => b[1] - a[1]);
 
   const allExpenseCategories = Object.entries(
-    groupSum(state.expenses, (e) => e.category || "General", "amount")
+    groupSum(state.expenses, (e) => catOf(e), "amount")
   ).sort((a, b) => b[1] - a[1]);
 
   const pendingTasks = state.tasks.filter((t) => !t.done);
@@ -14215,10 +14220,26 @@ function answerQuestion(question) {
   return `I can answer questions about all your Life Ledger data 😊\n\nTry asking:\n• "How much in gold?" or "total mutual funds"\n• "This month saving"\n• "Net worth"\n• "Show expenses" or "all time expenses"\n• "Salary income"\n• "My DevOps roadmap" or "wife ETL progress"\n• "Habits and streaks"\n• "Pending tasks"\n• "Goals"\n• "Compare me and wife"\n• "Today's plan"\n• "Full portfolio breakdown"\n• "How am I doing?"`;
 }
 
+// Expense category spelling variants are merged when reading (see spending-core.js), so totals and charts never
+// split one category in two. Stored data is left exactly as entered.
+let categoryCanonCache = { list: null, size: -1, map: {} };
+function catOf(e) {
+  const raw = String((e && e.category) || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "General";
+  const C = window.LifeLedgerSpendingCore;
+  if (!C) return raw;
+  const list = state.expenses || [];
+  if (categoryCanonCache.list !== list || categoryCanonCache.size !== list.length) {
+    categoryCanonCache = { list, size: list.length, map: C.categoryCanon(list) };
+  }
+  return categoryCanonCache.map[C.categoryKey(raw)] || raw;
+}
+
 function calculateMetrics() {
   let monthIncomeRows = state.income.filter((income) => isTargetDashboardMonth(income.date));
   let isFallbackIncome = false;
   let fallbackMonthLabel = "";
+  let fallbackMonthKey = "";
 
   if (monthIncomeRows.length === 0 && state.income.length > 0) {
     const incomesByMonth = {};
@@ -14234,6 +14255,7 @@ function calculateMetrics() {
       const latestMonthKey = sortedMonthKeys[0];
       monthIncomeRows = incomesByMonth[latestMonthKey];
       isFallbackIncome = true;
+      fallbackMonthKey = latestMonthKey;
 
       const [year, month] = latestMonthKey.split("-").map(Number);
       const tempDate = new Date(year, month - 1, 1);
@@ -14241,13 +14263,16 @@ function calculateMetrics() {
     }
   }
 
-  const monthExpenseRows = state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
+  // When income falls back to an earlier month, compare it with THAT month's spending (not the current month's).
+  const monthExpenseRows = isFallbackIncome
+    ? state.expenses.filter((expense) => toMonthKey(expense.date) === fallbackMonthKey)
+    : state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
   const monthIncome = sum(monthIncomeRows, "amount");
   const monthExpenses = sum(monthExpenseRows, "amount");
   const holdings = investmentHoldingsTotal();
   const liabilities = sum(state.liabilities, "value");
   const topExpenseCategory =
-    Object.entries(groupSum(monthExpenseRows, (expense) => expense.category || "General", "amount")).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    Object.entries(groupSum(monthExpenseRows, (expense) => catOf(expense), "amount")).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
   return {
     monthIncome,
     monthExpenses,
@@ -16231,7 +16256,7 @@ function renderExpensesAnalysis() {
   
   const catSums = {};
   allExpenses.forEach(e => {
-    const cat = e.category || "General";
+    const cat = catOf(e);
     catSums[cat] = (catSums[cat] || 0) + toNumber(e.amount);
   });
   const sortedCategories = Object.entries(catSums).sort((a, b) => b[1] - a[1]);
