@@ -1,0 +1,73 @@
+const assert = require("assert");
+const P = require("../protection-core.js");
+
+// Ages and birthdays (Prafful 22 Oct 1995, Archana 22 May 1997; "today" = 18 Oct 2026)
+assert.strictEqual(P.ageOn("1995-10-22", "2026-10-18"), 30, "turns 31 in four days");
+assert.strictEqual(P.ageOn("1995-10-22", "2026-10-22"), 31, "on the birthday itself");
+assert.strictEqual(P.ageOn("1997-05-22", "2026-10-18"), 29);
+assert.deepStrictEqual(P.nextBirthday("1995-10-22", "2026-10-18"), { date: "2026-10-22", days: 4, turning: 31 });
+assert.deepStrictEqual(P.nextBirthday("1997-05-22", "2026-10-18"), { date: "2027-05-22", days: 216, turning: 30 });
+assert.strictEqual(P.nextBirthday("1995-10-22", "2026-10-22").days, 0, "today counts");
+assert.strictEqual(P.ageOn("garbage", "2026-10-18"), null);
+assert.strictEqual(P.nextBirthday("", "2026-10-18"), null);
+
+// Premiums and renewals
+assert.strictEqual(P.annualPremium({ premium: 1000, frequency: "Monthly" }), 12000);
+assert.strictEqual(P.annualPremium({ premium: 5000, frequency: "Half-yearly" }), 10000);
+assert.strictEqual(P.annualPremium({ premium: 24000, frequency: "Yearly" }), 24000);
+assert.strictEqual(P.annualPremium({ premium: 24000 }), 24000, "no frequency means yearly");
+assert.strictEqual(P.dueStatus("2026-10-10", "2026-10-18").state, "overdue");
+assert.deepStrictEqual(P.dueStatus("2026-11-02", "2026-10-18"), { state: "soon", days: 15 });
+assert.strictEqual(P.dueStatus("2027-03-01", "2026-10-18").state, "ok");
+assert.strictEqual(P.dueStatus("", "2026-10-18").state, "none");
+assert.strictEqual(P.advanceDue("2026-10-18", "Yearly"), "2027-10-18");
+assert.strictEqual(P.advanceDue("2026-11-30", "Quarterly"), "2027-02-28", "month-end is kept inside the month");
+assert.strictEqual(P.advanceDue("2026-12-15", "Monthly"), "2027-01-15");
+assert.strictEqual(P.advanceDue("2026-08-31", "Half-yearly"), "2027-02-28");
+
+// Cover checks
+const state = () => ({
+  income: [{ person: "Me", date: "2026-09-30", netSalary: 199884 }, { person: "Me", date: "2026-08-31", netSalary: 100 }, { person: "Wife", date: "2026-09-30", amount: 56986 }],
+  insurance: [], vehicles: [], goals: [], expenses: [], people: { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } }, banksaving: [{ value: 450000 }], fd: [{ value: 2000000 }],
+});
+let s = state();
+assert.strictEqual(P.monthlyIncome(s, "Me"), 199884, "latest salary wins");
+assert.strictEqual(P.monthlyIncome(s, "Wife"), 56986);
+assert.strictEqual(P.termCheck(s, "Me").status, "not-set", "nothing entered yet (₹0 placeholders)");
+s.insurance = [{ type: "Term life", person: "Me", cover: 0 }];
+assert.strictEqual(P.termCheck(s, "Me").status, "not-set", "a ₹0 placeholder is not a policy");
+s.insurance = [{ type: "Term life", person: "Me", cover: 10000000 }];
+const t = P.termCheck(s, "Me");
+assert.strictEqual(t.status, "low");
+assert.strictEqual(t.min, 199884 * 12 * 10);
+s.insurance[0].cover = 40000000;
+assert.strictEqual(P.termCheck(s, "Me").status, "ok");
+assert.strictEqual(P.healthCheck(state()).status, "not-set");
+s.insurance.push({ type: "Health", person: "Both", cover: 500000 });
+assert.strictEqual(P.healthCheck(s).status, "low");
+s.insurance.push({ type: "Health", person: "Both", cover: 1000000 });
+assert.strictEqual(P.healthCheck(s).status, "ok");
+
+// Summary
+s = state(); s.vehicles = [{ value: 500000 }, { value: 0 }]; s.insurance = [{ type: "Health", person: "Both", cover: 1, premium: 25000, frequency: "Yearly", nextDue: "2026-10-25" }, { type: "Car", person: "Me", premium: 1000, frequency: "Monthly", nextDue: "2026-09-01" }];
+const sum = P.summary(s, "2026-10-18");
+assert.strictEqual(sum.vehiclesValue, 500000);
+assert.strictEqual(sum.yearlyPremium, 37000);
+assert.strictEqual(sum.dueSoon.length, 2);
+assert.strictEqual(sum.dueSoon[0].s.state, "overdue", "overdue first");
+
+// Goal suggestions: built from the household's own numbers; existing names are never duplicated
+s = state();
+assert.deepStrictEqual(P.suggestGoals(s, "2026-10-18"), [], "no spending history → nothing to base them on");
+const months = ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"];
+s.expenses = months.map((m) => ({ date: m + "-10", amount: 120000 }));
+const g = P.suggestGoals(s, "2026-10-18");
+assert.deepStrictEqual(g.map((x) => x.key), ["emergency", "retirement"]);
+assert.strictEqual(g[0].target, 720000, "6 × ₹1.2L");
+assert.strictEqual(g[0].saved, 2450000, "bank + FD today");
+assert.strictEqual(g[1].target, 36000000, "25 × ₹14.4L a year");
+assert.strictEqual(g[1].dueDate, "2055-10-22", "when the first person turns 60");
+assert.strictEqual(g[1].track, "All my assets");
+s.goals = [{ name: "Emergency Fund" }];
+assert.deepStrictEqual(P.suggestGoals(s, "2026-10-18").map((x) => x.key), ["retirement"], "already added");
+console.log("protection-core tests passed");

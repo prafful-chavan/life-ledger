@@ -27,6 +27,10 @@ const defaultData = {
   others: [],
   goals: [],
   tasks: [],
+  vehicles: [],
+  insurance: [],
+  people: { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } },
+  protectionSeeded: false,
   studies: [],
   workouts: [],
   activities: [],
@@ -1147,6 +1151,11 @@ function normalizeData(data) {
       return { ...g, owner: "Both" };
     }),
     tasks: ensureIds(data.tasks || [], "task"),
+    // Protection: vehicles, insurance policies and the two birthdays (kept in the vault, synced like everything else)
+    vehicles: ensureIds(Array.isArray(data.vehicles) ? data.vehicles : [], "veh"),
+    insurance: ensureIds(Array.isArray(data.insurance) ? data.insurance : [], "ins"),
+    people: data.people && typeof data.people === "object" ? data.people : { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } },
+    protectionSeeded: Boolean(data.protectionSeeded),
     studies: ensureIds(data.studies || [], "study").map(s => {
       if (s.owner === "Me" || s.owner) return s;
       return { ...s, owner: "Me" };
@@ -4649,7 +4658,7 @@ function buildAdvisorInput() {
   }
 
   // Everything else (FD, EPF, PPF, bonds, silver, crypto, bank savings, other)
-  const simple = { fd: "fd", epf: "epf", ppf: "ppf", bonds: "bonds", silver: "silver", crypto: "crypto", banksaving: "bank", others: "others" };
+  const simple = { fd: "fd", epf: "epf", ppf: "ppf", bonds: "bonds", silver: "silver", crypto: "crypto", banksaving: "bank", others: "others", vehicles: "others" };
   Object.entries(simple).forEach(([stateKey, cls]) => {
     (state[stateKey] || []).forEach((item) => {
       const value = toNumber(item.value);
@@ -8761,7 +8770,7 @@ function captureCurrentNetWorthBreakdown() {
   const ppf = Number(sum(state.ppf || [], "value").toFixed(2));
   const bonds = Number(sum(state.bonds || [], "value").toFixed(2));
   const bankSaving = Number(sum(state.banksaving || [], "value").toFixed(2));
-  const others = Number(sum(state.others || [], "value").toFixed(2));
+  const others = Number((sum(state.others || [], "value") + sum(state.vehicles || [], "value")).toFixed(2));   // vehicles count with "others"
   const liabilities = Number(sum(state.liabilities || [], "value").toFixed(2));
 
   const totalAssets = Number((mutualFunds + stocks + usStocks + gold + silver + crypto + fd + epf + ppf + bonds + bankSaving + others).toFixed(2));
@@ -15258,6 +15267,7 @@ function viewTitle(view) {
       career: "Career Roadmaps",
       goals: "Goals Tracker",
       todo: "Your tasks and notes",
+      protection: "Your protection",
       exercise: "Exercise & Workout Tracker",
       habits: "Habit Tracker & Streaks",
       assistant: "Ask your dashboard",

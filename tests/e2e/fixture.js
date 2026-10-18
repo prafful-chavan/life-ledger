@@ -61,6 +61,12 @@ function build(now = new Date()) {
       { id: "goal-2", name: "Trip", category: "Travel", owner: "Me", target: 100000, saved: 25000, dueDate: iso(new Date(now.getFullYear() + 1, now.getMonth(), 20)) },
     ],
     goldPrice: { price24k: 14000, price22k: 12833.33, prevClose24k: 13900, prevClose22k: 12741.67, source: "test" },
+    vehicles: [{ id: "veh-test-1", name: "Test car", type: "Car", owner: "Me", purchaseDate: monthsAgo(24), purchasePrice: 800000, value: 100000, note: "" }],
+    insurance: [
+      { id: "ins-test-1", person: "Both", type: "Health", insurer: "Acme Health", policyName: "Family floater", cover: 1000000, premium: 24000, frequency: "Yearly", nextDue: iso(new Date(now.getTime() + 10 * 86400000)), nominee: "", note: "" },
+      { id: "ins-test-2", person: "Me", type: "Term life", insurer: "Acme Life", policyName: "", cover: 30000000, premium: 18000, frequency: "Yearly", nextDue: iso(new Date(now.getTime() + 200 * 86400000)), nominee: "Archana", note: "" },
+    ],
+    protectionSeeded: true,
     habits: [{ id: "habit-1", name: "Walk", frequency: "Daily", owner: "Me", streak: 2, bestStreak: 5, history: [] }],
     tasks: [{ id: "task-1", text: "Pay rent", area: "Finance", date: today, done: false }],
     workouts: [], activities: [], studies: [], assets: [], netWorthHistory: [], interviewTrackerEntries: [],
@@ -69,7 +75,7 @@ function build(now = new Date()) {
   // Independent expectations (US stocks depend on the live exchange rate, so they are added by the runner)
   const mfNet = 1000 * 50 + (200 - 50) * 100;
   const stocks = 10 * 100 + 5 * 200;
-  const rest = 100000 + 200000 + 100000 + 50000 + 10000 + 5000 + 2000 + 30000 + 20000;
+  const rest = 100000 /* vehicle */ + 100000 + 200000 + 100000 + 50000 + 10000 + 5000 + 2000 + 30000 + 20000;
   const assetsWithoutUs = mfNet + stocks + rest;
   const lastMonthIncome = 260000;
   const thisMonthExpenses = 20000 + 5000 + 90000;   // spent after the latest salary arrived

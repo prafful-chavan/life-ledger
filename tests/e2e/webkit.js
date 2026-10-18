@@ -13,7 +13,7 @@ let pw; try { pw = require(require.resolve("playwright", { paths: [PW_DIR, proce
 const { build } = require("./fixture");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml", ".png": "image/png" };
 const results = []; const check = (name, ok, detail = "") => { results.push(ok); console.log(`${ok ? "  ✓" : "  ✗"} ${name}${!ok && detail ? "\n      " + String(detail).slice(0, 300) : ""}`); };
-const VIEWS = ["dashboard", "finance", "advisor", "goals", "exercise", "habits", "career", "todo"];
+const VIEWS = ["dashboard", "finance", "advisor", "goals", "protection", "exercise", "habits", "career", "todo"];
 
 (async () => {
   const server = http.createServer((req, res) => { const u = new URL(req.url, "http://x"); const f = path.join(ROOT, decodeURIComponent(u.pathname === "/" ? "/index.html" : u.pathname)); if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); } res.writeHead(200, { "Content-Type": MIME[path.extname(f)] || "application/octet-stream", "Cache-Control": "no-store" }); fs.createReadStream(f).pipe(res); });
@@ -24,7 +24,7 @@ const VIEWS = ["dashboard", "finance", "advisor", "goals", "exercise", "habits",
     console.log("\niPhone (WebKit) check\n");
     await page.goto(`http://127.0.0.1:${server.address().port}/`); await page.waitForTimeout(2000);
     await page.evaluate(() => { document.getElementById("setupPassword").value = "e2e-throwaway-pass-1"; document.getElementById("setupPasswordConfirm").value = "e2e-throwaway-pass-1"; document.getElementById("createVaultButton").click(); });
-    await page.waitForFunction(() => window.LifeLedgerApp && !document.getElementById("appShell").classList.contains("hidden"), null, { timeout: 30000 });
+    await page.waitForFunction(() => window.LifeLedgerApp && !document.getElementById("appShell").classList.contains("hidden"), null, { timeout: 30000 }); await page.waitForTimeout(1500);   // let start-up finish before loading the fixture
     await page.evaluate((s) => LifeLedgerApp.applyRemoteData(s), build(new Date()).state); await page.waitForTimeout(2500);
     await page.addStyleTag({ content: "*{animation-duration:0s!important;transition:none!important}" });
     const go = async (v) => { await page.evaluate((v) => LifeLedgerNav.goToView(v), v); await page.waitForTimeout(500); await page.evaluate(() => window.scrollTo(0, 0)); };

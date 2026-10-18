@@ -15,6 +15,7 @@
     advisor: '<circle cx="12" cy="12" r="9"></circle><path d="M15.5 8.5 13 13l-4.5 2.5L11 11z"></path>',
     health: '<path d="M3 12h4l2-6 4 12 2-6h6"></path>',
     more: '<circle cx="5" cy="12" r="1.3"></circle><circle cx="12" cy="12" r="1.3"></circle><circle cx="19" cy="12" r="1.3"></circle>',
+    protection: '<path d="M12 3 4.5 6v5.5c0 4.4 3.1 8.2 7.5 9.5 4.4-1.3 7.5-5.1 7.5-9.5V6z"></path>',
     goals: '<circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1"></circle>',
     career: '<rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M9 7V5h6v2"></path>',
     todo: '<path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"></path>',
@@ -30,6 +31,7 @@
     { view: "dashboard", label: "Dashboard", keywords: ["home", "overview", "net worth", "command center"], icon: "home" },
     { view: "finance", label: "Finance", keywords: ["money", "expenses", "income", "salary", "liabilities", "loans", "net worth history"], icon: "money" },
     { view: "advisor", label: "Wealth Advisor", keywords: ["portfolio", "invest", "mutual funds", "stocks", "score", "health"], icon: "advisor" },
+    { view: "protection", label: "Protection", keywords: ["insurance", "vehicle", "car", "bike", "policy", "premium", "term", "health cover", "birthday", "age"], icon: "protection" },
     { view: "goals", label: "Goals", keywords: ["targets", "savings", "milestones"], icon: "goals" },
     { view: "exercise", label: "Exercise", keywords: ["steps", "cycling", "workout", "walk", "run", "fitness"], icon: "health" },
     { view: "habits", label: "Habits", keywords: ["streak", "routine", "daily"], icon: "habits" },
@@ -224,6 +226,7 @@
     const grid = $(".more-grid", sheet);
     const entries = [
       { label: "Goals", icon: "goals", run: () => goToView("goals") },
+      { label: "Protection", icon: "protection", run: () => goToView("protection") },
       { label: "Habits", icon: "habits", run: () => goToView("habits") },
       { label: "Career", icon: "career", run: () => goToView("career") },
       { label: "To-Do", icon: "todo", run: () => goToView("todo") },

@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.6" />
-    <link rel="stylesheet" href="layout.css?v=1.8.4" />
+    <link rel="stylesheet" href="layout.css?v=1.8.6" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -33,9 +33,9 @@
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
     <script defer src="hero-series.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.95"></script>
+    <script defer src="app.js?v=1.0.96"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
-    <script defer src="nav.js?v=1.1.4"></script>
+    <script defer src="nav.js?v=1.1.5"></script>
     <script defer src="sync-engine.js?v=1.0.0"></script>
     <script defer src="sync-client.js?v=1.0.3"></script>
     <script defer src="auth.js?v=1.0.44"></script>
@@ -49,7 +49,9 @@
     <script defer src="knowledge-modules.js?v=1.0.0"></script>
     <script defer src="advisor.js?v=2.0.8"></script>
     <script defer src="spending-core.js?v=1.0.5"></script>
-    <script defer src="data-health.js?v=1.0.1"></script>
+    <script defer src="data-health.js?v=1.0.2"></script>
+    <script defer src="protection-core.js?v=1.0.0"></script>
+    <script defer src="protection.js?v=1.0.0"></script>
     <script defer src="spending-import.js?v=1.0.13"></script>
   </head>
   <body class="auth-locked">
@@ -156,6 +158,10 @@
           <button class="nav-item" type="button" data-view="goals">
             <span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1"></circle></svg></span>
             <span>Goals</span>
+          </button>
+          <button class="nav-item" type="button" data-view="protection">
+            <span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.1 8.2 7.5 9.5 4.4-1.3 7.5-5.1 7.5-9.5V6z"></path></svg></span>
+            <span>Protection</span>
           </button>
           <div class="nav-group-label">Life</div>
           <button class="nav-item" type="button" data-view="exercise">
@@ -1613,6 +1619,16 @@
           <div id="goalsGrid" class="goals-grid"></div>
         </section>
 
+        <section class="view" id="protection" aria-labelledby="protectionTitle" hidden>
+          <div class="section-heading">
+            <div>
+              <h2 id="protectionTitle">Protection</h2>
+              <p>Insurance, vehicles and the key dates that keep the two of you covered.</p>
+            </div>
+          </div>
+          <div id="protectionBody" class="prot-body"></div>
+        </section>
+
         <section class="view" id="todo" aria-labelledby="todoTitle">
           <div class="section-heading">
             <div>
@@ -2322,6 +2338,19 @@
           <button class="primary-button" type="button" id="importFileButton">Import file</button>
         </div>
         <p class="muted-small" id="importStatus"></p>
+      </div>
+    </div>
+
+    <div class="modal" id="protectionModal" role="dialog" aria-modal="true" aria-labelledby="protectionModalTitle" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" id="protectionModalEyebrow">Add</p>
+            <h2 id="protectionModalTitle">Policy</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <form id="protectionForm" class="quick-form"></form>
       </div>
     </div>
 

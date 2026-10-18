@@ -50,7 +50,7 @@
     // 1) Net worth rebuilt from the raw records
     {
       const usInr = rep.usStocksInr != null ? n(rep.usStocksInr) : 0;   // the exchange rate is an outside number, so take it as given
-      const flat = ["silver", "crypto", "fd", "epf", "ppf", "bonds", "banksaving", "others"].reduce((t, k) => t + sum(s[k], (x) => n(x.value)), 0);
+      const flat = ["silver", "crypto", "fd", "epf", "ppf", "bonds", "banksaving", "others", "vehicles"].reduce((t, k) => t + sum(s[k], (x) => n(x.value)), 0);
       const gold = sum(s.gold, (x) => n(x.value));
       const stocks = sum(s.stocks, (x) => n(x.quantity) * n(x.currentPrice));
       const assets = mfValue(s.mutualFunds) + stocks + usInr + gold + flat;

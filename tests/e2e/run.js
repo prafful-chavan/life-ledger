@@ -22,7 +22,7 @@ const { build } = require("./fixture");
 const ROOT = path.join(__dirname, "..", "..");
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".svg": "image/svg+xml" };
-const VIEWS = ["dashboard", "finance", "advisor", "goals", "exercise", "habits", "career", "todo"];
+const VIEWS = ["dashboard", "finance", "advisor", "goals", "protection", "exercise", "habits", "career", "todo"];
 const results = [];
 const check = (name, ok, detail = "") => { results.push({ name, ok: Boolean(ok), detail }); console.log(`${ok ? "  ✓" : "  ✗"} ${name}${!ok && detail ? "\n      " + String(detail).slice(0, 400) : ""}`); };
 const near = (a, b, tol = 1) => Math.abs(a - b) <= tol;
@@ -132,6 +132,15 @@ const SCANNER = `(${function scan() {
     check("a new vault is created and the app opens", ready);
     check("the heavy files are not loaded at start-up", !requested.some((p) => /interview-db|xlsx/.test(p)), requested.filter((p) => /interview-db|xlsx/.test(p)).join(", "));
 
+    // 1b. Protection on a brand-new vault: the empty ₹0 rows are put in place once
+    console.log("\nProtection");
+    await view("protection");
+    await sleep(800);
+    const seeded = await cdp.eval(`({cards:document.querySelectorAll('#protectionBody .prot-card').length, empty:document.querySelectorAll('#protectionBody .prot-card.is-empty').length, state:{v:LifeLedgerApp.getState().vehicles.length,i:LifeLedgerApp.getState().insurance.length,s:LifeLedgerApp.getState().protectionSeeded}})`);
+    check("first visit puts in 1 vehicle and 4 policies, all at ₹0 for you to fill", seeded.state.v === 1 && seeded.state.i === 4 && seeded.state.s && seeded.empty === 5, JSON.stringify(seeded));
+    const people = await cdp.eval(`document.querySelector('#protectionBody .prot-people').innerText.split(String.fromCharCode(10)).join(' | ')`);
+    check("both birth dates show an age and a birthday countdown", /Prafful[\s\S]*years old[\s\S]*turns/.test(people) && /Archana[\s\S]*years old[\s\S]*turns/.test(people) && (await cdp.eval(`[...document.querySelectorAll('[data-dob]')].map(i=>i.value).join(',')`)) === "1995-10-22,1997-05-22", people);
+
     // 2. load the made-up household
     const { state, expected } = build(new Date());
     // keep the day's first snapshot (made at start-up, when no gold existed) so the "first holding added later the same day" case is exercised
@@ -168,6 +177,25 @@ const SCANNER = `(${function scan() {
     await view("goals");
     const goalsText = await cdp.eval(`document.getElementById('goals').innerText`);
     check("a goal that follows mutual funds shows the live value and says so", /Follows your mutual funds automatically/i.test(goalsText) && goalsText.includes(String(expected.mfNet).replace(/(\d)(?=(\d\d)+\d$)/g, "$1,").replace(/^(\d+),(\d{3})$/, "$1,$2")), goalsText.slice(0, 200));
+
+    // 3b. Protection with data: totals, renewals, adding a policy, marking one paid
+    await view("protection");
+    await sleep(800);
+    const prot = JSON.parse(await cdp.eval(`(()=>{const stats=[...document.querySelectorAll('#protectionBody .prot-stat')].map(s=>s.innerText.split(String.fromCharCode(10)).join(' | ')); return JSON.stringify({stats:stats, hasAlert:!!document.querySelector('#protectionBody .prot-alert'), text:document.getElementById('protectionBody').innerText})})()`));
+    check("vehicle value, yearly premiums and renewals-soon add up", /Vehicles worth \| ₹1,00,000/i.test(prot.stats[0]) && /₹42,000/.test(prot.stats[1]) && /Renewals soon \| 1/i.test(prot.stats[2]) && prot.hasAlert, JSON.stringify(prot.stats));
+    check("term cover below/above the 10–15× guide is judged (₹3 crore is in the guide)", /Term life · Prafful[\s\S]*In the guide/.test(prot.text), prot.text.slice(0, 200));
+    const before = await cdp.eval(`LifeLedgerApp.getState().insurance.length`);
+    await cdp.eval(`(()=>{document.querySelector('#protectionBody [data-act="add"][data-kind="insurance"]').click(); const f=document.getElementById('protectionForm'); f.querySelector('[name=type]').value='Accident'; f.querySelector('[name=insurer]').value='Test Insurer'; f.querySelector('[name=cover]').value='500000'; f.querySelector('[name=premium]').value='1000'; f.querySelector('[name=frequency]').value='Monthly'; f.querySelector('[name=nextDue]').value='2030-01-31'; f.requestSubmit(); return 0})()`);
+    await sleep(700);
+    const added = await cdp.eval(`({n:LifeLedgerApp.getState().insurance.length, shown:document.getElementById('protectionBody').innerText.includes('Test Insurer'), closed:document.getElementById('protectionModal').hidden})`);
+    check("adding a policy saves it, shows it and closes the dialog", added.n === before + 1 && added.shown && added.closed, JSON.stringify(added));
+    await cdp.eval(`(()=>{const id=LifeLedgerApp.getState().insurance.find(p=>p.insurer==='Test Insurer').id; document.querySelector('[data-act="paid"][data-id="'+id+'"]').click(); return 0})()`);
+    await sleep(500);
+    const paid = await cdp.eval(`LifeLedgerApp.getState().insurance.find(p=>p.insurer==='Test Insurer').nextDue`);
+    check("“Mark paid” moves a monthly premium on by a month (31 Jan → 28 Feb)", paid === "2030-02-28", paid);
+    await cdp.eval(`(()=>{const id=LifeLedgerApp.getState().insurance.find(p=>p.insurer==='Test Insurer').id; window.confirm=()=>true; document.querySelector('[data-act="delete"][data-id="'+id+'"]').click(); return 0})()`);
+    await sleep(400);
+    check("deleting it removes it again", (await cdp.eval(`LifeLedgerApp.getState().insurance.length`)) === before);
 
     // 4. Data health
     console.log("\nData health");

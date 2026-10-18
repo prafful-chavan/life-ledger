@@ -438,6 +438,47 @@ body.prices-refreshing #topbarRefreshAllBtn::before {
 /* A dialog on a phone must be usable to its last button: the bottom tab bar (above dialogs) hides while one is open */
 body:has(.modal:not([hidden])) .mobile-tabs { display: none; }
 
+/* ── Protection page ── */
+.prot-body { display: grid; gap: 16px; }
+.prot-people { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.prot-person { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-soft); }
+.prot-person-name, .prot-card-title { font-weight: 650; font-size: 16px; }
+.prot-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.prot-dob { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.prot-dob input { min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; }
+.prot-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.prot-stat { padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); display: grid; gap: 2px; }
+.prot-stat span, .prot-nums span { font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.prot-stat b { font-size: 22px; }
+.prot-stat small, .prot-nums small { color: var(--muted); font-size: 12px; }
+.prot-alert { padding: 12px 16px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--watch) 50%, var(--line)); background: color-mix(in srgb, var(--watch) 10%, var(--panel)); display: grid; gap: 4px; font-size: 14px; }
+.prot-check { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line); }
+.prot-check:first-of-type { border-top: 0; }
+.prot-check-right { display: flex; align-items: center; gap: 10px; }
+.prot-chip { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 650; background: var(--panel-soft); color: var(--muted); }
+.prot-chip.good { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.prot-chip.warn { background: color-mix(in srgb, var(--watch) 16%, transparent); color: var(--watch); }
+.prot-chip.bad { background: color-mix(in srgb, var(--negative) 16%, transparent); color: var(--negative); }
+.prot-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.prot-card { padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); display: grid; gap: 12px; align-content: start; }
+.prot-card.is-empty { border-style: dashed; }
+.prot-card-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.prot-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.prot-nums > div { display: grid; gap: 2px; min-width: 0; }
+.prot-nums b { font-size: 16px; }
+.prot-nums b.prot-small { font-size: 13px; font-weight: 600; }
+.prot-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.prot-actions button { min-height: 38px; }
+.prot-empty { color: var(--muted); font-size: 14px; }
+.goal-suggest-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+@media (max-width: 680px) {
+  .prot-people, .prot-summary { grid-template-columns: 1fr; }
+  .prot-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .prot-stat b { font-size: 18px; }
+  .prot-nums { grid-template-columns: 1fr 1fr; }
+  .goal-suggest-row { flex-direction: column; align-items: stretch; }
+}
+
 /* ── Data health ── */
 .dh-card { max-width: 640px; }
 .dh-lead { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
