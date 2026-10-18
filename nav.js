@@ -265,20 +265,27 @@
   function bindMoreMenu() {
     const d = $("#topbarMore");
     if (!d) return;
-    document.addEventListener("click", (e) => { if (d.open && !d.contains(e.target)) d.open = false; });
-    d.addEventListener("click", (e) => { if (e.target.closest(".menu-item")) setTimeout(() => { d.open = false; }, 0); });
-    // On a phone the row of top-bar buttons scrolls sideways, which clips anything hanging below it (the menu was
-    // invisible and untappable). Position the menu on the screen itself, just under the ⋯ button.
+    const menu = d.querySelector(".topbar-menu"), btn = d.querySelector("summary");
+    if (!menu || !btn) return;
+    document.addEventListener("click", (e) => { if (d.open && !d.contains(e.target) && !menu.contains(e.target)) d.open = false; });
+    menu.addEventListener("click", (e) => { if (e.target.closest(".menu-item")) setTimeout(() => { d.open = false; }, 0); });
+    // The menu is a dropdown of a row that scrolls sideways on a phone (that clipped it) and sits under the page's
+    // own layers (Safari painted the page over it). So while it is open it lives at the top level of the page,
+    // fixed under the ⋯ button, above everything; when it closes it goes back into place.
+    const home = document.createComment("topbar-menu");
+    d.insertBefore(home, menu);
     const place = () => {
-      const menu = d.querySelector(".topbar-menu"), btn = d.querySelector("summary");
-      if (!menu || !btn) return;
-      if (!d.open) { menu.style.position = menu.style.top = menu.style.right = menu.style.left = menu.style.maxWidth = ""; return; }
+      if (!d.open) {
+        if (menu.parentNode !== d) { home.after(menu); }
+        menu.removeAttribute("style");
+        return;
+      }
+      if (menu.parentNode !== document.body) document.body.appendChild(menu);
       const r = btn.getBoundingClientRect();
-      menu.style.position = "fixed";
-      menu.style.top = Math.round(r.bottom + 8) + "px";
-      menu.style.left = "auto";
-      menu.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + "px";
-      menu.style.maxWidth = "calc(100vw - 16px)";
+      Object.assign(menu.style, {
+        position: "fixed", zIndex: "3000", left: "auto", maxWidth: "calc(100vw - 16px)",
+        top: Math.round(r.bottom + 8) + "px", right: Math.max(8, Math.round(window.innerWidth - r.right)) + "px",
+      });
     };
     d.addEventListener("toggle", place);
     window.addEventListener("resize", place);
