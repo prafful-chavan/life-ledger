@@ -43,6 +43,23 @@ function netWorth(state, fxOverride) {
   for (const [k, v] of Object.entries(cls)) out.classes[k] = { value: r0(v), sharePct: pct(v, assets) };
   const hist = (state.netWorthHistory || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
   out.history = hist.slice(-30).map((h) => ({ date: h.date, netWorth: r0(num(h.netWorth)) }));
+  // What moved since the last recorded day, class by class. Market moves hit funds/stocks/US/gold; manual edits and
+  // repayments show up in the other classes (others, FD, bank, EPF, liabilities) — so the reader can tell them apart.
+  const todayISO = isoDay(Date.now());
+  const prev = hist.filter((h) => h.date < todayISO && num(h.netWorth) > 0).pop();
+  if (prev) {
+    const keys = ["mutualFunds", "stocks", "usStocks", "gold", "silver", "crypto", "fd", "epf", "ppf", "bonds", "bankSaving", "others"];
+    const byClass = {};
+    for (const k of keys) { const d = cls[k] - num(prev[k]); if (Math.abs(d) >= 500) byClass[k] = r0(d); }
+    const liabDelta = liabilities - num(prev.liabilities);
+    if (Math.abs(liabDelta) >= 500) byClass.liabilities = r0(liabDelta);
+    const market = ["mutualFunds", "stocks", "usStocks", "gold", "silver", "crypto"].reduce((t, k) => t + (byClass[k] || 0), 0);
+    out.changeVsPrevious = {
+      previousDate: prev.date, previousNetWorth: r0(num(prev.netWorth)), delta: out.netWorth - r0(num(prev.netWorth)),
+      byClass, marketLikeMoves: r0(market),
+      note: "Positive liabilities delta means debt grew (bad for net worth). Round-number moves in others/FD/bank/EPF/liabilities are usually the household's own edits or payments, not markets.",
+    };
+  }
   return out;
 }
 

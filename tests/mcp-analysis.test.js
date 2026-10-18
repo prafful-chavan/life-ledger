@@ -32,6 +32,15 @@ assert.strictEqual(nw.classes.usStocks.value, 120 * 90);
 assert.strictEqual(nw.classes.others.value, 2000, "vehicles are in others");
 assert.strictEqual(nw.netWorth, nw.assets - 2000);
 
+// Change vs the last recorded day is explained class by class (edits vs market moves)
+const sc = state();
+sc.netWorthHistory = [{ date: "2020-01-01", netWorth: 1000, mutualFunds: 160000, stocks: 1500, usStocks: 10800, gold: 5000, silver: 100, crypto: 0, fd: 20000, epf: 3000, ppf: 0, bonds: 0, bankSaving: 10000, others: 4000, liabilities: 2000 }];
+const chg = A.netWorth(sc).changeVsPrevious;
+assert.strictEqual(chg.byClass.others, -2000, "an edit to a manual asset shows up under others");
+assert.strictEqual(chg.marketLikeMoves, 0);
+assert.ok(!("mutualFunds" in chg.byClass), "unchanged classes are left out");
+assert.strictEqual(A.netWorth(state()).changeVsPrevious, undefined, "no history, no comparison");
+
 // Mutual funds: redemption reduces invested and units; best/worst only count meaningful sizes
 const mf = A.mutualFundReport(s, "2026-10-18");
 const axis = mf.funds.find((f) => /Axis/.test(f.fund));
