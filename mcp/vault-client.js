@@ -44,16 +44,34 @@ async function postFollow(url, body, fetchImpl) {
   return res;
 }
 
-async function fetchState({ gatewayUrl, password, fetchImpl = fetch }) {
+/** One pull attempt. Throws {retry:true} errors for the transient failures Apps Script produces now and then. */
+async function pullOnce({ gatewayUrl, password, fetchImpl }) {
   const res = await postFollow(gatewayUrl, JSON.stringify({ op: "pull", token: await authToken(password), sinceRev: 0 }), fetchImpl);
-  if (!res.ok) throw new Error("Gateway HTTP " + res.status);
+  if (!res.ok) throw Object.assign(new Error("Gateway HTTP " + res.status), { retry: true });
   const text = await res.text();
   let j;
-  try { j = JSON.parse(text); } catch { throw new Error("Gateway sent a non-JSON reply: " + text.slice(0, 120).replace(/\s+/g, " ")); }
-  if (!j.ok) throw new Error(j.error === "unauthorized" ? "Wrong vault password (run setup again)" : `${j.error || "Gateway error"} [HTTP ${res.status}, ${text.length} bytes, from ${new URL(res.url || gatewayUrl).host}]`);
+  try { j = JSON.parse(text); } catch { throw Object.assign(new Error("Gateway sent a non-JSON reply: " + text.slice(0, 120).replace(/\s+/g, " ")), { retry: true }); }
+  if (!j.ok) {
+    if (j.error === "unauthorized") throw new Error("Wrong vault password (run setup again)");
+    throw Object.assign(new Error(`${j.error || "Gateway error"} [HTTP ${res.status}, ${text.length} bytes]`), { retry: true });
+  }
   if (!j.vault) throw new Error("The vault is empty on the gateway");
   const inner = await decryptVault(j.vault, password);
   return { data: inner.data, rev: j.rev, updatedAt: j.updatedAt };
+}
+
+/** Pulls and decrypts the vault, retrying transient gateway failures (read-only, so a retry is always safe). */
+async function fetchState({ gatewayUrl, password, fetchImpl = fetch, attempts = 4, waitMs = 1500 }) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    try { return await pullOnce({ gatewayUrl, password, fetchImpl }); }
+    catch (e) {
+      last = e;
+      if (!e.retry && !(e.name === "TypeError" || e.name === "AbortError")) throw e; // wrong password etc: no point retrying
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, waitMs * (i + 1)));
+    }
+  }
+  throw new Error(`${last.message} (after ${attempts} attempts)`);
 }
 
 module.exports = { authToken, decryptVault, encryptVault, fetchState };

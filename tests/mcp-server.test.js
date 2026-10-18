@@ -26,7 +26,16 @@ const S = require("../mcp/server.js");
   const redirecting = async (url, init) => { hops.push(init.method); return hops.length === 1 ? { ok: false, status: 302, headers: { get: () => "https://script.googleusercontent.com/macros/echo?x=1" }, text: async () => "" } : reply({ ok: true, rev: 9, vault }); };
   assert.strictEqual((await V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "pw-123", fetchImpl: redirecting })).rev, 9);
   assert.deepStrictEqual(hops, ["POST", "GET"]);
-  await assert.rejects(() => V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "x", fetchImpl: bad }), /Wrong vault password/);
+  await assert.rejects(() => V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "x", fetchImpl: bad, waitMs: 1 }), /Wrong vault password/);
+  // transient failures (a 404 from Google, a network blip) are retried; a wrong password is not
+  let calls = 0;
+  const flaky = async (url, init) => { calls++; if (calls === 1) return { ok: false, status: 404, headers: { get: () => null }, text: async () => "" }; if (calls === 2) throw new TypeError("fetch failed"); return reply({ ok: true, rev: 11, vault }); };
+  assert.strictEqual((await V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "pw-123", fetchImpl: flaky, waitMs: 1 })).rev, 11);
+  assert.strictEqual(calls, 3, "two transient failures, then success");
+  let wrongCalls = 0;
+  await assert.rejects(() => V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "x", fetchImpl: async () => { wrongCalls++; return reply({ ok: false, error: "unauthorized" }); }, waitMs: 1 }), /Wrong vault password/);
+  assert.strictEqual(wrongCalls, 1, "a wrong password is not retried");
+  await assert.rejects(() => V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "pw-123", fetchImpl: async () => ({ ok: false, status: 500, headers: { get: () => null }, text: async () => "" }), attempts: 2, waitMs: 1 }), /after 2 attempts/);
 
   // MCP protocol
   const state = {
