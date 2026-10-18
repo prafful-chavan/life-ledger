@@ -435,6 +435,9 @@ body.prices-refreshing #topbarRefreshAllBtn::before {
 .topbar-more.has-dot > summary { position: relative; }
 .topbar-more.has-dot > summary::after { content: ""; position: absolute; top: 6px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--negative); box-shadow: 0 0 0 2px var(--panel); }
 
+/* A dialog on a phone must be usable to its last button: the bottom tab bar (above dialogs) hides while one is open */
+body:has(.modal:not([hidden])) .mobile-tabs { display: none; }
+
 /* ── Data health ── */
 .dh-card { max-width: 640px; }
 .dh-lead { margin: 0 0 12px; color: var(--muted); font-size: 14px; }

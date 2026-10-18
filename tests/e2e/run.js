@@ -206,6 +206,11 @@ const SCANNER = `(${function scan() {
     check("phone: tapping ⋯ opens a menu you can see and tap", menu.open && menu.items.length >= 4 && menu.items.every((i) => i.ok), JSON.stringify(menu));
     const dh = menu.items.find((i) => /Data health/.test(i.t));
     if (dh) { await tap(dh.x, dh.y); const opened = await cdp.eval(`!document.getElementById('dataHealthModal').hidden`); check("phone: tapping 'Data health' in that menu opens it", opened); await cdp.eval(`document.querySelector('#dataHealthModal [data-close-modal]').click()`); }
+    // dialogs on a phone: the last button must be tappable (the bottom tab bar used to cover it)
+    for (const [name, opener] of [["Settings", `document.getElementById('settingsButton').click()`], ["Add expense", `document.querySelector('[data-open-modal="quickAddModal"]').click()`]]) {
+      const lastBtn = await cdp.eval(`(async()=>{${opener}; await new Promise(r=>setTimeout(r,700)); const m=[...document.querySelectorAll('.modal')].find(x=>!x.hidden); if(!m) return {noModal:true}; const card=m.querySelector('.modal-card')||m; card.scrollTop=card.scrollHeight; await new Promise(r=>setTimeout(r,400)); const bs=[...card.querySelectorAll('button')].filter(b=>b.offsetParent&&!b.hasAttribute('data-close-modal')); const b=bs[bs.length-1]; const r=b.getBoundingClientRect(); const t=document.elementFromPoint(r.left+r.width/2,Math.min(r.top+r.height/2,innerHeight-1)); const res={last:b.textContent.trim().slice(0,20),hit:t===b||b.contains(t),by:(t&&(t.className||t.tagName)+'').slice(0,30)}; const c=m.querySelector('[data-close-modal]'); c&&c.click(); return res})()`);
+      check(`phone: the last button in the ${name} dialog can be tapped`, lastBtn.hit, JSON.stringify(lastBtn));
+    }
     await viewport(1280, 900); await sleep(400);
 
     for (const [w, h, label] of [[1280, 900, "desktop"], [440, 956, "phone"]]) {
