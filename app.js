@@ -15148,11 +15148,13 @@ function computeDataHealth() {
   return DH.run({
     state,
     now: todayISO(),
+    dismissed: (state.advisor && state.advisor.healthDismissed) || {},
     reported: { netWorth: nw.netWorth, totalAssets: nw.totalAssets, usStocksInr: nw.snapshot?.usStocks, advisorTotal },
     categoryKey: window.LifeLedgerSpendingCore?.categoryKey,
   });
 }
 
+let dataHealthShowDismissed = false;
 function renderDataHealth() {
   const body = document.getElementById("dataHealthBody");
   if (!body) return;
@@ -15164,16 +15166,28 @@ function renderDataHealth() {
     ? `${result.counts.warn} thing${result.counts.warn > 1 ? "s" : ""} to look at`
     : result.counts.info ? "All good — a few notes" : "Everything adds up";
   const order = { warn: 0, info: 1, ok: 2 };
-  const rows = [...result.checks].sort((x, y) => order[x.status] - order[y.status]).map((c) => `
-    <article class="dh-row ${c.status}">
+  const visible = result.checks.filter((c) => !c.snoozed || dataHealthShowDismissed);
+  const rows = [...visible].sort((x, y) => order[x.status] - order[y.status]).map((c) => `
+    <article class="dh-row ${c.status}${c.snoozed ? " snoozed" : ""}">
       <span class="dh-icon" aria-hidden="true">${icon[c.status]}</span>
       <div>
         <h3>${escapeHTML(c.title)}</h3>
         <p>${escapeHTML(c.detail || "")}</p>
         ${c.items && c.items.length ? `<ul>${c.items.map((i) => `<li>${escapeHTML(i)}</li>`).join("")}</ul>` : ""}
+        ${c.status === "info" ? `<button type="button" class="dh-dismiss" data-dh-id="${escapeHTML(c.id)}" data-dh-sig="${escapeHTML(c.signature)}" data-dh-undo="${c.snoozed ? "1" : ""}">${c.snoozed ? "Show again" : "Dismiss this note"}</button>` : ""}
       </div>
     </article>`).join("");
-  body.innerHTML = `<div class="dh-summary ${result.counts.warn ? "warn" : "ok"}"><strong>${head}</strong><span>${result.counts.ok} passed · ${result.counts.info} notes · ${result.counts.warn} to fix</span></div>${rows}`;
+  const toggle = result.counts.snoozed ? `<button type="button" class="dh-toggle" id="dhToggleDismissed">${dataHealthShowDismissed ? "Hide" : "Show"} ${result.counts.snoozed} dismissed</button>` : "";
+  body.innerHTML = `<div class="dh-summary ${result.counts.warn ? "warn" : "ok"}"><strong>${head}</strong><span>${result.counts.ok} passed · ${result.counts.info} notes · ${result.counts.warn} to fix</span></div>${rows}${toggle}`;
+}
+
+function setHealthDismissed(id, signature, undo) {
+  const cur = state.advisor || { profile: {}, review: null };
+  const map = { ...(cur.healthDismissed || {}) };
+  if (undo) delete map[id]; else map[id] = signature;
+  state.advisor = { ...cur, healthDismissed: map };   // lives inside the vault, so it syncs to your other devices
+  saveData(true);
+  renderDataHealth();
 }
 
 /** Dashboard chip, ⋯ dot and menu count: only real problems ("to fix") are surfaced; notes stay inside the check. */
@@ -15201,6 +15215,9 @@ function scheduleHealthBadge() {
 if (typeof document !== "undefined") {
   document.addEventListener("click", (e) => {
     if (e.target.closest('[data-open-modal="dataHealthModal"]') || e.target.closest("#dataHealthRerun")) renderDataHealth();
+    const dis = e.target.closest(".dh-dismiss");
+    if (dis) setHealthDismissed(dis.dataset.dhId, dis.dataset.dhSig, dis.dataset.dhUndo === "1");
+    if (e.target.closest("#dhToggleDismissed")) { dataHealthShowDismissed = !dataHealthShowDismissed; renderDataHealth(); }
     if (e.target.closest('[data-open-modal="importModal"]')) ensureXlsx();   // start fetching the spreadsheet reader as the dialog opens
   });
 }

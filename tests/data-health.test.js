@@ -63,4 +63,23 @@ assert.strictEqual(get(run(s, {}), "liabilities").status, "info");
 // never throws on empty / bad input
 assert.doesNotThrow(() => H.run({}));
 assert.doesNotThrow(() => H.run(null));
+
+// dismissing a note: hidden from the counts until what it says changes; problems cannot be dismissed
+{
+  const s = base(); s.liabilities = [{ name: "Car", value: 40000, rate: 0 }];
+  const first = get(run(s, {}), "liabilities");
+  assert.strictEqual(first.status, "info");
+  const r1 = H.run({ state: s, now: "2026-10-17", reported: {}, categoryKey: key, dismissed: { liabilities: first.signature } });
+  assert.strictEqual(get(r1, "liabilities").snoozed, true);
+  assert.strictEqual(r1.counts.snoozed, 1);
+  assert.strictEqual(r1.counts.info, run(s, {}).counts.info - 1, "one fewer note once dismissed");
+  s.liabilities = [{ name: "Car", value: 40000, rate: 0 }, { name: "Bike", value: 9000, rate: 0 }];
+  const r2 = H.run({ state: s, now: "2026-10-17", reported: {}, categoryKey: key, dismissed: { liabilities: first.signature } });
+  assert.strictEqual(get(r2, "liabilities").snoozed, false, "the note changed, so it is back");
+  const w = base(); w.stocks.push({ symbol: "NOPRICE", quantity: 1, currentPrice: 0 });
+  const wr = H.run({ state: w, now: "2026-10-17", reported: {}, categoryKey: key });
+  const prob = get(wr, "prices-missing");
+  const wr2 = H.run({ state: w, now: "2026-10-17", reported: {}, categoryKey: key, dismissed: { "prices-missing": prob.signature } });
+  assert.strictEqual(get(wr2, "prices-missing").snoozed, false, "a real problem is never snoozed");
+}
 console.log("data-health tests passed");

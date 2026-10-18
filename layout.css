@@ -451,6 +451,9 @@ body.prices-refreshing #topbarRefreshAllBtn::before {
 .dh-row.ok .dh-icon { background: color-mix(in srgb, var(--positive) 18%, transparent); color: var(--positive); }
 .dh-row.warn { border-color: color-mix(in srgb, var(--negative) 45%, var(--line)); }
 .dh-row.warn .dh-icon { background: color-mix(in srgb, var(--negative) 18%, transparent); color: var(--negative); }
+.dh-dismiss, .dh-toggle { margin-top: 8px; background: none; border: 0; padding: 0; font-size: 13px; font-weight: 650; color: var(--brand); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.dh-toggle { justify-self: start; }
+.dh-row.snoozed { border-style: dashed; }
 .dh-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 .hero-asof { margin-top: 4px; font-size: 12px; color: var(--muted); }

@@ -3,7 +3,7 @@
  * run(ctx) re-derives the key numbers from the raw records and flags anything that does not add up,
  * so a mismatch shows up as a plain message instead of needing someone to audit by hand.
  *
- * ctx = { state, now: "YYYY-MM-DD", reported: { netWorth, totalAssets, usStocksInr, advisorTotal }, categoryCanon?, categoryKey? }
+ * ctx = { state, dismissed?: { [checkId]: signature }, now: "YYYY-MM-DD", reported: { netWorth, totalAssets, usStocksInr, advisorTotal }, categoryCanon?, categoryKey? }
  * → { checks: [{ id, status: "ok"|"info"|"warn", title, detail, items? }], counts: { ok, info, warn } }
  */
 (function (root, factory) {
@@ -180,8 +180,14 @@
         : ok("liabilities", "Every loan has an interest rate", `${(s.liabilities || []).length} loans checked.`));
     }
 
-    const counts = { ok: 0, info: 0, warn: 0 };
-    checks.forEach((c) => { counts[c.status]++; });
+    // Notes (not problems) can be dismissed. A dismissal is tied to what the note said, so it comes back if the note changes.
+    const dismissed = ctx.dismissed || {};
+    const counts = { ok: 0, info: 0, warn: 0, snoozed: 0 };
+    checks.forEach((c) => {
+      c.signature = (c.items || []).join("|") || c.detail || "";
+      c.snoozed = c.status === "info" && dismissed[c.id] === c.signature;
+      if (c.snoozed) counts.snoozed++; else counts[c.status]++;
+    });
     return { checks, counts };
   }
 
