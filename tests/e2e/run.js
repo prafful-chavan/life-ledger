@@ -196,6 +196,18 @@ const SCANNER = `(${function scan() {
     await cdp.eval(`document.querySelector('#importModal [data-close-modal]') && document.querySelector('#importModal [data-close-modal]').click(); 0`);
 
     // 6. every page, both widths: renders, no sideways overflow, readable
+    // A real finger tap on ⋯ (a scripted .click() hid this bug before): the menu must be visible and its items tappable
+    await viewport(440, 956); await sleep(500); await view("dashboard");
+    await cdp.eval(`window.scrollTo(0,0)`);
+    const pt = await cdp.eval(`(()=>{const r=document.querySelector('#topbarMore > summary').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    const tap = async (x, y) => { for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 }); await sleep(500); };
+    await tap(pt.x, pt.y);
+    const menu = await cdp.eval(`(()=>{const d=document.getElementById('topbarMore');const items=[...d.querySelectorAll('.menu-item')].filter(b=>b.offsetParent!==null||getComputedStyle(b).display!=='none').map(b=>{const r=b.getBoundingClientRect();if(!r.width)return null;const t=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {t:b.textContent.trim().slice(0,18),ok:t===b||b.contains(t),x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}}).filter(Boolean);return {open:d.open,items}})()`);
+    check("phone: tapping ⋯ opens a menu you can see and tap", menu.open && menu.items.length >= 4 && menu.items.every((i) => i.ok), JSON.stringify(menu));
+    const dh = menu.items.find((i) => /Data health/.test(i.t));
+    if (dh) { await tap(dh.x, dh.y); const opened = await cdp.eval(`!document.getElementById('dataHealthModal').hidden`); check("phone: tapping 'Data health' in that menu opens it", opened); await cdp.eval(`document.querySelector('#dataHealthModal [data-close-modal]').click()`); }
+    await viewport(1280, 900); await sleep(400);
+
     for (const [w, h, label] of [[1280, 900, "desktop"], [440, 956, "phone"]]) {
       console.log(`\nPages at ${label} width (${w}px)`);
       await viewport(w, h); await sleep(600);

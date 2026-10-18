@@ -267,6 +267,22 @@
     if (!d) return;
     document.addEventListener("click", (e) => { if (d.open && !d.contains(e.target)) d.open = false; });
     d.addEventListener("click", (e) => { if (e.target.closest(".menu-item")) setTimeout(() => { d.open = false; }, 0); });
+    // On a phone the row of top-bar buttons scrolls sideways, which clips anything hanging below it (the menu was
+    // invisible and untappable). Position the menu on the screen itself, just under the ⋯ button.
+    const place = () => {
+      const menu = d.querySelector(".topbar-menu"), btn = d.querySelector("summary");
+      if (!menu || !btn) return;
+      if (!d.open) { menu.style.position = menu.style.top = menu.style.right = menu.style.left = menu.style.maxWidth = ""; return; }
+      const r = btn.getBoundingClientRect();
+      menu.style.position = "fixed";
+      menu.style.top = Math.round(r.bottom + 8) + "px";
+      menu.style.left = "auto";
+      menu.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + "px";
+      menu.style.maxWidth = "calc(100vw - 16px)";
+    };
+    d.addEventListener("toggle", place);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", () => { if (d.open) d.open = false; }, { passive: true });
   }
 
   // ── Finance: seventeen tabs become seven sections (+ a chip row for sections with several tabs) ──
