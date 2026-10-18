@@ -52,6 +52,11 @@ assert.strictEqual(mf.totalValue, 160000);
 assert.strictEqual(A.fundKind("Motilal Oswal Midcap Fund Direct Growth"), "Mid cap");
 assert.strictEqual(A.fundKind("UTI Nifty 50 Index Fund"), "Index");
 
+// Gold follows the live rate, not the stale saved value
+const g = { ...state(), gold: [{ weightGrams: 10, carat: "22K", value: 1 }, { weightGrams: 5, carat: "24K", value: 1 }, { value: 700 }], goldPrice: { price22k: 100, price24k: 110 } };
+assert.strictEqual(A.netWorth(g).classes.gold.value, 1000 + 550 + 700, "weight × carat rate; rows without weight keep their saved value");
+assert.strictEqual(A.netWorth({ ...state(), gold: [{ weightGrams: 10, carat: "22K", value: 5000 }] }).classes.gold.value, 5000, "no live rate available → saved value");
+
 // Stocks
 const st = A.stockReport(s);
 assert.strictEqual(st.holdings[0].gainPct, 50);

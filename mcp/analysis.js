@@ -19,6 +19,21 @@ function usdInr(state, override) {
   return num(override) || num(state.fx && state.fx.usdInr) || num((state.netWorthHistory || []).slice().reverse().find((h) => h.fxRate)?.fxRate) || 0;
 }
 
+/** Gold is valued as weight × the live carat rate (as the app does on every load), not the value last saved in the vault. */
+function goldValue(state) {
+  const gp = state.goldPrice || {}, p22 = num(gp.price22k), p24 = num(gp.price24k);
+  const rate = (carat) => {
+    const c = String(carat || "22K").toUpperCase();
+    if (c.includes("24")) return p24 > 0 ? p24 : p22 > 0 ? p22 / (22 / 24) : 0;
+    if (c.includes("18")) return (p24 > 0 ? p24 : p22 > 0 ? p22 / (22 / 24) : 0) * (18 / 24);
+    return p22 > 0 ? p22 : p24 > 0 ? p24 * (22 / 24) : 0;
+  };
+  return (state.gold || []).reduce((t, g) => {
+    const w = num(g.weightGrams || g.weight), live = w > 0 ? w * rate(g.carat) : 0;
+    return t + (live > 0 ? live : num(g.value));
+  }, 0);
+}
+
 // ── net worth ────────────────────────────────────────────────────────────────────────────────
 function netWorth(state, fxOverride) {
   const fx = usdInr(state, fxOverride);
@@ -27,7 +42,7 @@ function netWorth(state, fxOverride) {
     mutualFunds: sum(state.mutualFunds, (x) => (x.transactionType === "REDEMPTION" ? -1 : 1) * num(x.currentValue)),
     stocks: sum(state.stocks, (x) => x.currentValue),
     usStocks: us,
-    gold: sum(state.gold, (x) => x.value),
+    gold: goldValue(state),
     silver: sum(state.silver, (x) => x.value),
     crypto: sum(state.crypto, (x) => x.value),
     fd: sum(state.fd, (x) => x.value),
