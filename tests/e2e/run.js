@@ -158,8 +158,8 @@ const SCANNER = `(${function scan() {
     const cards = await cdp.eval(`Array.from(document.querySelectorAll('#financeSummary .metric-card')).map(c=>c.innerText.replace(/\\n+/g,' | '))`);
     const fNW = cards.find((c) => /NET WORTH/i.test(c)) || "";
     check("finance net worth matches the dashboard", near(parseINR(fNW.split("|")[1]), snap.netWorth, 1), fNW);
-    const saved = cards.find((c) => /SAVED/i.test(c)) || "";
-    check("savings use last month's income AND last month's spending", near(parseINR(saved.split("|")[1]), expected.savedLastMonth, 1) && saved.includes(expected.savingsRatePct + "%"), saved);
+    const saved = cards.find((c) => /SAVED|LEFT FROM/i.test(c)) || "";
+    check("savings = latest salary minus this month's spending (salary lands at month end, pays next month)", near(parseINR(saved.split("|")[1]), expected.savedCycle, 1) && saved.includes(expected.savingsRatePct + "%"), saved);
     const advTotal = await cdp.eval(`LifeLedgerAdvisor.analyze(LifeLedgerApp.getAdvisorInput()).metrics.total`);
     check("advisor total equals finance total assets", near(advTotal, snap.totalAssets, 150), `advisor ${advTotal} vs ${snap.totalAssets}`);
     await view("dashboard");

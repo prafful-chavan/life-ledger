@@ -72,13 +72,13 @@ function build(now = new Date()) {
   const rest = 100000 + 200000 + 100000 + 50000 + 10000 + 5000 + 2000 + 30000 + 20000;
   const assetsWithoutUs = mfNet + stocks + rest;
   const lastMonthIncome = 260000;
-  const lastMonthExpenses = 30000 + 10000 + 15000;
+  const thisMonthExpenses = 20000 + 5000 + 90000;   // spent after the latest salary arrived
   return {
     state,
     expected: {
       mfNet, assetsWithoutUs, goldTyped: 100000, goldLive: Math.round(10 * 12833.33 * 100) / 100, liabilities: 40000,
-      savedLastMonth: lastMonthIncome - lastMonthExpenses,
-      savingsRatePct: Math.round(((lastMonthIncome - lastMonthExpenses) / lastMonthIncome) * 100),
+      savedCycle: lastMonthIncome - thisMonthExpenses,
+      savingsRatePct: Math.round(((lastMonthIncome - thisMonthExpenses) / lastMonthIncome) * 100),
       emiTotal: 25000,
     },
   };

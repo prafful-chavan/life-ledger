@@ -4901,12 +4901,12 @@ function renderMetrics() {
       customBorder: `3px solid ${dayColor}`
     },
     {
-      label: metrics.isFallbackIncome ? `Income (${metrics.fallbackMonthLabel})` : "This month income",
+      label: metrics.isFallbackIncome ? `Latest salary (${metrics.fallbackMonthLabel})` : "This month income",
       value: formatINR(metrics.monthIncome),
       hint: `${metrics.incomePeople} income owner${metrics.incomePeople === 1 ? "" : "s"} tracked`,
     },
     {
-      label: metrics.isFallbackIncome ? `Expenses (${metrics.fallbackMonthLabel})` : "This month expenses",
+      label: "This month expenses",
       value: formatINR(metrics.monthExpenses),
       hint: `${metrics.topExpenseCategory || "No"} is the biggest category`,
     },
@@ -4914,7 +4914,7 @@ function renderMetrics() {
       label: "Savings rate",
       value: `${metrics.savingsRate}%`,
       hint: metrics.isFallbackIncome
-        ? `${formatINR(metrics.monthIncome - metrics.monthExpenses)} left (est. savings)`
+        ? `${formatINR(metrics.monthIncome - metrics.monthExpenses)} of the ${metrics.fallbackMonthLabel} salary left after this month's spending`
         : `${formatINR(metrics.monthIncome - metrics.monthExpenses)} left this month`,
     },
   ].slice(2).forEach((metric) => {
@@ -5397,7 +5397,7 @@ function renderFinanceSummary() {
     { label: "Net worth", value: formatINR(nw.netWorth), hint: "Assets − liabilities" },
     { label: "Total assets", value: formatINR(nw.totalAssets), hint: "Investments, savings, gold and more" },
     { label: "Liabilities", value: formatINR(nw.liabilities), hint: nw.liabilities > 0 ? "Outstanding loans and dues" : "Debt free" },
-    { label: m.isFallbackIncome ? `Saved (${m.fallbackMonthLabel})` : "Saved this month", value: formatINR(saved), hint: `${m.savingsRate}% of income`, tone: saved >= 0 ? "up" : "down" },
+    { label: m.isFallbackIncome ? `Left from ${m.fallbackMonthLabel} salary` : "Saved this month", value: formatINR(saved), hint: `${m.savingsRate}% of income`, tone: saved >= 0 ? "up" : "down" },
   ];
   el.innerHTML = "";
   cards.forEach((c) => {
@@ -14005,7 +14005,7 @@ function answerQuestion(question) {
     const topCat = topMonthExpenses[0];
     let fallbackNote = "";
     if (metrics.isFallbackIncome) {
-      fallbackNote = `\n⚠️ No income found for current month — using latest available (${metrics.fallbackMonthLabel}).`;
+      fallbackNote = `\n⚠️ No income found for current month — using the latest salary (${metrics.fallbackMonthLabel}) against this month's spending.`;
     }
     return `**Monthly Finance Summary** 📊\n• Income: **${formatINR(metrics.monthIncome)}**\n• Expenses: **${formatINR(metrics.monthExpenses)}**\n• Surplus: **${formatINR(surplus)}**\n• Savings rate: **${metrics.savingsRate}%**${topCat ? `\n• Top expense: **${topCat[0]}** — ${formatINR(topCat[1])}` : ""}${fallbackNote}\n\n${surplus > 0 ? "👍 Great job saving this month!" : "⚠️ Spending exceeds income. Check your top categories."}`;
   }
@@ -14250,7 +14250,6 @@ function calculateMetrics() {
   let monthIncomeRows = state.income.filter((income) => isTargetDashboardMonth(income.date));
   let isFallbackIncome = false;
   let fallbackMonthLabel = "";
-  let fallbackMonthKey = "";
 
   if (monthIncomeRows.length === 0 && state.income.length > 0) {
     const incomesByMonth = {};
@@ -14266,7 +14265,6 @@ function calculateMetrics() {
       const latestMonthKey = sortedMonthKeys[0];
       monthIncomeRows = incomesByMonth[latestMonthKey];
       isFallbackIncome = true;
-      fallbackMonthKey = latestMonthKey;
 
       const [year, month] = latestMonthKey.split("-").map(Number);
       const tempDate = new Date(year, month - 1, 1);
@@ -14274,10 +14272,9 @@ function calculateMetrics() {
     }
   }
 
-  // When income falls back to an earlier month, compare it with THAT month's spending (not the current month's).
-  const monthExpenseRows = isFallbackIncome
-    ? state.expenses.filter((expense) => toMonthKey(expense.date) === fallbackMonthKey)
-    : state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
+  // Salary is credited on the last day of a month and pays for the NEXT month's spending (rent etc.), so when the
+  // current month has no income yet, the latest salary is compared with the current month's spending.
+  const monthExpenseRows = state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
   const monthIncome = sum(monthIncomeRows, "amount");
   const monthExpenses = sum(monthExpenseRows, "amount");
   const holdings = investmentHoldingsTotal();
