@@ -529,6 +529,8 @@ kbd {
   border-radius: 10px; background: transparent; color: var(--ink); font: 500 14px inherit; font-family: inherit; text-align: left; cursor: pointer;
 }
 .topbar-menu .menu-item:hover { background: var(--panel-soft); }
+/* the legacy button classes on some items made their text smaller and bolder than the rest */
+.topbar-menu .menu-item.menu-item { font: 500 15px/1.2 inherit; font-family: inherit; }
 .topbar-menu .menu-item.danger-button { color: var(--negative); }
 
 /* ⌘K command bar */
@@ -573,10 +575,16 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 @media (max-width: 680px) {
   .sidebar .nav-list { display: none !important; }
   #themeToggle, #settingsButton { display: none; }
+  /* The top bar already names the page, so the big repeated title + paragraph under it only pushes the content down */
+  .view > .section-heading > div:first-child { display: none; }
+  .view > .section-heading > div:nth-child(2):not(.hero-card) { width: 100%; }
+  .view > .section-heading .search-wrapper, .view > .section-heading .search-wrapper > input, #todoSearch { width: 100% !important; max-width: none; }
+  .goals-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .goal-stat-card { padding: 14px 16px; }
   .mobile-tabs {
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 1400;
-    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); background: var(--panel-translucent);
-    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border-top: 1px solid var(--line);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); background: var(--panel);   /* solid: page content must not ghost through the labels */
+    border-top: 1px solid var(--line);
   }
   .mobile-tab {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 52px; border: 0;
