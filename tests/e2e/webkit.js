@@ -33,6 +33,8 @@ const VIEWS = ["dashboard", "finance", "advisor", "goals", "exercise", "habits",
     await page.tap("#topbarMore > summary"); await page.waitForTimeout(400);
     const menu = await page.evaluate(() => { const m = document.querySelector(".topbar-menu"); const items = [...m.querySelectorAll(".menu-item")].filter((b) => b.getBoundingClientRect().width).map((b) => { const r = b.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return b === t || b.contains(t); }); return { top: m.parentElement === document.body, n: items.length, all: items.every(Boolean) }; });
     check("the ⋯ menu is drawn above the page and every item can be tapped", menu.top && menu.n >= 4 && menu.all, JSON.stringify(menu));
+    const fonts = await page.evaluate(() => [...document.querySelectorAll(".topbar-menu .menu-item")].map((b) => { const cs = getComputedStyle(b); return cs.fontSize + "/" + cs.fontWeight; }));
+    check("every ⋯ menu item uses the same text size and weight", new Set(fonts).size === 1, fonts.join(", "));
     await page.tap("body", { position: { x: 15, y: 700 } }); await page.waitForTimeout(300);
 
     const tab = await page.evaluate(() => { const c = getComputedStyle(document.querySelector(".mobile-tabs")).backgroundColor.match(/[\d.]+/g).map(Number); return { alpha: c.length > 3 ? c[3] : 1 }; });

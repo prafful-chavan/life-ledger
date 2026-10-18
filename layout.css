@@ -530,7 +530,7 @@ kbd {
 }
 .topbar-menu .menu-item:hover { background: var(--panel-soft); }
 /* the legacy button classes on some items made their text smaller and bolder than the rest */
-.topbar-menu .menu-item.menu-item { font: 500 15px/1.2 inherit; font-family: inherit; }
+.topbar-menu .menu-item.menu-item { font-family: inherit; font-size: 15px; font-weight: 500; line-height: 1.2; }
 .topbar-menu .menu-item.danger-button { color: var(--negative); }
 
 /* ⌘K command bar */
