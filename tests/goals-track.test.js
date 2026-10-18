@@ -30,4 +30,10 @@ app.__setStateForTest({ mutualFunds: [mf("A Fund", "Me", 100, 50)], stocks: [], 
 assert.strictEqual(app.liveGoals()[0].saved, 5000);
 assert.strictEqual(stored[0].saved, 5, "stored goal keeps the typed number");
 assert.strictEqual(app.goalTrackedValue({ owner: "Both", track: "Mutual funds" }), 5000);
+
+// USD→INR: a new browser with no local copy uses the rate remembered in the vault, not a hard-coded guess
+app.__setStateForTest({ fx: { usdInr: 94.95, at: "2026-10-18T10:00:00.000Z" }, mutualFunds: [], stocks: [], gold: [], goals: [] });
+assert.strictEqual(app.getUsdInrRate(), 94.95, "vault copy used when nothing is cached locally");
+app.__setStateForTest({ mutualFunds: [], stocks: [], gold: [], goals: [] });
+assert.strictEqual(app.getUsdInrRate(), 96.7, "last resort only when nothing is known at all");
 console.log("goals-track tests passed");

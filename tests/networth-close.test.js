@@ -119,4 +119,11 @@ assert.strictEqual(r.settled.stocks, true);
   assert.strictEqual(K(true, "", false, 0, { heldNow: false, lockedValue: 0 }), true, "still empty → stays locked");
   assert.strictEqual(K(true, "2026-10-17T02:02:10.642Z", false, 0, { heldNow: true, lockedValue: 1559288 }), true, "a real locked close is kept");
 }
+
+// US stocks locked with a different exchange rate must be recomputed
+{
+  const K = require("../networth-close.js").keepLock;
+  assert.strictEqual(K(true, "2026-10-18T09:54:22Z", false, 0, { heldNow: true, lockedValue: 208226, fxChanged: true }), false, "rate changed → not locked");
+  assert.strictEqual(K(true, "2026-10-18T09:54:22Z", false, 0, { heldNow: true, lockedValue: 208226, fxChanged: false }), true, "same rate → keeps the lock");
+}
 console.log("networth-close tests passed");

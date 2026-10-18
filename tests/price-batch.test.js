@@ -152,7 +152,7 @@ console.log("price-batch tests passed");
 {
   const real = {
     "SILVERBEES.NS": chart(199.94, [195, 198, 199.94]), "BAJAJCON.NS": chart(472, [460, 470, 472]), "JINDALSTEL.NS": chart(1045.2, [1000, 1040, 1045.2]),
-    "GOLDBEES.NS": chart(120.2, [118, 119, 120.2]), "ICICIB22.NS": chart(108.39, [105, 107, 108.39]), "RATEGAIN.NS": chart(827.2, [800, 820, 827.2]), "BHARTIARTL.NS": chart(1905, [1880, 1900, 1905]),
+    "GOLDBEES.NS": chart(120.2, [118, 119, 120.2]), "GOLD1.NS": chart(121.31, [120.9, 120.98, 121.31]), "ICICIB22.NS": chart(108.39, [105, 107, 108.39]), "RATEGAIN.NS": chart(827.2, [800, 820, 827.2]), "BHARTIARTL.NS": chart(1905, [1880, 1900, 1905]),
   };
   const rt = makeRuntime(real);
   const r = rt.get({ symbols: "SILVERBEES,BAJAJCON,JINDALSTEL,GOLDBEES,ICICIB22,RATEGAIN,BHARTIARTL" });
@@ -169,14 +169,16 @@ console.log("price-batch tests passed");
   assert.strictEqual(r.NETFSILVER.price, 199.94);
   assert.strictEqual(r.BAJAJCORP.price, 472);
   assert.strictEqual(r.JINDALSTEEL.price, 1045.2);
-  assert.strictEqual(r.GOLD1.price, 120.2);
+  assert.strictEqual(r.GOLD1, undefined, "GOLD1 (Kotak Gold ETF) is not an alias of Gold BeES; it must be asked for by name");
   assert.strictEqual(r.BHARAT22.price, 108.39);
   // and asking by the nickname still resolves to the real ticker
   const rt2 = makeRuntime(real);
-  const r2 = rt2.get({ symbols: "NETFSILVER,BAJAJCORP,BHARTI,GOLD1" });
+  const r2 = rt2.get({ symbols: "NETFSILVER,BAJAJCORP,BHARTI,GOLD1,GOLDBEES" });
   assert.strictEqual(r2.SILVERBEES.price, 199.94);
   assert.strictEqual(r2.BAJAJCON.price, 472);
   assert.strictEqual(r2.BHARTIARTL.price, 1905);
   assert.strictEqual(r2.GOLDBEES.price, 120.2);
+  assert.strictEqual(r2.GOLD1.price, 121.31, "Kotak Gold ETF is priced as itself");
+  assert.strictEqual(r2.GOLD1.prevClose, 120.98);
 }
 console.log("price-alias tests passed");

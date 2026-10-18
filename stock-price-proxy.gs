@@ -54,7 +54,7 @@ var US_EXCHANGES = {
 // ─── Known Indian ISIN to NSE Ticker mapping & Broker Aliases ────────────────
 var ISIN_TO_TICKER = {
   // ETFs & Funds
-  "INF174KA1HJ8": "GOLDBEES",
+  "INF174KA1HJ8": "GOLD1",   // Kotak Gold ETF (Nippon Gold BeES is INF204KB17I5)
   "INF247L01AP3": "MON100",
   "INF204KB15V2": "ITBEES",
   "INF179KC1FB2": "HDFCSML250",
@@ -172,7 +172,6 @@ var ISIN_TO_TICKER = {
   "BHARAT22": "ICICIB22",
   "NETFSILVER": "SILVERBEES",
   "BAJAJCORP": "BAJAJCON",
-  "GOLD1": "GOLDBEES",
   "JINDALSTEEL": "JINDALSTEL",
   "RATEGAINTR": "RATEGAIN",
   "GEVERNOVA": "GE T&D",
@@ -931,7 +930,6 @@ function assignResultsWithAliases(results, canonicalSym, rawOrig, item) {
   if (canonicalSym === "BHARAT22") results["ICICIB22"] = item;
   if (canonicalSym === "SILVERBEES") results["NETFSILVER"] = item;
   if (canonicalSym === "BAJAJCON") results["BAJAJCORP"] = item;
-  if (canonicalSym === "GOLDBEES") results["GOLD1"] = item;
   if (canonicalSym === "JINDALSTEL") results["JINDALSTEEL"] = item;
   if (canonicalSym === "RATEGAIN") results["RATEGAINTR"] = item;
   if (canonicalSym === "BHARTIARTL") results["BHARTI"] = item;

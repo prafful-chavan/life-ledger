@@ -969,6 +969,12 @@ function normalizeGoldHolding(item) {
   };
 }
 
+/** Last good USD→INR rate, kept in the vault so a new browser or phone never has to guess. */
+function normalizeFx(fx) {
+  const rate = Number(fx && fx.usdInr);
+  return rate > 50 && rate < 200 ? { usdInr: rate, at: String(fx.at || "") } : null;
+}
+
 function normalizeNetWorthHistoryEntry(entry) {
   return {
     id: entry.id || `nwh-${generateUUID()}`,
@@ -996,6 +1002,7 @@ function normalizeNetWorthHistoryEntry(entry) {
     bankSaving: toNumber(entry.bankSaving),
     others: toNumber(entry.others),
     liabilities: toNumber(entry.liabilities),
+    ...(toNumber(entry.fxRate) > 0 ? { fxRate: toNumber(entry.fxRate) } : {}),
     source: entry.source || "snapshot",
     // audit trail written by the official-close check (must survive every reload and sync)
     ...(entry.audit && typeof entry.audit === "object" ? { audit: entry.audit } : {})
@@ -1092,6 +1099,7 @@ function normalizeData(data) {
       const cleanGold = rawGold.filter(g => g.id !== "gold-1" && g.id !== "gold-2" && g.id !== "gold-3");
       return ensureIds(cleanGold, "gold").map(normalizeGoldHolding);
     })(),
+    fx: normalizeFx(data.fx),
     goldPrice: (() => {
       const gp = data.goldPrice || {};
       let price24k = toNumber(gp.price24k);
@@ -2801,7 +2809,7 @@ async function runImport(importFn) {
 
 const MASTER_ISIN_MAP = {
   // ── Upstox (Me) ──
-  "INF174KA1HJ8": { symbol: "GOLDBEES", company: "Nippon India ETF Gold BeES", category: "ETF" },
+  "INF174KA1HJ8": { symbol: "GOLD1", company: "Kotak Gold ETF", category: "ETF" },   // Kotak, NOT Nippon Gold BeES (that one is INF204KB17I5)
   "INF247L01AP3": { symbol: "MON100", company: "Motilal Oswal Nasdaq 100 ETF", category: "ETF" },
   "INF204KB15V2": { symbol: "ITBEES", company: "Nippon India ETF IT BeES", category: "ETF" },
   "INF179KC1FB2": { symbol: "HDFCSML250", company: "HDFC Nifty Smallcap 250 ETF", category: "ETF" },
@@ -2954,7 +2962,6 @@ const STOCK_EXCHANGE_TICKER_MAP = {
   "BHARAT22": "ICICIB22",
   "NETFSILVER": "SILVERBEES",
   "BAJAJCORP": "BAJAJCON",
-  "GOLD1": "GOLDBEES",
   "TRIL": "TARIL"   // Transformers & Rectifiers trades as TARIL on NSE; rows imported earlier still say TRIL
 };
 
@@ -3143,7 +3150,6 @@ function resolveNseSymbol(rawSymbol, cleanName, isinCode) {
       if (sym === "SBI") return "SBIN";
       if (sym === "BAJAJCORP") return "BAJAJCON";
       if (sym === "ICICIB22") return "BHARAT22";
-      if (sym === "GOLD1") return "GOLDBEES";
       return sym;
     }
   }
@@ -6171,11 +6177,19 @@ let activeStockBroker = "All";
 
 // Last known USD→INR rate (sync). Refreshed by refreshUsdInrRate() on every price refresh.
 function getUsdInrRate() {
+  let best = null;
   try {
     const cached = JSON.parse(localStorage.getItem(USD_INR_CACHE_KEY) || 'null');
-    if (cached && cached.rate > 50 && cached.rate < 200) return cached.rate;
+    if (cached && cached.rate > 50 && cached.rate < 200) best = { rate: cached.rate, at: Number(cached.timestamp) || 0 };
   } catch {}
-  return USD_INR_FALLBACK;
+  try {
+    const v = typeof state === 'object' && state && state.fx;
+    if (v && v.usdInr > 50 && v.usdInr < 200) {
+      const at = Date.parse(v.at) || 0;
+      if (!best || at > best.at) best = { rate: v.usdInr, at };
+    }
+  } catch {}
+  return best ? best.rate : USD_INR_FALLBACK;
 }
 
 // Live USD→INR: Apps Script proxy (?fx=1) first, then public CORS-friendly FX APIs.
@@ -6197,6 +6211,15 @@ async function refreshUsdInrRate() {
       const rate = Number(src.pick(await res.json()));
       if (rate > 50 && rate < 200) {
         try { localStorage.setItem(USD_INR_CACHE_KEY, JSON.stringify({ rate, timestamp: Date.now() })); } catch {}
+        try {
+          if (typeof state === 'object' && state) {
+            const prev = state.fx;
+            if (!prev || Math.abs(prev.usdInr - rate) > 0.01 || Date.now() - (Date.parse(prev.at) || 0) > 6 * 3600000) {
+              state.fx = { usdInr: rate, at: new Date().toISOString() };
+              saveData(false);
+            }
+          }
+        } catch {}
         return rate;
       }
     } catch {}
@@ -6212,7 +6235,7 @@ function calcUsStockTotalValueINR() {
 const defaultStockHoldings = [
   // ── Upstox Holdings (8 ETFs) ──
   { id: "stk-up-1", owner: "Me", symbol: "HDFCMID150", company: "HDFC Nifty Midcap 150 ETF", exchange: "NSE", category: "ETF", quantity: 1678, avgPrice: 21.12, currentPrice: 23.36, invested: 35439.36, currentValue: 39198.08, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox ETF" },
-  { id: "stk-up-2", owner: "Me", symbol: "GOLD1", company: "Nippon India ETF Gold BeES", exchange: "NSE", category: "ETF", quantity: 1523, avgPrice: 80.21, currentPrice: 118.16, invested: 122159.83, currentValue: 179957.68, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Gold ETF" },
+  { id: "stk-up-2", owner: "Me", symbol: "GOLD1", company: "Kotak Gold ETF", exchange: "NSE", category: "ETF", quantity: 1523, avgPrice: 80.21, currentPrice: 118.16, invested: 122159.83, currentValue: 179957.68, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Gold ETF" },
   { id: "stk-up-3", owner: "Me", symbol: "HDFCSML250", company: "HDFC Nifty Smallcap 250 ETF", exchange: "NSE", category: "ETF", quantity: 464, avgPrice: 170.49, currentPrice: 180.67, invested: 79107.36, currentValue: 83830.88, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Smallcap ETF" },
   { id: "stk-up-4", owner: "Me", symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", exchange: "NSE", category: "ETF", quantity: 569, avgPrice: 264.94, currentPrice: 277.42, invested: 150750.86, currentValue: 157851.98, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Nifty 50 ETF" },
   { id: "stk-up-5", owner: "Me", symbol: "MID150BEES", company: "Nippon India ETF Nifty Midcap 150 BeES", exchange: "NSE", category: "ETF", quantity: 221, avgPrice: 217.54, currentPrice: 239.42, invested: 48076.34, currentValue: 52911.82, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Midcap ETF" },
@@ -8831,12 +8854,15 @@ function buildTodaySnapshot(options = {}) {
   const settled = {};
   const changes = {};
   const asOf = {};
+  const fxNow = getUsdInrRate();
   NWH_MARKET_CLASSES.forEach((cls) => {
     const live = dayChangeMetrics.classes[cls];
     const liveSettled = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
+    const fxChanged = cls === 'usStocks' && live.held && existing && prevSettled[cls] &&
+      (!existing.fxRate || Math.abs(existing.fxRate - fxNow) > 0.05);   // US stocks are valued with the exchange rate of the moment they were locked
     const NWC = typeof window !== "undefined" ? window.LifeLedgerNetWorthClose : undefined;
     const keep = NWC?.keepLock
-      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt, { heldNow: live.held, lockedValue: existing ? existing[cls] : 0 })
+      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt, { heldNow: live.held, lockedValue: existing ? existing[cls] : 0, fxChanged })
       : Boolean(prevSettled[cls]);
     if (keep) {
       // Locked at its close earlier today (and nothing newer after the close): keep that value and gain/loss
@@ -8888,6 +8914,7 @@ function buildTodaySnapshot(options = {}) {
     bankSaving: breakdown.bankSaving,
     others: breakdown.others,
     liabilities: breakdown.liabilities,
+    fxRate: fxNow,
     source: options.source || "daily"
   };
 

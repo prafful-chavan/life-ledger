@@ -45,10 +45,12 @@ runTest('getIsinMapping resolves known ISINs to proper symbol and company', () =
   assert.strictEqual(sgb.symbol, 'SGBFEB32IV-GB');
   assert.strictEqual(sgb.category, 'Bond');
 
-  const goldbees = app.getIsinMapping('INF174KA1HJ8');
-  assert.ok(goldbees, 'Gold BeES should be found');
-  assert.strictEqual(goldbees.symbol, 'GOLDBEES');
-  assert.strictEqual(goldbees.category, 'ETF');
+  const kotak = app.getIsinMapping('INF174KA1HJ8');
+  assert.ok(kotak, 'Kotak Gold ETF should be found');
+  assert.strictEqual(kotak.symbol, 'GOLD1', 'INF174KA1HJ8 is the Kotak Gold ETF, not Nippon Gold BeES');
+  assert.strictEqual(kotak.category, 'ETF');
+  const goldbees = app.getIsinMapping('INF204KB17I5');
+  assert.strictEqual(goldbees.symbol, 'GOLDBEES', 'Nippon Gold BeES keeps its own ISIN');
 });
 
 // Test 2: Case insensitivity and whitespace handling
@@ -219,7 +221,7 @@ runTest('getExchangeTicker maps BHARAT22 to ICICIB22 for exchange quote fetching
   assert.strictEqual(app.getExchangeTicker('NETFSILVER'), 'SILVERBEES');
   assert.strictEqual(app.getExchangeTicker('TRIL'), 'TARIL', 'old TRIL rows are fetched under the real NSE symbol');
   assert.strictEqual(app.getExchangeTicker('BAJAJCORP'), 'BAJAJCON');
-  assert.strictEqual(app.getExchangeTicker('GOLD1'), 'GOLDBEES');
+  assert.strictEqual(app.getExchangeTicker('GOLD1'), 'GOLD1', 'Kotak Gold ETF trades as GOLD1; never rewritten to Gold BeES');
   assert.strictEqual(app.getExchangeTicker('RELIANCE'), 'RELIANCE');
 });
 
