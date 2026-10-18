@@ -1566,9 +1566,6 @@ function bindFinanceTabs() {
     }
   });
 
-  document.getElementById("syncExpensesFromDriveBtn")?.addEventListener("click", () => {
-    syncExpensesFromDrive();
-  });
 
   document.querySelectorAll(".sync-holdings-btn")?.forEach(btn => {
     btn.addEventListener("click", () => {
@@ -2795,87 +2792,6 @@ async function runImport(importFn) {
   if (status) status.textContent = summary;
   toast(`Import complete. ${summary}`);
   return result;
-}
-
-async function syncExpensesFromDrive() {
-  if (!window.LifeLedgerDrive || !window.LifeLedgerDrive.isConnected()) {
-    toast("Please connect Google Drive in the settings panel first.");
-    return;
-  }
-
-  // The Spending-app Dropbox import is the automated source now. This button REPLACES every
-  // expense with CSV rows (new random ids), which then get imported a second time by the
-  // Dropbox sync. Make that a deliberate choice.
-  if (state.spendingImport && state.spendingImport.importedAt) {
-    const ok = confirm(
-      "Spending app auto-sync is on.\n\nThis old CSV sync REPLACES all expenses with the CSV files, and the next Spending app import will then add them again (duplicates).\n\nUse Settings → Spending app sync → “Rebuild” instead.\n\nRun the CSV sync anyway?"
-    );
-    if (!ok) return;
-  }
-
-  const btn = document.getElementById("syncExpensesFromDriveBtn");
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "☁ Syncing...";
-  }
-
-  toast("Scanning Google Drive for latest expense files...");
-
-  const owners = ["Me", "Wife"];
-  let filesFound = 0;
-  let allNewExpenses = [];
-
-  try {
-    for (const owner of owners) {
-      const fileData = await window.LifeLedgerDrive.downloadLatestExpenseFile(owner);
-      if (fileData) {
-        filesFound++;
-        console.log(`[app.js] Found and downloaded latest file for ${owner}: "${fileData.filename}"`);
-        
-        const mockFile = {
-          name: fileData.filename,
-          text: async () => {
-            const td = new TextDecoder();
-            return td.decode(fileData.buffer);
-          },
-          arrayBuffer: () => Promise.resolve(fileData.buffer)
-        };
-
-        const imported = await parseImportFile(mockFile, "expense");
-        console.log(`[app.js] Parsed file for ${owner}: ${imported?.expenses?.length ?? 0} expenses extracted`);
-        if (imported && imported.expenses && imported.expenses.length > 0) {
-          imported.expenses.forEach(exp => {
-            exp.paidBy = owner;
-            allNewExpenses.push(exp);
-          });
-        } else {
-          // Log the raw CSV text headers for debugging
-          try {
-            const rawText = await mockFile.text();
-            const firstLine = rawText.split('\n')[0];
-            console.warn(`[app.js] WARNING: 0 expenses parsed for ${owner}. CSV headers: "${firstLine}"`);
-          } catch(e) {}
-        }
-      }
-    }
-
-    if (filesFound === 0) {
-      toast("No expense files matching 'Transactions*.csv/xlsx' found on Google Drive.");
-    } else {
-      state.expenses = allNewExpenses;
-      renderExpensesOnly();
-      await saveData(true, "expense");
-      toast(`✓ Synced successfully! Loaded ${allNewExpenses.length} total expenses from ${filesFound} files.`);
-    }
-  } catch (error) {
-    console.error("[app.js] Expense sync failed:", error);
-    toast(`Sync failed: ${error.message}`);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "☁ Sync from Drive";
-    }
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
