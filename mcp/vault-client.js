@@ -35,14 +35,22 @@ async function encryptVault(inner, password, { compress = true } = {}) {
   return { v: 1, salt: salt.toString("base64"), iv: iv.toString("base64"), ciphertext: body.toString("base64"), compressed: compress };
 }
 
+/** POST once, then follow Apps Script's redirect(s) with plain GETs (the result is served from the redirect target). */
+async function postFollow(url, body, fetchImpl) {
+  let res = await fetchImpl(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, redirect: "manual", body });
+  for (let hop = 0; hop < 5 && res.status >= 300 && res.status < 400 && res.headers.get("location"); hop++) {
+    res = await fetchImpl(new URL(res.headers.get("location"), url).toString(), { method: "GET", redirect: "manual" });
+  }
+  return res;
+}
+
 async function fetchState({ gatewayUrl, password, fetchImpl = fetch }) {
-  const res = await fetchImpl(gatewayUrl, {
-    method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, redirect: "follow",
-    body: JSON.stringify({ op: "pull", token: await authToken(password), sinceRev: 0 }),
-  });
+  const res = await postFollow(gatewayUrl, JSON.stringify({ op: "pull", token: await authToken(password), sinceRev: 0 }), fetchImpl);
   if (!res.ok) throw new Error("Gateway HTTP " + res.status);
-  const j = await res.json();
-  if (!j.ok) throw new Error(j.error === "unauthorized" ? "Wrong vault password (run setup again)" : j.error || "Gateway error");
+  const text = await res.text();
+  let j;
+  try { j = JSON.parse(text); } catch { throw new Error("Gateway sent a non-JSON reply: " + text.slice(0, 120).replace(/\s+/g, " ")); }
+  if (!j.ok) throw new Error(j.error === "unauthorized" ? "Wrong vault password (run setup again)" : `${j.error || "Gateway error"} [HTTP ${res.status}, ${text.length} bytes, from ${new URL(res.url || gatewayUrl).host}]`);
   if (!j.vault) throw new Error("The vault is empty on the gateway");
   const inner = await decryptVault(j.vault, password);
   return { data: inner.data, rev: j.rev, updatedAt: j.updatedAt };

@@ -14,12 +14,18 @@ const S = require("../mcp/server.js");
   // fetchState sends the derived token (never the password) and surfaces gateway errors plainly
   const vault = await V.encryptVault({ data: { expenses: [] } }, "pw-123");
   let sent;
-  const ok = async (url, init) => { sent = JSON.parse(init.body); return { ok: true, json: async () => ({ ok: true, rev: 7, vault }) }; };
+  const reply = (obj) => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(obj) });
+  const ok = async (url, init) => { sent = JSON.parse(init.body); return reply({ ok: true, rev: 7, vault }); };
   const got = await V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "pw-123", fetchImpl: ok });
   assert.strictEqual(got.rev, 7);
   assert.strictEqual(sent.op, "pull");
   assert.ok(/^[0-9a-f]{64}$/.test(sent.token) && !JSON.stringify(sent).includes("pw-123"), "token only");
-  const bad = async () => ({ ok: true, json: async () => ({ ok: false, error: "unauthorized" }) });
+  const bad = async () => reply({ ok: false, error: "unauthorized" });
+  // a redirect is followed with a plain GET and no body
+  const hops = [];
+  const redirecting = async (url, init) => { hops.push(init.method); return hops.length === 1 ? { ok: false, status: 302, headers: { get: () => "https://script.googleusercontent.com/macros/echo?x=1" }, text: async () => "" } : reply({ ok: true, rev: 9, vault }); };
+  assert.strictEqual((await V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "pw-123", fetchImpl: redirecting })).rev, 9);
+  assert.deepStrictEqual(hops, ["POST", "GET"]);
   await assert.rejects(() => V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "x", fetchImpl: bad }), /Wrong vault password/);
 
   // MCP protocol
@@ -45,6 +51,9 @@ const S = require("../mcp/server.js");
   assert.strictEqual(parsed.netWorth.classes.others.value, 500, "vehicles count");
   assert.strictEqual(parsed.protection.people[0].who, "Prafful");
   assert.strictEqual(parsed.goals[0].progressPct, 25);
+  const tracked = { ...state, mutualFunds: [{ transactionType: "PURCHASE", currentValue: 600, owner: "Me" }, { transactionType: "REDEMPTION", currentValue: 100, owner: "Me" }, { transactionType: "PURCHASE", currentValue: 50, owner: "Wife" }], goals: [{ name: "MF", target: 1000, saved: 1, track: "Mutual funds", owner: "Both" }, { name: "Mine", target: 1000, saved: 1, track: "Mutual funds", owner: "Me" }] };
+  const g2 = JSON.parse((await S.handle({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "goals" } }, async () => tracked)).result.content[0].text);
+  assert.deepStrictEqual(g2.map((g) => g.saved), [550, 500], "goals that follow holdings use live values, net of redemptions, by owner");
 
   const unknown = await S.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "delete_everything" } }, loader);
   assert.ok(unknown.error, "unknown tool is refused");
