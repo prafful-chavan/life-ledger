@@ -58,7 +58,7 @@ const liabilitiesView = (state) => (state.liabilities || []).map((l) => ({ name:
 function brief(state, a = {}) {
   const today = todayISO();
   return {
-    asOf: today, dataFreshness: A.freshness(state), netWorth: A.netWorth(state, a.usdInr), healthCheck: A.healthCheck(state, today, a.usdInr),
+    asOf: today, integrity: A.integrity(state, a.usdInr), dataFreshness: A.freshness(state), netWorth: A.netWorth(state, a.usdInr), healthCheck: A.healthCheck(state, today, a.usdInr),
     expenses: A.expenseReport(state, a.month), mutualFunds: A.mutualFundReport(state, today), stocks: A.stockReport(state),
     usStocks: A.usStockReport(state, a.usdInr), goals: goalsView(state), liabilities: liabilitiesView(state), protection: protectionView(state, today),
   };

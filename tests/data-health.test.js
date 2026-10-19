@@ -82,4 +82,18 @@ assert.doesNotThrow(() => H.run(null));
   const wr2 = H.run({ state: w, now: "2026-10-17", reported: {}, categoryKey: key, dismissed: { "prices-missing": prob.signature } });
   assert.strictEqual(get(wr2, "prices-missing").snoozed, false, "a real problem is never snoozed");
 }
+
+// doubled holdings are flagged with a fix action; a few genuine twin lots are not
+{
+  const lots = Array.from({ length: 12 }, (_, i) => ({ id: "mf-" + i, fundName: "F" + i, owner: "Me", demat: "G", units: 10 + i, invested: 1000 + i, purchaseDate: "2026-01-01", transactionType: "PURCHASE", latestNav: 10, navDate: "16-10-2026" }));
+  const healthy = Object.assign(base(), { mutualFunds: [...lots, { ...lots[0], id: "mf-twin" }] });
+  const h1 = run(healthy, {}), c1 = h1.checks.find((c) => c.id === "duplicate-holdings");
+  assert.strictEqual(c1.status, "ok", "one genuine twin lot is not an alarm");
+  const doubled = Object.assign(base(), { mutualFunds: [...lots, ...lots.map((l) => ({ ...l, id: l.id + "-copy" }))] });
+  const h2 = run(doubled, {}), c2 = h2.checks.find((c) => c.id === "duplicate-holdings");
+  assert.strictEqual(c2.status, "warn"); assert.strictEqual(c2.action, "remove-duplicate-holdings");
+  assert.ok(/mutual fund rows: 24/.test(c2.items[0]), c2.items[0]);
+  assert.ok(h2.counts.warn >= 1, "it counts as something to fix");
+}
+
 console.log("data-health tests passed");

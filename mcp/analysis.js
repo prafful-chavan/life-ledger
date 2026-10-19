@@ -4,6 +4,7 @@
  */
 const Advisor = require("../advisor-engine.js");
 const Protection = require("../protection-core.js");
+const Integrity = require("../holdings-integrity.js");
 
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const sum = (list, f) => (list || []).reduce((s, x) => s + num(f(x)), 0);
@@ -235,6 +236,32 @@ function healthCheck(state, today, fxOverride) {
   return { flags, netWorth: nw.netWorth, liquid: r0(liquid), monthlySpend6mo: r0(monthly), note: "Rules of thumb for discussion with a CA or planner — not tax or investment advice." };
 }
 
+
+// ── is the data itself trustworthy? ──────────────────────────────────────────────────────────
+/**
+ * Plain checks that catch a corrupted book before any advice is built on it: rows that appear in bulk twice (an out-of-date
+ * copy of the app syncing back in) and a day-on-day net-worth jump that markets and the household's own edits cannot explain.
+ * When alerts is non-empty the brief must say so first and make no investment calls.
+ */
+function integrity(state, fxOverride) {
+  const alerts = [];
+  const names = { mutualFunds: "mutual fund", stocks: "stock", usstocks: "US stock" };
+  for (const r of Integrity.duplicateReport(state).filter(Integrity.looksDuplicated)) {
+    alerts.push({ level: "critical", topic: "Repeated holdings", text: `${r.rowsInDuplicateGroups} of ${r.rows} ${names[r.coll]} rows are copies of each other. Net worth and every total built on them are inflated. In the app open Data health → "Remove the extra copies", or restore the last good snapshot in Settings → History.` });
+  }
+  const nw = netWorth(state, fxOverride), ch = nw.changeVsPrevious;
+  if (ch && ch.previousNetWorth > 0 && !alerts.length) {      // duplicates already explain a jump; don't add noise on top
+    const pct = (Math.abs(ch.delta) / ch.previousNetWorth) * 100;
+    const market = Math.abs(ch.marketLikeMoves);
+    const explained = Math.abs(ch.delta) - market;           // what is left after market-type moves = edits, repayments, imports
+    if (pct >= 6 && market / Math.abs(ch.delta || 1) < 0.5) {
+      alerts.push({ level: "critical", topic: "Unexplained jump", text: `Net worth moved ${ch.delta >= 0 ? "+" : "−"}₹${Math.abs(ch.delta).toLocaleString("en-IN")} (${r1(pct)}%) since ${ch.previousDate}, but market-type moves explain only ₹${market.toLocaleString("en-IN")}. Check for repeated rows or a bulk import before trusting any figure.` });
+    } else if (pct >= 6) alerts.push({ level: "watch", topic: "Large move", text: `Net worth moved ${r1(pct)}% since ${ch.previousDate}; mostly market movement, but worth a glance.` });
+    void explained;
+  }
+  return { ok: !alerts.some((a) => a.level === "critical"), alerts };
+}
+
 // ── freshness: how old are the prices behind these numbers? ─────────────────────────────────
 function freshness(state, now = Date.now()) {
   const newest = (list, f) => (list || []).reduce((m, x) => Math.max(m, f(x) || 0), 0);
@@ -246,4 +273,4 @@ function freshness(state, now = Date.now()) {
   return { mutualFundsHoursOld: age(mf), stocksHoursOld: age(st), usStocksHoursOld: age(us), goldHoursOld: age(gold), note: "Prices refresh whenever the app is open on any device; hours-old values mean no device has opened it since." };
 }
 
-module.exports = { netWorth, mutualFundReport, stockReport, usStockReport, expenseReport, healthCheck, freshness, salaryForSpendingMonth, fundKind };
+module.exports = { integrity, netWorth, mutualFundReport, stockReport, usStockReport, expenseReport, healthCheck, freshness, salaryForSpendingMonth, fundKind };

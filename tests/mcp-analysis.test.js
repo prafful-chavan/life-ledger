@@ -41,6 +41,29 @@ assert.strictEqual(chg.marketLikeMoves, 0);
 assert.ok(!("mutualFunds" in chg.byClass), "unchanged classes are left out");
 assert.strictEqual(A.netWorth(state()).changeVsPrevious, undefined, "no history, no comparison");
 
+
+// Integrity: bulk duplicate rows and unexplained jumps are caught; normal data is quiet
+{
+  const lots = Array.from({ length: 12 }, (_, i) => ({ id: "mf-" + i, fundName: "F" + i, owner: "Me", demat: "G", units: 10 + i, invested: 1000 + i, purchaseDate: "2026-01-01", transactionType: "PURCHASE", latestNav: 10, currentValue: 100 }));
+  const healthy = { ...state(), mutualFunds: lots };
+  assert.deepStrictEqual(A.integrity(healthy), { ok: true, alerts: [] }, "healthy data raises nothing");
+  const doubled = { ...state(), mutualFunds: [...lots, ...lots.map((l) => ({ ...l, id: l.id + "-copy" }))] };
+  const bad = A.integrity(doubled);
+  assert.strictEqual(bad.ok, false); assert.strictEqual(bad.alerts[0].topic, "Repeated holdings"); assert.ok(/Remove the extra copies/.test(bad.alerts[0].text));
+  // The previous day is built from the book's own class values, so the only thing that differs is what we change on purpose
+  const book = state(), cur = A.netWorth(book), c = cur.classes;
+  const prevDay = (over) => ({ date: "2020-01-01", mutualFunds: c.mutualFunds.value, stocks: c.stocks.value, usStocks: c.usStocks.value, gold: c.gold.value, silver: c.silver.value, crypto: c.crypto.value, fd: c.fd.value, epf: c.epf.value, ppf: c.ppf.value, bonds: c.bonds.value, bankSaving: c.bankSaving.value, others: c.others.value, liabilities: cur.liabilities, netWorth: cur.netWorth, ...over });
+  const quiet = A.integrity({ ...book, netWorthHistory: [prevDay({})] });
+  assert.ok(quiet.ok && !quiet.alerts.length, "no change since yesterday raises nothing");
+  // FD and Others were empty yesterday and now hold money: not markets → critical (>= 6%)
+  const unexplained = A.integrity({ ...book, netWorthHistory: [prevDay({ fd: 0, others: 0, netWorth: cur.netWorth - c.fd.value - c.others.value })] });
+  assert.ok(unexplained.alerts.some((a) => a.topic === "Unexplained jump" && a.level === "critical") && !unexplained.ok, JSON.stringify(unexplained));
+  // The same size of move caused by funds (markets) is only a watch, and not a data fault
+  const marketDriven = A.integrity({ ...book, netWorthHistory: [prevDay({ mutualFunds: c.mutualFunds.value - 60000, netWorth: cur.netWorth - 60000 })] });
+  assert.ok(marketDriven.ok, "a big but market-driven move is not a data fault");
+  assert.ok(marketDriven.alerts.every((a) => a.level === "watch"));
+}
+
 // Mutual funds: redemption reduces invested and units; best/worst only count meaningful sizes
 const mf = A.mutualFundReport(s, "2026-10-18");
 const axis = mf.funds.find((f) => /Axis/.test(f.fund));

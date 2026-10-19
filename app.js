@@ -1042,7 +1042,17 @@ function notifyActivityRepair(count) {
   }, 2500);
 }
 
+/** Every load and every remote merge goes through here: leftover legacy-id copies of imported rows are dropped. */
 function normalizeData(data) {
+  const normalized = normalizeDataCore(data);
+  const HI = typeof window !== "undefined" ? window.LifeLedgerHoldingsIntegrity : null;
+  if (!HI) return normalized;
+  const c = HI.collapseImportGhosts(normalized);
+  if (c.removed) console.warn(`[integrity] removed ${c.removed} leftover duplicate holding row(s) from an older import`);
+  return c.removed ? c.data : normalized;
+}
+
+function normalizeDataCore(data) {
   return {
     ...clone(defaultData),
     ...data,
@@ -3805,11 +3815,12 @@ function parseMasterHoldingsWorkbook(buffer) {
 
   console.log(`[holdings] Parsed: ${parsedMutualFunds.length} MF txns, ${parsedStocks.length} Stock txns, ${parsedUsStocks.length} US Stock txns`);
 
-  return {
-    mutualFunds: parsedMutualFunds,
-    stocks: parsedStocks,
-    usstocks: parsedUsStocks
-  };
+  // Content-derived ids: importing the same sheet again gives the same ids, so nothing is deleted-and-recreated and an
+  // older copy of the app can never bring "deleted" rows back next to their replacements (see holdings-integrity.js).
+  const HI = typeof window !== "undefined" ? window.LifeLedgerHoldingsIntegrity : null;
+  return HI
+    ? { mutualFunds: HI.assignStableIds("mutualFunds", parsedMutualFunds), stocks: HI.assignStableIds("stocks", parsedStocks), usstocks: HI.assignStableIds("usstocks", parsedUsStocks) }
+    : { mutualFunds: parsedMutualFunds, stocks: parsedStocks, usstocks: parsedUsStocks };
 }
 
 async function syncHoldingsFromDrive() {
@@ -15210,11 +15221,30 @@ function renderDataHealth() {
         <h3>${escapeHTML(c.title)}</h3>
         <p>${escapeHTML(c.detail || "")}</p>
         ${c.items && c.items.length ? `<ul>${c.items.map((i) => `<li>${escapeHTML(i)}</li>`).join("")}</ul>` : ""}
+        ${c.action === "remove-duplicate-holdings" ? `<button type="button" class="secondary-button dh-action" data-dh-action="remove-duplicate-holdings">Remove the extra copies</button>` : ""}
         ${c.status === "info" ? `<button type="button" class="dh-dismiss" data-dh-id="${escapeHTML(c.id)}" data-dh-sig="${escapeHTML(c.signature)}" data-dh-undo="${c.snoozed ? "1" : ""}">${c.snoozed ? "Show again" : "Dismiss this note"}</button>` : ""}
       </div>
     </article>`).join("");
   const toggle = result.counts.snoozed ? `<button type="button" class="dh-toggle" id="dhToggleDismissed">${dataHealthShowDismissed ? "Hide" : "Show"} ${result.counts.snoozed} dismissed</button>` : "";
   body.innerHTML = `<div class="dh-summary ${result.counts.warn ? "warn" : "ok"}"><strong>${head}</strong><span>${result.counts.ok} passed · ${result.counts.info} notes · ${result.counts.warn} to fix</span></div>${rows}${toggle}`;
+}
+
+/** One tap: keeps one copy of each lot when a book has been doubled (genuine identical lots keep their pair). */
+function removeDuplicateHoldings() {
+  const HI = typeof window !== "undefined" ? window.LifeLedgerHoldingsIntegrity : null;
+  if (!HI) return;
+  const rep = HI.duplicateReport(state);
+  const hit = rep.filter(HI.looksDuplicated);
+  if (!hit.length) { toast("No doubled holdings found."); return; }
+  const msg = hit.map((r) => `${r.coll === "mutualFunds" ? "mutual fund" : r.coll === "stocks" ? "stock" : "US stock"} rows: ${r.rows} → about ${Math.round(r.rows - r.rowsInDuplicateGroups / 2)}`).join("\n");
+  if (!confirm(`Remove the extra copies?\n\n${msg}\n\nA snapshot of your current data is saved first, so you can undo this from Settings → History.`)) return;
+  Promise.resolve(window.LifeLedgerSync?.snapshotNow?.()).catch(() => {}).then(() => {
+    hit.forEach((r) => { state[r.coll] = HI.halveDuplicates(r.coll, state[r.coll]); });
+    renderAll();
+    saveData(true);
+    toast("Extra copies removed.");
+    renderDataHealth();
+  });
 }
 
 function setHealthDismissed(id, signature, undo) {
@@ -15253,6 +15283,8 @@ if (typeof document !== "undefined") {
     if (e.target.closest('[data-open-modal="dataHealthModal"]') || e.target.closest("#dataHealthRerun")) renderDataHealth();
     const dis = e.target.closest(".dh-dismiss");
     if (dis) setHealthDismissed(dis.dataset.dhId, dis.dataset.dhSig, dis.dataset.dhUndo === "1");
+    const act = e.target.closest(".dh-action");
+    if (act && act.dataset.dhAction === "remove-duplicate-holdings") { removeDuplicateHoldings(); return; }
     if (e.target.closest("#dhToggleDismissed")) { dataHealthShowDismissed = !dataHealthShowDismissed; renderDataHealth(); }
     if (e.target.closest('[data-open-modal="importModal"]')) ensureXlsx();   // start fetching the spreadsheet reader as the dialog opens
   });

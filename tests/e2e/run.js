@@ -212,6 +212,18 @@ const SCANNER = `(${function scan() {
     await cdp.eval(`document.querySelector('#dataHealthModal [data-close-modal]').click(); LifeLedgerApp.applyRemoteData(${JSON.stringify(state)}); 0`);
     await sleep(800);
 
+    // 4b. Doubled holdings (the 19 Oct incident): flagged with a one-tap fix that keeps one copy of each lot
+    await cdp.eval(`(()=>{const s=LifeLedgerApp.getState(); window.__mfBefore=s.mutualFunds.length; const lots=Array.from({length:12},(_,i)=>({id:'mf-e2e-'+i,fundName:'E2E Fund '+i,owner:'Me',demat:'G',transactionType:'PURCHASE',units:10+i,nav:10,invested:100+i,purchaseDate:'2025-01-01',date:'2025-01-01',latestNav:10,currentValue:100+i})); s.mutualFunds.push(...lots, ...lots.map(l=>({...l,id:l.id+'-copy'}))); LifeLedgerApp.renderAll(); document.querySelector('#topbarMore summary').click(); document.querySelector('[data-open-modal="dataHealthModal"]').click(); return 0})()`);
+    await sleep(1200);
+    const dup = JSON.parse(await cdp.eval(`JSON.stringify({warn:[...document.querySelectorAll('.dh-row.warn h3')].map(h=>h.textContent), btn:!!document.querySelector('.dh-action[data-dh-action="remove-duplicate-holdings"]')})`));
+    check("doubled holdings are flagged as something to fix, with a one-tap button", dup.warn.some((t) => /appear twice/i.test(t)) && dup.btn, JSON.stringify(dup));
+    await cdp.eval(`(()=>{window.confirm=()=>true; document.querySelector('.dh-action[data-dh-action="remove-duplicate-holdings"]').click(); return 0})()`);
+    await sleep(2000);
+    const fixedDup = JSON.parse(await cdp.eval(`JSON.stringify({n:LifeLedgerApp.getState().mutualFunds.length, before:window.__mfBefore, stillWarn:[...document.querySelectorAll('.dh-row.warn h3')].map(h=>h.textContent)})`));
+    check("one tap keeps one copy of each lot and clears the warning", fixedDup.n === fixedDup.before + 12 && !fixedDup.stillWarn.some((t) => /appear twice/i.test(t)), JSON.stringify(fixedDup));
+    await cdp.eval(`document.querySelector('#dataHealthModal [data-close-modal]').click(); LifeLedgerApp.applyRemoteData(${JSON.stringify(state)}); 0`);
+    await sleep(800);
+
     // 5. lazy loading
     console.log("\nLoading");
     await view("career");

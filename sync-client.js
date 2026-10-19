@@ -95,12 +95,14 @@
     const pulled = await post({ op: "pull", token: token_, sinceRev: state.rev || 0 });
 
     let local = host.getLocal();
+    let remoteData = null;
     const rev = pulled.rev || 0;
     const genAtMerge = dirtyGen;
 
     if (pulled.vault && !pulled.unchanged) {
       const remoteInner = await host.decryptVault(pulled.vault);
       const remote = { data: remoteInner.data, meta: remoteInner.sync || E.emptyMeta() };
+      remoteData = remote.data;
       if (userIsTyping()) { setStatus("synced", "Update waiting — finish typing"); return { retry: 3000 }; }
       // The host merges into the app's LIVE data in one step (see auth.js), so edits made while
       // we were waiting on the network or decrypting are kept.
@@ -113,6 +115,17 @@
     } else if (!dirty && pulled.rev) {
       writeState({ rev, lastOkAt: Date.now() });
       return { done: true };
+    }
+
+    // Safety net: never push a sudden pile of extra copies of rows the cloud already holds. That is what an out-of-date copy
+    // of the app looks like after an import replaced the holdings; the cure is on this device (Data health → remove copies).
+    const HI = window.LifeLedgerHoldingsIntegrity;
+    if (HI && remoteData) {
+      const hits = HI.duplicateSurge(remoteData, local.data);
+      if (hits.length) {
+        console.warn("[sync] push blocked: duplicate surge", hits);
+        return { blocked: true, detail: "Sync paused to protect your data: this device has many repeated holdings rows that the cloud does not. Open Data health and remove the extra copies, or reload the page." };
+      }
     }
 
     // Push our (possibly merged) state, guarded by the revision we merged against.
@@ -133,6 +146,7 @@
       for (let i = 0; i < MAX_ROUNDS; i++) {
         const r = await round();
         if (r.retry) { setTimeout(() => api.sync("deferred"), r.retry); return; }
+        if (r.blocked) { setStatus("error", r.detail); return; }
         if (r.done) { setStatus("synced"); return; }
       }
       setStatus("error", "Too many concurrent changes — will retry");

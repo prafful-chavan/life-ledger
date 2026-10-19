@@ -183,6 +183,22 @@
     // Notes (not problems) can be dismissed. A dismissal is tied to what the note said, so it comes back if the note changes.
     const dismissed = ctx.dismissed || {};
     const counts = { ok: 0, info: 0, warn: 0, snoozed: 0 };
+    // Doubled holdings (e.g. an older copy of the app bringing back rows that an import replaced)
+    {
+      const HI = typeof module === "object" && module.exports ? require("./holdings-integrity.js") : (typeof self !== "undefined" ? self.LifeLedgerHoldingsIntegrity : null);
+      if (HI) {
+        const names = { mutualFunds: "mutual fund", stocks: "stock", usstocks: "US stock" };
+        const bad = HI.duplicateReport(s).filter(HI.looksDuplicated);
+        if (bad.length) {
+          const c = warn("duplicate-holdings", "Some holdings appear twice",
+            "Rows with identical content, differing only by id — usually an older copy of the app syncing back in. Net worth and every total are inflated until they are removed.",
+            bad.map((r) => `${names[r.coll]} rows: ${r.rows}, of which ${r.rowsInDuplicateGroups} are copies of each other`));
+          c.action = "remove-duplicate-holdings";
+          checks.push(c);
+        } else checks.push(ok("duplicate-holdings", "No doubled holdings", "No fund, stock or US stock rows are repeated in bulk."));
+      }
+    }
+
     checks.forEach((c) => {
       c.signature = (c.items || []).join("|") || c.detail || "";
       c.snoozed = c.status === "info" && dismissed[c.id] === c.signature;
