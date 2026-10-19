@@ -1,8 +1,11 @@
-name: Deploy to GitHub Pages
+name: Test and deploy to GitHub Pages
 
+# Every push to main is tested first; the site is only deployed if every test passes.
+# Pull requests are tested but never deployed.
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -10,12 +13,34 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Kolkata                      # the household's timezone; dates in the app are IST
+      CI: "true"
+      CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: A changed script must have a new version number
+        run: node tests/version-lock.test.js
+      - name: Unit tests
+        run: node tools/run-unit-tests.js
+      - name: Browser end-to-end tests (made-up household, throwaway vault)
+        run: node tests/e2e/run.js
+
   deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

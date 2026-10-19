@@ -64,7 +64,7 @@ class CDP {
 async function launchChrome() {
   const port = 9300 + Math.floor(Math.random() * 500);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ll-e2e-"));
-  const proc = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--hide-scrollbars", "about:blank"], { stdio: "ignore" });
+  const proc = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--hide-scrollbars", ...(process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : []), "about:blank"], { stdio: "ignore" });
   for (let i = 0; i < 60; i++) {
     try { const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); const page = list.find((t) => t.type === "page"); if (page) return { proc, dir, wsUrl: page.webSocketDebuggerUrl }; } catch { /* not up yet */ }
     await sleep(250);
@@ -229,6 +229,30 @@ const SCANNER = `(${function scan() {
     const fixedDup = JSON.parse(await cdp.eval(`JSON.stringify({n:LifeLedgerApp.getState().mutualFunds.length, before:window.__mfBefore, stillWarn:[...document.querySelectorAll('.dh-row.warn h3')].map(h=>h.textContent)})`));
     check("one tap keeps one copy of each lot and clears the warning", fixedDup.n === fixedDup.before + 12 && !fixedDup.stillWarn.some((t) => /appear twice/i.test(t)), JSON.stringify(fixedDup));
     await cdp.eval(`document.querySelector('#dataHealthModal [data-close-modal]').click(); LifeLedgerApp.applyRemoteData(${JSON.stringify(state)}); 0`);
+    await sleep(800);
+
+    // 4c. Sync Holdings preview: a sheet that would wipe the stocks and most funds asks first; "No" changes nothing
+    console.log("\nSync Holdings preview");
+    await cdp.eval(fs.readFileSync(path.join(ROOT, "node_modules", "xlsx", "dist", "xlsx.full.min.js"), "utf8") + "; 0");   // the page's spreadsheet reader
+    const sh = JSON.parse(await cdp.eval(`(async()=>{
+      const sleep=(ms)=>new Promise((r)=>setTimeout(r,ms));
+      const s0=LifeLedgerApp.getState(); const before={mf:s0.mutualFunds.length, st:s0.stocks.length};
+      const rows=s0.mutualFunds.slice(0,3).map((m)=>({'Scheme Name':m.fundName,'Transaction Type':m.transactionType==='REDEMPTION'?'REDEEM':'PURCHASE','Units':m.units,'NAV':m.nav,'Amount':m.invested,'Date':m.purchaseDate||m.date,'Owner (Me / Wife)':m.owner==='Wife'?'Wife':'Me'}));
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '6. Mutual fund of my');
+      const buffer=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+      window.LifeLedgerDrive={...(window.LifeLedgerDrive||{}), isConnected:()=>true, downloadMasterHoldingsFile: async()=>({buffer, filename:'test.xlsx', modifiedTime:'now'})};
+      const asked=[]; window.confirm=(m)=>{asked.push(m); return false};
+      document.querySelector('.sync-holdings-btn').click(); await sleep(2500);
+      const afterNo={mf:LifeLedgerApp.getState().mutualFunds.length, st:LifeLedgerApp.getState().stocks.length};
+      window.confirm=(m)=>{asked.push(m); return true};
+      document.querySelector('.sync-holdings-btn').click(); await sleep(5000);
+      const afterYes={mf:LifeLedgerApp.getState().mutualFunds.length, st:LifeLedgerApp.getState().stocks.length};
+      return JSON.stringify({before, afterNo, afterYes, asked:asked.map((a)=>a.slice(0,400))});
+    })()`));
+    check("a sheet that would empty the stocks asks first, and says why", sh.asked.length >= 2 && /bigger change than usual/i.test(sh.asked[0]) && /the sheet has none, but you hold/i.test(sh.asked[0]), JSON.stringify(sh.asked[0]));
+    check("answering No changes nothing", sh.afterNo.mf === sh.before.mf && sh.afterNo.st === sh.before.st && sh.before.st > 0, JSON.stringify(sh));
+    check("answering Yes applies the sheet", sh.afterYes.st === 0 && sh.afterYes.mf === 3, JSON.stringify(sh.afterYes));
+    await cdp.eval(`LifeLedgerApp.applyRemoteData(${JSON.stringify(state)}); 0`);
     await sleep(800);
 
     // 5. lazy loading

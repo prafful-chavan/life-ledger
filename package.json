@@ -1,0 +1,13 @@
+{
+  "name": "life-ledger",
+  "private": true,
+  "description": "Prafful & Archana's Life Ledger — static web app. No build step; dependencies are for tests only.",
+  "scripts": {
+    "test": "node tools/run-unit-tests.js",
+    "test:e2e": "node tests/e2e/run.js",
+    "version-lock": "node tools/update-version-lock.js"
+  },
+  "devDependencies": {
+    "xlsx": "0.18.5"
+  }
+}

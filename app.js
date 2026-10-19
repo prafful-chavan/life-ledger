@@ -3861,6 +3861,20 @@ async function syncHoldingsFromDrive() {
       return;
     }
 
+    // Preview: a routine sync (a few new lots) goes straight through; anything bigger asks first, after a snapshot.
+    const HI = typeof window !== "undefined" ? window.LifeLedgerHoldingsIntegrity : null;
+    let importNote = "";
+    if (HI) {
+      const summary = HI.importSummary(state, holdingsData);
+      const text = HI.describeImport(summary);
+      importNote = text.lines.filter((l) => !/no change/.test(l)).join(" · ");
+      if (summary.needsConfirm) {
+        const msg = `This sync is a bigger change than usual:\n\n${summary.reasons.join("\n")}\n\n${text.lines.join("\n")}\n\n${text.details.join("\n")}\n\nApply it? A snapshot of your current data is saved first, so you can undo it from Settings → History.`;
+        if (!confirm(msg)) { toast("Holdings sync cancelled — nothing was changed."); return; }
+        try { await window.LifeLedgerSync?.snapshotNow?.(); } catch { /* offline: the confirmation was the safeguard */ }
+      }
+    }
+
     // Always fully replace state to keep it in sync with the Drive file
     state.mutualFunds = holdingsData.mutualFunds;
     state.stocks = holdingsData.stocks;
@@ -3887,7 +3901,7 @@ async function syncHoldingsFromDrive() {
     renderAll();
     await saveData(true);
 
-    toast(`✅ Holdings synced! ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks. Live prices updated.`);
+    toast(`✅ Holdings synced! ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks. Live prices updated.${importNote ? " Changes: " + importNote + "." : ""}`);
   } catch (err) {
     console.error("[app.js] Holdings sync error:", err);
     toast(`❌ Holdings Sync Failed: ${err.message}`);

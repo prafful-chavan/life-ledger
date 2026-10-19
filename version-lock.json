@@ -1,0 +1,130 @@
+{
+  "advisor-ai.js": {
+    "version": "2.0.1",
+    "sha256": "2dc96400bead420ebee49ee69b8c16992e1daf5a0cbf37cef419a010f980fba5"
+  },
+  "advisor-context.js": {
+    "version": "1.0.3",
+    "sha256": "f83a86c124d827ad88e561463b751f813208e9b9f451516537ab76108e85a113"
+  },
+  "advisor-engine.js": {
+    "version": "2.0.4",
+    "sha256": "9a95a8431c08b046d1621aa835a7b91569ff7da9c55b726efd8ed27ba17817b1"
+  },
+  "advisor.js": {
+    "version": "2.0.8",
+    "sha256": "05bf960ed82b81041a011798ec3dc1cfb390840ff47f831b6ce58fa16e135de9"
+  },
+  "ai-agent.js": {
+    "version": "1.0.47",
+    "sha256": "94658e35c3ba52e0a93952e5e4f0dd248acf53964f3f3bc9b8ba959e097b78a9"
+  },
+  "app.js": {
+    "version": "1.0.99",
+    "sha256": "f81941b8d577d01cf7a02a620f59b326ac2995254f411c5fed7e06ea8a6c561e"
+  },
+  "auth.js": {
+    "version": "1.0.44",
+    "sha256": "b80295c0672382640498a19a14a827e83f63ee6190a13089425b588767ffd25f"
+  },
+  "cmdk-core.js": {
+    "version": "1.0.0",
+    "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
+  },
+  "data-health.js": {
+    "version": "1.0.3",
+    "sha256": "9b58b42cda120374aae90d06c3ba9f9295b076c0588ab0e779b4cc301e6a455a"
+  },
+  "drive-sync.js": {
+    "version": "1.0.42",
+    "sha256": "e12193c74adbb7cbaa4ef8be663e369ddcbcd36e2d7a054f1b279e3325fa2f5f"
+  },
+  "hero-series.js": {
+    "version": "1.0.0",
+    "sha256": "16c92129ddb51260dd9898521289d38b75edbae537d3a8590cdbaac621c5107a"
+  },
+  "holdings-integrity.js": {
+    "version": "1.0.1",
+    "sha256": "cfb5866ecab3eca6b007e71f4f9c36945cea0a511c3b9de1ae1674b109f2cd1c"
+  },
+  "knowledge-modules.js": {
+    "version": "1.0.0",
+    "sha256": "5a74d029c14018699257e23258aa477e6f92ce536e8204e62b4c90057766e03b"
+  },
+  "knowledge.js": {
+    "version": "1.0.2",
+    "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
+  },
+  "layout.css": {
+    "version": "1.8.6",
+    "sha256": "3fb7ced9ddf7c29e240fd5eee5b532d322e957d466e4491596aa2f49ee295353"
+  },
+  "liability-calc.js": {
+    "version": "1.0.0",
+    "sha256": "f85a15be1821daa9c18b589e14ed6c6582894588983d2f9858102b0adf398ff6"
+  },
+  "nav.js": {
+    "version": "1.1.5",
+    "sha256": "c6ac5c7e7338411b5ba6d452cce88329ab8c2fb28cda53ce672b10c2ec5e5cd4"
+  },
+  "networth-close.js": {
+    "version": "1.0.6",
+    "sha256": "e638550698d13e5de3124e78e2d6abfcdee5b75619936c386b486b3f2d445076"
+  },
+  "networth-delta.js": {
+    "version": "1.0.0",
+    "sha256": "f6a6d87cb525c7e77dddafdfb301409cfb21b7e07b039fa132b6e8591e52d65d"
+  },
+  "price-history.js": {
+    "version": "1.0.1",
+    "sha256": "ae5f5d14a5cd4b1def0b96355d94bc7395c3fbc31c3edaeba84cc84583660ed4"
+  },
+  "protection-core.js": {
+    "version": "1.0.0",
+    "sha256": "a54a41ff9eb97b0483b7526b94fa85232c2e6a5cdbf9c00ba9e3bc992fcddc35"
+  },
+  "protection.js": {
+    "version": "1.0.0",
+    "sha256": "37561c0c059563fe25d913de52101a3fb9e6accc522d74213f26c387045bd68b"
+  },
+  "script-gate.js": {
+    "version": "1.0.0",
+    "sha256": "da75b5982dc7083f868b099f154e9aaf77e971ef6d7bf0d9b147484b08bf8df3"
+  },
+  "spending-core.js": {
+    "version": "1.0.5",
+    "sha256": "229a6d67f6c1b1d52d3dfe0fb409d1cb19f580333fb8099d49190574a0b95408"
+  },
+  "spending-import.js": {
+    "version": "1.0.13",
+    "sha256": "7b1d01670102b0ec61aadd12d86d29eab3c0cc42f47c642c3e19900d7ed62840"
+  },
+  "styles.css": {
+    "version": "1.0.20",
+    "sha256": "8c038acf487240d913c22a5019ddfdc20bb9ed20ee4634cfc05dad4860978966"
+  },
+  "sync-client.js": {
+    "version": "1.0.4",
+    "sha256": "05d824523fcf66e9eed3b57a0b6fc037db51de5f080f32b11b422b2ffdc771ea"
+  },
+  "sync-engine.js": {
+    "version": "1.1.0",
+    "sha256": "cb63ead2d81007cd32877c2446af25783dc271785dead73109f479f928e55c21"
+  },
+  "sync-ui.js": {
+    "version": "1.0.0",
+    "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
+  },
+  "theme.css": {
+    "version": "1.1.6",
+    "sha256": "d61cc9b1ccb1205a8f3c31781c7c5f4dd42f1b5b461c8794d1c04fbf1b9fc76e"
+  },
+  "ui-polish.js": {
+    "version": "1.0.3",
+    "sha256": "b266c817a840121bc13cc930dd850f35d3ce3d6a2d386a6c36f360654eaead5f"
+  },
+  "vault-store.js": {
+    "version": "1.0.8",
+    "sha256": "e5583e3919ff63738b63906841b67480b9bc07bb8b668c65d1cc9908ffb7ec4b"
+  }
+}

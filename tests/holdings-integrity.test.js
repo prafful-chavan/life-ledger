@@ -50,4 +50,52 @@ assert.deepStrictEqual(H.duplicateSurge(base, { mutualFunds: [...base.mutualFund
 assert.strictEqual(H.duplicateSurge(base, { mutualFunds: [...base.mutualFunds, ...base.mutualFunds.map((r) => ({ ...r, id: r.id + "x" }))] })[0].extra, 50);
 assert.deepStrictEqual(H.duplicateSurge({ mutualFunds: [] }, base), [], "no baseline, no verdict");
 assert.deepStrictEqual(H.duplicateSurge(base, { mutualFunds: [] }), [], "shrinking is never a surge");
+
+// ── import preview ──
+{
+  const mkMf = (i, o = {}) => ({ fundName: "Fund " + (i % 7), owner: "Me", demat: "G", transactionType: "PURCHASE", units: 10 + i, invested: 1000 + i * 3, purchaseDate: "2026-01-" + String(1 + (i % 27)).padStart(2, "0"), ...o });
+  const held = Array.from({ length: 40 }, (_, i) => ({ ...mkMf(i), id: "mf-legacy-" + i, latestNav: 5, currentValue: 50 }));
+  const state = { mutualFunds: held, stocks: [], usstocks: [] };
+  const stableSame = H.assignStableIds("mutualFunds", held.map(({ id, latestNav, currentValue, ...r }) => r));
+
+  // the very same sheet, with brand-new ids and no prices: nothing changes, nothing needs a question
+  let sum = H.importSummary(state, { mutualFunds: stableSame, stocks: [], usstocks: [] });
+  assert.strictEqual(sum.needsConfirm, false);
+  assert.strictEqual(sum.byColl.mutualFunds.added.length, 0); assert.strictEqual(sum.byColl.mutualFunds.removed.length, 0); assert.strictEqual(sum.byColl.mutualFunds.unchanged, 40);
+  assert.deepStrictEqual(H.describeImport(sum).lines, ["Mutual funds: 40 → 40 (no change)"], "an id migration shows as no change");
+
+  // one new SIP lot is routine: applied without asking, but still described
+  const two = H.assignStableIds("mutualFunds", [...held.map(({ id, latestNav, currentValue, ...r }) => r), mkMf(100)]);
+  sum = H.importSummary(state, { mutualFunds: two, stocks: [], usstocks: [] });
+  assert.strictEqual(sum.needsConfirm, false, "+1 on 40 is under 5%");
+  assert.deepStrictEqual(H.describeImport(sum).lines, ["Mutual funds: 40 → 41 (+1 new)"]);
+  // …and on a realistic book a handful of new lots is nothing
+  const realistic = Array.from({ length: 613 }, (_, i) => ({ ...mkMf(i), id: "mf-" + i }));
+  assert.strictEqual(H.importSummary({ mutualFunds: realistic }, { mutualFunds: [...realistic.map(({ id, ...r }) => r), mkMf(900), mkMf(901), mkMf(902)] }).needsConfirm, false, "+3 on 613 is routine");
+  assert.ok(H.describeImport(sum).details[0] === "New:" && /Fund/.test(H.describeImport(sum).details[1]));
+
+  // a sheet that would drop a lot of rows, or add a lot, asks first
+  const shrunk = H.assignStableIds("mutualFunds", held.slice(0, 30).map(({ id, latestNav, currentValue, ...r }) => r));
+  sum = H.importSummary(state, { mutualFunds: shrunk, stocks: [], usstocks: [] });
+  assert.strictEqual(sum.needsConfirm, true); assert.strictEqual(sum.byColl.mutualFunds.removed.length, 10);
+  assert.ok(/Mutual funds: 0 new and 10 removed against 40/.test(sum.reasons[0]) || /10 removed against 40 held/.test(sum.reasons[0]), sum.reasons[0]);
+  const doubled = H.assignStableIds("mutualFunds", [...held, ...held.map((r, i) => ({ ...r, id: undefined, units: r.units + 0.5 }))].map(({ id, latestNav, currentValue, ...r }) => r));
+  assert.strictEqual(H.importSummary(state, { mutualFunds: doubled, stocks: [], usstocks: [] }).needsConfirm, true, "doubling the book needs a yes");
+
+  // an empty sheet against a held book always asks; two empty sides never do
+  sum = H.importSummary(state, { mutualFunds: [], stocks: [], usstocks: [] });
+  assert.strictEqual(sum.needsConfirm, true); assert.ok(/the sheet has none, but you hold 40/.test(sum.reasons[0]));
+  assert.strictEqual(H.importSummary({ mutualFunds: [], stocks: [], usstocks: [] }, { mutualFunds: [], stocks: [], usstocks: [] }).needsConfirm, false);
+  // a first import into an empty book is not a "change" worth asking about
+  assert.strictEqual(H.importSummary({ mutualFunds: [] }, { mutualFunds: stableSame }).needsConfirm, false);
+
+  // sales and spellings: REDEEM and REDEMPTION are the same lot
+  const withSale = { mutualFunds: [{ ...mkMf(1, { transactionType: "REDEMPTION" }), id: "x" }], stocks: [], usstocks: [] };
+  assert.strictEqual(H.importSummary(withSale, { mutualFunds: [mkMf(1, { transactionType: "REDEEM" })] }).byColl.mutualFunds.unchanged, 1);
+  // long lists are trimmed in the dialog
+  const big = H.importSummary({ mutualFunds: [] }, { mutualFunds: stableSame });
+  const d = H.describeImport(big, { examples: 3 });
+  assert.ok(d.details.some((l) => /and 37 more/.test(l)));
+}
+
 console.log("holdings-integrity tests passed");

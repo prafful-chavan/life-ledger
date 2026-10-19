@@ -2,6 +2,13 @@
 
 A private, mobile-friendly personal dashboard for family finance, salary growth, expenses, net worth, interview preparation, future goals, daily tasks, exercise, and local assistant-style analysis.
 
+## Making a change safely
+
+1. Edit the code. If you changed a script or stylesheet that `index.html` loads as `file?v=X.Y.Z`, **bump that `?v=`** — devices cache by that URL and would never receive the change otherwise.
+2. `node tools/update-version-lock.js` records the new version (it refuses until every changed file has been bumped).
+3. `npm test` runs every unit test; `npm run test:e2e` drives the real app in headless Chrome with a made-up household.
+4. `git push` first runs a hook (version check + unit tests; enabled by `git config core.hooksPath .githooks`). On GitHub, every push to `main` is tested again and **the site is deployed only if all tests pass**.
+
 ## Live app
 
 **https://prafful-chavan.github.io/life-ledger/**

@@ -124,5 +124,60 @@
     return hits;
   }
 
-  return { COLLS, fingerprint, hash16, isStableId, assignStableIds, collapseImportGhosts, duplicateReport, looksDuplicated, halveDuplicates, duplicateSurge };
+
+  // ── preview of a Sync Holdings import ───────────────────────────────────────────────────────
+  const LABEL = { mutualFunds: "Mutual funds", stocks: "Stocks & ETFs", usstocks: "US stocks" };
+  const inr = (v) => "₹" + Math.round(num(v)).toLocaleString("en-IN");
+  const rowText = (coll, r) => coll === "mutualFunds"
+    ? `${r.fundName || "?"} · ${iso(r.purchaseDate || r.date)} · ${inr(r.invested)}${/^red/i.test(String(r.transactionType || "")) ? " (sale)" : ""} · ${r.owner || "Me"}`
+    : `${r.symbol || r.company || "?"} · ${num(r.quantity)} × · ${iso(r.purchaseDate || r.date)} · ${r.owner || "Me"}`;
+
+  /** What changes if `incoming` replaces `current`, matching rows by content (never by id, which a re-import regenerates). */
+  function diffHoldings(coll, current, incoming) {
+    const group = (rows) => { const m = new Map(); for (const r of rows || []) { const fp = fingerprint(coll, r); (m.get(fp) || m.set(fp, []).get(fp)).push(r); } return m; };
+    const cur = group(current), inc = group(incoming);
+    const added = [], removed = [];
+    let unchanged = 0;
+    for (const [fp, rows] of inc) { const c = (cur.get(fp) || []).length; unchanged += Math.min(c, rows.length); if (rows.length > c) added.push(...rows.slice(c)); }
+    for (const [fp, rows] of cur) { const n = (inc.get(fp) || []).length; if (rows.length > n) removed.push(...rows.slice(n)); }
+    return { added, removed, unchanged, before: (current || []).length, after: (incoming || []).length };
+  }
+
+  /**
+   * Summarises an import and decides whether it needs the user's OK first: a few new lots are routine, but a sheet that
+   * would remove or add many rows, shrink a book by 5%+, or empty one is a bigger event than a normal daily sync.
+   */
+  function importSummary(state, incoming) {
+    const byColl = {}, reasons = [];
+    for (const coll of Object.keys(COLLS)) {
+      const d = diffHoldings(coll, state && state[coll], incoming && incoming[coll]);
+      byColl[coll] = d;
+      if (!d.before && !d.after) continue;
+      const changed = d.added.length + d.removed.length;
+      if (d.before > 0 && d.after === 0) reasons.push(`${LABEL[coll]}: the sheet has none, but you hold ${d.before}`);
+      else if (d.before > 0 && (d.removed.length >= 5 || d.added.length >= 5 || changed / d.before >= 0.05)) reasons.push(`${LABEL[coll]}: ${d.added.length} new and ${d.removed.length} removed against ${d.before} held`);
+    }
+    return { byColl, needsConfirm: reasons.length > 0, reasons };
+  }
+
+  /** Plain-language lines for a dialog or toast. */
+  function describeImport(summary, { examples = 4 } = {}) {
+    const lines = [];
+    for (const coll of Object.keys(COLLS)) {
+      const d = summary.byColl[coll];
+      if (!d || (!d.before && !d.after)) continue;
+      const bits = [];
+      if (d.added.length) bits.push(`+${d.added.length} new`);
+      if (d.removed.length) bits.push(`−${d.removed.length} removed`);
+      lines.push(`${LABEL[coll]}: ${d.before} → ${d.after}${bits.length ? " (" + bits.join(", ") + ")" : " (no change)"}`);
+    }
+    const sample = (title, key) => {
+      const out = [];
+      for (const coll of Object.keys(COLLS)) for (const r of (summary.byColl[coll] || {})[key] || []) out.push(rowText(coll, r));
+      return out.length ? [title, ...out.slice(0, examples).map((t) => "   • " + t), ...(out.length > examples ? [`   … and ${out.length - examples} more`] : [])] : [];
+    };
+    return { lines, details: [...sample("New:", "added"), ...sample("Removed:", "removed")] };
+  }
+
+  return { COLLS, fingerprint, hash16, isStableId, assignStableIds, collapseImportGhosts, duplicateReport, looksDuplicated, halveDuplicates, duplicateSurge, diffHoldings, importSummary, describeImport };
 });
