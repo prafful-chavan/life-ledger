@@ -8860,6 +8860,17 @@ function isNetWorthClassSettled(cls, fetchedAtMs, dateISO, navISO) {
   }
 }
 
+/** A cheap fingerprint of what is held per market class. When it changes (rows added, removed, edited) a locked close is stale. */
+function holdingsSignature() {
+  const n = (v) => Number(v) || 0;
+  const sum = (list, f) => (list || []).reduce((t, x) => t + f(x), 0);
+  return {
+    mutualFunds: `${(state.mutualFunds || []).length}:${Math.round(sum(state.mutualFunds, (m) => (/^red/i.test(String(m.transactionType || "")) ? -1 : 1) * n(m.units)))}`,
+    stocks: `${(state.stocks || []).length}:${Math.round(sum(state.stocks, (x) => n(x.quantity)))}`,
+    usStocks: `${(state.usstocks || []).length}:${Math.round(sum(state.usstocks, (x) => n(x.quantity) * 1000))}`,
+  };
+}
+
 // What today's net worth record looks like RIGHT NOW (pure: does not touch saved history).
 // Classes already locked at their close keep their locked value; the rest are live.
 function buildTodaySnapshot(options = {}) {
@@ -8875,14 +8886,22 @@ function buildTodaySnapshot(options = {}) {
   const changes = {};
   const asOf = {};
   const fxNow = getUsdInrRate();
+  const sigNow = holdingsSignature();
   NWH_MARKET_CLASSES.forEach((cls) => {
     const live = dayChangeMetrics.classes[cls];
     const liveSettled = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
     const fxChanged = cls === 'usStocks' && live.held && existing && prevSettled[cls] &&
       (!existing.fxRate || Math.abs(existing.fxRate - fxNow) > 0.05);   // US stocks are valued with the exchange rate of the moment they were locked
+    // The rows behind a class changed after it was locked (an import, a deletion, a correction): the locked value is stale.
+    // Snapshots saved before fingerprints existed fall back to "the locked value is far from what the holdings are worth now".
+    const lockedValue = existing ? toNumber(existing[cls]) : 0, liveValue = toNumber(breakdown[cls]);
+    const holdingsChanged = Boolean(existing && prevSettled[cls] && (
+      existing.holdSig && existing.holdSig[cls] !== undefined
+        ? existing.holdSig[cls] !== sigNow[cls]
+        : lockedValue > 0 && liveValue > 0 && Math.abs(lockedValue / liveValue - 1) > 0.25));
     const NWC = typeof window !== "undefined" ? window.LifeLedgerNetWorthClose : undefined;
     const keep = NWC?.keepLock
-      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt, { heldNow: live.held, lockedValue: existing ? existing[cls] : 0, fxChanged })
+      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt, { heldNow: live.held, lockedValue: existing ? existing[cls] : 0, fxChanged, holdingsChanged })
       : Boolean(prevSettled[cls]);
     if (keep) {
       // Locked at its close earlier today (and nothing newer after the close): keep that value and gain/loss
@@ -8935,6 +8954,7 @@ function buildTodaySnapshot(options = {}) {
     others: breakdown.others,
     liabilities: breakdown.liabilities,
     fxRate: fxNow,
+    holdSig: sigNow,
     source: options.source || "daily"
   };
 

@@ -157,6 +157,13 @@ const SCANNER = `(${function scan() {
     const expectedNW = expectedAssets - expected.liabilities;
     check("net worth equals an independent sum of the raw records", near(snap.netWorth, expectedNW), `app ${snap.netWorth} vs expected ${expectedNW}`);
     check("mutual funds count redemptions (net units × NAV)", near(snap.mutualFunds, expected.mfNet), `app ${snap.mutualFunds} vs ${expected.mfNet}`);
+    // A doubled value that was locked into today's record must be recomputed once the rows are corrected (19 Oct incident)
+    const relock = await cdp.eval(`(()=>{const s=LifeLedgerApp.getState(); const today=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); const live=LifeLedgerApp.getNetWorthSnapshot().mutualFunds;
+      let rec=(s.netWorthHistory||[]).find(e=>e.date===today); const orig=rec?JSON.stringify(rec):null; if(!rec){rec={id:'nwh-e2e',date:today}; s.netWorthHistory=[...(s.netWorthHistory||[]),rec]}
+      rec.mutualFunds=live*2; rec.settled={...(rec.settled||{}),mutualFunds:true}; rec.asOf={...(rec.asOf||{}),mutualFunds:new Date(Date.now()+3600000).toISOString()}; delete rec.holdSig;
+      const after=LifeLedgerApp.getNetWorthSnapshot().mutualFunds; if(orig){const i=s.netWorthHistory.findIndex(e=>e.date===today); s.netWorthHistory[i]=JSON.parse(orig)} else {s.netWorthHistory=s.netWorthHistory.filter(e=>e.id!=='nwh-e2e')}; return JSON.stringify({live,locked:live*2,after})})()`);
+    const rl = JSON.parse(relock);
+    check("a doubled value locked into today's record is recomputed from the current rows", near(rl.after, rl.live, 1), JSON.stringify(rl));
     if (process.env.DEBUG) { const s2 = await cdp.eval(`(()=>{const s=LifeLedgerApp.getNetWorthSnapshot(); return JSON.stringify({nw:s.netWorth,mf:s.mutualFunds,st:s.stocks,us:s.usStocks,gold:s.gold,settled:s.settled,asOf:s.asOf, rec:(LifeLedgerApp.getState().netWorthHistory||[]).map(h=>({d:h.date,nw:h.netWorth,mf:h.mutualFunds,gold:h.gold,settled:h.settled}))})})()`); console.log('SNAP-BEFORE-VIEW', s2); }
     await view("dashboard");
     const hero = await cdp.eval(`document.getElementById('heroValue').textContent`);

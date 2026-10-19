@@ -126,4 +126,11 @@ assert.strictEqual(r.settled.stocks, true);
   assert.strictEqual(K(true, "2026-10-18T09:54:22Z", false, 0, { heldNow: true, lockedValue: 208226, fxChanged: true }), false, "rate changed → not locked");
   assert.strictEqual(K(true, "2026-10-18T09:54:22Z", false, 0, { heldNow: true, lockedValue: 208226, fxChanged: false }), true, "same rate → keeps the lock");
 }
+
+// Holdings corrected after a class was locked (e.g. doubled rows removed): the stale locked value must be recomputed
+{
+  const K = require("../networth-close.js").keepLock;
+  assert.strictEqual(K(true, "2026-10-19T05:42:18Z", false, 0, { heldNow: true, lockedValue: 8764413, holdingsChanged: true }), false, "rows changed → not locked");
+  assert.strictEqual(K(true, "2026-10-19T05:42:18Z", false, 0, { heldNow: true, lockedValue: 4382206, holdingsChanged: false }), true, "rows unchanged → the close stays locked");
+}
 console.log("networth-close tests passed");

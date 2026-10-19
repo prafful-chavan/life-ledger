@@ -119,6 +119,8 @@
     if (!prevSettled) return false;
     // The value was locked with a different USD→INR rate than today's: it has to be recomputed
     if (extra && extra.fxChanged) return false;
+    // The holdings behind the class changed after it was locked (rows added, removed or corrected): recompute
+    if (extra && extra.holdingsChanged) return false;
     // A class locked while the household held none of it (value 0, no price time) must open up as soon as something
     // is added; otherwise a first-ever holding added later the same day would not count until tomorrow.
     if (extra && extra.heldNow && !prevAsOfISO && !num(extra.lockedValue)) return false;
