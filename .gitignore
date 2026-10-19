@@ -10,3 +10,14 @@ Salary*.xlsx
 
 # Optional local override (config.js in repo is a placeholder)
 # config.local.js
+
+# Private tax documents (Form 16, ITRs, broker statements, passbooks…). The GitHub repository is PUBLIC: never commit these.
+tax-docs/
+**/tax-docs/**
+*.itr
+*Form16*
+*form16*
+*Form-16*
+*ITR-V*
+*26AS*
+*AIS_*
