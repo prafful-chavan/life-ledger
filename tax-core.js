@@ -509,7 +509,7 @@
     if (f.form === "ITR-1") {
       const why = [];
       if (hasST) why.push("short-term capital gains/losses");
-      if (ltcg > 0 && (fyStartYear < 2024 || ltcg > E.RULES.itr1.maxLtcg112AFromAY2526)) why.push("long-term gains ITR-1 cannot carry");
+      if (ltcg > (fyStartYear >= 2024 ? E.RULES.itr1.maxLtcg112AFromAY2526 : 100000)) why.push("long-term gains above what ITR-1 can carry");
       if (num(ev.brokers?.intraday)) why.push("intraday (speculative) trades");
       if (hasForeign) why.push("foreign assets");
       if (why.length) add("high", "wrong-form", "ITR-1 was not allowed", `This year had ${why.join(", ")}. The return needed ITR-2.`, 0, "File ITR-2.");
@@ -595,6 +595,8 @@
     }
 
     const corrected = E.computeTax(correctedInput(c));
+    // Items below stand if the household can show proof; they are listed but not counted in the corrected tax.
+    for (const f of findings) f.proofNeeded = ["hra-proof", "hra-parents", "hra-pan", "80ggc", "80c"].includes(f.id);
     const order = { high: 0, medium: 1, low: 2, info: 3 };
     findings.sort((a, b) => order[a.severity] - order[b.severity] || b.taxImpact - a.taxImpact);
     return {
@@ -920,7 +922,7 @@
       }
       // Advance tax only for people whose tax after TDS is ₹10,000 or more, with the amount to have paid by each date.
       for (const p of model.people || []) for (const a of (p.plan && p.plan.advanceTax) || []) add(a.date, `Advance tax for ${p.name}: ${inr(a.cumulativeAmount)} paid in total (${a.cumulativePct}%)`, "tax", "Tax after TDS is ₹10,000 or more, so instalments apply.", p.name);
-      for (const r of model.returnsAudit || []) if (r.remedy && r.remedy.lastDate && r.remedy.pctExtra && r.extraTax > 0 && r.fy !== model.fy) add(r.remedy.lastDate, `Last day to correct FY ${r.fy} by an updated return`, "law", `Extra tax rate is ${r.remedy.pctExtra}% now; it steps up on 1 April.`, r.person);
+      for (const r of model.returnsAudit || []) if (r.remedy && r.remedy.lastDate && r.remedy.pctExtra && r.extraTax > 0 && r.fy !== model.fy) add(r.remedy.lastDate, `Last day to correct FY ${r.fy} by an updated return`, "law", `Extra tax rate is ${r.remedy.pctExtra}% now; it steps up on 1 April.`, NAMES[r.person] || r.person);
       const dep = model.profile && model.profile.departure;
       if (dep && dep.date) add(dep.date, "Planned departure abroad", "plan", "Residential status, NRO/NRE accounts, KYC updates and insurance must be settled before this date.");
       return out.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -954,11 +956,11 @@
       const ord = { high: 0, medium: 1, low: 2 };
       for (const latest of (model.returnsAudit || []).filter((r) => !r.unfiled && r.ay === "2026-27" && r.extraTax > 0)) {
         const hi = latest.findings.filter((f) => f.severity === "high").length;
-        add(`revise-${latest.person}`, "high", `Revise the FY ${latest.fy} return`, `${hi} high-severity item${hi === 1 ? "" : "s"}; on the documents the refund of ${inr(latest.refundClaimed)} becomes ${inr(latest.refundOnDocuments)}. Free until 31 Dec 2026.`, "2026-12-31", { who: latest.person === "Me" ? NAMES.Me : NAMES.Wife });
+        add(`revise-${latest.person}`, "high", `Revise the FY ${latest.fy} return`, `${hi} high-severity item${hi === 1 ? "" : "s"}. On the documents the ${inr(latest.refundClaimed)} refund would instead be ${latest.refundOnDocuments < 0 ? `about ${inr(-latest.refundOnDocuments)} to pay` : `${inr(latest.refundOnDocuments)}`}. Fee-free until 31 Dec 2026.`, "2026-12-31", { who: latest.person === "Me" ? NAMES.Me : NAMES.Wife });
       }
       for (const r of model.returnsAudit || []) {
         if (r.fy === model.fy || r.ay === "2026-27" || !(r.extraTax > 0) || !r.remedy || !r.remedy.open) continue;
-        add(`itru-${r.fy}-${r.person}`, "medium", `Decide on an updated return for FY ${r.fy}`, `About ${inr(r.remedy.totalToPay)} to correct (${r.remedy.pctExtra}% extra on tax and interest); rate steps up on 1 April. ${r.unfiled ? "No return was filed for this year." : ""}`, r.remedy.lastDate, { who: r.person });
+        add(`itru-${r.fy}-${r.person}`, "medium", `Decide on an updated return for FY ${r.fy}`, `About ${inr(r.remedy.totalToPay)} to correct (${r.remedy.pctExtra}% extra on tax and interest); the rate steps up on 1 April. ${r.unfiled ? "No return was filed for this year." : ""}`, r.remedy.lastDate, { who: NAMES[r.person] || r.person });
       }
       const us = sumVal(state.usstocks, "currentValue") || sumVal(state.usstocks);
       const faMissing = (model.returnsAudit || []).some((r) => (r.findings || []).some((f) => f.id === "schedule-fa"));

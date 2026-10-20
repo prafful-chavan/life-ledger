@@ -136,6 +136,13 @@ assert.strictEqual(G.classifyGift({ amount: 200000, date: "2024-09-09", relation
 assert.ok(/loan/i.test(G.classifyGift({ amount: 500000, date: "2024-05-14", relation: "other", repaymentExpected: true }, ctx).summary));
 assert.strictEqual(G.classifyGift({ amount: 150000, date: "2024-09-09", relation: "parent" }, ctx).clubbedToGiver, false, "no clubbing for gifts to parents");
 
+// ITR-1 can carry long-term gains up to ₹1L (to FY 2023-24) and ₹1.25L after; it was wrongly refused before
+const itr1 = (fy, brokers) => audit({ fy, person: "T", filed: { form: "ITR-1", regime: "new", grossSalary: 900000, totalTax: 0, taxesPaid: 0 }, evidence: { brokers } }).findings.map((f) => f.id);
+assert.ok(!itr1("2023-24", { ltcgBefore: 25000 }).includes("wrong-form"), "₹25,000 of long-term gains fits ITR-1");
+assert.ok(itr1("2023-24", { ltcgBefore: 150000 }).includes("wrong-form"), "above ₹1L it does not");
+assert.ok(itr1("2024-25", { ltcgAfter: 5000, stcgAfter: 1000 }).includes("wrong-form"), "any short-term gain needs ITR-2");
+const proof = audit({ fy: "2023-24", person: "T", filed: { form: "ITR-2", regime: "old", grossSalary: 2000000, exemptAllowances: 100000, exemptBreakup: { hra: 100000 }, deductions: { "80GGC": 100000 }, totalTax: 0, taxesPaid: 0, foreignAssetsDeclared: true }, evidence: { rent: { paid: 0 }, donations: [{ amount: 100000, debitDate: "2024-06-01", recognisedParty: false }] } });
+assert.strictEqual(proof.findings.filter((f) => f.proofNeeded).map((f) => f.id).sort().join(), "80ggc,hra-proof", "HRA and the donation are marked proof-needed");
 console.log("tax law, remedies and gifts tests passed");
 
 // ── residency (moving abroad) ──

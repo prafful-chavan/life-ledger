@@ -116,12 +116,12 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.0.3",
-    "sha256": "3fc76727a77a81ae94b7ee978106601293f9a1112024e70f8f631247f2439cd8"
+    "version": "1.0.5",
+    "sha256": "5338aa3c2ebf63c4d3214ae46aaa0eb8865748f70a65134da42ba8bcd77c2d65"
   },
   "tax.js": {
-    "version": "1.0.3",
-    "sha256": "849700e68cae18b9c7819588c853a4fb105925345f93ce4d9e5c6880b00daab1"
+    "version": "1.0.5",
+    "sha256": "ddeaad469317b4b1d9d938d536637b24eec53438b8c4e918828a30fe06958085"
   },
   "theme.css": {
     "version": "1.1.7",
