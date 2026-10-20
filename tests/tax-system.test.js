@@ -98,3 +98,42 @@ assert.strictEqual(used.regimes.new.tax, plan({ fy: "2026-27", person: "x", gros
 assert.ok(!plan({ fy: "2026-27", person: "Full", grossSalary: 900000, basic: 300000, realisedLtcgYtd: 130000 }, "2026-10-20").levers.some((l) => l.id === "ltcg-harvest"), "nothing left to harvest");
 
 console.log("tax-system tests passed");
+
+// ── law register, remedies, gifts ──
+const Law = require("../tools/tax/law.js");
+const R = require("../tools/tax/remedies.js");
+const G = require("../tools/tax/gifts.js");
+assert.ok(Law.LAW.every((r) => r.id && r.topic && r.rule && ["statute", "secondary", "author"].includes(r.confidence) && Array.isArray(r.sources) && r.sources.length), "every rule names its source and confidence");
+assert.strictEqual(new Set(Law.LAW.map((r) => r.id)).size, Law.LAW.length, "rule ids are unique");
+assert.ok(Law.lawStatus("2026-10-20").needsReview.includes("fast-ds"), "secondary-source rules are flagged for review");
+assert.ok(Law.lawStatus("2027-03-01").stale.length === Law.LAW.length, "everything is stale after 60 days");
+
+assert.deepStrictEqual([R.itrUTier("2025-26", "2026-10-20").pct, R.itrUTier("2024-25", "2026-10-20").pct, R.itrUTier("2023-24", "2026-10-20").pct, R.itrUTier("2022-23", "2026-10-20").pct], [25, 50, 60, 70]);
+assert.strictEqual(R.itrUTier("2021-22", "2026-10-20"), null, "AY 2021-22 closed after 31-Mar-2026");
+assert.strictEqual(R.itrUTier("2022-23", "2027-04-01"), null, "AY 2022-23 closes 31-Mar-2027");
+assert.strictEqual(R.itrUTier("2025-26", "2027-04-02").pct, 50, "the rate steps up each 1 April");
+const cost = R.itrUCost({ ay: "2024-25", additionalTax: 20000, asOf: "2026-10-20" });
+assert.strictEqual(cost.extraTax, Math.round((cost.additionalTax + cost.interest) * 0.5));
+assert.strictEqual(cost.totalToPay, cost.additionalTax + cost.interest + cost.extraTax);
+assert.strictEqual(R.revisedReturn({ ay: "2026-27", asOf: "2026-12-31" }).fee, 0);
+assert.strictEqual(R.revisedReturn({ ay: "2026-27", asOf: "2027-01-02" }).fee, 5000);
+assert.strictEqual(R.revisedReturn({ ay: "2025-26", asOf: "2026-10-20" }).open, false);
+const f = R.fastDs({ valueAtMar2026: 300000, peakValueInr: 900000, asOf: "2026-10-20" });
+assert.ok(f.open && f.category === "B" && f.cost === 100000);
+assert.strictEqual(R.fastDs({ valueAtMar2026: 300000, taxedIncome: false, asOf: "2026-10-20" }).cost, 180000, "category A is 60% of value");
+assert.strictEqual(R.fastDs({ valueAtMar2026: 1, asOf: "2027-01-01" }).open, false, "window closes 31-Dec-2026");
+
+const ctx = { marriageDate: "2024-06-30" };
+assert.strictEqual(G.isRelative("spouse", "2024-05-14", ctx.marriageDate), false, "fiancée is not yet a relative");
+assert.strictEqual(G.isRelative("spouse", "2024-09-09", ctx.marriageDate), true);
+assert.strictEqual(G.isRelative("parent", "2020-01-01", ctx.marriageDate), true);
+const pre = G.classifyGift({ amount: 500000, date: "2024-05-14", relation: "spouse", viaOther: true }, ctx);
+assert.ok(/before the wedding/.test(pre.summary) && pre.confidence === "medium" && !pre.clubbedToGiver);
+const post = G.classifyGift({ amount: 600000, date: "2024-09-09", relation: "spouse" }, ctx);
+assert.ok(post.clubbedToGiver && post.taxableToReceiver === 0);
+assert.strictEqual(G.classifyGift({ amount: 30000, date: "2024-09-09", relation: "other" }, ctx).taxableToReceiver, 0, "up to ₹50,000 is fine");
+assert.strictEqual(G.classifyGift({ amount: 200000, date: "2024-09-09", relation: "other" }, ctx).taxableToReceiver, 200000, "non-relative above ₹50,000");
+assert.ok(/loan/i.test(G.classifyGift({ amount: 500000, date: "2024-05-14", relation: "other", repaymentExpected: true }, ctx).summary));
+assert.strictEqual(G.classifyGift({ amount: 150000, date: "2024-09-09", relation: "parent" }, ctx).clubbedToGiver, false, "no clubbing for gifts to parents");
+
+console.log("tax law, remedies and gifts tests passed");
