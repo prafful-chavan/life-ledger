@@ -8,7 +8,7 @@ const state = {
   fx: { usdInr: 90 },
   income: [
     ...months.map((d) => salaryRow("Me", d, 260000, 48000)),
-    salaryRow("Me", "2026-04-01", 250000, 40000),                       // credited 1 Apr = March's salary → previous FY
+    salaryRow("Me", "2026-03-01", 250000, 40000),                       // March's salary → previous FY
     ...months.map((d) => salaryRow("Wife", d, 58000, 0)),
   ],
   mutualFunds: [
@@ -31,7 +31,7 @@ const m = H.build(state, "2026-10-20");
 assert.strictEqual(m.fy, "2026-27"); assert.strictEqual(m.ay, "2027-28");
 
 // salary: 6 paid months + 6 typical months; the 1-Apr credit belongs to last year
-assert.strictEqual(H.salaryFy("2026-04-01"), "2025-26"); assert.strictEqual(H.salaryFy("2026-04-30"), "2026-27"); assert.strictEqual(H.salaryFy("2027-01-02"), "2026-27");
+assert.strictEqual(H.salaryFy("2026-03-01"), "2025-26"); assert.strictEqual(H.salaryFy("2026-04-01"), "2026-27", "a month's pay dated the 1st belongs to that month"); assert.strictEqual(H.salaryFy("2026-04-30"), "2026-27"); assert.strictEqual(H.salaryFy("2027-01-02"), "2026-27");
 const me = m.people.find((p) => p.who === "Me"), wife = m.people.find((p) => p.who === "Wife");
 assert.strictEqual(me.salary.months, 6); assert.strictEqual(me.salary.gross, 260000 * 12);
 assert.strictEqual(me.salary.tds, 48000 * 12);

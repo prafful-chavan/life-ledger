@@ -1048,10 +1048,9 @@
     const daysTo = (from, to) => Math.round((Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 864e5);
     const fyStartYear = (fy) => +fy.slice(0, 4);
 
-    /** The financial year a salary record belongs to. A credit on the 1st–3rd is the previous month's salary. */
+    /** The financial year a salary record belongs to: the month of its date is the pay month (the salary sheet dates a month's pay on the 1st; manual entries use the credit date). */
     function salaryFy(iso) {
-      let y = +iso.slice(0, 4), m = +iso.slice(5, 7); const d = +iso.slice(8, 10);
-      if (d <= 3) { m -= 1; if (m === 0) { m = 12; y -= 1; } }
+      const y = +iso.slice(0, 4), m = +iso.slice(5, 7);
       return m >= 4 ? `${y}-${String(y + 1).slice(2)}` : `${y - 1}-${String(y).slice(2)}`;
     }
 
@@ -1060,11 +1059,7 @@
      * Returns { months, gross, basic, hra, pf, tds, professionalTax, typicalMonthlyGross, basedOn } or null when there is none.
      */
     /** 1 = April … 12 = March for the month a salary record pays. */
-    function payIdx(iso) {
-      let y = +iso.slice(0, 4), m = +iso.slice(5, 7); const d = +iso.slice(8, 10);
-      if (d <= 3) { m -= 1; if (m === 0) { m = 12; y -= 1; } }
-      return m >= 4 ? m - 3 : m + 9;
-    }
+    function payIdx(iso) { const m = +iso.slice(5, 7); return m >= 4 ? m - 3 : m + 9; }
     const MONTH_NAMES = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
     function salaryProjection(state, who, fy) {
       const all = (state.income || []).filter((i) => (i.person || "Me") === who && (!i.type || /salary/i.test(i.type)) && num(i.grossEarnings) > 0)

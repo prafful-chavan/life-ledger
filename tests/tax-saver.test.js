@@ -79,6 +79,13 @@ const sp = H.salaryProjection(gap, "Me", "2026-27");
 assert.deepStrictEqual(sp.missingMonths, ["Jun"]); assert.strictEqual(sp.remainingMonths, 6); assert.strictEqual(sp.gross, 260000 * 12, "5 paid + 1 missing + 6 to come");
 assert.ok(H.build(gap, "2026-10-20").actions.some((a) => a.id === "missing-Me"), "the gap is flagged so the real payslip can be added");
 
+// ── real-world date mix: the salary sheet dates a month's pay on the 1st, manual entries use the credit date ──
+const mix = { income: ["2026-04-01", "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-31", "2026-09-30"].map((d, i) => row("Me", d, [326726, 251126, 282440, 340164, 261564, 261564][i], 47961)), taxProfile: {} };
+const mp = H.salaryProjection(mix, "Me", "2026-27");
+assert.strictEqual(mp.months, 6); assert.deepStrictEqual(mp.missingMonths, [], "nothing is missing: April to September are all there");
+assert.strictEqual(mp.remainingMonths, 6); assert.strictEqual(mp.lastPaidMonth, "Sep");
+assert.ok(!H.build(mix, "2026-10-20").actions.some((a) => a.id === "missing-Me"));
+
 // ── whole plan: ranked, totals add up, next year assumed ──
 assert.ok(sv.levers.every((l, i, a) => i === 0 || a[i - 1].thisYear + a[i - 1].runRate * 0.5 >= l.thisYear + l.runRate * 0.5), "ranked by value");
 assert.strictEqual(sv.totals.thisYear, sv.levers.reduce((a, l) => a + l.thisYear, 0));
