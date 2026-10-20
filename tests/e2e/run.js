@@ -223,6 +223,12 @@ const SCANNER = `(${function scan() {
     await cdp.eval(`document.querySelector('[data-tax-tab="rules"]').click()`); await sleep(300);
     check("rules tab shows sources and flags rules that rest on commentary", /Commentary: confirm/.test(await cdp.eval(`document.getElementById('taxBody').innerText`)));
     await cdp.eval(`document.querySelector('[data-tax-tab="data"]').click()`); await sleep(300);
+    await cdp.eval(`(()=>{const file=new File([JSON.stringify({taxProfile:{marriageDate:'2024-06-30',checklist:[{id:'imp',title:'Imported item'}]},taxReturns:[{id:'imp-1',fy:'2024-25',person:'Wife',filed:{form:'ITR-2',regime:'new',grossSalary:500000,totalTax:0,taxesPaid:0}}],taxFamily:[]})],'tax.json',{type:'application/json'}); const dt=new DataTransfer(); dt.items.add(file); const i=document.getElementById('taxImportFile'); i.files=dt.files; i.dispatchEvent(new Event('change',{bubbles:true})); return 0})()`); await sleep(500);
+    check("importing a file asks in the page (not a pop-up that some browsers block)", await cdp.eval(`!!document.querySelector('#taxAsk [data-tax-ask="yes"]')`));
+    await cdp.eval(`document.querySelector('#taxAsk [data-tax-ask="yes"]').click()`); await sleep(900);
+    check("after confirming, the imported data is stored and the page says so", (await cdp.eval(`(()=>{const s=LifeLedgerApp.getState(); return s.taxReturns.length===1 && s.taxFamily.length===0 && s.taxProfile.checklist[0].id==='imp'})()`)) && /Imported: 1 returns/.test(await cdp.eval(`(document.getElementById('taxAsk')||{innerText:''}).innerText`)));
+    await cdp.eval(`document.querySelector('#taxAsk [data-tax-ask="yes"]').click()`); await sleep(300);
+    await cdp.eval(`document.querySelector('[data-tax-tab="data"]').click()`); await sleep(300);
     check("data tab shows counts and import/export", /Import tax data/.test(await cdp.eval(`document.getElementById('taxBody').innerText`)) && (await cdp.eval(`!!document.getElementById('taxExport')`)));
     if (process.env.TAX_SHOTS) {   // optional: save pictures of the tax page (made-up data) for a visual check
       for (const [w, h, label] of [[1280, 1000, "desktop"], [430, 932, "phone"]]) {

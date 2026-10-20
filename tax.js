@@ -26,6 +26,19 @@
   const sevChip = (sev) => chip(sev === "high" ? "bad" : sev === "medium" ? "warn" : sev === "info" ? "muted" : "muted", sev);
   const note = () => `<p class="tax-note">Planning aid, not tax advice. Figures come from your own records and the law as checked on ${esc(T().law.VERIFIED)}; a CA confirms before anything is filed or paid.</p>`;
 
+  /** In-page confirmation (native confirm/alert are blocked in some browsers and silently answer "no"). */
+  function ask(message, yes = "Replace", no = "Cancel") {
+    return new Promise((resolve) => {
+      const old = document.getElementById("taxAsk"); if (old) old.remove();
+      const box = document.createElement("div"); box.id = "taxAsk"; box.className = "tax-ask"; box.setAttribute("role", "alertdialog"); box.setAttribute("aria-modal", "true");
+      box.innerHTML = `<div class="tax-ask-card"><p>${esc(message).replace(/\n/g, "<br>")}</p><div class="prot-actions">${no ? `<button type="button" class="secondary-button" data-tax-ask="no">${esc(no)}</button>` : ""}<button type="button" class="primary-button" data-tax-ask="yes">${esc(yes)}</button></div></div>`;
+      const onKey = (e) => { if (e.key === "Escape") done(false); };
+      const done = (v) => { box.remove(); document.removeEventListener("keydown", onKey); resolve(v); };
+      box.addEventListener("click", (e) => { const b = e.target.closest("[data-tax-ask]"); if (b) done(b.dataset.taxAsk === "yes"); else if (e.target === box) done(false); });
+      document.addEventListener("keydown", onKey); document.body.appendChild(box); box.querySelector('[data-tax-ask="yes"]').focus();
+    });
+  }
+
   function compute() {
     try { model = T().household.build(state(), today()); } catch (e) { console.warn(e); model = null; }
     return model;
@@ -186,16 +199,17 @@
   async function importFile(file) {
     if (!file) return;
     let data;
-    try { data = JSON.parse(await file.text()); } catch { alert("That file is not valid JSON."); return; }
+    try { data = JSON.parse(await file.text()); } catch { await ask("That file is not valid JSON.", "OK", ""); return; }
     const ok = data && typeof data === "object" && (Array.isArray(data.taxReturns) || data.taxProfile || Array.isArray(data.taxFamily));
-    if (!ok) { alert("This does not look like a tax data file (it needs taxProfile, taxReturns or taxFamily)."); return; }
+    if (!ok) { await ask("This does not look like a tax data file (it needs taxProfile, taxReturns or taxFamily).", "OK", ""); return; }
     const s = state();
-    if (!confirm(`Replace your stored tax data with this file?\n\nReturns: ${(data.taxReturns || []).length}, transfers: ${(data.taxFamily || []).length}.`)) return;
+    if (!(await ask(`Replace your stored tax data with this file?\n\nReturns: ${(data.taxReturns || []).length}, transfers: ${(data.taxFamily || []).length}, checklist items: ${((data.taxProfile || {}).checklist || []).length}.`))) return;
     const withIds = (list, p) => (Array.isArray(list) ? list : []).map((x) => (x && typeof x === "object" ? { ...x, id: x.id || uid(p) } : null)).filter(Boolean);
     s.taxProfile = data.taxProfile && typeof data.taxProfile === "object" ? data.taxProfile : {};
     s.taxReturns = withIds(data.taxReturns, "taxr");
     s.taxFamily = withIds(data.taxFamily, "taxf");
     await save(); tab = "today"; render();
+    await ask(`Imported: ${s.taxReturns.length} returns, ${s.taxFamily.length} transfers, ${(s.taxProfile.checklist || []).length} checklist items.`, "OK", "");
   }
   function exportFile() {
     const s = state(), blob = new Blob([JSON.stringify({ taxProfile: s.taxProfile || {}, taxReturns: s.taxReturns || [], taxFamily: s.taxFamily || [] }, null, 1)], { type: "application/json" });
@@ -209,7 +223,7 @@
     const done = e.target.closest("[data-tax-done]");
     if (done) { const p = profile(); p.done = { ...(p.done || {}), [done.dataset.taxDone]: today() }; save().catch(() => {}); render(); return; }
     const del = e.target.closest("[data-tax-del-family]");
-    if (del && confirm("Remove this transfer?")) { const s = state(); s.taxFamily = (s.taxFamily || []).filter((x) => x.id !== del.dataset.taxDelFamily); save().catch(() => {}); render(); return; }
+    if (del) { ask("Remove this transfer?", "Remove").then((yes) => { if (!yes) return; const s = state(); s.taxFamily = (s.taxFamily || []).filter((x) => x.id !== del.dataset.taxDelFamily); save().catch(() => {}); render(); }); return; }
     if (e.target.closest("#taxExport")) exportFile();
   }
   function onSubmit(e) {
