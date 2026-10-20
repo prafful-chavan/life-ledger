@@ -138,3 +138,17 @@ discovered automatically — a new section that keeps an array of records in `st
 To give a new feature a hand-written briefing, register a module (see `knowledge-modules.js`):
 `LifeLedgerKnowledge.registerModule({ id, title, description, build: (state, args) => "text" })`.
 Add a line to `DESCRIPTIONS` in `knowledge.js` if you want the new list to carry a friendly explanation.
+
+
+## Tax page
+
+The **Tax** page (sidebar → Money → Tax) is a personal Indian income-tax planner for the two of you. Everything is computed in the browser by `tax-core.js` (the same file the tests and the MCP server use); `tax.js` only draws it.
+
+- **Today**: tax this year per person, ranked actions, and the dates that matter.
+- **Plan**: new vs old regime on your real salary records, ways to pay less (employer NPS, tax-free long-term gains and exactly which units to sell and buy back), advance tax, and a move-abroad residency view.
+- **Returns**: each filed (or unfiled) year checked against its documents, what correcting it costs (revised return, updated return), and the July filing checklist.
+- **Family money**: gifts, loans and deposits between family members, using the marriage date.
+- **Rules**: every rule the page relies on, its source and how sure we are. A monthly scheduled check looks for changes.
+- **Data**: import/export. Your profile, returns and transfers live in the encrypted vault (`taxProfile`, `taxReturns`, `taxFamily`); nothing personal is in the code or the repository.
+
+Planning aid only: a CA confirms before anything is filed or paid. Tests: `tests/tax-system.test.js`, `tests/tax-household.test.js`, `tests/tax-sync.test.js`, `tests/mcp-taxplan.test.js`, and the Tax checks in `tests/e2e/run.js`.
