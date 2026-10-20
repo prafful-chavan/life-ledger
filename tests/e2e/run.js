@@ -230,6 +230,20 @@ const SCANNER = `(${function scan() {
     await cdp.eval(`document.querySelector('[data-tax-tab="returns"]').click()`); await sleep(300);
     const rets = await cdp.eval(`document.getElementById('taxBody').innerText`);
     check("returns tab flags the unsupported claims and the unfiled year", /Exempt allowances above Form 16/i.test(rets) && /Employer NPS \(80CCD\(2\)\) without an NPS contribution/i.test(rets) && /No return filed/.test(rets), rets.slice(0, 400));
+    // add, edit and delete a year's return through the dialog
+    const nBefore = await cdp.eval(`LifeLedgerApp.getState().taxReturns.length`);
+    await cdp.eval(`document.querySelector('[data-tax-ret="add"]').click()`); await sleep(300);
+    check("'Add a year' opens the return dialog", await cdp.eval(`!document.getElementById('taxReturnModal').hidden && !!document.querySelector('#taxReturnForm [name="f:filed.grossSalary"]')`));
+    await cdp.eval(`(()=>{const f=document.getElementById('taxReturnForm'); const set=(n,v)=>{f.querySelector('[name="f:'+n+'"]').value=v}; set('person','Wife'); set('fy','2024-25'); set('filed.form','ITR-2'); set('filed.regime','new'); set('filed.grossSalary','400000'); set('filed.totalTax','0'); set('filed.taxesPaid','0'); document.getElementById('taxPrefill').click(); f.requestSubmit(); return 0})()`); await sleep(700);
+    const added2 = await cdp.eval(`(()=>{const s=LifeLedgerApp.getState(); const r=s.taxReturns.find(x=>x.fy==='2024-25'&&x.person==='Wife'); return JSON.stringify({n:s.taxReturns.length, r, closed:document.getElementById('taxReturnModal').hidden, shown:/Archana · FY 2024-25/.test(document.getElementById('taxBody').innerText)})})()`);
+    const a2 = JSON.parse(added2);
+    check("saving the dialog stores the year (empty fields are not stored as zero) and shows it", a2.n === nBefore + 1 && a2.r && a2.r.filed.grossSalary === 400000 && a2.r.filed.deductions === undefined && a2.closed && a2.shown, added2.slice(0, 300));
+    await cdp.eval(`(()=>{const id=LifeLedgerApp.getState().taxReturns.find(x=>x.fy==='2024-25'&&x.person==='Wife').id; document.querySelector('[data-tax-ret="edit"][data-id="'+id+'"]').click(); return 0})()`); await sleep(300);
+    await cdp.eval(`(()=>{const f=document.getElementById('taxReturnForm'); f.querySelector('[name="f:filed.totalTax"]').value='1500'; f.requestSubmit(); return 0})()`); await sleep(700);
+    check("editing a year updates it in place", (await cdp.eval(`(()=>{const s=LifeLedgerApp.getState(); const r=s.taxReturns.filter(x=>x.fy==='2024-25'&&x.person==='Wife'); return r.length===1 && r[0].filed.totalTax===1500})()`)));
+    await cdp.eval(`(()=>{const id=LifeLedgerApp.getState().taxReturns.find(x=>x.fy==='2024-25'&&x.person==='Wife').id; document.querySelector('[data-tax-ret="del"][data-id="'+id+'"]').click(); return 0})()`); await sleep(300);
+    await cdp.eval(`document.querySelector('#taxAsk [data-tax-ask="yes"]').click()`); await sleep(500);
+    check("deleting a year asks in the page and removes it", (await cdp.eval(`LifeLedgerApp.getState().taxReturns.length`)) === nBefore);
     await cdp.eval(`(()=>{const c=document.querySelector('[data-tax-file="form16"]'); c.click(); return 0})()`); await sleep(400);
     check("ticking a filing-checklist item saves it", Boolean((await cdp.eval(`(LifeLedgerApp.getState().taxProfile.filingDone||{})[Object.keys(LifeLedgerApp.getState().taxProfile.filingDone||{})[0]]`)||{}).form16));
     await cdp.eval(`document.querySelector('[data-tax-tab="family"]').click()`); await sleep(300);
@@ -255,6 +269,14 @@ const SCANNER = `(${function scan() {
           const shot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
           fs.writeFileSync(path.join(process.env.TAX_SHOTS, `tax-${t}-${label}.png`), Buffer.from(shot.data, "base64"));
         }
+      }
+      for (const [w, h, label] of [[1280, 1000, "desktop"], [430, 932, "phone"]]) {
+        await viewport(w, h); await sleep(400);
+        await cdp.eval(`document.querySelector('[data-tax-tab="returns"]').click()`); await sleep(300);
+        await cdp.eval(`document.querySelector('[data-tax-ret="add"]').click()`); await sleep(400);
+        const shot = await cdp.send("Page.captureScreenshot", { format: "png" });
+        fs.writeFileSync(path.join(process.env.TAX_SHOTS, `tax-return-dialog-${label}.png`), Buffer.from(shot.data, "base64"));
+        await cdp.eval(`document.querySelector('#taxReturnModal [data-close-modal]').click()`); await sleep(300);
       }
       await viewport(1280, 900); await sleep(300);
     }

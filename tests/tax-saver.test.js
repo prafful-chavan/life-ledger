@@ -143,3 +143,21 @@ console.log("tax if sold tests passed");
   assert.strictEqual(mu.plan.tdsProjected, mu.salary.tdsPace); assert.ok(/current monthly pace/.test(mu.salary.tdsAssumption));
 }
 console.log("salary pattern tests passed");
+
+// ── pre-filling a return's evidence from the app's own records ──
+{
+  const st = {
+    income: ["2024-04-30", "2024-05-31", "2025-03-31", "2025-04-30"].map((d) => ({ person: "Me", date: d, type: "Salary", grossEarnings: 100000, taxTds: 10000, amount: 90000 })),
+    mutualFunds: [
+      { id: "b", fundName: "Eq Fund", owner: "Me", transactionType: "PURCHASE", units: 100, invested: 10000, purchaseDate: "2022-01-10", latestNav: 300 },
+      { id: "r1", fundName: "Eq Fund", owner: "Me", transactionType: "REDEMPTION", units: 50, invested: 12500, purchaseDate: "2024-06-01" },
+      { id: "r2", fundName: "Eq Fund", owner: "Me", transactionType: "REDEMPTION", units: 50, invested: 15000, purchaseDate: "2024-09-01" },
+    ],
+  };
+  const ev = H.evidenceFromRecords(st, "Me", "2024-25");
+  assert.strictEqual(ev.months, 3, "April, May and March belong to FY 2024-25");
+  assert.strictEqual(ev.evidence.ais.salary, 300000); assert.strictEqual(ev.evidence.tds, 30000);
+  assert.deepStrictEqual(ev.evidence.brokers, { ltcgBefore: 7500, ltcgAfter: 10000 }, "split at 23-Jul-2024 by sale date");
+  assert.deepStrictEqual(H.evidenceFromRecords(st, "Wife", "2024-25").evidence, {}, "nothing is invented when there is no record");
+}
+console.log("evidence prefill tests passed");

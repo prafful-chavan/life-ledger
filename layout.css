@@ -711,3 +711,10 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .tax-planned { background: color-mix(in srgb, var(--good) 10%, transparent); font-weight: 600; }
 .adv-h-tax { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
 .tax-card #taxCardLines { color: var(--muted); }
+.tax-modal-card { max-width: 920px; width: min(920px, calc(100vw - 32px)); }
+.quick-form.tax-return-form { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.quick-form.tax-return-form > * { grid-column: 1 / -1; }
+.tax-form-section { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.tax-form-section > summary { cursor: pointer; font-weight: 650; padding: 4px 0; }
+.tax-form-section[open] > summary { margin-bottom: 8px; }
+.tax-form-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }

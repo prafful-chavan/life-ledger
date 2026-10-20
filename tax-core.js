@@ -1423,7 +1423,29 @@
       return L.join("\n");
     }
 
-    return { build, salaryProjection, salaryFy, personInputs, returnsAudit, deadlines, actions, departureView, harvestPlan, filingChecklist, briefing };
+    /**
+     * What the app's own records say about a year, to pre-fill a return's evidence: salary and TDS from the income records,
+     * and gains realised on mutual funds (split at 23-Jul-2024 by sale date). Only fields with data are returned.
+     */
+    function evidenceFromRecords(state, who, fy) {
+      const out = {};
+      const rows = (state.income || []).filter((i) => (i.person || "Me") === who && (!i.type || /salary/i.test(i.type)) && salaryFy(i.date || "") === fy);
+      const gross = rows.reduce((a, r) => a + num(r.grossEarnings), 0), tds = rows.reduce((a, r) => a + num(r.taxTds), 0);
+      if (gross > 0) out.ais = { salary: r0(gross) };
+      if (tds > 0) out.tds = r0(tds);
+      const fyEnd = `${fyStartYear(fy) + 1}-03-31`;
+      const lots = gains.buildLots(state, num((state.fx || {}).usdInr) || 95);
+      const re = gains.realisedThisFY(lots.realised, fyEnd).rows.filter((r) => r.owner === who && (r.category === "equity" || r.category === "hybrid"));
+      if (re.length) {
+        const b = { stcgBefore: 0, stcgAfter: 0, ltcgBefore: 0, ltcgAfter: 0 };
+        for (const r of re) { const after = r.sold >= engine.RULES.equityRateChange; b[(r.term === "long" ? "ltcg" : "stcg") + (after ? "After" : "Before")] += r.gain; }
+        out.brokers = Object.fromEntries(Object.entries(b).filter(([, v]) => v !== 0).map(([k, v]) => [k, r0(v)]));
+        out.brokersNote = "Mutual-fund redemptions recorded in the app only; add stock sales from your broker's tax report.";
+      }
+      return { evidence: out, months: rows.length };
+    }
+
+    return { build, salaryProjection, salaryFy, personInputs, returnsAudit, deadlines, actions, departureView, harvestPlan, filingChecklist, briefing, evidenceFromRecords };
   })();
 
   return { law, engine, remedies, gifts, residency, audit, planner, gains, saver, household };

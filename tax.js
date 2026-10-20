@@ -192,17 +192,119 @@
     const items = m.filing.map((f) => `<label class="tax-check"><input type="checkbox" data-tax-file="${esc(f.id)}" ${f.done ? "checked" : ""} /><span>${esc(f.title)}${f.done ? ` <small class="prot-sub">· done ${esc(prettyDate(f.done))}</small>` : ""}</span></label>`).join("");
     return `<section class="panel tax-panel"><div class="panel-header"><div><h3>Filing checklist for FY ${esc(m.fy)}</h3><p>Return due 31 July ${+m.fy.slice(0, 4) + 1}. Tick items as you collect them.</p></div></div>${items}</section>`;
   }
+  const returnsBar = `<section class="panel tax-panel"><div class="panel-header"><div><h3>Your returns</h3><p>Add each year once it is filed (or note a year that was not). The check below compares it with the documents.</p></div><button type="button" class="primary-button" data-tax-ret="add">Add a year</button></div></section>`;
+  const editBtns = (r) => `<div class="prot-actions"><button type="button" class="secondary-button" data-tax-ret="edit" data-id="${esc(r.id)}">Edit</button><button type="button" class="secondary-button" data-tax-ret="del" data-id="${esc(r.id)}">Delete</button></div>`;
   function viewReturns(m) {
-    if (!m.returnsAudit.length) return filingHtml(m) + `<section class="panel tax-panel"><div class="prot-empty">No returns yet. Import your tax data on the Data tab.</div></section>`;
-    return filingHtml(m) + m.returnsAudit.map((r) => {
+    if (!m.returnsAudit.length) return filingHtml(m) + returnsBar + `<section class="panel tax-panel"><div class="prot-empty">No returns yet. Import your tax data on the Data tab.</div></section>`;
+    return filingHtml(m) + returnsBar + m.returnsAudit.map((r) => {
       const who = NAMES[r.person] || r.person;
-      if (r.error) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>Could not check: ${esc(r.error)}</p></div></div></section>`;
-      if (r.unfiled) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>No return filed${r.note ? ` · ${esc(r.note)}` : ""}</p></div>${chip(r.extraTax > 0 ? "bad" : "good", r.extraTax > 0 ? `${inr(r.extraTax)} unpaid` : "nothing due")}</div>${remedyHtml(r)}</section>`;
+      if (r.error) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>Could not check: ${esc(r.error)}</p></div></div>${editBtns(r)}</section>`;
+      if (r.unfiled) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>No return filed${r.note ? ` · ${esc(r.note)}` : ""}</p></div>${chip(r.extraTax > 0 ? "bad" : "good", r.extraTax > 0 ? `${inr(r.extraTax)} unpaid` : "nothing due")}</div>${remedyHtml(r)}${editBtns(r)}</section>`;
       const high = r.findings.filter((f) => f.severity === "high").length;
       const list = r.findings.length ? r.findings.map((f) => `<div class="tax-finding"><div class="tax-ftitle">${sevChip(f.severity)}${f.proofNeeded ? " " + chip("muted", "proof needed") : ""} <b>${esc(f.title)}</b>${f.taxImpact ? ` <span class="prot-sub">· tax effect ${inr(f.taxImpact)}</span>` : ""}</div><div class="prot-sub">${esc(f.detail)}${f.fix ? ` <i>${esc(f.fix)}</i>` : ""}</div></div>`).join("") : `<div class="prot-empty">No issues found against the documents.</div>`;
       return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)} <span class="prot-sub">(AY ${esc(r.ay)})</span></h3><p>${esc(r.form)} · ${esc(r.regime)} regime · tax filed ${inr(r.filedTax)} · on the documents ${inr(r.correctedTax)}${r.note ? ` · ${esc(r.note)}` : ""}</p></div>
-        ${chip(high ? "bad" : r.findings.length ? "warn" : "good", high ? `${high} serious` : r.findings.length ? `${r.findings.length} to check` : "clean")}</div>${r.findings.some((f) => f.proofNeeded) ? `<p class="prot-sub">"On the documents" counts only what the documents contradict. Items marked <b>proof needed</b> are not in that figure: they stand if you can show the proof (bank transfers, agreement, receipts).</p>` : ""}${list}${remedyHtml(r)}</section>`;
+        ${chip(high ? "bad" : r.findings.length ? "warn" : "good", high ? `${high} serious` : r.findings.length ? `${r.findings.length} to check` : "clean")}</div>${r.findings.some((f) => f.proofNeeded) ? `<p class="prot-sub">"On the documents" counts only what the documents contradict. Items marked <b>proof needed</b> are not in that figure: they stand if you can show the proof (bank transfers, agreement, receipts).</p>` : ""}${list}${remedyHtml(r)}${editBtns(r)}</section>`;
     }).join("");
+  }
+
+  // ── Add / edit a year's return (same dialog pattern as the Protection page) ───────────────────
+  const FY_LIST = (() => { const out = []; for (let y = 2026; y >= 2018; y--) out.push(`${y}-${String(y + 1).slice(2)}`); return out; })();
+  const N = "number", B = "bool";
+  const RETURN_FORM = [
+    ["About the return", [
+      ["person", "Whose return", "select", [["Me", "Prafful"], ["Wife", "Archana"]]], ["fy", "Financial year", "select", FY_LIST.map((f) => [f, `FY ${f}`])],
+      ["status", "Status", "select", [["filed", "Filed"], ["unfiled", "Not filed"]]], ["filed.form", "Form", "select", [["ITR-1", "ITR-1"], ["ITR-2", "ITR-2"], ["ITR-3", "ITR-3"], ["ITR-4", "ITR-4"]]],
+      ["filed.regime", "Regime", "select", [["new", "New"], ["old", "Old"]]], ["filed.filedOn", "Filed on", "date"], ["note", "Note", "text"],
+    ]],
+    ["As filed in the return", [
+      ["filed.grossSalary", "Gross salary", N], ["filed.exemptAllowances", "Exempt allowances (total)", N], ["filed.exemptBreakup.hra", "of which HRA", N],
+      ["filed.otherIncome", "Interest and dividends", N], ["filed.speculativeIncome", "Intraday profit", N],
+      ["filed.gains.stcgBefore", "Short-term gains, before 23 Jul 2024", N], ["filed.gains.stcgAfter", "Short-term gains, from 23 Jul 2024", N],
+      ["filed.gains.ltcgBefore", "Long-term gains, before 23 Jul 2024", N], ["filed.gains.ltcgAfter", "Long-term gains, from 23 Jul 2024", N],
+      ["filed.deductions.80C", "80C", N], ["filed.deductions.80D", "80D", N], ["filed.deductions.80DDB", "80DDB", N], ["filed.deductions.80GGC", "80GGC", N], ["filed.deductions.80TTA", "80TTA", N],
+      ["filed.employerNps", "Employer NPS, 80CCD(2)", N], ["filed.totalTax", "Tax with cess, before interest", N], ["filed.interestAndFee", "Interest and late fee", N],
+      ["filed.taxesPaid", "Taxes paid (TDS, TCS, self-assessment)", N], ["filed.foreignAssetsDeclared", "Foreign assets declared (Schedule FA)", B],
+    ]],
+    ["From the documents (Form 16, AIS, 26AS, broker reports)", [
+      ["evidence.form16.exemptions", "Form 16: exemptions", N], ["evidence.form16.employerNps", "Form 16: employer NPS", N],
+      ["evidence.ais.salary", "AIS: salary", N], ["evidence.ais.interest", "AIS: interest", N], ["evidence.ais.dividend", "AIS: dividends", N], ["evidence.ais.saleOfSecurities", "AIS: sale of securities", N],
+      ["evidence.tds", "26AS: TDS", N],
+      ["evidence.brokers.stcgBefore", "Brokers: short-term, before 23 Jul 2024", N], ["evidence.brokers.stcgAfter", "Brokers: short-term, from 23 Jul 2024", N],
+      ["evidence.brokers.ltcgBefore", "Brokers: long-term, before 23 Jul 2024", N], ["evidence.brokers.ltcgAfter", "Brokers: long-term, from 23 Jul 2024", N], ["evidence.brokers.intraday", "Brokers: intraday", N],
+      ["evidence.foreign.accountOpened", "Foreign account opened on", "date"], ["evidence.foreign.peakValueInr", "Foreign assets, peak value", N], ["evidence.foreign.dividendsInr", "Foreign dividends", N],
+      ["evidence.npsAccount", "Has an NPS account", B], ["evidence.healthPremiums.total", "Health premiums actually paid", N], ["evidence.parentsSenior", "A parent was 60 or older", B],
+      ["evidence.illness80DDB", "80DDB illness, as certified", "text"], ["evidence.rent.paid", "Rent actually paid", N], ["evidence.rent.landlordPan", "Landlord PAN available", B],
+    ]],
+  ];
+  const getPath = (o, path) => path.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o);
+  function setPath(o, path, v) { const ks = path.split("."); let a = o; ks.slice(0, -1).forEach((k) => { a[k] = a[k] && typeof a[k] === "object" ? a[k] : {}; a = a[k]; }); a[ks[ks.length - 1]] = v; }
+  let editingReturn = null;
+
+  /** A stored record in the form's shape (an unfiled year keeps its figures at the top level). */
+  function toFormShape(r) {
+    if (!r) return { person: "Me", fy: FY_LIST[1], status: "filed", filed: { regime: "new", form: "ITR-2" }, evidence: {} };
+    if (r.kind !== "unfiled") return { ...r, status: "filed" };
+    return { id: r.id, person: r.person, fy: r.fy, note: r.note, status: "unfiled", filed: { regime: r.regime, grossSalary: r.grossSalary, exemptAllowances: r.exemptAllowances, otherIncome: r.otherIncome, gains: r.gains || {}, deductions: { "80C": r.deductions } }, evidence: { tds: r.tds } };
+  }
+  function fieldHtml([path, label, type, options], rec) {
+    const v = getPath(rec, path);
+    const name = `f:${path}`;
+    if (type === "select") return `<label class="tax-field"><span>${esc(label)}</span><select name="${name}">${options.map(([val, l]) => `<option value="${esc(val)}" ${String(v ?? "") === val ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+    if (type === B) return `<label class="tax-field"><span>${esc(label)}</span><select name="${name}"><option value="">Not known</option><option value="yes" ${v === true ? "selected" : ""}>Yes</option><option value="no" ${v === false ? "selected" : ""}>No</option></select></label>`;
+    return `<label class="tax-field"><span>${esc(label)}</span><input name="${name}" type="${type === N ? "number" : type}" ${type === N ? 'step="any" inputmode="decimal"' : ""} value="${esc(v ?? "")}" /></label>`;
+  }
+  function openReturnForm(id) {
+    const s = state(), rec = id ? (s.taxReturns || []).find((r) => r.id === id) : null;
+    editingReturn = { id: rec ? rec.id : null };
+    $("taxReturnEyebrow").textContent = rec ? "Edit" : "Add";
+    $("taxReturnTitle").textContent = rec ? `FY ${rec.fy} · ${NAMES[rec.person] || rec.person}` : "A year's return";
+    const shape = toFormShape(rec);
+    $("taxReturnForm").innerHTML = RETURN_FORM.map(([title, fields], i) => `<details class="tax-form-section" ${i === 0 || rec ? "open" : ""}><summary>${esc(title)}</summary><div class="tax-fields">${fields.map((f) => fieldHtml(f, shape)).join("")}</div></details>`).join("")
+      + `<div class="tax-form-actions"><button type="button" class="secondary-button" id="taxPrefill">Fill documents from my records</button><span class="prot-sub" id="taxPrefillNote">Salary and TDS from your income records; mutual-fund gains from your holdings. Leave anything you do not know empty.</span></div>`
+      + `<button type="submit" class="primary-button full-span">Save</button>`;
+    $("taxReturnModal").hidden = false;
+  }
+  function closeReturnForm() { $("taxReturnModal").hidden = true; editingReturn = null; }
+  function readForm() {
+    const rec = {}, fd = new FormData($("taxReturnForm"));
+    const types = new Map(RETURN_FORM.flatMap(([, f]) => f.map(([p, , t]) => [p, t])));
+    fd.forEach((raw, key) => {
+      const path = key.slice(2), t = types.get(path), v = String(raw).trim();
+      if (v === "") return;   // empty = not known; never stored as 0
+      setPath(rec, path, t === N ? Number(v) : t === B ? v === "yes" : v);
+    });
+    return rec;
+  }
+  async function submitReturnForm(e) {
+    e.preventDefault();
+    if (!editingReturn) return;
+    const f = readForm(), s = state();
+    s.taxReturns = s.taxReturns || [];
+    if (!f.fy || !f.person) { await ask("Choose whose return and the financial year.", "OK", ""); return; }
+    let record;
+    if (f.status === "unfiled") {
+      const fl = f.filed || {};
+      record = { kind: "unfiled", fy: f.fy, person: f.person, regime: fl.regime || "old", grossSalary: fl.grossSalary || 0, exemptAllowances: fl.exemptAllowances || 0,
+        deductions: Object.values(fl.deductions || {}).reduce((a, b) => a + (Number(b) || 0), 0), otherIncome: fl.otherIncome || 0, gains: fl.gains || {}, tds: (f.evidence || {}).tds || 0, note: f.note || "" };
+    } else {
+      if (!f.filed || !(f.filed.grossSalary > 0)) { await ask("Enter at least the gross salary from the return.", "OK", ""); return; }
+      record = { fy: f.fy, person: f.person, filed: f.filed, evidence: f.evidence || {}, note: f.note || "" };
+    }
+    const clash = s.taxReturns.find((r) => r.fy === record.fy && r.person === record.person && r.id !== editingReturn.id);
+    if (clash && !(await ask(`There is already a return for FY ${record.fy} (${NAMES[record.person]}). Replace it?`, "Replace"))) return;
+    if (clash) s.taxReturns = s.taxReturns.filter((r) => r !== clash);
+    if (editingReturn.id) { const i = s.taxReturns.findIndex((r) => r.id === editingReturn.id); if (i >= 0) s.taxReturns[i] = { id: editingReturn.id, ...record }; }
+    else s.taxReturns.push({ id: uid("taxr"), ...record });
+    closeReturnForm(); tab = "returns"; await save(); render();
+  }
+  function prefillFromRecords() {
+    const fd = new FormData($("taxReturnForm")), who = fd.get("f:person"), fy = fd.get("f:fy");
+    const { evidence, months } = T().household.evidenceFromRecords(state(), who, fy);
+    const put = (path, v) => { const el = $("taxReturnForm").querySelector(`[name="f:${path}"]`); if (el && v != null && el.value === "") el.value = v; };
+    if (evidence.ais) put("evidence.ais.salary", evidence.ais.salary);
+    put("evidence.tds", evidence.tds);
+    Object.entries(evidence.brokers || {}).forEach(([k, v]) => put(`evidence.brokers.${k}`, v));
+    $("taxPrefillNote").textContent = months || evidence.brokers ? `Filled from ${months} salary month${months === 1 ? "" : "s"}${evidence.brokers ? " and your mutual-fund redemptions" : ""}. ${evidence.brokersNote || ""} Empty fields were left alone.` : "No salary or redemptions on record for that year.";
   }
 
   // ── Family money ─────────────────────────────────────────────────────────────────────────
@@ -293,6 +395,14 @@
   function onClick(e) {
     const tb = e.target.closest("[data-tax-tab]");
     if (tb) { tab = tb.dataset.taxTab; render(); return; }
+    const rb = e.target.closest("[data-tax-ret]");
+    if (rb) {
+      const act = rb.dataset.taxRet, id = rb.dataset.id;
+      if (act === "add") openReturnForm(null);
+      else if (act === "edit") openReturnForm(id);
+      else if (act === "del") ask("Delete this return? The check and the correction costs for that year will go with it.", "Delete").then((yes) => { if (!yes) return; const s = state(); s.taxReturns = (s.taxReturns || []).filter((r) => r.id !== id); save().catch(() => {}); render(); });
+      return;
+    }
     const fchk = e.target.closest("[data-tax-file]");
     if (fchk && fchk.type === "checkbox") { const p = profile(), fy = model.fy; p.filingDone = p.filingDone || {}; p.filingDone[fy] = { ...(p.filingDone[fy] || {}) }; if (fchk.checked) p.filingDone[fy][fchk.dataset.taxFile] = today(); else delete p.filingDone[fy][fchk.dataset.taxFile]; save().catch(() => {}); render(); return; }
     const done = e.target.closest("[data-tax-done]");
@@ -319,6 +429,9 @@
 
   function init() {
     $("taxOpenBtn")?.addEventListener("click", () => window.LifeLedgerNav?.goToView?.("tax"));
+    $("taxReturnForm")?.addEventListener("submit", submitReturnForm);
+    $("taxReturnForm")?.addEventListener("click", (e) => { if (e.target.closest("#taxPrefill")) prefillFromRecords(); });
+    document.querySelector("#taxReturnModal [data-close-modal]")?.addEventListener("click", closeReturnForm);
     window.addEventListener("ll:data-changed", () => { invalidate(); renderCard(); });
     window.addEventListener("ll:prices-updated", () => { invalidate(); renderCard(); });
     setTimeout(() => { renderCard(); registerWithAssistant(); }, 3200);

@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.14" />
+    <link rel="stylesheet" href="layout.css?v=1.8.16" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -53,8 +53,8 @@
     <script defer src="data-health.js?v=1.0.5"></script>
     <script defer src="protection-core.js?v=1.0.0"></script>
     <script defer src="protection.js?v=1.0.0"></script>
-    <script defer src="tax-core.js?v=1.2.4"></script>
-    <script defer src="tax.js?v=1.2.2"></script>
+    <script defer src="tax-core.js?v=1.2.5"></script>
+    <script defer src="tax.js?v=1.2.3"></script>
     <script defer src="spending-import.js?v=1.0.13"></script>
   </head>
   <body class="auth-locked">
@@ -2378,6 +2378,19 @@
           <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
         </div>
         <form id="protectionForm" class="quick-form"></form>
+      </div>
+    </div>
+
+    <div class="modal" id="taxReturnModal" role="dialog" aria-modal="true" aria-labelledby="taxReturnTitle" hidden>
+      <div class="modal-card tax-modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" id="taxReturnEyebrow">Add</p>
+            <h2 id="taxReturnTitle">A year's return</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <form id="taxReturnForm" class="quick-form tax-return-form"></form>
       </div>
     </div>
 
