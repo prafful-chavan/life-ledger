@@ -74,19 +74,24 @@
   const TERM = "Term life", HEALTH = "Health";
   const coverOf = (state, who, type) => (state.insurance || []).filter((p) => p.type === type && (p.person === who || p.person === "Both")).reduce((s, p) => s + num(p.cover), 0);
 
+  // Employer group cover lasts only as long as the job, so it is counted apart from the household's own policies:
+  // "employer" means the guide is met today only because of the employer's cover.
+  const isEmployer = (p) => p && p.employer === "Yes";
+  const split = (list) => list.reduce((acc, p) => { acc[isEmployer(p) ? "employerCover" : "ownCover"] += num(p.cover); return acc; }, { ownCover: 0, employerCover: 0 });
+  const statusOf = (own, employer, min) => own + employer <= 0 ? "not-set" : own >= min ? "ok" : own + employer >= min ? "employer" : "low";
+
   /** Term life cover versus 10–15 × yearly income (a common rule of thumb). */
   function termCheck(state, who) {
     const income = monthlyIncome(state, who) * 12;
-    const cover = (state.insurance || []).filter((p) => p.type === TERM && p.person === who).reduce((s, p) => s + num(p.cover), 0);
+    const { ownCover, employerCover } = split((state.insurance || []).filter((p) => p.type === TERM && p.person === who));
     const min = income * 10, max = income * 15;
-    const status = cover <= 0 ? "not-set" : cover < min ? "low" : "ok";
-    return { who, income, cover, min, max, status };
+    return { who, income, cover: ownCover + employerCover, ownCover, employerCover, min, max, status: statusOf(ownCover, employerCover, min) };
   }
 
   /** Family health cover versus a common ₹10 lakh baseline. */
   function healthCheck(state, baseline = 1000000) {
-    const cover = (state.insurance || []).filter((p) => p.type === HEALTH).reduce((s, p) => s + num(p.cover), 0);
-    return { cover, baseline, status: cover <= 0 ? "not-set" : cover < baseline ? "low" : "ok" };
+    const { ownCover, employerCover } = split((state.insurance || []).filter((p) => p.type === HEALTH));
+    return { cover: ownCover + employerCover, ownCover, employerCover, baseline, status: statusOf(ownCover, employerCover, baseline) };
   }
 
   function summary(state, today) {
@@ -126,5 +131,5 @@
     return out;
   }
 
-  return { ageOn, nextBirthday, annualPremium, dueStatus, advanceDue, monthlyIncome, monthlySpending, termCheck, healthCheck, summary, suggestGoals, coverOf, PERIODS };
+  return { ageOn, nextBirthday, annualPremium, dueStatus, advanceDue, monthlyIncome, monthlySpending, termCheck, healthCheck, summary, suggestGoals, coverOf, isEmployer, PERIODS };
 });

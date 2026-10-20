@@ -80,12 +80,12 @@
     "sha256": "ae5f5d14a5cd4b1def0b96355d94bc7395c3fbc31c3edaeba84cc84583660ed4"
   },
   "protection-core.js": {
-    "version": "1.0.0",
-    "sha256": "a54a41ff9eb97b0483b7526b94fa85232c2e6a5cdbf9c00ba9e3bc992fcddc35"
+    "version": "1.0.1",
+    "sha256": "e0a7a33b04173c02d5192d3536d8a5a68193fdde0de554d51399132714484d2f"
   },
   "protection.js": {
-    "version": "1.0.0",
-    "sha256": "37561c0c059563fe25d913de52101a3fb9e6accc522d74213f26c387045bd68b"
+    "version": "1.0.2",
+    "sha256": "e6113911f585c48ed9b4307a4de6d66e41fd8badb22d2c1db8a264e1f823555a"
   },
   "script-gate.js": {
     "version": "1.0.0",
@@ -116,8 +116,8 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.2.6",
-    "sha256": "a554fb5af9e174ce676bc70b08fc122cce6a2cad58d25f569c670658569df22e"
+    "version": "1.2.7",
+    "sha256": "aa9a4ff546406f983925923fd97adbc0f1b31a39bae53ea009e158a93b7b33ca"
   },
   "tax.js": {
     "version": "1.2.3",

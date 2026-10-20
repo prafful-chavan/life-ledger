@@ -198,6 +198,13 @@ const SCANNER = `(${function scan() {
     check("adding a policy saves it, shows it and closes the dialog", added.n === before + 1 && added.shown && added.closed, JSON.stringify(added));
     await cdp.eval(`(()=>{const id=LifeLedgerApp.getState().insurance.find(p=>p.insurer==='Test Insurer').id; document.querySelector('[data-act="paid"][data-id="'+id+'"]').click(); return 0})()`);
     await sleep(500);
+    // Employer group cover: the form has the field; meeting the guide only through it gets its own status, then back to own
+    const setEmployer = (v) => cdp.eval(`(()=>{document.querySelector('[data-act="edit"][data-kind="insurance"][data-id="ins-test-1"]').click(); const f=document.getElementById('protectionForm'); const s=f.querySelector('[name=employer]'); if(!s) return 'no field'; s.value='${v}'; f.requestSubmit(); return 'ok'})()`);
+    const empSet = await setEmployer("Yes"); await sleep(600);
+    const emp = JSON.parse(await cdp.eval(`JSON.stringify({stored: LifeLedgerApp.getState().insurance.find(p=>p.id==='ins-test-1').employer, text: document.getElementById('protectionBody').innerText})`));
+    check("health cover only through the employer is shown apart and asks for your own", empSet === "ok" && emp.stored === "Yes" && /Health cover \(family\)[\s\S]*employer group cover ₹10,00,000[\s\S]*Only through the employer/i.test(emp.text) && /Employer cover/.test(emp.text), emp.text.slice(emp.text.indexOf("Health cover"), emp.text.indexOf("Health cover") + 260));
+    await setEmployer("No"); await sleep(600);
+    check("marking it an own policy again puts it back in the guide", /Health cover \(family\)[\s\S]{0,120}In the guide/.test(await cdp.eval(`document.getElementById('protectionBody').innerText`)));
 
     // 3b-2. Tax is woven into the rest of the app: dashboard card, Wealth Advisor, Hey Prafful
     await view("dashboard"); await sleep(900);

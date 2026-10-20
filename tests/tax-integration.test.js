@@ -55,4 +55,12 @@ const mi = H.build(ins, "2026-10-20");
 const t = P.termCheck(ins, "Me");
 assert.strictEqual(t.status, "low");
 assert.ok(mi.actions.some((a) => a.id === "term-me" && /below the guide/.test(a.title)), "same 'below the guide' verdict as the Protection page");
+// Employer-only health cover still asks for a personal policy, on the Tax page and in the daily health check
+const grp = { ...state, insurance: [{ person: "Both", type: "Health", cover: 1200000, employer: "Yes" }] };
+const hAct = H.build(grp, "2026-10-20").actions.find((a) => a.id === "health");
+assert.ok(hAct && /only through the employer/.test(hAct.title) && /₹12,00,000/.test(hAct.why || hAct.detail || JSON.stringify(hAct)), "employer-only health cover keeps the action");
+assert.ok(!H.build({ ...state, insurance: [{ person: "Both", type: "Health", cover: 1200000 }] }, "2026-10-20").actions.some((a) => a.id === "health"), "own ₹12L clears it");
+const AN = require("../mcp/analysis.js");
+const flag = AN.healthCheck({ ...grp, expenses: [], income: [] }, "2026-10-20").flags.find((f) => f.topic === "Health cover");
+assert.ok(flag && flag.level === "watch" && /employer group cover, which ends with the job/.test(flag.text));
 console.log("tax integration tests passed");

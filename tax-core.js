@@ -1288,10 +1288,16 @@
           const t = Protection.termCheck(state, who);
           if (t.status === "ok") continue;
           const guide = t.income > 0 ? ` The guide is 10–15 × yearly income: ${inr(t.min)} – ${inr(t.max)}.` : "";
-          add(`term-${who === "Me" ? "me" : "wife"}`, sev, t.status === "not-set" ? `Term life cover for ${NAMES[who]}` : `${NAMES[who]}'s term cover is below the guide`, `${t.status === "not-set" ? "No term cover is recorded on the Protection page." : `Recorded cover ${inr(t.cover)}.`}${guide}`, "", { who: NAMES[who] });
+          const title = t.status === "not-set" ? `Term life cover for ${NAMES[who]}` : t.status === "employer" ? `${NAMES[who]}'s term cover is only through the employer` : `${NAMES[who]}'s term cover is below the guide`;
+          const body = t.status === "not-set" ? "No term cover is recorded on the Protection page." : t.status === "employer" ? `Own policies ${inr(t.ownCover)}, employer group cover ${inr(t.employerCover)}; the group cover ends with the job.` : `Recorded cover ${inr(t.cover)}.`;
+          add(`term-${who === "Me" ? "me" : "wife"}`, sev, title, `${body}${guide}`, "", { who: NAMES[who] });
         }
         const h = Protection.healthCheck(state);
-        if (h.status !== "ok") add("health", "medium", h.status === "not-set" ? "Record your health cover, and compare personal policies" : "Health cover is below ₹10 lakh", "Employer group cover ends when the job does; personal cover bought now starts its waiting periods now. Record policies on the Protection page.", "");
+        if (h.status !== "ok") {
+          const title = h.status === "not-set" ? "Record your health cover, and compare personal policies" : h.status === "employer" ? "Health cover is only through the employer: buy your own" : "Health cover is below ₹10 lakh";
+          const now = h.status === "employer" ? `Employer group cover ${inr(h.employerCover)}, own policies ${inr(h.ownCover)}. ` : "";
+          add("health", "medium", title, `${now}Employer group cover ends when the job does (a job change or a posting abroad); personal cover bought now starts its waiting periods now. Record policies on the Protection page.`, "");
+        }
       }
       // User-supplied checklist (stored in the vault, so it can hold private items)
       const done = (model.profile && model.profile.done) || {};

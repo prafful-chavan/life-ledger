@@ -27,6 +27,7 @@
       title: "Insurance policy", key: "insurance", prefix: "ins",
       fields: [
         ["person", "Whose cover", "select", ["Me", "Wife", "Both"]], ["type", "Type", "select", ["Term life", "Health", "Car", "Bike", "Home", "Accident", "Other"]],
+        ["employer", "Employer group cover (ends with the job)", "select", ["No", "Yes"]],
         ["insurer", "Insurer", "text"], ["policyName", "Policy name", "text"], ["cover", "Cover / sum assured (₹)", "number"], ["premium", "Premium (₹)", "number"],
         ["frequency", "Paid", "select", ["Yearly", "Half-yearly", "Quarterly", "Monthly"]], ["nextDue", "Next premium due", "date"], ["nominee", "Nominee", "text"], ["note", "Note", "text"],
       ],
@@ -54,7 +55,9 @@
   }
 
   const chip = (cls, text) => `<span class="prot-chip ${cls}">${esc(text)}</span>`;
-  const statusChip = (status, okText, lowText) => status === "ok" ? chip("good", okText) : status === "low" ? chip("warn", lowText) : chip("muted", "Not added yet");
+  const statusChip = (status, okText, lowText) => status === "ok" ? chip("good", okText) : status === "low" ? chip("warn", lowText) : status === "employer" ? chip("warn", "Only through the employer") : chip("muted", "Not added yet");
+  // Own policies and employer group cover shown apart: the employer's cover stops when the job does.
+  const coverSplit = (c) => c.employerCover > 0 ? `<div class="prot-sub">Your own policies ${inr(c.ownCover)} · employer group cover ${inr(c.employerCover)}${c.status === "employer" ? ": it ends if you leave or change jobs, so buy your own while it is active" : ""}</div>` : "";
 
   function render() {
     const root = $("protectionBody");
@@ -71,7 +74,7 @@
       </div>`;
     };
     const termRow = (c) => `<div class="prot-check"><div><b>Term life · ${esc(NAMES[c.who])}</b>
-        <div class="prot-sub">${c.income > 0 ? `Common guide: 10–15 × yearly income = ${inr(c.min)} – ${inr(c.max)}` : "Add a salary to see a guide"}</div></div>
+        <div class="prot-sub">${c.income > 0 ? `Common guide: 10–15 × yearly income = ${inr(c.min)} – ${inr(c.max)}` : "Add a salary to see a guide"}</div>${coverSplit(c)}</div>
         <div class="prot-check-right"><b>${c.cover > 0 ? inr(c.cover) : "—"}</b> ${statusChip(c.status, "In the guide", "Below the guide")}</div></div>`;
     const h = sum.health;
     const due = sum.dueSoon.length ? `<div class="prot-alert">${sum.dueSoon.map((x) => `<div>⏰ <b>${esc(x.p.type)}${x.p.insurer ? " · " + esc(x.p.insurer) : ""}</b> ${x.s.state === "overdue" ? `was due ${Math.abs(x.s.days)} day${Math.abs(x.s.days) === 1 ? "" : "s"} ago` : x.s.days === 0 ? "is due today" : `is due in ${x.s.days} day${x.s.days === 1 ? "" : "s"}`} (${prettyDate(x.p.nextDue)}) · ${inr(x.p.premium)}</div>`).join("")}</div>` : "";
@@ -82,7 +85,7 @@
       const empty = !(Number(p.cover) > 0 || Number(p.premium) > 0 || p.insurer);
       return `<article class="prot-card ${empty ? "is-empty" : ""}">
         <div class="prot-card-top"><div><div class="prot-card-title">${esc(p.type)}${p.policyName ? " · " + esc(p.policyName) : ""}</div>
-          <div class="prot-sub">${esc(NAMES[p.person] || p.person)}${p.insurer ? " · " + esc(p.insurer) : ""}${p.note ? " · " + esc(p.note) : ""}</div></div>
+          <div class="prot-sub">${esc(NAMES[p.person] || p.person)}${P().isEmployer(p) ? " · Employer cover" : ""}${p.insurer ? " · " + esc(p.insurer) : ""}${p.note ? " · " + esc(p.note) : ""}</div></div>
           ${ds.state === "overdue" ? chip("bad", "Overdue") : ds.state === "soon" ? chip("warn", "Due soon") : empty ? chip("muted", "Fill in") : ""}</div>
         <div class="prot-nums"><div><span>Cover</span><b>${inr(p.cover)}</b></div><div><span>Premium</span><b>${inr(p.premium)}</b><small>${esc(p.frequency || "Yearly")}</small></div><div><span>Next due</span><b class="prot-small">${esc(dueText)}</b></div></div>
         <div class="prot-actions"><button type="button" class="secondary-button" data-act="edit" data-kind="insurance" data-id="${esc(p.id)}">Edit</button>
@@ -107,7 +110,7 @@
 
       <section class="panel"><div class="panel-header"><div><h3>Is your cover enough?</h3><p>Common rules of thumb, only a guide, not advice.</p></div></div>
         ${sum.term.map(termRow).join("")}
-        <div class="prot-check"><div><b>Health cover (family)</b><div class="prot-sub">Common guide: at least ${inr(h.baseline)} in total</div></div>
+        <div class="prot-check"><div><b>Health cover (family)</b><div class="prot-sub">Common guide: at least ${inr(h.baseline)} in total</div>${coverSplit(h)}</div>
           <div class="prot-check-right"><b>${h.cover > 0 ? inr(h.cover) : "—"}</b> ${statusChip(h.status, "In the guide", "Below the guide")}</div></div></section>
 
       <section class="panel"><div class="panel-header"><div><h3>Insurance policies</h3><p>Cover, premium and renewal date for each policy.</p></div>

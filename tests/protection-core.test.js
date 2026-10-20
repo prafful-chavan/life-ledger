@@ -47,6 +47,20 @@ s.insurance.push({ type: "Health", person: "Both", cover: 500000 });
 assert.strictEqual(P.healthCheck(s).status, "low");
 s.insurance.push({ type: "Health", person: "Both", cover: 1000000 });
 assert.strictEqual(P.healthCheck(s).status, "ok");
+// Employer group cover counts apart: meeting the guide only through it is its own status
+let e = state();
+e.insurance = [{ type: "Health", person: "Both", cover: 1200000, employer: "Yes" }];
+let hc = P.healthCheck(e);
+assert.deepStrictEqual([hc.status, hc.cover, hc.ownCover, hc.employerCover], ["employer", 1200000, 0, 1200000], "₹12L only through the employer");
+e.insurance.push({ type: "Health", person: "Both", cover: 500000, employer: "No" });
+assert.strictEqual(P.healthCheck(e).status, "employer", "own ₹5L is still below the guide");
+e.insurance.push({ type: "Health", person: "Both", cover: 500000 });
+assert.strictEqual(P.healthCheck(e).status, "ok", "own ₹10L meets the guide (no employer field = own policy)");
+e.insurance = [{ type: "Health", person: "Both", cover: 300000, employer: "Yes" }];
+assert.strictEqual(P.healthCheck(e).status, "low", "below the guide even with the employer's cover");
+e.insurance = [{ type: "Term life", person: "Me", cover: 199884 * 12 * 10, employer: "Yes" }];
+assert.strictEqual(P.termCheck(e, "Me").status, "employer", "group term cover alone");
+assert.ok(P.isEmployer({ employer: "Yes" }) && !P.isEmployer({}) && !P.isEmployer({ employer: "No" }));
 
 // Summary
 s = state(); s.vehicles = [{ value: 500000 }, { value: 0 }]; s.insurance = [{ type: "Health", person: "Both", cover: 1, premium: 25000, frequency: "Yearly", nextDue: "2026-10-25" }, { type: "Car", person: "Me", premium: 1000, frequency: "Monthly", nextDue: "2026-09-01" }];
