@@ -25,6 +25,9 @@ function calendar(state, today, horizonDays = 75) {
   add(nextOccurrence(today, 3, 15), "Advance tax final instalment", "tax");
   add(nextOccurrence(today, 3, 31), "Last day of the financial year: tax-saving investments (80C), gain/loss harvesting, and ELSS SIPs must be done", "tax");
   add(nextOccurrence(today, 7, 31), "ITR filing due date for salaried individuals", "tax");
+  // Legal deadlines that are the same for everyone (see tools/tax/law.js); dates are absolute, not yearly.
+  add("2026-12-31", "Last day of the FAST-DS 2026 foreign-asset disclosure window, and the last fee-free day to revise the FY 2025-26 return", "tax");
+  add("2027-03-31", "Last day to revise the FY 2025-26 return (₹1,000–5,000 fee after 31 Dec); updated-return extra tax steps up on 1 April for earlier years", "tax");
   return items.sort((a, b) => a.inDays - b.inDays);
 }
 
