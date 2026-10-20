@@ -360,8 +360,9 @@
     const toSpouse = t.relation === "spouse";
 
     if (t.repaymentExpected) {
-      out.summary = "A loan, not a gift: no tax on the principal; interest received is the lender's income. Keep a written acknowledgement and take repayments by bank.";
-      out.keep.push("one-line loan acknowledgement signed by the borrower", "bank trail of repayments");
+      out.summary = "A loan, not a gift: the money stays the lender's and nothing is taxed when it is lent or repaid. Interest the lender charges is the lender's income; with no interest charged, there is none. What the borrower earns with the money is the borrower's income.";
+      if (toSpouse) { out.clubbedToGiver = true; out.confidence = "medium"; out.flags.push("Between spouses, income earned on an interest-free loan has been added to the lender's income (sec 64) in some cases: ask the CA, or charge a market rate of interest."); }
+      out.keep.push("one-line loan acknowledgement signed by the borrower (amount, date, interest-free, repayable on demand)", "bank transfer record of the loan and of every repayment");
       return out;
     }
 
@@ -1302,8 +1303,15 @@
           add("health", "medium", title, `${now}Employer group cover ends when the job does (a job change or a posting abroad); personal cover bought now starts its waiting periods now. Record policies on the Protection page.`, "");
         }
       }
-      // User-supplied checklist (stored in the vault, so it can hold private items)
       const done = (model.profile && model.profile.done) || {};
+      // A family loan needs the borrower's signed note; ticked off with the same Done as checklist items
+      const relName = { parent: "a parent", "spouse-parent": "a parent-in-law", sibling: "a sibling", "spouse-sibling": "a sibling-in-law", child: "a child", spouse: "the spouse", other: "someone else" };
+      for (const t of state.taxFamily || []) {
+        if (!t || !t.repaymentExpected || done[`loan-note-${t.id}`]) continue;
+        add(`todo-loan-note-${t.id}`, "medium", `Get the loan note signed: ${inr(t.amount)} from ${NAMES[t.from] || t.from || "?"} to ${NAMES[t.to] || relName[t.relation] || "?"}`,
+          `One dated line signed by the borrower: amount, date given (${t.date || "?"}), interest-free, repayable on demand. Keep it with the bank transfer record; take repayments by bank transfer too.`, "");
+      }
+      // User-supplied checklist (stored in the vault, so it can hold private items)
       for (const c of (model.profile && model.profile.checklist) || []) if (c && c.id && !done[c.id]) add(`todo-${c.id}`, c.severity || "low", c.title, c.why || "", c.due || "");
       return out.sort((a, b) => ord[a.severity] - ord[b.severity] || (a.due || "9999") .localeCompare(b.due || "9999"));
     }

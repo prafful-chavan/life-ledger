@@ -179,3 +179,19 @@ console.log("evidence prefill tests passed");
   assert.strictEqual(old.plan.form, "ITR-1", "a loss older than 8 years no longer counts");
 }
 console.log("form tests passed");
+
+// Family loans: classified as loans, and each one asks for the borrower's signed note until it is ticked Done
+{
+  const { gifts: GF } = require("../tax-core.js");
+  const loan = GF.classifyGift({ amount: 1500000, date: "2026-05-25", from: "Me", relation: "parent", repaymentExpected: true }, { marriageDate: "2024-06-30" });
+  assert.ok(/A loan, not a gift/.test(loan.summary) && /no interest charged, there is none/.test(loan.summary) && !loan.clubbedToGiver, "loan to a parent: no clubbing");
+  const sp = GF.classifyGift({ amount: 100000, date: "2026-05-25", from: "Me", to: "Wife", relation: "spouse", repaymentExpected: true }, { marriageDate: "2024-06-30" });
+  assert.ok(sp.clubbedToGiver && sp.flags.some((f) => /sec 64/.test(f)), "loan to a spouse: clubbing flagged");
+  const fam = [{ id: "taxf-l1", date: "2026-05-25", amount: 1500000, from: "Me", relation: "parent", repaymentExpected: true }, { id: "taxf-g1", date: "2026-05-25", amount: 100000, from: "Me", relation: "parent" }];
+  const acts = H.build({ income: [], taxProfile: {}, taxFamily: fam }, "2026-10-20").actions;
+  const a = acts.find((x) => x.id === "todo-loan-note-taxf-l1");
+  assert.ok(a && /₹15,00,000 from Prafful to a parent/.test(a.title), "loan note action: " + (a && a.title));
+  assert.ok(!acts.some((x) => x.id === "todo-loan-note-taxf-g1"), "a gift asks for no loan note");
+  assert.ok(!H.build({ income: [], taxProfile: { done: { "loan-note-taxf-l1": "2026-10-21" } }, taxFamily: fam }, "2026-10-20").actions.some((x) => x.id === "todo-loan-note-taxf-l1"), "ticked Done: gone");
+}
+console.log("family loan tests passed");
