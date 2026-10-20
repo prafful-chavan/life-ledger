@@ -7,7 +7,7 @@
  *   filed: { form, regime, filedOn, grossSalary, exemptAllowances, exemptBreakup: { hra, sec10_14i, ... }, professionalTax,
  *            otherIncome, interest, dividend, speculativeIncome, gains: { stcgBefore, stcgAfter, ltcgBefore, ltcgAfter },
  *            deductions: { "80C", "80D", "80DDB", "80GGC", "80TTA", ... } (as allowed in the return), employerNps,
- *            totalIncome, totalTax, taxesPaid, foreignAssetsDeclared },
+ *            totalIncome, totalTax, interestAndFee (234A/B/C/F already in the filed liability), taxesPaid, foreignAssetsDeclared },
  *   evidence: { form16: { gross, exemptions, employerNps }, ais: { salary, interest, dividend, saleOfSecurities }, tds,
  *               brokers: { stcgBefore, stcgAfter, ltcgBefore, ltcgAfter, intraday, saleValue },
  *               foreign: { accountOpened, peakValueInr, dividendsInr }, npsAccount, healthPremiums: { self, parents },
@@ -141,9 +141,9 @@ function audit(c) {
   findings.sort((a, b) => order[a.severity] - order[b.severity] || b.taxImpact - a.taxImpact);
   return {
     fy: c.fy, ay: E.ayOf(c.fy), person: c.person, form: f.form, regime: f.regime,
-    filedTax: r0(num(f.totalTax) || baseTax), recomputedFiledTax: baseTax, correctedTax: corrected.totalTax,
-    extraTaxIfCorrected: corrected.totalTax - baseTax, refundClaimed: r0(num(f.taxesPaid) - (num(f.totalTax) || baseTax)),
-    refundOnDocumentedFigures: r0(num(f.taxesPaid) - corrected.totalTax), findings,
+    filedTax: r0(num(f.totalTax) || baseTax), recomputedFiledTax: baseTax, correctedTax: corrected.totalTax, interestAndFeeFiled: r0(num(f.interestAndFee)),
+    extraTaxIfCorrected: corrected.totalTax - baseTax, refundClaimed: r0(num(f.taxesPaid) - (num(f.totalTax) || baseTax) - num(f.interestAndFee)),
+    refundOnDocumentedFigures: r0(num(f.taxesPaid) - corrected.totalTax - num(f.interestAndFee)), findings,
   };
 }
 
