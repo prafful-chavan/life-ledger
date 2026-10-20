@@ -138,7 +138,7 @@
     },
     /** Rule 11DD — the only illnesses that qualify for 80DDB (neurological ones need ≥40% certified disability). */
     rule11DD: ["dementia", "dystonia musculorum deformans", "motor neuron disease", "ataxia", "chorea", "hemiballismus", "aphasia", "parkinson", "malignant cancer", "aids", "chronic renal failure", "haemophilia", "thalassaemia"],
-    /** Surcharge on total income (special-rate equity gains capped at 15%; new regime capped at 25%). Marginal relief not modelled. */
+    /** Surcharge by total income: [up to this income, %] (special-rate equity gains capped at 15%; new regime capped at 25%), with marginal relief. */
     surcharge: [[50 * L, 0], [100 * L, 10], [200 * L, 15], [500 * L, 25], [Infinity, 37]],
     itr1: { maxIncome: 50 * L, maxLtcg112AFromAY2526: 1.25 * L },
     blackMoneyPenaltyThreshold: 20 * L, // foreign assets (non-immovable) up to this value: no ₹10L non-disclosure penalty (from 1-Oct-2024)
@@ -176,7 +176,9 @@
     const stBefore = st * stShareB, stAfter = st - stBefore;
     // The return utility rounds each rate bucket separately.
     const tax = r0(stBefore * e.stcgBefore / 100) + r0(stAfter * (after2425 ? e.stcgAfter : e.stcgBefore) / 100) + r0(ltBefore * e.ltcgBefore / 100) + r0(ltAfter * (after2425 ? e.ltcgAfter : e.ltcgBefore) / 100);
-    return { tax, taxableST: st, taxableLT: Math.max(0, ltBefore + ltAfter) };
+    // incomeLT: the long-term gain counted in total income (the ₹1L/₹1.25L only lowers the tax on it, sec 112A);
+    // taxableLT: the part the 10%/12.5% is charged on.
+    return { tax, taxableST: st, taxableLT: Math.max(0, ltBefore + ltAfter), incomeLT: lt };
   }
 
   /** HRA exemption u/s 10(13A): least of HRA received, rent − 10% of salary (basic + DA), 50%/40% of salary. */
@@ -219,8 +221,9 @@
     const chapterVIA = regime === "old" ? num(p.deductions) + nps : nps;
     const g = equityGainsTax(p.fy, p.gains);
     // Sec 288A: total income is rounded to the nearest ₹10; the rounding sits in the slab-rate part.
-    const totalIncome = Math.round((Math.max(0, grossTotal - chapterVIA) + g.taxableST + g.taxableLT) / 10) * 10;
-    const normalIncome = Math.max(0, totalIncome - g.taxableST - g.taxableLT);
+    // Total income includes the whole long-term gain (the 87A limit and the surcharge tiers are tested on it).
+    const totalIncome = Math.round((Math.max(0, grossTotal - chapterVIA) + g.taxableST + g.incomeLT) / 10) * 10;
+    const normalIncome = Math.max(0, totalIncome - g.taxableST - g.incomeLT);
     let normalTax = slabTax(normalIncome, cfg.slabs);
     let specialTax = g.tax;
     // 87A: total income (including gains) must be within the limit; the rebate never covers special-rate equity gains from FY 2025-26.
@@ -232,13 +235,23 @@
       if (normalTax > excess) rebate = normalTax - excess; // tax may not exceed the income above the rebate limit
     }
     const beforeSurcharge = Math.max(0, normalTax + specialTax - rebate);
-    let surchargePct = 0;
-    for (const [limit, pct] of RULES.surcharge) if (totalIncome > limit) surchargePct = pct;
-    if (regime === "new") surchargePct = Math.min(25, surchargePct);
-    const surcharge = normalTax * surchargePct / 100 + specialTax * Math.min(15, surchargePct) / 100;
+    // Surcharge tiers read "income up to `limit` pays `pct`"; the new regime is capped at 25%, special-rate gains at 15%.
+    const tier = RULES.surcharge.findIndex(([limit]) => totalIncome <= limit);
+    const capPct = (pct) => (regime === "new" ? Math.min(25, pct) : pct);
+    const surchargePct = capPct(RULES.surcharge[tier][1]);
+    const surchargeOn = (normal, special, pct) => normal * pct / 100 + special * Math.min(15, pct) / 100;
+    let surcharge = surchargeOn(normalTax, specialTax, surchargePct);
+    // Marginal relief: tax + surcharge may not exceed the tax at the threshold plus the income above it
+    if (tier > 0 && surcharge > 0) {
+      const threshold = RULES.surcharge[tier - 1][0], specialIncome = g.taxableST + g.incomeLT;
+      const normalAt = slabTax(Math.max(0, threshold - specialIncome), cfg.slabs);
+      const atThreshold = normalAt + specialTax + surchargeOn(normalAt, specialTax, capPct(RULES.surcharge[tier - 1][1]));
+      const cap = atThreshold + (totalIncome - threshold);
+      if (beforeSurcharge + surcharge > cap) surcharge = Math.max(0, cap - beforeSurcharge);
+    }
     const cess = (beforeSurcharge + surcharge) * RULES.cess / 100;
     return {
-      fy: p.fy, regime, salaryIncome: r0(salaryIncome), grossTotalIncome: r0(grossTotal + g.taxableST + g.taxableLT), chapterVIA: r0(chapterVIA),
+      fy: p.fy, regime, salaryIncome: r0(salaryIncome), grossTotalIncome: r0(grossTotal + g.taxableST + g.incomeLT), chapterVIA: r0(chapterVIA),
       totalIncome: r0(totalIncome), normalIncome: r0(normalIncome), normalTax: r0(normalTax), specialRateTax: r0(specialTax), rebate87A: r0(rebate),
       surcharge: r0(surcharge), cess: r0(cess), totalTax: r0(beforeSurcharge + surcharge + cess), marginalRatePct: marginalRate(normalIncome, cfg.slabs),
       assumedRules: !!y.assumed,
@@ -731,7 +744,7 @@
     const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
     const r0 = (v) => Math.round(v);
     const isoOf = (x) => String(x || "").slice(0, 10);
-    const RULES = { equity: { holdMonths: 12 }, listedOther: { holdMonths: 12 }, unlistedOther: { holdMonths: 24 }, foreignShares: { holdMonths: 24 } };
+    const RULES = { equity: { holdMonths: 12 }, listedOther: { holdMonths: 12 }, unlistedOther: { holdMonths: 24 }, foreignShares: { holdMonths: 24 }, debtAlwaysShortFrom: "2023-04-01" };
   // ── classification ───────────────────────────────────────────────────────────────────────────
   function taxCategory(name, kind, category) {
     const n = String(name || "").toLowerCase();
@@ -802,13 +815,21 @@
     return m;
   };
 
-  /** Is a lot long-term on `asOf`? (Debt: never.) */
+  /**
+   * Is a lot long-term on `asOf`? Sec 2(42A): held for MORE than the period, so the day after the anniversary at the
+   * earliest. Sec 50AA: a debt fund bought on or after 1-Apr-2023 is short-term however long it is held; one bought
+   * earlier is long-term after 24 months.
+   */
   function holding(lot, asOf, sellDate) {
     if (lot.dateKnown === false) return { long: null, months: null, rule: null, unknown: true };
-    const cat = lot.cat || lot.category;
-    const rule = cat === "equity" || cat === "hybrid" ? RULES.equity : cat === "listedOther" ? RULES.listedOther : cat === "debt" ? null : cat === "foreignShares" ? RULES.foreignShares : RULES.unlistedOther;
-    const months = monthsBetween(lot.date || lot.buyDate, sellDate || asOf);
-    return { long: !!rule && months >= rule.holdMonths, months, rule };
+    const cat = lot.cat || lot.category, bought = lot.date || lot.buyDate, sold = sellDate || asOf;
+    const rule = cat === "equity" || cat === "hybrid" ? RULES.equity : cat === "listedOther" ? RULES.listedOther
+      : cat === "debt" ? (String(bought) >= RULES.debtAlwaysShortFrom ? null : RULES.unlistedOther)
+      : cat === "foreignShares" ? RULES.foreignShares : RULES.unlistedOther;
+    const months = monthsBetween(bought, sold);
+    let long = false;
+    if (rule) { const anniversary = new Date(String(bought).slice(0, 10) + "T00:00:00Z"); anniversary.setUTCMonth(anniversary.getUTCMonth() + rule.holdMonths); long = new Date(String(sold).slice(0, 10) + "T00:00:00Z") > anniversary; }
+    return { long, months, rule };
   }
 
   const fyOf = (iso) => { const y = +iso.slice(0, 4), m = +iso.slice(5, 7); return m >= 4 ? `${y}-${String(y + 1).slice(2)}` : `${y - 1}-${String(y).slice(2)}`; };
@@ -821,7 +842,8 @@
       const value = l.qty * l.price, gain = value - l.cost;
       const o = (owners[l.owner] ||= { equityST: 0, equityLT: 0, otherST: 0, otherLT: 0, debt: 0, unknownTermEquity: 0, unknownTermOther: 0 });
       if (h.unknown) { if (l.cat === "equity" || l.cat === "hybrid") o.unknownTermEquity += gain; else o.unknownTermOther += gain; }
-      else if (l.cat === "debt") o.debt += gain;
+      else if (l.cat === "debt" && !h.long) o.debt += gain;
+      else if (l.cat === "debt") o.otherLT += gain;
       else if (l.cat === "equity" || l.cat === "hybrid") (h.long ? (o.equityLT += gain) : (o.equityST += gain));
       else (h.long ? (o.otherLT += gain) : (o.otherST += gain));
       return { ...l, value, gain, long: h.long, months: h.months, termUnknown: !!h.unknown };
@@ -862,7 +884,7 @@
         const w = (e.owners[o] ||= { eqST: 0, eqLT: 0, slabST: 0, otherLT: 0, unknown: 0, unknownEq: true });
         const g = l.qty * l.price - l.cost, h = holding(l, today), eq = l.cat === "equity" || l.cat === "hybrid";
         if (h.unknown) { w.unknown += g; w.unknownEq = w.unknownEq && eq; e.unknown = true; continue; }
-        if (l.cat === "debt") w.slabST += g;
+        if (l.cat === "debt") (h.long ? (w.otherLT += g) : (w.slabST += g));
         else if (eq) (h.long ? (w.eqLT += g) : (w.eqST += g));
         else (h.long ? (w.otherLT += g) : (w.slabST += g));
       }

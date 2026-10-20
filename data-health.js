@@ -74,6 +74,17 @@
         : warn("advisor-total", "Advisor and Finance disagree", `Finance shows ${inr(rep.totalAssets)} of assets, the Advisor ${inr(rep.advisorTotal)} (difference ${inr(diff)}).`));
     }
 
+    // 2b) The tax engine checked, in this browser, against outside references: official Budget/CBDT figures and statute
+    //     arithmetic (tax-oracle.js), and the household's own filed returns (the tax in each return must reproduce).
+    if (ctx.taxSelfCheck) {
+      const o = ctx.taxSelfCheck.oracle || { total: 0, passed: 0, failed: [] }, rt = ctx.taxSelfCheck.returns || { total: 0, reproduced: 0, failed: [] };
+      const bad = [...(o.failed || []).map((f) => `Reference case ${f.id}: expected ${inr(f.expected)}, the engine gives ${typeof f.got === "number" ? inr(f.got) : f.got}`),
+        ...(rt.failed || []).map((f) => `Filed return ${f}: the engine does not reproduce the tax in it`)];
+      const what = `${o.passed} of ${o.total} reference cases (Budget tables, CBDT examples, the Act's rates)${rt.total ? ` and ${rt.reproduced} of ${rt.total} filed returns` : ""}`;
+      checks.push(bad.length ? warn("tax-engine", "The tax engine disagrees with a reference", `${what} agree. Tax figures may be wrong until this is fixed.`, bad)
+        : ok("tax-engine", "Tax engine checked against references", `${what} agree, checked just now in this browser.`));
+    }
+
     // 3) Prices present and recent
     {
       const missing = [];

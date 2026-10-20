@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.102",
-    "sha256": "2be3dbadf782900b4c963464bdc38879a3e9e63887cc7dc8cba8dac3eca63196"
+    "version": "1.0.103",
+    "sha256": "ecc4d84669765abba773a7a1e54e26c9b8ee90dfe9105fcccd8c9d18520d620b"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -32,8 +32,8 @@
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
   },
   "data-health.js": {
-    "version": "1.0.5",
-    "sha256": "04b0a2c75b4a29fbe6fef22bbb6af7546a6e9ee0d4809d9b5b29550649e62bfb"
+    "version": "1.0.6",
+    "sha256": "55b94188a67666f2dced2e699030bd5b5a46127ebe11775b6c87123acc007a0d"
   },
   "drive-sync.js": {
     "version": "1.0.42",
@@ -116,8 +116,12 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.2.10",
-    "sha256": "3cfdecd53f35bbd1a490b881164444051a33ba20660b291f67854c4efa5e676b"
+    "version": "1.2.11",
+    "sha256": "56da9b01c9584e2835cf8159dc3c05c0f51030e84be61a4c1225bf7d8bfb7615"
+  },
+  "tax-oracle.js": {
+    "version": "1.0.0",
+    "sha256": "a4bd3998404098703112139f1ea2c0351e8fad3db7c466af4f3faf326fbbb028"
   },
   "tax.js": {
     "version": "1.2.4",

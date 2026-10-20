@@ -39,9 +39,10 @@ assert.strictEqual(re.owners.Me.equityLT, 2500, "bought Jan 2024, sold Aug 2026 
 const un = Tax.unrealised(lots, "2026-10-18");
 assert.strictEqual(Math.round(un.owners.Me.equityLT), 2500, "50 old units left: 50×150 − 5000");
 assert.strictEqual(Math.round(un.owners.Me.equityST), -5000, "recent lot is short-term and at a loss");
-assert.strictEqual(Tax.holding({ date: "2025-10-18", cat: "equity" }, "2026-10-18").long, true, "exactly 12 months is long-term");
-assert.strictEqual(Tax.holding({ date: "2025-10-19", cat: "equity" }, "2026-10-18").long, false);
-assert.strictEqual(Tax.holding({ date: "2024-01-01", cat: "debt" }, "2026-10-18").long, false, "debt funds are always at slab");
+assert.strictEqual(Tax.holding({ date: "2025-10-17", cat: "equity" }, "2026-10-18").long, true, "12 months and a day is long-term (sec 2(42A): more than 12 months)");
+assert.strictEqual(Tax.holding({ date: "2025-10-18", cat: "equity" }, "2026-10-18").long, false, "exactly 12 months is still short-term");
+assert.strictEqual(Tax.holding({ date: "2024-01-01", cat: "debt" }, "2026-10-18").long, false, "debt funds bought from April 2023 are always at slab (sec 50AA)");
+assert.strictEqual(Tax.holding({ date: "2022-01-01", cat: "debt" }, "2026-10-18").long, true, "a debt fund bought before April 2023 is long-term after 24 months");
 assert.strictEqual(Tax.holding({ date: "2025-01-01", cat: "foreignShares" }, "2026-10-18").long, false, "foreign shares need 24 months");
 assert.strictEqual(Tax.taxCategory("Motilal Oswal Nasdaq 100 ETF", "stock"), "listedOther");
 assert.strictEqual(Tax.taxCategory("Nippon India ETF Nifty 50 BeES", "stock"), "equity");

@@ -96,4 +96,16 @@ assert.doesNotThrow(() => H.run(null));
   assert.ok(h2.counts.warn >= 1, "it counts as something to fix");
 }
 
+// The tax-engine self-check: references and filed returns, and what a disagreement looks like
+{
+  const O = require("../tax-oracle.js"), T = require("../tax-core.js");
+  const good = run(base(), {}, { taxSelfCheck: { oracle: O.run(T.engine), returns: { total: 5, reproduced: 5, failed: [] } } }).checks.find((c) => c.id === "tax-engine");
+  assert.strictEqual(good.status, "ok");
+  assert.ok(new RegExp(`${O.CASES.length} of ${O.CASES.length} reference cases`).test(good.detail) && /5 of 5 filed returns/.test(good.detail), good.detail);
+  const broken = { computeTax: (p) => ({ ...T.engine.computeTax(p), totalTax: T.engine.computeTax(p).totalTax + 1 }) };
+  const bad = run(base(), {}, { taxSelfCheck: { oracle: O.run(broken), returns: { total: 5, reproduced: 4, failed: ["FY 2024-25 (Prafful)"] } } }).checks.find((c) => c.id === "tax-engine");
+  assert.strictEqual(bad.status, "warn", "a ₹1 drift on the engine is a warning");
+  assert.ok(bad.items.some((i) => /FY 2024-25/.test(i)) && bad.items.filter((i) => /Reference case/.test(i)).length >= 20, "each disagreement is listed");
+  assert.ok(!run(base(), {}).checks.some((c) => c.id === "tax-engine"), "no self-check given: no row");
+}
 console.log("data-health tests passed");

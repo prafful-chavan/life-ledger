@@ -15281,8 +15281,19 @@ function computeDataHealth() {
   let advisorTotal = null;
   try { advisorTotal = window.LifeLedgerAdvisor?.analyze(buildAdvisorInput())?.metrics?.total ?? null; } catch { /* advisor optional */ }
   const nw = getNetWorthSummary();
+  // The tax engine re-checked here against its reference cases and the household's filed returns
+  let taxSelfCheck = null;
+  try {
+    const O = window.LifeLedgerTaxOracle, T = window.LifeLedgerTax, tm = window.LifeLedgerTaxUI?.model?.();
+    if (O && T) {
+      const filed = ((tm && tm.returnsAudit) || []).filter((r) => !r.unfiled && !r.error);
+      const failed = filed.filter((r) => (r.findings || []).some((f) => f.id === "arithmetic")).map((r) => `FY ${r.fy} (${r.person === "Wife" ? "Archana" : "Prafful"})`);
+      taxSelfCheck = { oracle: O.run(T.engine), returns: { total: filed.length, reproduced: filed.length - failed.length, failed } };
+    }
+  } catch (e) { console.warn("[data-health] tax self-check unavailable:", e); }
   return DH.run({
     state,
+    taxSelfCheck,
     now: todayISO(),
     dismissed: (state.advisor && state.advisor.healthDismissed) || {},
     reported: { netWorth: nw.netWorth, totalAssets: nw.totalAssets, usStocksInr: nw.snapshot?.usStocks, advisorTotal },
