@@ -141,6 +141,11 @@ console.log("tax if sold tests passed");
   const under = { income: [...prevMonths.map((d, i) => mk(d, prevGross[i], Math.round(prevTax / 24))), ...cur], taxProfile: {} };
   const mu = H.build(under, "2026-10-20").people.find((x) => x.who === "Me");
   assert.strictEqual(mu.plan.tdsProjected, mu.salary.tdsPace); assert.ok(/current monthly pace/.test(mu.salary.tdsAssumption));
+  // A salary with no tax (rebate) never says TDS will rise; ₹200 a month in the TDS field is pointed out as professional tax
+  const low = { income: ["2026-04-30", "2026-05-31", "2026-06-30"].map((d) => ({ id: "w" + d, person: "Wife", date: d, type: "Salary", grossEarnings: 60000, basicSalary: 30000, taxTds: 200, amount: 59800 })), taxProfile: {} };
+  const wl = H.build(low, "2026-10-20").people.find((x) => x.who === "Wife");
+  assert.strictEqual(wl.salary.tdsSalaryTax, 0);
+  assert.ok(/No tax is due on this salary/.test(wl.salary.tdsAssumption) && /professional tax/.test(wl.salary.tdsAssumption) && !/expected to rise/.test(wl.salary.tdsAssumption));
 }
 console.log("salary pattern tests passed");
 

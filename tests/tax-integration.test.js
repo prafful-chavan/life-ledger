@@ -11,6 +11,11 @@ const conc = res.signals.find((x) => x.id === "conc-in:ACME");
 assert.ok(conc && conc.why.some((w) => /tax about ₹36,400/.test(w) && /₹1,25,000 of the gain falls inside/.test(w)));
 assert.ok(!conc.why.some((w) => /check the tax/.test(w)), "no vague tax hint once the number is known");
 assert.ok(res.signals.find((x) => x.id === "conc-in:BETA").why.some((w) => /₹6,500–₹10,400/.test(w) && /buy dates are not in your records/.test(w)));
+// Unknown buy dates with no tax either way (inside the exemption) says so, never "₹0–₹0"
+const zero = A.analyze({ now: "2026-10-20", holdings: [{ key: "in:GAMA", cls: "stock", name: "Gama", value: 980000, invested: 930000 }], tax: { taxIfSold: { "in:GAMA": { key: "in:GAMA", gain: 50000, tax: null, taxRange: [0, 0], unknownDates: true } }, harvest: [] } });
+const zw = zero.signals.flatMap((x) => x.why || []).join(" ");
+assert.ok(!/₹0–₹0/.test(zw), "no ₹0–₹0 range");
+assert.ok(zero.signals.length === 0 || /no tax whether it counts as short- or long-term/.test(zw) || !/sold all of it today/.test(zw));
 assert.deepStrictEqual(res.holdings.find((h) => h.key === "in:ACME").tax, { gain: 400000, tax: 36400, taxRange: null, exemptUsed: 125000, unknownDates: false });
 // Without the tax model the advisor still works and says nothing about tax
 const plain = A.analyze({ now: "2026-10-20", holdings: [{ key: "in:ACME", cls: "stock", name: "Acme", value: 500000, invested: 100000 }] });

@@ -8,12 +8,12 @@
     "sha256": "d5e4ddf3f195dab3502935aeedec853d49040a1980ea719fed814a3fb11788f3"
   },
   "advisor-engine.js": {
-    "version": "2.0.5",
-    "sha256": "87ab834331e4bd6dcff41214968850e679164661460f22798ef3cfec6e4cf012"
+    "version": "2.0.6",
+    "sha256": "bd11e7e6637739faae035873be4441023726d837d981d675211fa9ff8de4bcf1"
   },
   "advisor.js": {
-    "version": "2.0.9",
-    "sha256": "d37ebd56e18ed1df5c46a4259cd3c16e9fed083366364a46f71f3aaa873ad518"
+    "version": "2.0.10",
+    "sha256": "d61859dd2ad5cff7e66a560e9fe286150ccaf6039035a7922267b916c13d1d3a"
   },
   "ai-agent.js": {
     "version": "1.0.48",
@@ -116,8 +116,8 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.2.5",
-    "sha256": "2f251c18ee0bc72892518a2e760a9d1ac37e0973bd7b95b86e1a3f8be6e312ba"
+    "version": "1.2.6",
+    "sha256": "a554fb5af9e174ce676bc70b08fc122cce6a2cad58d25f569c670658569df22e"
   },
   "tax.js": {
     "version": "1.2.3",

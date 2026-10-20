@@ -1184,7 +1184,7 @@
       }
       const tdsPace = sal.tds;
       const tdsProjected = truesUp === false ? tdsPace : Math.max(tdsPace, salaryTax);
-      sal.tdsPace = tdsPace; sal.tdsSalaryTax = salaryTax; sal.tdsAssumption = truesUp === true ? "Your employer deducted the full salary tax last year, so TDS is expected to rise to cover it by March." : truesUp === false ? "Last year's TDS did not match the salary tax, so TDS is projected at the current monthly pace." : "TDS is expected to rise to cover the salary tax by March (the usual payroll practice); check your payslips.";
+      sal.tdsPace = tdsPace; sal.tdsSalaryTax = salaryTax; sal.tdsAssumption = salaryTax === 0 ? `No tax is due on this salary, so the employer should not deduct TDS.${tdsPace > 0 ? " Check the TDS entries in your income records: ₹200 a month is usually professional tax, not TDS." : ""}` : truesUp === true ? "Your employer deducted the full salary tax last year, so TDS is expected to rise to cover it by March." : truesUp === false ? "Last year's TDS did not match the salary tax, so TDS is projected at the current monthly pace." : "TDS is expected to rise to cover the salary tax by March (the usual payroll practice); check your payslips.";
       sal.tds = r0(tdsProjected);
       return {
         plan: {
@@ -1417,7 +1417,7 @@
         if (m.taxIfSold && m.taxIfSold.length) {
           L.push("", "TAX IF EACH HOLDING WERE SOLD TODAY (on its own, unused exemption applied):");
           m.taxIfSold.filter((r) => Math.abs(r.gain) >= 1000).sort((a, b) => (b.tax || (b.taxRange || [0, 0])[1]) - (a.tax || (a.taxRange || [0, 0])[1])).slice(0, 25)
-            .forEach((r) => L.push(`- ${r.name}: gain ${inr(r.gain)}, tax ${r.tax != null ? inr(r.tax) : `${inr(r.taxRange[0])}–${inr(r.taxRange[1])} (buy dates unknown)`}`));
+            .forEach((r) => L.push(`- ${r.name}: gain ${inr(r.gain)}, tax ${r.tax != null ? inr(r.tax) : r.taxRange[1] <= 0 ? "none either way" : `${inr(r.taxRange[0])}–${inr(r.taxRange[1])} (buy dates unknown)`}`));
         }
       } else L.push('More: get_module {id: "tax"} (actions, filed returns, tax if each holding were sold).');
       return L.join("\n");

@@ -253,7 +253,7 @@
   function taxNote(h) {
     const t = h.tax;
     if (!t || h.groupKey === "safe") return "";
-    const text = t.tax == null && t.taxRange ? `about ${inr(t.taxRange[0])}–${inr(t.taxRange[1])} (buy dates unknown)` : t.gain <= 0 ? `none: selling books a ${inr(-t.gain)} loss` : `${inr(t.tax)} on a ${inr(t.gain)} gain${t.exemptUsed > 0 ? ` (${inr(t.exemptUsed)} tax-free)` : ""}`;
+    const text = t.gain <= 0 ? `none: selling books a ${inr(-t.gain)} loss` : t.tax == null && t.taxRange ? (t.taxRange[1] <= 0 ? `none on a ${inr(t.gain)} gain (either way)` : `about ${t.taxRange[0] === t.taxRange[1] ? inr(t.taxRange[1]) : `${inr(t.taxRange[0])}–${inr(t.taxRange[1])}`} on a ${inr(t.gain)} gain (buy dates unknown)`) : t.gain <= 0 ? `none: selling books a ${inr(-t.gain)} loss` : `${inr(t.tax)} on a ${inr(t.gain)} gain${t.exemptUsed > 0 ? ` (${inr(t.exemptUsed)} tax-free)` : ""}`;
     return `<p class="adv-h-tax">Tax if sold today: ${esc(text)}</p>`;
   }
 

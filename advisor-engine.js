@@ -381,8 +381,12 @@
     const taxLine = (key) => {
       const r = taxBy[key];
       if (!r) return null;
-      if (r.tax == null && r.taxRange) return `If you sold all of it today: about ${inr(r.taxRange[0])}–${inr(r.taxRange[1])} tax (the buy dates are not in your records, so short- or long-term is unknown).`;
       if (r.gain <= 0) return `Selling now would book a loss of ${inr(-r.gain)}, which carries forward against future gains if the return is filed on time.`;
+      if (r.tax == null && r.taxRange) {
+        const [lo, hi] = r.taxRange;
+        if (hi <= 0) return `If you sold all of it today: gain ${inr(r.gain)}, no tax whether it counts as short- or long-term.`;
+        return `If you sold all of it today: gain ${inr(r.gain)}, tax about ${lo === hi ? inr(hi) : `${inr(lo)}–${inr(hi)}`} (the buy dates are not in your records, so short- or long-term is unknown).`;
+      }
       return `If you sold all of it today: gain ${inr(r.gain)}, tax about ${inr(r.tax)}${r.exemptUsed > 0 ? ` (${inr(r.exemptUsed)} of the gain falls inside this year's tax-free ₹1.25 lakh)` : ""}.`;
     };
     const signals = [];
