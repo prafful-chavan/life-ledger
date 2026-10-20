@@ -54,4 +54,14 @@ function classifyGift(t, ctx = {}) {
   return out;
 }
 
-module.exports = { classifyGift, isRelative, THRESHOLD };
+/**
+ * When a spouse's investments were paid for partly with money given by the other spouse and partly with her own or her parents'
+ * money, only the share traceable to the giver's money is clubbed (sec 64). Returns the fraction to club, 0..1.
+ * contributions: { fromSpouse, fromOthers } in ₹ (own earnings, gifts from parents, etc. are "fromOthers").
+ */
+function clubbingShare({ fromSpouse = 0, fromOthers = 0 } = {}) {
+  const a = Math.max(0, num(fromSpouse)), b = Math.max(0, num(fromOthers));
+  return a + b > 0 ? a / (a + b) : 0;
+}
+
+module.exports = { classifyGift, isRelative, clubbingShare, THRESHOLD };

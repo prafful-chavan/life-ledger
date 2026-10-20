@@ -157,4 +157,7 @@ assert.strictEqual(rs.status, "RNOR", "citizen visiting with Indian income over 
 rs = Res.residentialStatus({ daysInIndia: 10, citizen: true, indianIncome: 2000000, taxedElsewhere: false, prevYears: tenYears });
 assert.strictEqual(rs.status, "RNOR", "deemed resident when taxed nowhere");
 assert.ok(Law.byId("residency-india") && Law.byId("uk-nic-dcc") && Law.byId("uk-fig"), "relocation rules are in the register");
+assert.strictEqual(G.clubbingShare({ fromSpouse: 300000, fromOthers: 100000 }), 0.75, "club only the part traceable to the spouse's money");
+assert.strictEqual(G.clubbingShare({ fromSpouse: 0, fromOthers: 500000 }), 0);
+assert.strictEqual(G.clubbingShare({}), 0);
 console.log("residency tests passed");
