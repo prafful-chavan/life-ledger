@@ -90,4 +90,11 @@ const noAdv = plan({ fy: "2026-27", person: "Low", grossSalary: 700000, basic: 2
 assert.strictEqual(noAdv.advanceTax.length, 0);
 assert.ok(!noAdv.levers.some((l) => l.yearlySaving <= 0), "levers worth nothing are dropped");
 
+// Gains already booked use up the exemption
+const used = plan({ fy: "2026-27", person: "Used", grossSalary: 3000000, basic: 1000000, realisedLtcgYtd: 70000, tdsProjected: 600000 }, "2026-10-20");
+const h = used.levers.find((l) => l.id === "ltcg-harvest");
+assert.ok(/55,000/.test(h.title) && h.yearlySaving === Math.round(55000 * 0.125 * 1.04), "₹55,000 of the exemption left");
+assert.strictEqual(used.regimes.new.tax, plan({ fy: "2026-27", person: "x", grossSalary: 3000000, basic: 1000000, tdsProjected: 600000 }, "2026-10-20").regimes.new.tax, "gains inside the exemption add no tax");
+assert.ok(!plan({ fy: "2026-27", person: "Full", grossSalary: 900000, basic: 300000, realisedLtcgYtd: 130000 }, "2026-10-20").levers.some((l) => l.id === "ltcg-harvest"), "nothing left to harvest");
+
 console.log("tax-system tests passed");

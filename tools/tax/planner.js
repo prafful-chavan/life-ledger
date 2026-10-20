@@ -3,7 +3,7 @@
  * what each lever is worth (employer NPS, gains harvesting, deductions), advance-tax instalments and the filing calendar.
  *
  * p = { fy, person, grossSalary, basic, hraReceived, rentPaid, metro, professionalTax, otherIncome, employerNps (current),
- *       gains: { stcgAfter, ltcgAfter } (expected this year), deductionsPaid: { "80C", "80D_self", "80D_parents", "80CCD1B", homeLoanInterest },
+ *       gains: { stcgAfter, ltcgAfter } (further gains expected), realisedLtcgYtd / realisedStcgYtd (already booked this year), deductionsPaid: { "80C", "80D_self", "80D_parents", "80CCD1B", homeLoanInterest },
  *       parentsSenior, tdsProjected, hasForeignAssets, hasShareSales }
  */
 const E = require("./engine");
@@ -17,7 +17,9 @@ function plan(p, asOf = new Date().toISOString().slice(0, 10)) {
   const hra = E.hraExemption({ hraReceived: p.hraReceived, rentPaid: p.rentPaid, basic: p.basic, metro: p.metro });
   const capped = E.capDeductions(p.deductionsPaid || {}, { parentsSenior: p.parentsSenior, basic: p.basic });
   const oldDed = capped["80C"] + capped["80CCD1B"] + capped["80D"] + capped.homeLoanInterest;
-  const base = { fy: p.fy, grossSalary: p.grossSalary, professionalTax: p.professionalTax, otherIncome: p.otherIncome, employerNps: p.employerNps, basic: p.basic, gains: p.gains };
+  const gains = { ...(p.gains || {}) };
+  if (num(p.realisedLtcgYtd) || num(p.realisedStcgYtd)) { gains.ltcgAfter = num(gains.ltcgAfter) + num(p.realisedLtcgYtd); gains.stcgAfter = num(gains.stcgAfter) + num(p.realisedStcgYtd); }
+  const base = { fy: p.fy, grossSalary: p.grossSalary, professionalTax: p.professionalTax, otherIncome: p.otherIncome, employerNps: p.employerNps, basic: p.basic, gains };
   const cmp = E.compareRegimes(base, { old: { exemptAllowances: hra, deductions: oldDed }, newer: { exemptAllowances: 0, deductions: 0 } });
   const chosen = cmp.better;
   const current = cmp[chosen];
@@ -29,7 +31,8 @@ function plan(p, asOf = new Date().toISOString().slice(0, 10)) {
     levers.push({ id: "employer-nps", title: "Employer NPS (80CCD(2)) up to the cap", yearlySaving: current.totalTax - t.totalTax, detail: `Ask the employer to route up to ₹${npsCap.toLocaleString("en-IN")} a year (${y.newRegime ? y.newRegime.cap80CCD2Pct : 10}% of basic) to NPS. Needs your own NPS account (PRAN). Locked until 60.` });
   }
   // Long-term gains harvesting (₹1.25L exemption, 12.5%)
-  levers.push({ id: "ltcg-harvest", title: "Book ₹1.25L of long-term equity gains tax-free (each person)", yearlySaving: r0(E.RULES.equity.exemptionFromFY2425 * E.RULES.equity.ltcgAfter / 100 * 1.04), detail: "Sell and buy back the same day before 31 March; resets your cost so future tax is lower. Leave out funds with exit loads." });
+  const exemptionLeft = Math.max(0, E.RULES.equity.exemptionFromFY2425 - Math.max(0, num(p.realisedLtcgYtd)));
+  if (exemptionLeft > 0) levers.push({ id: "ltcg-harvest", title: `Book ₹${exemptionLeft.toLocaleString("en-IN")} more of long-term equity gains tax-free`, yearlySaving: r0(exemptionLeft * E.RULES.equity.ltcgAfter / 100 * 1.04), detail: `${num(p.realisedLtcgYtd) > 0 ? `₹${r0(p.realisedLtcgYtd).toLocaleString("en-IN")} of the ₹1.25L exemption is already used this year. ` : ""}Sell and buy back the same day before 31 March; resets your cost so future tax is lower. Leave out funds with exit loads.` });
   // Holding period
   if (num(p.gains?.stcgAfter) > 0) levers.push({ id: "hold-12m", title: "Hold equity 12+ months", yearlySaving: r0(num(p.gains.stcgAfter) * (E.RULES.equity.stcgAfter - E.RULES.equity.ltcgAfter) / 100 * 1.04), detail: "Short-term 20% vs long-term 12.5% (first ₹1.25L free)." });
   for (let i = levers.length - 1; i >= 0; i--) if (!(levers[i].yearlySaving > 0)) levers.splice(i, 1);
