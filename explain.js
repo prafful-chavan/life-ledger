@@ -78,7 +78,7 @@
       title: `Tax · ${person.name} · FY ${p.fy}`, formula: `Total income ₹${Math.round(num(b.totalIncome)).toLocaleString("en-IN")} → tax`,
       sections: [{ title: "Total income", lines: income, result: { label: "Total income", value: num(b.totalIncome) }, check: checked(income, b.totalIncome, 10) }],
       lines, result: { label: `Tax for the year (${b.regime} regime)`, value: num(b.totalTax) },
-      after: [{ label: "TDS expected by March", value: num(p.tdsProjected), note: sal.tdsAssumption || "" }, { label: p.balance < 0 ? "Left to pay" : "Refund expected", value: Math.abs(num(p.balance)) }],
+      after: [{ label: "TDS expected by March", value: num(p.tdsProjected), note: sal.tdsAssumption || "" }, Math.round(num(p.balance)) === 0 ? { label: "Nothing to pay or refund", value: 0 } : { label: p.balance < 0 ? "Left to pay" : "Refund expected", value: Math.abs(num(p.balance)) }],
       check: checked(lines, b.totalTax, 2),
     };
   }

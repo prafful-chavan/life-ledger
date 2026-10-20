@@ -43,5 +43,7 @@ const { household: H } = require("../tax-core.js");
   assert.ok(e.sections[0].lines.some((l) => l.label === "Interest and dividends" && l.value === 22300));
   assert.strictEqual(e.after[0].value, me.plan.tdsProjected);
   assert.strictEqual(X.tax({ plan: null }), null, "no plan: nothing to explain");
+  const zero = X.tax({ ...me, plan: { ...me.plan, balance: 0 } });
+  assert.strictEqual(zero.after[1].label, "Nothing to pay or refund", "a zero balance is not called a refund");
 }
 console.log("explain tests passed");

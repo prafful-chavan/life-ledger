@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.106",
-    "sha256": "07c39d89857c265cb47322887f5845884b137a2ef753546ab9a1db8e93a4158c"
+    "version": "1.0.107",
+    "sha256": "3f8a4cf804a49f68bad660133d2b3ed49d4bacddcac2faa94c6c03562c3517b4"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -40,8 +40,8 @@
     "sha256": "e12193c74adbb7cbaa4ef8be663e369ddcbcd36e2d7a054f1b279e3325fa2f5f"
   },
   "explain.js": {
-    "version": "1.0.0",
-    "sha256": "ed1dd82c8d560b2de256cf6daf883d92fa7ff7b17b76b24b832ec10fd31a4b59"
+    "version": "1.0.1",
+    "sha256": "9bf8fa16232b6639fc68d2f185b9025142d7835187630c554932b159047a81bb"
   },
   "hero-series.js": {
     "version": "1.0.0",

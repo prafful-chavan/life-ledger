@@ -2388,7 +2388,7 @@ function openExplain(kind, arg) {
   if (!X) return;
   let e = null;
   try {
-    if (kind === "networth") e = X.netWorth(getNetWorthSummary().snapshot, { timeOf: (iso) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) });
+    if (kind === "networth") e = X.netWorth(getNetWorthSummary().snapshot, { timeOf: (iso) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) });
     else if (kind === "savings") {
       const m = calculateMetrics(), names = { Me: "Prafful", Wife: "Archana" };
       const key = activeDashboardMonth || monthKey(new Date()), monthLabel = new Date(key + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
