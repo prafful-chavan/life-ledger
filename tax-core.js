@@ -856,6 +856,7 @@
     const r0 = (v) => Math.round(v);
     const inr = (v) => (num(v) < 0 ? "−" : "") + "₹" + Math.abs(Math.round(num(v))).toLocaleString("en-IN");
     const CESS = 1 + engine.RULES.cess / 100;
+    const monthName = (ym) => { try { return new Date(ym + "-01T00:00:00Z").toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" }); } catch { return ym; } };
     const addMonthsISO = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
     const daysTo = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 864e5);
     const nextFy = (fy) => `${+fy.slice(0, 4) + 1}-${String(+fy.slice(0, 4) + 2).slice(2)}`;
@@ -868,17 +869,24 @@
     }
     const chosenRegime = (p) => planner.plan(p, "2000-01-01").better;
 
-    /** Employer NPS: saving and out-of-pocket cost by the month the employer starts it. remaining = payroll months left this year. */
-    function npsByStart(p, remaining) {
+    /**
+     * Employer NPS: saving and out-of-pocket cost by the month the employer starts it. remaining = payroll months left this year,
+     * counting the month now under way; the earliest start is next month. planned = "YYYY-MM" the household intends to start.
+     */
+    function npsByStart(p, remaining, today, planned) {
       const I = planner.inputs(p), regime = chosenRegime(p), monthly = I.npsCap / 12, have = num(p.employerNps);
       const room = Math.max(0, I.npsCap - have);
       if (room <= 0) return { cap: I.npsCap, rows: [], runRate: null };
       const t0 = taxWith(p, regime).totalTax;
-      const rows = [0, 1, 2, 3].map((off) => {
-        const months = Math.max(0, Math.min(12, remaining - off));
+      const cur = (today || "2026-01-01").slice(0, 7) + "-01";
+      const offsets = new Set([0, 1, 2, 3]);
+      if (planned && /^\d{4}-\d{2}$/.test(planned)) { const o = (+planned.slice(0, 4) - +cur.slice(0, 4)) * 12 + (+planned.slice(5, 7) - +cur.slice(5, 7)) - 1; if (o >= 0 && o <= 11) offsets.add(o); }
+      const rows = [...offsets].sort((a, b) => a - b).map((off) => {
+        const months = Math.max(0, Math.min(12, remaining - 1 - off));
         const amount = Math.min(room, r0(monthly * months));
         const saving = r0(t0 - taxWith(p, regime, { base: { employerNps: have + amount } }).totalTax);
-        return { startsInMonths: off + 1, months, amount, saving, netCost: amount - saving };
+        const from = addMonthsISO(cur, 1 + off).slice(0, 7);
+        return { startsInMonths: off + 1, from, months, amount, saving, netCost: amount - saving, planned: from === planned };
       }).filter((x) => x.amount > 0);
       const full = r0(t0 - taxWith(p, regime, { base: { employerNps: have + room } }).totalTax);
       return { cap: I.npsCap, regime, rows, runRate: { amount: room, saving: full, netCost: room - full } };
@@ -941,19 +949,18 @@
       return out;
     }
 
-    /** Tax on extra business profit if it is earned by each person. profit = yearly ₹. */
-    function businessScenarios(people, profits) {
-      const rows = [];
-      for (const profit of profits) {
+    /** Tax on extra business profit if it is earned by each person. profit = yearly ₹; monthsThisYear = months of it that fall in this tax year. */
+    function businessScenarios(people, profits, monthsThisYear = 12) {
+      const taxOn = (profit) => {
         const owners = people.filter((x) => x.plan).map((x) => {
-          const p = x.inputs, I = planner.inputs(p), regime = x.plan.better;
-          const t1 = taxWith(p, regime, { base: { otherIncome: num(p.otherIncome) + profit } }).totalTax, t0 = x.taxNow.totalTax;
-          return { who: x.who, name: x.name, extraTax: r0(t1 - t0) };
+          const p = x.inputs, regime = x.plan.better;
+          const t1 = taxWith(p, regime, { base: { otherIncome: num(p.otherIncome) + profit } }).totalTax;
+          return { who: x.who, name: x.name, extraTax: r0(t1 - x.taxNow.totalTax) };
         });
         const best = owners.slice().sort((a, b) => a.extraTax - b.extraTax)[0], worst = owners.slice().sort((a, b) => b.extraTax - a.extraTax)[0];
-        rows.push({ profit, owners, saving: worst && best ? worst.extraTax - best.extraTax : 0, bestOwner: best ? best.name : "" });
-      }
-      return rows;
+        return { owners, saving: worst && best ? worst.extraTax - best.extraTax : 0, bestOwner: best ? best.name : "" };
+      };
+      return profits.map((profit) => ({ profit, ...taxOn(profit), months: monthsThisYear, thisYear: monthsThisYear < 12 ? { profit: r0(profit * monthsThisYear / 12), ...taxOn(profit * monthsThisYear / 12) } : null }));
     }
 
     /** What the 87A rebate loss costs a person who becomes a non-resident (the rebate is for residents only). */
@@ -976,13 +983,13 @@
       for (const x of people) {
         if (!x.plan) continue;
         const rem = x.salary ? x.salary.remainingMonths : 12;
-        const nps = npsByStart(x.inputs, rem), rc = regimeCheck(x.inputs);
+        const nps = npsByStart(x.inputs, rem, today, profile && profile.npsStart), rc = regimeCheck(x.inputs);
         const wait = waitList(state, x.who, today), losses = lossList(state, x.who, today);
         perPerson.push({ who: x.who, name: x.name, nps, regime: rc, wait, losses });
-        const first = nps.rows[0];
+        const first = nps.rows.find((r) => r.planned) || nps.rows[0];
         if (first && nps.runRate && nps.runRate.saving >= 3000) levers.push({
           id: `nps-${x.who}`, who: x.name, kind: "structure", title: `Employer NPS for ${x.name}`, thisYear: first.saving, runRate: nps.runRate.saving,
-          what: `Ask payroll to route ₹${r0(nps.cap / 12).toLocaleString("en-IN")} a month (up to 14% of basic) into NPS from next month: ${inr(first.amount)} this year saves ${inr(first.saving)}; a full year (${inr(nps.runRate.amount)}) saves ${inr(nps.runRate.saving)}. Out of pocket ${inr(nps.runRate.netCost)}, invested for retirement.`,
+          what: `Ask payroll to route ₹${r0(nps.cap / 12).toLocaleString("en-IN")} a month (up to 14% of basic) into NPS from ${monthName(first.from)}${first.planned ? " (your plan)" : ""}: ${inr(first.amount)} this year saves ${inr(first.saving)}; a full year (${inr(nps.runRate.amount)}) saves ${inr(nps.runRate.saving)}. Out of pocket ${inr(nps.runRate.netCost)}, invested for retirement.`,
           needs: ["Your own NPS account (PRAN)", "Employer must offer the option"], risks: ["Locked until 60 (60% tax-free lump sum, 40% annuity)", "Reduces cash salary"], deadline: "", confidence: "high" });
         const ltcgLeft = x.exemptionLeft;
         if (ltcgLeft >= 5000 && x.harvest && x.harvest.picks.length) levers.push({
@@ -1003,11 +1010,16 @@
         needs: ["Her own savings or her parents' gifts", "Separate account or folio"], risks: ["Clubbing if the money came from you", "A gift to a parent must be real"], deadline: "", confidence: "high" });
       const bizProfits = [200000, 500000, 1000000];
       if (profile && num(profile.sideBusinessProfit) > 0) bizProfits.unshift(num(profile.sideBusinessProfit));
-      const business = businessScenarios(people, bizProfits);
+      let bizMonths = 12;
+      if (profile && /^\d{4}-\d{2}-\d{2}$/.test(profile.sideBusinessStart || "")) {
+        const st = profile.sideBusinessStart, fyStartY = +fy.slice(0, 4);
+        if (st > `${fyStartY + 1}-03-31`) bizMonths = 0; else if (st >= `${fyStartY}-04-01`) { const m = +st.slice(5, 7); bizMonths = m >= 4 ? 16 - m : 4 - m; }
+      }
+      const business = businessScenarios(people, bizProfits, bizMonths);
       const nri = people.map(nonResidentCost).filter(Boolean);
       levers.sort((a, b) => (b.thisYear + b.runRate * 0.5) - (a.thisYear + a.runRate * 0.5));
       const totals = { thisYear: levers.reduce((a, l) => a + l.thisYear, 0), runRate: levers.reduce((a, l) => a + l.runRate, 0) };
-      return { fy, levers, perPerson, location: loc, business, nonResident: nri, totals };
+      return { fy, levers, perPerson, location: loc, business, businessMonthsThisYear: bizMonths, nonResident: nri, totals };
     }
 
     /** Next year's tax if salary grows by growthPct (assumed rules). */
@@ -1047,25 +1059,41 @@
      * Salary for a financial year from the income records: what has been paid so far plus the typical month for the rest.
      * Returns { months, gross, basic, hra, pf, tds, professionalTax, typicalMonthlyGross, basedOn } or null when there is none.
      */
+    /** 1 = April … 12 = March for the month a salary record pays. */
+    function payIdx(iso) {
+      let y = +iso.slice(0, 4), m = +iso.slice(5, 7); const d = +iso.slice(8, 10);
+      if (d <= 3) { m -= 1; if (m === 0) { m = 12; y -= 1; } }
+      return m >= 4 ? m - 3 : m + 9;
+    }
+    const MONTH_NAMES = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
     function salaryProjection(state, who, fy) {
       const all = (state.income || []).filter((i) => (i.person || "Me") === who && (!i.type || /salary/i.test(i.type)) && num(i.grossEarnings) > 0)
         .sort((a, b) => (a.date < b.date ? -1 : 1));
       const rows = all.filter((i) => salaryFy(i.date) === fy);
-      const source = rows.length ? rows : all.filter((i) => salaryFy(i.date) === `${fyStartYear(fy) - 1}-${String(fyStartYear(fy)).slice(2)}`);
+      const prevFy = `${fyStartYear(fy) - 1}-${String(fyStartYear(fy)).slice(2)}`;
+      const source = rows.length ? rows : all.filter((i) => salaryFy(i.date) === prevFy);
       if (!source.length) return null;
       const recent = source.slice(-3), mean = (k, set = recent) => set.reduce((a, r) => a + num(r[k]), 0) / set.length;
-      // Bonus months distort the average: use the median of the last six gross figures as the "typical" month.
+      // Bonus months distort the average: the typical month is the median of the last six gross figures.
       const grossSorted = source.slice(-6).map((r) => num(r.grossEarnings)).sort((a, b) => a - b), typical = grossSorted[Math.floor(grossSorted.length / 2)];
       const scale = typical / (mean("grossEarnings") || typical || 1);
       const last = recent[recent.length - 1];
-      const have = rows.length ? rows.length : 0, remaining = rows.length ? Math.max(0, 12 - have) : 12;
-      const sum = (k) => (rows.length ? rows : []).reduce((a, r) => a + num(r[k]), 0);
       const monthly = (k) => (k === "grossEarnings" ? typical : num(last[k]));
+      const sum = (k) => rows.reduce((a, r) => a + num(r[k]), 0);
+      let lastIdx = 0, missing = [];
+      if (rows.length) {
+        const have = new Set(rows.map((r) => payIdx(r.date)));
+        lastIdx = Math.max(...have);
+        for (let i = 1; i <= lastIdx; i++) if (!have.has(i)) missing.push(MONTH_NAMES[i - 1]);
+      }
+      const remaining = rows.length ? 12 - lastIdx : 12;
+      const imputed = missing.length + remaining;   // months estimated from the typical month
       return {
-        fy, months: have, remainingMonths: remaining, basedOn: rows.length ? "this year so far plus a typical month" : "last year's salary",
-        gross: r0(sum("grossEarnings") + remaining * monthly("grossEarnings")), basic: r0(sum("basicSalary") + remaining * monthly("basicSalary")),
-        hra: r0(sum("hra") + remaining * monthly("hra")), pf: r0(sum("pf") + remaining * monthly("pf")),
-        tds: r0(sum("taxTds") + remaining * mean("taxTds")), professionalTax: Math.min(2500, r0(sum("professionalTax") + remaining * (num(last.professionalTax) || 200))),
+        fy, months: rows.length, remainingMonths: remaining, missingMonths: missing, lastPaidMonth: rows.length ? MONTH_NAMES[lastIdx - 1] : null,
+        basedOn: rows.length ? "this year so far plus a typical month" : "last year's salary",
+        gross: r0(sum("grossEarnings") + imputed * monthly("grossEarnings")), basic: r0(sum("basicSalary") + imputed * monthly("basicSalary")),
+        hra: r0(sum("hra") + imputed * monthly("hra")), pf: r0(sum("pf") + imputed * monthly("pf")),
+        tds: r0(sum("taxTds") + imputed * mean("taxTds")), professionalTax: Math.min(2500, r0(sum("professionalTax") + imputed * (num(last.professionalTax) || 200))),
         typicalMonthlyGross: r0(typical), scale: Math.round(scale * 100) / 100, employer: last.organization || "",
       };
     }
@@ -1163,6 +1191,19 @@
           if (l.id === "employer-nps" && l.yearlySaving >= 10000) add(`nps-${p.who}`, "medium", `Employer NPS could save ${p.name} about ${inr(l.yearlySaving)} a year`, l.detail, "");
           if (l.id === "ltcg-harvest" && today >= `${+today.slice(0, 4)}-01-15` && today <= `${+today.slice(0, 4)}-03-31` && l.yearlySaving > 1000) add(`harvest-${p.who}`, "medium", `Book tax-free long-term gains for ${p.name} before 31 March`, l.title + ". " + l.detail, `${+today.slice(0, 4)}-03-31`);
         }
+      }
+      for (const p of model.people) if (p.salary && p.salary.missingMonths && p.salary.missingMonths.length) add(`missing-${p.who}`, "low", `${p.name}: salary for ${p.salary.missingMonths.join(", ")} is missing from your income records`, "The tax numbers estimate those months from a typical month. Adding the real payslip makes the year's tax and TDS exact.", "", { who: p.name });
+      // Decisions the household has already made become dated steps.
+      const prof = model.profile || {};
+      if (prof.npsStart && today < `${prof.npsStart}-01`) {
+        const askBy = addDays(`${prof.npsStart}-01`, -30).slice(0, 10);
+        add("nps-open", "medium", "Open your NPS account (Tier I)", `Employer NPS needs your own account (PRAN). Planned employer start: ${prof.npsStart}.`, askBy, { who: NAMES.Me });
+        add("nps-hr", "medium", `Ask TCS HR to start employer NPS from ${prof.npsStart}`, "Ask for the effective month in writing, the percentage of basic (up to 14%), and that it is a CTC restructure, not an extra deduction.", askBy, { who: NAMES.Me });
+      }
+      if (prof.sideBusinessStart && today < addDays(prof.sideBusinessStart, 60)) {
+        const st = prof.sideBusinessStart, y1 = +st.slice(0, 4);
+        add("biz-setup", "medium", "Side business: set up before the first rupee comes in", "Decide who owns it (the lower-taxed spouse, only if she does the work and the capital is hers), open a separate current account, keep invoices, and note the GST limit (₹20L for services).", addDays(st, -14).slice(0, 10), { who: "Both" });
+        add("biz-tax", "low", "Side business: tax steps", `Business income means ITR-3 or ITR-4 (not ITR-2/ITR-1) for the owner, due 31 August ${y1 + 1}. Under the presumptive scheme, advance tax is one payment by 15 March. Ask a CA which scheme fits.`, `${y1 + 1}-03-15`, { who: "Both" });
       }
       // Protection: cover gaps are tax-adjacent (80C/80D in the old regime) and the biggest financial risk.
       const pol = state.insurance || [];

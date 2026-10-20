@@ -56,8 +56,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.12",
-    "sha256": "4c1bf9c9cb59ef1c6ecf31b9f1e76bed59815c6325a9e963155cfde186460d64"
+    "version": "1.8.13",
+    "sha256": "433431615e15d1f1fabf7142074091c1bb2b26e6ded971dfd472c7fd3e4bfdb1"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -116,12 +116,12 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.1.1",
-    "sha256": "e0773fd12d7ec2c85a58dc6838f4769602a65c2a2e9d5511ed9dfbc9f29ee0ca"
+    "version": "1.2.1",
+    "sha256": "9f36ac18c8e8300203bb20dd95d22a6f1b56054d93a428ae473d9c16af240e0f"
   },
   "tax.js": {
-    "version": "1.1.1",
-    "sha256": "b85201f57e69e363e80e78565164cca3d98951ae234080ffe8a5f01f4874cf4a"
+    "version": "1.2.0",
+    "sha256": "50422bda0e9547d999c9163fc369f63d842a765cc27cb5c567b643f69c9015fc"
   },
   "theme.css": {
     "version": "1.1.7",

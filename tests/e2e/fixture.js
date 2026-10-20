@@ -68,7 +68,7 @@ function build(now = new Date()) {
     ],
     protectionSeeded: true,
     // Tax page: made-up profile, one filed return with unsupported claims, one unfiled year, one family transfer
-    taxProfile: { marriageDate: "2024-06-30", rentMonthly: { Me: 15000 }, parentsSenior: true, checklist: [{ id: "will", title: "Make a will", why: "Test item", severity: "low" }], done: {} },
+    taxProfile: { marriageDate: "2024-06-30", rentMonthly: { Me: 15000 }, parentsSenior: true, checklist: [{ id: "will", title: "Make a will", why: "Test item", severity: "high" }], done: {} },
     taxReturns: [
       { id: "taxr-test-1", fy: "2025-26", person: "Me", filed: { form: "ITR-1", regime: "new", grossSalary: 3000000, exemptAllowances: 200000, employerNps: 100000, otherIncome: 0, totalTax: 0, taxesPaid: 500000 }, evidence: { form16: { gross: 3000000, exemptions: 0, employerNps: 0 }, npsAccount: false, ais: { salary: 3000000, interest: 20000 } } },
       { id: "taxr-test-2", kind: "unfiled", fy: "2021-22", person: "Me", regime: "old", grossSalary: 1300000, exemptAllowances: 170000, deductions: 140000, otherIncome: 100, tds: 70000 },

@@ -21,11 +21,15 @@ assert.ok(sv && sv.levers.length, "a savings plan is built");
 const me = m.people.find((x) => x.who === "Me"), wife = m.people.find((x) => x.who === "Wife");
 
 // ── employer NPS: engine tax with and without, by start month ──
-const nps = S.npsByStart(me.inputs, me.salary.remainingMonths);
+const nps = S.npsByStart(me.inputs, me.salary.remainingMonths, "2026-10-20", "2027-01");
 const I = P.inputs(me.inputs);
 assert.strictEqual(nps.cap, I.npsCap);
 const first = nps.rows[0];
-assert.strictEqual(first.amount, Math.round(I.npsCap / 12 * me.salary.remainingMonths));
+assert.strictEqual(first.from, "2026-11", "the earliest start is next month");
+assert.strictEqual(first.amount, Math.round(I.npsCap / 12 * (me.salary.remainingMonths - 1)), "the month now under way is already processed");
+const planned = nps.rows.find((r) => r.planned);
+assert.ok(planned && planned.from === "2027-01" && planned.months === 3, "January start leaves Jan, Feb and Mar");
+assert.ok(planned.saving < first.saving);
 const t0 = S.taxWith(me.inputs, nps.regime).totalTax, t1 = S.taxWith(me.inputs, nps.regime, { base: { employerNps: first.amount } }).totalTax;
 assert.strictEqual(first.saving, Math.round(t0 - t1), "saving is the engine's own difference");
 assert.ok(nps.rows.every((r, i, a) => i === 0 || r.saving <= a[i - 1].saving), "starting later saves less");
@@ -58,6 +62,22 @@ assert.ok(wait.some((x) => x.name === "Waiting Fund" && x.inDays === 42 && x.sav
 assert.ok(!wait.some((x) => x.name === "Gain Fund"), "an already long-term lot is not");
 const loss = S.lossList(state, "Me", "2026-10-20");
 assert.ok(loss.some((x) => x.name === "Loss Fund" && x.loss === 8000 && x.term === "long" && x.futureSaving > 0));
+
+// ── a planned side-business start only counts the months left this year ──
+const planBiz = H.build({ ...state, taxProfile: { ...state.taxProfile, npsStart: "2027-01", sideBusinessStart: "2027-01-01", sideBusinessProfit: 600000 } }, "2026-10-20");
+assert.strictEqual(planBiz.savings.businessMonthsThisYear, 3, "Jan, Feb, Mar");
+const b600 = planBiz.savings.business[0];
+assert.strictEqual(b600.profit, 600000); assert.strictEqual(b600.thisYear.profit, 150000);
+assert.ok(b600.thisYear.owners.find((o) => o.who === "Me").extraTax > 45000);
+assert.strictEqual(planBiz.savings.levers.find((l) => l.id === "nps-Me").thisYear, planBiz.savings.perPerson.find((x) => x.who === "Me").nps.rows.find((r) => r.planned).saving, "the lever follows the planned start");
+assert.ok(planBiz.actions.some((a) => a.id === "nps-open") && planBiz.actions.some((a) => a.id === "nps-hr") && planBiz.actions.some((a) => a.id === "biz-setup") && planBiz.actions.some((a) => a.id === "biz-tax"), "decisions become dated steps");
+assert.strictEqual(H.build(state, "2026-10-20").savings.businessMonthsThisYear, 12);
+
+// ── a missing month of salary is estimated, and the months left follow the calendar ──
+const gap = { income: ["2026-04-30", "2026-05-31", "2026-07-31", "2026-08-31", "2026-09-30"].map((d) => row("Me", d, 260000, 48000)), taxProfile: {} };
+const sp = H.salaryProjection(gap, "Me", "2026-27");
+assert.deepStrictEqual(sp.missingMonths, ["Jun"]); assert.strictEqual(sp.remainingMonths, 6); assert.strictEqual(sp.gross, 260000 * 12, "5 paid + 1 missing + 6 to come");
+assert.ok(H.build(gap, "2026-10-20").actions.some((a) => a.id === "missing-Me"), "the gap is flagged so the real payslip can be added");
 
 // ── whole plan: ranked, totals add up, next year assumed ──
 assert.ok(sv.levers.every((l, i, a) => i === 0 || a[i - 1].thisYear + a[i - 1].runRate * 0.5 >= l.thisYear + l.runRate * 0.5), "ranked by value");
