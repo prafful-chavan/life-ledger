@@ -43,8 +43,8 @@ function build(now = new Date()) {
     liabilities: [{ id: "liab-1", name: "Car Loan", owner: "Me", category: "Car Loan", value: 40000, emi: 5000, emiDay: 5, rate: 8, payments: {} }],
     income: [
       ...[3, 2, 1].flatMap((k) => [
-        { id: `inc-me-${k}`, person: "Me", date: monthsAgo(k), source: "Acme", type: "Salary", amount: 200000, netSalary: 200000 },
-        { id: `inc-w-${k}`, person: "Wife", date: monthsAgo(k), source: "Beta", type: "Salary", amount: 60000, netSalary: 60000 },
+        { id: `inc-me-${k}`, person: "Me", date: monthsAgo(k), source: "Acme", type: "Salary", amount: 200000, netSalary: 200000, grossEarnings: 260000, basicSalary: 80000, hra: 40000, pf: 9600, taxTds: 48000, professionalTax: 200, organization: "Acme" },
+        { id: `inc-w-${k}`, person: "Wife", date: monthsAgo(k), source: "Beta", type: "Salary", amount: 60000, netSalary: 60000, grossEarnings: 62000, basicSalary: 31000, hra: 12000, pf: 3700, taxTds: 0, professionalTax: 200, organization: "Beta" },
       ]),
     ],
     expenses: [
@@ -67,6 +67,13 @@ function build(now = new Date()) {
       { id: "ins-test-2", person: "Me", type: "Term life", insurer: "Acme Life", policyName: "", cover: 30000000, premium: 18000, frequency: "Yearly", nextDue: iso(new Date(now.getTime() + 200 * 86400000)), nominee: "Archana", note: "" },
     ],
     protectionSeeded: true,
+    // Tax page: made-up profile, one filed return with unsupported claims, one unfiled year, one family transfer
+    taxProfile: { marriageDate: "2024-06-30", rentMonthly: { Me: 15000 }, parentsSenior: true, checklist: [{ id: "will", title: "Make a will", why: "Test item", severity: "low" }], done: {} },
+    taxReturns: [
+      { id: "taxr-test-1", fy: "2025-26", person: "Me", filed: { form: "ITR-1", regime: "new", grossSalary: 3000000, exemptAllowances: 200000, employerNps: 100000, otherIncome: 0, totalTax: 0, taxesPaid: 500000 }, evidence: { form16: { gross: 3000000, exemptions: 0, employerNps: 0 }, npsAccount: false, ais: { salary: 3000000, interest: 20000 } } },
+      { id: "taxr-test-2", kind: "unfiled", fy: "2021-22", person: "Me", regime: "old", grossSalary: 1300000, exemptAllowances: 170000, deductions: 140000, otherIncome: 100, tds: 70000 },
+    ],
+    taxFamily: [{ id: "taxf-test-1", date: "2024-05-14", amount: 500000, from: "Me", to: "Wife", relation: "spouse", viaOther: true }],
     habits: [{ id: "habit-1", name: "Walk", frequency: "Daily", owner: "Me", streak: 2, bestStreak: 5, history: [] }],
     tasks: [{ id: "task-1", text: "Pay rent", area: "Finance", date: today, done: false }],
     workouts: [], activities: [], studies: [], assets: [], netWorthHistory: [], interviewTrackerEntries: [],

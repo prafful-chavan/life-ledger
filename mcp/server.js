@@ -12,6 +12,7 @@ const Holdings = require("./holdings.js");
 const Fit = require("./fitness.js");
 const Cal = require("./calendar.js");
 const LawWatch = require("./lawwatch.js");
+const { taxPlan } = require("./taxplan.js");
 const Market = require("./market.js");
 const Protection = require("../protection-core.js");
 const { fetchState } = require("./vault-client.js");
@@ -133,12 +134,13 @@ const TOOLS = [
     const today = todayISO(), limit = a.rowsPerTable || 14, nw = A.netWorth(s, ctx.usdInr);
     return {
       brief: brief(s, a), funds: await tableFor(s, "funds", ctx, today, limit), stocks: await tableFor(s, "stocks", ctx, today, limit), usStocks: await tableFor(s, "us", ctx, today, 8),
-      tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today),
+      tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today), taxPlan: taxPlan(s, today),
     };
   } },
   { name: "holdings_table", description: "One row per holding with value, return, XIRR, trend, RSI, 50/200-day averages, the app's verdict, review-below / first-target / stretch levels with the holding's value at each, and an estimate of tax if sold today. kind = funds | stocks | us.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["funds", "stocks", "us"] }, limit: { type: "number" } }, required: ["kind"] }, run: async (s, a, ctx) => tableFor(s, a.kind, ctx, todayISO(), a.limit) },
   { name: "tax_report", description: "Capital gains by lot (FIFO), tax if sold today, this year's realised gains and ₹1.25L exemption left per person, harvesting ideas, an old-vs-new regime income-tax estimate, and the list of facts a CA would still need from you.", inputSchema: { type: "object", properties: {} }, run: async (s, a, ctx) => taxReport(s, ctx, todayISO()) },
   { name: "fitness", description: "Body measurements and trend, workouts, steps, cycling vs goals, habit streaks (no names), plus net-worth milestone pace and this month's SIP progress.", inputSchema: { type: "object", properties: {} }, run: async (s, a, ctx) => { const today = todayISO(), nw = A.netWorth(s, ctx.usdInr); return { fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), sipThisMonth: Cal.sipProgress(s, today) }; } },
+  { name: "tax_plan", description: "The household tax plan for this financial year: projected tax under both regimes per person, TDS vs tax, long-term-gain exemption left, ranked actions, dates, filed returns checked against their documents and what correcting each costs. Same engine as the app's Tax page.", inputSchema: { type: "object", properties: {} }, run: async (s) => taxPlan(s, todayISO()) },
   { name: "calendar", description: "Upcoming birthdays, renewals, tax dates and the salary day (next 75 days).", inputSchema: { type: "object", properties: {} }, run: async (s) => Cal.calendar(s, todayISO()) },
   { name: "net_worth", description: "Net worth by asset class with shares and the last 30 history points.", inputSchema: { type: "object", properties: { usdInr: { type: "number" } } }, run: async (s, a) => A.netWorth(s, a.usdInr) },
   { name: "mutual_funds", description: "Fund-level summary: invested, value, gain %, XIRR, day change; best/worst; category mix.", inputSchema: { type: "object", properties: {} }, run: async (s) => A.mutualFundReport(s, todayISO()) },

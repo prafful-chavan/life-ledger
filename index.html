@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.6" />
-    <link rel="stylesheet" href="layout.css?v=1.8.6" />
+    <link rel="stylesheet" href="layout.css?v=1.8.8" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -33,9 +33,9 @@
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
     <script defer src="hero-series.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.99"></script>
+    <script defer src="app.js?v=1.0.100"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
-    <script defer src="nav.js?v=1.1.5"></script>
+    <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
     <script defer src="sync-engine.js?v=1.1.0"></script>
     <script defer src="sync-client.js?v=1.0.4"></script>
@@ -53,6 +53,8 @@
     <script defer src="data-health.js?v=1.0.3"></script>
     <script defer src="protection-core.js?v=1.0.0"></script>
     <script defer src="protection.js?v=1.0.0"></script>
+    <script defer src="tax-core.js?v=1.0.2"></script>
+    <script defer src="tax.js?v=1.0.1"></script>
     <script defer src="spending-import.js?v=1.0.13"></script>
   </head>
   <body class="auth-locked">
@@ -163,6 +165,10 @@
           <button class="nav-item" type="button" data-view="protection">
             <span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.1 8.2 7.5 9.5 4.4-1.3 7.5-5.1 7.5-9.5V6z"></path></svg></span>
             <span>Protection</span>
+          </button>
+          <button class="nav-item" type="button" data-view="tax">
+            <span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"></path><path d="M9 8h6M9 12h6"></path></svg></span>
+            <span>Tax</span>
           </button>
           <div class="nav-group-label">Life</div>
           <button class="nav-item" type="button" data-view="exercise">
@@ -1628,6 +1634,16 @@
             </div>
           </div>
           <div id="protectionBody" class="prot-body"></div>
+        </section>
+
+        <section class="view" id="tax" aria-labelledby="taxTitle" hidden>
+          <div class="section-heading">
+            <div>
+              <h2 id="taxTitle">Tax</h2>
+              <p>Where you stand this year, what to do next, and what the filed returns miss.</p>
+            </div>
+          </div>
+          <div id="taxBody" class="prot-body"></div>
         </section>
 
         <section class="view" id="todo" aria-labelledby="todoTitle">

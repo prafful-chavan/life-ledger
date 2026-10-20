@@ -1,0 +1,220 @@
+/**
+ * Life Ledger — Tax page UI. All the arithmetic is in tax-core.js (LifeLedgerTax); this file only draws it and edits the
+ * household's tax data, which lives in the encrypted vault (state.taxProfile, state.taxReturns, state.taxFamily).
+ * Nothing personal is in this file. Planning aid only — a CA confirms before anything is filed or paid.
+ */
+(function () {
+  "use strict";
+  const T = () => window.LifeLedgerTax;
+  const App = () => window.LifeLedgerApp;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
+  const inr = (v) => (num(v) < 0 ? "−" : "") + "₹" + Math.abs(Math.round(num(v))).toLocaleString("en-IN");
+  const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const prettyDate = (iso) => { if (!iso) return "—"; const d = new Date(iso + "T00:00:00Z"); return isNaN(d) ? iso : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }); };
+  const uid = (p) => `${p}-${(crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2) + Date.now())}`;
+  const NAMES = { Me: "Prafful", Wife: "Archana" };
+  const TABS = [["today", "Today"], ["plan", "Plan"], ["returns", "Returns"], ["family", "Family money"], ["rules", "Rules"], ["data", "Data"]];
+  let tab = "today";
+  let model = null;
+
+  const state = () => App().getState();
+  function save() { return App().saveData(true); }
+  const profile = () => { const s = state(); if (!s.taxProfile || typeof s.taxProfile !== "object") s.taxProfile = {}; return s.taxProfile; };
+  const chip = (cls, text) => `<span class="prot-chip ${cls}">${esc(text)}</span>`;
+  const sevChip = (sev) => chip(sev === "high" ? "bad" : sev === "medium" ? "warn" : sev === "info" ? "muted" : "muted", sev);
+  const note = () => `<p class="tax-note">Planning aid, not tax advice. Figures come from your own records and the law as checked on ${esc(T().law.VERIFIED)}; a CA confirms before anything is filed or paid.</p>`;
+
+  function compute() {
+    try { model = T().household.build(state(), today()); } catch (e) { console.warn(e); model = null; }
+    return model;
+  }
+
+  // ── Today ───────────────────────────────────────────────────────────────────────────────
+  function viewToday(m) {
+    const stat = (label, big, small) => `<div class="prot-stat"><span>${esc(label)}</span><b>${big}</b><small>${small}</small></div>`;
+    const cards = m.people.map((p) => {
+      if (!p.plan) return stat(p.name, "—", esc(p.note || "No salary yet"));
+      const pl = p.plan, bal = pl.balance;
+      return stat(`${p.name} · ${m.fy}`, `${inr(pl.regimes[pl.better].tax)}`, `${esc(pl.better)} regime · ${bal >= 0 ? `TDS is ${inr(bal)} more than the tax` : `${inr(-bal)} more than TDS`}`);
+    }).join("");
+    const top = m.actions.slice(0, 7);
+    const act = top.length ? top.map((a) => {
+      const isTodo = a.id.startsWith("todo-");
+      return `<div class="tax-action"><div class="tax-action-main"><div>${sevChip(a.severity)} <b>${esc(a.title)}</b>${a.who ? ` <span class="prot-sub">· ${esc(a.who)}</span>` : ""}</div>
+        <div class="prot-sub">${esc(a.why)}${a.due ? ` Due ${esc(prettyDate(a.due))}.` : ""}</div></div>
+        ${isTodo ? `<button type="button" class="secondary-button" data-tax-done="${esc(a.id.slice(5))}">Done</button>` : ""}</div>`;
+    }).join("") : `<div class="prot-empty">Nothing urgent. Import your tax data on the Data tab to see returns and deadlines.</div>`;
+    const soon = m.deadlines.filter((d) => d.inDays >= 0).slice(0, 8).map((d) => `<div class="tax-deadline"><div class="tax-date">${esc(prettyDate(d.date))}<small>${d.inDays === 0 ? "today" : `in ${d.inDays} day${d.inDays === 1 ? "" : "s"}`}</small></div>
+        <div><b>${esc(d.title)}</b>${d.who ? ` <span class="prot-sub">· ${esc(d.who)}</span>` : ""}<div class="prot-sub">${esc(d.why)}</div></div></div>`).join("");
+    const left = m.people.filter((p) => p.plan).map((p) => `${esc(p.name)}: ${inr(p.exemptionLeft)} of the ₹1.25L long-term-gain exemption left (booked ${inr(Math.max(0, p.realised.ltcg))})`).join(" · ");
+    return `<div class="prot-summary">${cards}</div>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>What to do next</h3><p>Ranked by how much it matters.</p></div></div>${act}</section>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>Dates that matter</h3><p>${left || "&nbsp;"}</p></div></div>${soon || `<div class="prot-empty">No dates in the next year.</div>`}</section>`;
+  }
+
+  // ── Plan ─────────────────────────────────────────────────────────────────────────────────
+  function viewPlan(m) {
+    const p = profile(), per = (k, who) => ((p[k] || {})[who]) ;
+    const field = (label, key, who, step = 1000, hint = "") => `<label class="tax-field"><span>${esc(label)}</span><input type="number" inputmode="numeric" min="0" step="${step}" data-tax-field="${key}" data-who="${who}" value="${esc(num(per(key, who)) || "")}" placeholder="0" />${hint ? `<small>${esc(hint)}</small>` : ""}</label>`;
+    const dedField = (label, k, who) => `<label class="tax-field"><span>${esc(label)}</span><input type="number" inputmode="numeric" min="0" step="1000" data-tax-ded="${k}" data-who="${who}" value="${esc(num(((p.deductionsPaid || {})[who] || {})[k]) || "")}" placeholder="0" /></label>`;
+    const cols = m.people.map((pp) => {
+      if (!pp.plan) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(pp.name)}</h3><p>${esc(pp.note || "")}</p></div></div></section>`;
+      const pl = pp.plan, o = pl.regimes.old, n = pl.regimes.new;
+      const lev = pl.levers.length ? pl.levers.map((l) => `<div class="prot-check"><div><b>${esc(l.title)}</b><div class="prot-sub">${esc(l.detail)}</div></div><div class="prot-check-right"><b>${inr(l.yearlySaving)}</b><span class="prot-sub">a year</span></div></div>`).join("") : `<div class="prot-empty">No further levers worth acting on.</div>`;
+      const adv = pl.advanceTax.length ? pl.advanceTax.map((a) => `<div class="prot-check"><div>${esc(prettyDate(a.date))} ${a.date < m.asOf ? chip("muted", "past") : ""}</div><div class="prot-check-right"><b>${inr(a.cumulativeAmount)}</b><span class="prot-sub">cumulative (${a.cumulativePct}%)</span></div></div>`).join("") : `<div class="prot-empty">Tax after TDS is under ₹10,000: no advance tax needed.</div>`;
+      return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(pp.name)} · FY ${esc(m.fy)}</h3><p>${esc(pp.salary.basedOn)} · gross about ${inr(pp.salary.gross)} · TDS about ${inr(pl.tdsProjected)}</p></div>${chip(pl.better === "new" ? "good" : "warn", `${pl.better} regime is cheaper by ${inr(pl.saving)}`)}</div>
+        <div class="tax-compare"><div><span>New regime</span><b>${inr(n && n.tax)}</b><small>taxable ${inr(n && n.taxable)}</small></div>
+          <div><span>Old regime</span><b>${inr(o.tax)}</b><small>taxable ${inr(o.taxable)} · HRA ${inr(o.hraExempt)} · deductions ${inr(o.deductions)}</small></div>
+          <div><span>Marginal rate</span><b>${pl.marginalRatePct}%</b><small>+ 4% cess · file ${esc(pl.form)}</small></div></div>
+        <h4 class="tax-h">Ways to pay less</h4>${lev}<h4 class="tax-h">Advance tax</h4>${adv}</section>`;
+    }).join("");
+    const dep = p.departure || {};
+    const dv = m.departure;
+    const depHtml = dv ? `<div class="tax-dep">${dv.years.map((y) => `<div><span>FY ${esc(y.fy)}</span><b>${esc(y.status === "NR" ? "Non-resident" : y.status === "RNOR" ? "Resident, not ordinarily" : "Resident")}</b><small>${y.daysInIndia} days in India · ${y.globalIncomeTaxed ? "world income taxed in India (credit for foreign tax)" : "only Indian income taxed in India"}</small></div>`).join("")}</div>
+      <p class="prot-sub">Leaving after ${esc(prettyDate(dv.latestForNonResidentThisYear))} makes this year a resident year even if you work abroad. Confirm with your employer's tax team and a cross-border adviser.</p>` : `<p class="prot-sub">Enter a planned departure date to see your Indian tax status year by year.</p>`;
+    return `<div class="tax-grid2">${cols}</div>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>Your inputs</h3><p>Change them and the plan above updates. Salary comes from your income records.</p></div></div>
+        <div class="tax-fields">${["Me", "Wife"].map((w) => `<fieldset class="tax-fs"><legend>${esc(NAMES[w])}</legend>
+          ${field("Rent paid per month (₹)", "rentMonthly", w, 500, "Old regime only (HRA)")}${field("Employer NPS per year (₹)", "employerNps", w, 1000, "Both regimes")}${field("Other income per year (₹)", "otherIncome", w, 1000, "Interest, dividends")}
+          ${dedField("80C paid (₹)", "80C", w)}${dedField("Health premium for family (₹)", "80D_self", w)}${dedField("Health premium for parents (₹)", "80D_parents", w)}${dedField("NPS own contribution (₹)", "80CCD1B", w)}${dedField("Home-loan interest (₹)", "homeLoanInterest", w)}
+        </fieldset>`).join("")}</div>
+        <div class="tax-fields"><label class="tax-field"><span>Parents 60 or older</span><select data-tax-flag="parentsSenior"><option value="">No</option><option value="1" ${p.parentsSenior ? "selected" : ""}>Yes (₹50,000 limit)</option></select></label>
+          <label class="tax-field"><span>Marriage date</span><input type="date" data-tax-flag="marriageDate" value="${esc(p.marriageDate || "")}" /></label></div></section>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>If you move abroad</h3><p>Residential status for tax in India.</p></div></div>
+        <div class="tax-fields"><label class="tax-field"><span>Planned departure</span><input type="date" data-tax-dep="date" value="${esc(dep.date || "")}" /></label>
+        <label class="tax-field"><span>Days you would be in India the year after</span><input type="number" min="0" max="365" data-tax-dep="visitDays" value="${esc(dep.visitDays != null ? dep.visitDays : "")}" placeholder="30" /></label></div>${depHtml}</section>`;
+  }
+
+  // ── Returns ──────────────────────────────────────────────────────────────────────────────
+  function remedyHtml(r) {
+    if (!r.remedy) return `<div class="prot-sub">Nothing to correct.</div>`;
+    const x = r.remedy;
+    if (x.fee !== undefined && x.lastDate && !x.pctExtra) return `<div class="tax-remedy"><b>Revised return</b> is open: ${x.fee === 0 ? `free until ${esc(prettyDate(x.freeUntil || x.lastDate))}` : `fee ${inr(x.fee)}`}, last date ${esc(prettyDate(x.lastDate))}. Net payable on the documents is about ${inr(Math.max(0, -r.refundOnDocuments))} plus small interest.</div>`;
+    if (!x.open) return `<div class="tax-remedy">${esc(x.reason || "Closed.")}</div>`;
+    return `<div class="tax-remedy"><b>Updated return (ITR-U):</b> ${inr(x.additionalTax)} tax + about ${inr(x.interest)} interest + ${x.pctExtra}% extra (${inr(x.extraTax)}) = about <b>${inr(x.totalToPay)}</b>. Last date ${esc(prettyDate(x.lastDate))}${x.rateRisesTo ? `; the extra rises to ${x.rateRisesTo.pct}% after ${esc(prettyDate(x.rateRisesTo.after))}` : ""}. Estimate: the portal shows the real figure.</div>`;
+  }
+  function viewReturns(m) {
+    if (!m.returnsAudit.length) return `<section class="panel tax-panel"><div class="prot-empty">No returns yet. Import your tax data on the Data tab.</div></section>`;
+    return m.returnsAudit.map((r) => {
+      const who = NAMES[r.person] || r.person;
+      if (r.error) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>Could not check: ${esc(r.error)}</p></div></div></section>`;
+      if (r.unfiled) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>No return filed${r.note ? ` · ${esc(r.note)}` : ""}</p></div>${chip(r.extraTax > 0 ? "bad" : "good", r.extraTax > 0 ? `${inr(r.extraTax)} unpaid` : "nothing due")}</div>${remedyHtml(r)}</section>`;
+      const high = r.findings.filter((f) => f.severity === "high").length;
+      const list = r.findings.length ? r.findings.map((f) => `<div class="tax-finding"><div class="tax-ftitle">${sevChip(f.severity)} <b>${esc(f.title)}</b>${f.taxImpact ? ` <span class="prot-sub">· tax effect ${inr(f.taxImpact)}</span>` : ""}</div><div class="prot-sub">${esc(f.detail)}${f.fix ? ` <i>${esc(f.fix)}</i>` : ""}</div></div>`).join("") : `<div class="prot-empty">No issues found against the documents.</div>`;
+      return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)} <span class="prot-sub">(AY ${esc(r.ay)})</span></h3><p>${esc(r.form)} · ${esc(r.regime)} regime · tax filed ${inr(r.filedTax)} · on the documents ${inr(r.correctedTax)}${r.note ? ` · ${esc(r.note)}` : ""}</p></div>
+        ${chip(high ? "bad" : r.findings.length ? "warn" : "good", high ? `${high} serious` : r.findings.length ? `${r.findings.length} to check` : "clean")}</div>${list}${remedyHtml(r)}</section>`;
+    }).join("");
+  }
+
+  // ── Family money ─────────────────────────────────────────────────────────────────────────
+  const REL = [["spouse", "Spouse"], ["parent", "Parent"], ["child", "Child"], ["sibling", "Brother or sister"], ["spouse-sibling", "Spouse's brother or sister"], ["spouse-parent", "Spouse's parent"], ["other", "Someone else"]];
+  function viewFamily(m) {
+    const list = m.family.length ? m.family.map((t) => `<div class="tax-finding"><div class="prot-card-top"><div><b>${inr(t.amount)}</b> · ${esc(NAMES[t.from] || t.from || "?")} → ${esc(NAMES[t.to] || (REL.find((r) => r[0] === t.relation) || [])[1] || "?")} <span class="prot-sub">· ${esc(prettyDate(t.date))}${t.viaOther ? " · paid into a third party's account" : ""}${t.repaymentExpected ? " · to be repaid" : ""}</span></div>
+        <button type="button" class="secondary-button" data-tax-del-family="${esc(t.id)}">Remove</button></div>
+        <div>${esc(t.result.summary)}</div>${t.result.flags.map((f) => `<div class="prot-sub">• ${esc(f)}</div>`).join("")}${t.result.keep.length ? `<div class="prot-sub">Keep: ${esc(t.result.keep.join("; "))}</div>` : ""}
+        ${t.note ? `<div class="prot-sub">${esc(t.note)}</div>` : ""}</div>`).join("") : `<div class="prot-empty">No transfers recorded.</div>`;
+    return `<section class="panel tax-panel"><div class="panel-header"><div><h3>Money between family members</h3><p>Gifts, loans and deposits: whether they are taxable, whether income on them is added to the giver, and what to keep. Uses the marriage date.</p></div></div>${list}</section>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>Add a transfer</h3></div></div>
+        <form id="taxFamilyForm" class="tax-fields">
+          <label class="tax-field"><span>Date</span><input type="date" name="date" required /></label><label class="tax-field"><span>Amount (₹)</span><input type="number" name="amount" min="1" step="1" required /></label>
+          <label class="tax-field"><span>From</span><select name="from"><option value="Me">Prafful</option><option value="Wife">Archana</option><option value="Other">Someone else</option></select></label>
+          <label class="tax-field"><span>To / relation to the giver</span><select name="relation">${REL.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></label>
+          <label class="tax-field"><span>Paid into a third party's account?</span><select name="viaOther"><option value="">No</option><option value="1">Yes</option></select></label>
+          <label class="tax-field"><span>Will it be repaid?</span><select name="repaymentExpected"><option value="">No (a gift)</option><option value="1">Yes (a loan)</option></select></label>
+          <label class="tax-field tax-wide"><span>Note</span><input type="text" name="note" maxlength="200" /></label>
+          <button type="submit" class="primary-button">Add</button></form></section>`;
+  }
+
+  // ── Rules ────────────────────────────────────────────────────────────────────────────────
+  function viewRules(m) {
+    const L = T().law, st = m.law;
+    const label = { statute: "Statute", secondary: "Commentary: confirm", author: "Author's view: confirm" };
+    const cls = { statute: "good", secondary: "warn", author: "bad" };
+    return `<section class="panel tax-panel"><div class="panel-header"><div><h3>Rules this page relies on</h3><p>${L.LAW.length} rules, last checked ${esc(prettyDate(L.VERIFIED))}. ${st.weak.length} rest on professional commentary rather than the official text. A monthly check looks for changes.</p></div></div>
+      ${L.LAW.map((r) => `<div class="tax-finding"><div class="tax-ftitle">${chip(cls[r.confidence], label[r.confidence])} <b>${esc(r.topic)}</b> <span class="prot-sub">${esc([r.act1961, r.act2025].filter(Boolean).join(" → "))}</span></div>
+        <div class="prot-sub">${esc(r.rule)}</div><div class="prot-sub">${(r.sources || []).filter((s) => /^https?:/.test(s)).map((s) => `<a href="${esc(s)}" target="_blank" rel="noopener noreferrer">${esc(s.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60))}</a>`).join(" · ")}</div></div>`).join("")}</section>`;
+  }
+
+  // ── Data ─────────────────────────────────────────────────────────────────────────────────
+  function viewData() {
+    const s = state();
+    return `<section class="panel tax-panel"><div class="panel-header"><div><h3>Your tax data</h3><p>Stays in your encrypted vault and syncs like everything else.</p></div></div>
+      <div class="prot-summary"><div class="prot-stat"><span>Returns</span><b>${(s.taxReturns || []).length}</b><small>filed or unfiled years</small></div><div class="prot-stat"><span>Transfers</span><b>${(s.taxFamily || []).length}</b><small>family money</small></div><div class="prot-stat"><span>Checklist</span><b>${((s.taxProfile || {}).checklist || []).length}</b><small>${Object.keys((s.taxProfile || {}).done || {}).length} done</small></div></div>
+      <div class="prot-actions"><label class="secondary-button tax-file">Import tax data<input type="file" accept="application/json,.json" id="taxImportFile" hidden /></label>
+        <button type="button" class="secondary-button" id="taxExport">Export tax data</button></div>
+      <p class="prot-sub">Import reads a JSON file with taxProfile, taxReturns and taxFamily, and replaces what is stored here after you confirm. Export saves the same file as a backup.</p></section>`;
+  }
+
+  function render() {
+    const root = $("taxBody");
+    if (!root || !App() || !T() || !App().getState) return;
+    const m = compute();
+    if (!m) { root.innerHTML = `<section class="panel tax-panel"><div class="prot-empty">The tax page could not be built. Open the console for details.</div></section>`; return; }
+    const tabs = `<div class="tax-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" class="tax-tab${k === tab ? " active" : ""}" aria-selected="${k === tab}" data-tax-tab="${k}">${l}</button>`).join("")}</div>`;
+    const body = { today: viewToday, plan: viewPlan, returns: viewReturns, family: viewFamily, rules: viewRules, data: viewData }[tab](m);
+    const focus = document.activeElement && root.contains(document.activeElement) ? document.activeElement : null;
+    const key = focus && (focus.dataset.taxField || focus.dataset.taxDed || focus.dataset.taxFlag || focus.dataset.taxDep) ? [focus.dataset.taxField || focus.dataset.taxDed || focus.dataset.taxFlag || focus.dataset.taxDep, focus.dataset.who || ""] : null;
+    root.innerHTML = tabs + body + note();
+    if (key) { const sel = `[data-tax-field="${key[0]}"][data-who="${key[1]}"],[data-tax-ded="${key[0]}"][data-who="${key[1]}"],[data-tax-flag="${key[0]}"],[data-tax-dep="${key[0]}"]`; const el = root.querySelector(sel); if (el && el.tagName === "INPUT") { try { el.focus(); } catch { /* ignore */ } } }
+  }
+
+  // ── events ───────────────────────────────────────────────────────────────────────────────
+  function setNested(obj, a, b, v) { obj[a] = obj[a] && typeof obj[a] === "object" ? obj[a] : {}; obj[a][b] = v; }
+  function onChange(e) {
+    const t = e.target, p = profile();
+    if (t.dataset.taxField) { setNested(p, t.dataset.taxField, t.dataset.who, num(t.value)); }
+    else if (t.dataset.taxDed) { p.deductionsPaid = p.deductionsPaid || {}; p.deductionsPaid[t.dataset.who] = p.deductionsPaid[t.dataset.who] || {}; p.deductionsPaid[t.dataset.who][t.dataset.taxDed] = num(t.value); }
+    else if (t.dataset.taxFlag) { p[t.dataset.taxFlag] = t.dataset.taxFlag === "parentsSenior" ? t.value === "1" : t.value; }
+    else if (t.dataset.taxDep) { p.departure = p.departure || {}; p.departure[t.dataset.taxDep] = t.dataset.taxDep === "visitDays" ? num(t.value) : t.value; }
+    else if (t.id === "taxImportFile") { importFile(t.files && t.files[0]); t.value = ""; return; }
+    else return;
+    save().catch(() => {}); render();
+  }
+  async function importFile(file) {
+    if (!file) return;
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { alert("That file is not valid JSON."); return; }
+    const ok = data && typeof data === "object" && (Array.isArray(data.taxReturns) || data.taxProfile || Array.isArray(data.taxFamily));
+    if (!ok) { alert("This does not look like a tax data file (it needs taxProfile, taxReturns or taxFamily)."); return; }
+    const s = state();
+    if (!confirm(`Replace your stored tax data with this file?\n\nReturns: ${(data.taxReturns || []).length}, transfers: ${(data.taxFamily || []).length}.`)) return;
+    const withIds = (list, p) => (Array.isArray(list) ? list : []).map((x) => (x && typeof x === "object" ? { ...x, id: x.id || uid(p) } : null)).filter(Boolean);
+    s.taxProfile = data.taxProfile && typeof data.taxProfile === "object" ? data.taxProfile : {};
+    s.taxReturns = withIds(data.taxReturns, "taxr");
+    s.taxFamily = withIds(data.taxFamily, "taxf");
+    await save(); tab = "today"; render();
+  }
+  function exportFile() {
+    const s = state(), blob = new Blob([JSON.stringify({ taxProfile: s.taxProfile || {}, taxReturns: s.taxReturns || [], taxFamily: s.taxFamily || [] }, null, 1)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `life-ledger-tax-data-${today()}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  function onClick(e) {
+    const tb = e.target.closest("[data-tax-tab]");
+    if (tb) { tab = tb.dataset.taxTab; render(); return; }
+    const done = e.target.closest("[data-tax-done]");
+    if (done) { const p = profile(); p.done = { ...(p.done || {}), [done.dataset.taxDone]: today() }; save().catch(() => {}); render(); return; }
+    const del = e.target.closest("[data-tax-del-family]");
+    if (del && confirm("Remove this transfer?")) { const s = state(); s.taxFamily = (s.taxFamily || []).filter((x) => x.id !== del.dataset.taxDelFamily); save().catch(() => {}); render(); return; }
+    if (e.target.closest("#taxExport")) exportFile();
+  }
+  function onSubmit(e) {
+    if (e.target.id !== "taxFamilyForm") return;
+    e.preventDefault();
+    const f = new FormData(e.target), s = state();
+    s.taxFamily = s.taxFamily || [];
+    s.taxFamily.push({ id: uid("taxf"), date: f.get("date"), amount: num(f.get("amount")), from: f.get("from"), to: f.get("relation") === "spouse" ? (f.get("from") === "Me" ? "Wife" : "Me") : "", relation: f.get("relation"), viaOther: f.get("viaOther") === "1", repaymentExpected: f.get("repaymentExpected") === "1", note: String(f.get("note") || "") });
+    save().catch(() => {}); render();
+  }
+
+  function init() {
+    const body = $("taxBody"); if (!body) return;
+    body.addEventListener("click", onClick); body.addEventListener("change", onChange); body.addEventListener("submit", onSubmit);
+    document.addEventListener("click", (e) => { if (e.target.closest('[data-view="tax"]')) setTimeout(render, 60); });
+    window.addEventListener("ll:data-changed", () => { if (!$("tax")?.hidden) render(); });
+    setTimeout(() => { if (App()?.getState && !$("tax")?.hidden) render(); }, 3000);
+  }
+  window.addEventListener("load", init);
+  window.LifeLedgerTaxUI = { render, compute: () => compute() };
+})();

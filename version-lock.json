@@ -20,8 +20,8 @@
     "sha256": "94658e35c3ba52e0a93952e5e4f0dd248acf53964f3f3bc9b8ba959e097b78a9"
   },
   "app.js": {
-    "version": "1.0.99",
-    "sha256": "f81941b8d577d01cf7a02a620f59b326ac2995254f411c5fed7e06ea8a6c561e"
+    "version": "1.0.100",
+    "sha256": "ba74bd5aa76638ad0bd2ef1575429beb6b7f8b056b467a2f8d9de0a987b9147c"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -56,16 +56,16 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.6",
-    "sha256": "3fb7ced9ddf7c29e240fd5eee5b532d322e957d466e4491596aa2f49ee295353"
+    "version": "1.8.8",
+    "sha256": "9487ce6505769b4e5f39edadbc5efb5e252e6a1bb5b4f7e6e39df39089bddf5f"
   },
   "liability-calc.js": {
     "version": "1.0.0",
     "sha256": "f85a15be1821daa9c18b589e14ed6c6582894588983d2f9858102b0adf398ff6"
   },
   "nav.js": {
-    "version": "1.1.5",
-    "sha256": "c6ac5c7e7338411b5ba6d452cce88329ab8c2fb28cda53ce672b10c2ec5e5cd4"
+    "version": "1.1.6",
+    "sha256": "6dd4dc3204678471680a035a7a3faf94f19eddb3cc4aad322529f1be17e38cea"
   },
   "networth-close.js": {
     "version": "1.0.6",
@@ -114,6 +114,14 @@
   "sync-ui.js": {
     "version": "1.0.0",
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
+  },
+  "tax-core.js": {
+    "version": "1.0.2",
+    "sha256": "2e8a67067abe0e3b71b7f503228ae8b366ca0160820a24148fd3de84e67b4bc0"
+  },
+  "tax.js": {
+    "version": "1.0.1",
+    "sha256": "559f2f8eaefbf304f0d6d7ea865cb80b6612c948b55ea9833ae7f7aba94b0eaf"
   },
   "theme.css": {
     "version": "1.1.6",

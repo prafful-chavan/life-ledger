@@ -31,6 +31,9 @@ const defaultData = {
   insurance: [],
   people: { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } },
   protectionSeeded: false,
+  taxProfile: {},
+  taxReturns: [],
+  taxFamily: [],
   studies: [],
   workouts: [],
   activities: [],
@@ -1166,6 +1169,10 @@ function normalizeDataCore(data) {
     insurance: ensureIds(Array.isArray(data.insurance) ? data.insurance : [], "ins"),
     people: data.people && typeof data.people === "object" ? data.people : { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } },
     protectionSeeded: Boolean(data.protectionSeeded),
+    // Tax page: the household's profile, filed returns and family money transfers (private; kept in the vault, synced like everything else)
+    taxProfile: data.taxProfile && typeof data.taxProfile === "object" && !Array.isArray(data.taxProfile) ? data.taxProfile : {},
+    taxReturns: ensureIds(Array.isArray(data.taxReturns) ? data.taxReturns : [], "taxr"),
+    taxFamily: ensureIds(Array.isArray(data.taxFamily) ? data.taxFamily : [], "taxf"),
     studies: ensureIds(data.studies || [], "study").map(s => {
       if (s.owner === "Me" || s.owner) return s;
       return { ...s, owner: "Me" };
@@ -15334,6 +15341,7 @@ function viewTitle(view) {
       goals: "Goals Tracker",
       todo: "Your tasks and notes",
       protection: "Your protection",
+      tax: "Your tax plan",
       exercise: "Exercise & Workout Tracker",
       habits: "Habit Tracker & Streaks",
       assistant: "Ask your dashboard",
