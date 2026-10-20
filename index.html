@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.17" />
+    <link rel="stylesheet" href="layout.css?v=1.8.18" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -33,7 +33,7 @@
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
     <script defer src="hero-series.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.104"></script>
+    <script defer src="app.js?v=1.0.106"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -53,9 +53,10 @@
     <script defer src="data-health.js?v=1.0.7"></script>
     <script defer src="protection-core.js?v=1.0.1"></script>
     <script defer src="protection.js?v=1.0.2"></script>
-    <script defer src="tax-core.js?v=1.2.11"></script>
+    <script defer src="tax-core.js?v=1.2.12"></script>
     <script defer src="tax-oracle.js?v=1.0.0"></script>
-    <script defer src="tax.js?v=1.2.4"></script>
+    <script defer src="explain.js?v=1.0.0"></script>
+    <script defer src="tax.js?v=1.2.5"></script>
     <script defer src="spending-import.js?v=1.0.13"></script>
   </head>
   <body class="auth-locked">
@@ -255,7 +256,7 @@
             <div class="hero-top">
               <div class="hero-figure">
                 <div class="hero-label">Family net worth</div>
-                <div class="hero-value" id="heroValue">—</div>
+                <div class="hero-value" id="heroValue">—</div><button type="button" class="explain-btn" data-explain="networth" aria-label="How net worth is calculated">How?</button>
                 <div class="hero-delta" id="heroDelta"></div>
                 <div class="hero-asof" id="heroAsOf"></div>
               </div>
@@ -2369,6 +2370,18 @@
       </div>
     </div>
 
+    <div class="modal" id="explainModal" role="dialog" aria-modal="true" aria-labelledby="explainTitle" hidden>
+      <div class="modal-card explain-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">How this is calculated</p>
+            <h2 id="explainTitle">—</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <div id="explainBody"></div>
+      </div>
+    </div>
     <div class="modal" id="protectionModal" role="dialog" aria-modal="true" aria-labelledby="protectionModalTitle" hidden>
       <div class="modal-card">
         <div class="modal-header">

@@ -732,6 +732,9 @@
       better: chosen, saving: cmp.saving, marginalRatePct: current.marginalRatePct,
       tdsProjected: r0(num(p.tdsProjected)), balance: r0(num(p.tdsProjected) - current.totalTax),
       form, levers, advanceTax: advance, calendar,
+      // The engine's own working for the chosen regime, so "how was this calculated" shows the same arithmetic
+      breakdown: current,
+      breakdownInput: { ...base, ...(chosen === "old" ? { exemptAllowances: hra, deductions: oldDed } : { exemptAllowances: 0, deductions: 0 }), regime: chosen },
     };
   }
 
@@ -828,7 +831,13 @@
       : cat === "foreignShares" ? RULES.foreignShares : RULES.unlistedOther;
     const months = monthsBetween(bought, sold);
     let long = false;
-    if (rule) { const anniversary = new Date(String(bought).slice(0, 10) + "T00:00:00Z"); anniversary.setUTCMonth(anniversary.getUTCMonth() + rule.holdMonths); long = new Date(String(sold).slice(0, 10) + "T00:00:00Z") > anniversary; }
+    if (rule) {
+      // The anniversary is the same day N months on, or that month's last day (29 Feb → 28 Feb), never the 1st after it
+      const b = new Date(String(bought).slice(0, 10) + "T00:00:00Z"), y = b.getUTCFullYear(), m = b.getUTCMonth() + rule.holdMonths;
+      const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      const anniversary = new Date(Date.UTC(y, m, Math.min(b.getUTCDate(), lastDay)));
+      long = new Date(String(sold).slice(0, 10) + "T00:00:00Z") > anniversary;
+    }
     return { long, months, rule };
   }
 

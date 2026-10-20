@@ -2374,6 +2374,47 @@ async function loadAiInsights() {
   }
 }
 
+// ── "How was this calculated?" ──────────────────────────────────────────────────────────────
+// Builders live in explain.js (pure, tested: each explanation's lines must add up to the figure on screen).
+function explainHtml(e) {
+  const money = (v) => (typeof v === "number" ? formatINR(v) : escapeHTML(String(v)));
+  const rows = (lines) => lines.map((l) => `<div class="explain-row"><span class="explain-sign">${l.sign || ""}</span><span class="explain-label">${escapeHTML(l.label)}${l.note ? `<small>${escapeHTML(l.note)}</small>` : ""}</span><b>${money(l.value)}</b></div>`).join("");
+  const block = (lines, result, check) => `${rows(lines)}<div class="explain-row explain-total"><span class="explain-sign">=</span><span class="explain-label">${escapeHTML(result.label)}</span><b>${money(result.value)}${result.extra ? ` · ${escapeHTML(result.extra)}` : ""}</b></div>${check && !check.ok ? `<p class="explain-warn">These lines do not add up to the figure on screen${check.note ? `: ${escapeHTML(check.note)}` : ""}. Please treat it as unverified.</p>` : ""}`;
+  return `${e.formula ? `<p class="explain-formula">${escapeHTML(e.formula)}</p>` : ""}${(e.sections || []).map((s) => `<h3 class="explain-h">${escapeHTML(s.title)}</h3>${block(s.lines, s.result, s.check)}`).join("")}${e.sections ? `<h3 class="explain-h">Tax</h3>` : ""}${block(e.lines, e.result, e.check)}${(e.after || []).length ? `<div class="explain-after">${rows(e.after)}</div>` : ""}`;
+}
+
+function openExplain(kind, arg) {
+  const X = window.LifeLedgerExplain;
+  if (!X) return;
+  let e = null;
+  try {
+    if (kind === "networth") e = X.netWorth(getNetWorthSummary().snapshot, { timeOf: (iso) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) });
+    else if (kind === "savings") {
+      const m = calculateMetrics(), names = { Me: "Prafful", Wife: "Archana" };
+      const key = activeDashboardMonth || monthKey(new Date()), monthLabel = new Date(key + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+      e = X.savings({ salaryRows: (m.incomeRows || []).map((r) => ({ who: names[r.person] || r.person || "Prafful", date: formatDate(r.date), amount: toNumber(r.amount) })),
+        spent: m.monthExpenses, count: m.expenseCount, monthLabel, salaryLabel: m.isFallbackIncome ? m.fallbackMonthLabel : "", rate: m.savingsRate });
+    } else if (kind === "tax") {
+      const person = (window.LifeLedgerTaxUI?.model?.()?.people || []).find((p) => p.who === arg);
+      e = person ? X.tax(person) : null;
+    } else if (kind === "goal") {
+      const g = liveGoals().find((x) => String(x.id) === String(arg));
+      e = g ? X.goal(g, goalNeedPerMonth(g)) : null;
+    }
+  } catch (err) { console.warn("[explain]", err); }
+  if (!e) return;
+  document.getElementById("explainTitle").textContent = e.title;
+  document.getElementById("explainBody").innerHTML = explainHtml(e);
+  openModal("explainModal");
+}
+if (typeof document !== "undefined") document.addEventListener("click", (ev) => {
+  const b = ev.target.closest && ev.target.closest("[data-explain]");
+  if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const [kind, arg] = String(b.dataset.explain).split(":");
+  openExplain(kind, arg);
+});
+
 function openModal(target) {
   const el = typeof target === "string" ? document.getElementById(target) : target;
   if (el) {
@@ -4989,6 +5030,7 @@ function renderMetrics() {
     },
     {
       label: "Savings rate",
+      explain: "savings",
       value: `${metrics.savingsRate}%`,
       hint: metrics.isFallbackIncome
         ? `${formatINR(metrics.monthIncome - metrics.monthExpenses)} of the ${metrics.fallbackMonthLabel} salary left after this month's spending`
@@ -5001,7 +5043,7 @@ function renderMetrics() {
       card.style.borderLeft = metric.customBorder;
     }
     card.innerHTML = `
-      <div class="label">${escapeHTML(metric.label)}</div>
+      <div class="label">${escapeHTML(metric.label)}${metric.explain ? ` <button type="button" class="explain-btn" data-explain="${metric.explain}" aria-label="How ${escapeHTML(metric.label.toLowerCase())} is calculated">How?</button>` : ""}</div>
       <div class="value">${metric.isHTML ? metric.value : escapeHTML(metric.value)}</div>
       <div class="hint">${metric.isHTML ? metric.hint : escapeHTML(metric.hint)}</div>
     `;
@@ -11188,7 +11230,7 @@ function renderGoals() {
           const plan = goalNeedPerMonth(goal);
           if (plan.done) return "";
           const togo = `<span><b>${formatINR(plan.remaining)}</b> to go</span>`;
-          const per = plan.perMonth == null ? "" : plan.overdue ? `<span class="goal-need-warn">Overdue — needs the full amount now</span>` : `<span><b>${formatINR(plan.perMonth)}</b> a month for ${plan.months} month${plan.months === 1 ? "" : "s"}</span>`;
+          const per = plan.perMonth == null ? "" : plan.overdue ? `<span class="goal-need-warn">Overdue — needs the full amount now</span>` : `<span><b>${formatINR(plan.perMonth)}</b> a month for ${plan.months} month${plan.months === 1 ? "" : "s"} <button type="button" class="explain-btn" data-explain="goal:${escapeHTML(String(goal.id))}" aria-label="How this is worked out">How?</button></span>`;
           return `<div class="goal-need">${togo}${per}</div>`;
         })()}
       </div>
@@ -14427,6 +14469,8 @@ function calculateMetrics() {
     liabilities,
     netWorth: holdings - liabilities,
     incomePeople: new Set(monthIncomeRows.map((income) => income.person || "Me")).size,
+    incomeRows: monthIncomeRows,
+    expenseCount: monthExpenseRows.length,
     savingsRate: monthIncome ? Math.round(((monthIncome - monthExpenses) / monthIncome) * 100) : 0,
     topExpenseCategory,
     isFallbackIncome,

@@ -14,8 +14,16 @@ const NAMES = { Me: "Prafful", Wife: "Archana" };
 const STOP = new Set(["fund", "direct", "plan", "growth", "option", "ltd", "limited", "the", "of", "co", "company", "inc", "corporation", "corp", "and", "regular"]);
 
 function tokens(name) {
-  return String(name || "").toLowerCase().replace(/&/g, " and ").replace(/fertiliser/g, "fertilizer").replace(/[^a-z0-9]+/g, " ")
-    .split(" ").filter((t) => t && !STOP.has(t));
+  const raw = String(name || "").toLowerCase().replace(/&/g, " and ").replace(/fertiliser/g, "fertilizer").replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean);
+  // Initials written apart are one word: "R R Kabel" is "RR Kabel"
+  const merged = [];
+  let prevSingle = false;
+  for (const t of raw) {
+    const single = t.length === 1 && /[a-z]/.test(t);
+    if (single && prevSingle) merged[merged.length - 1] += t; else merged.push(t);
+    prevSingle = single;
+  }
+  return merged.filter((t) => !STOP.has(t));
 }
 function similarity(a, b) {
   const A = new Set(tokens(a)), B = new Set(tokens(b));
@@ -55,8 +63,11 @@ function pair(appRows, refRows) {
   const used = new Set(), pairs = [];
   const scored = [];
   refRows.forEach((r, ri) => appRows.forEach((a, ai) => {
-    const s = Math.max(similarity(a.name, r.name), a.symbol && String(r.symbol || "").toUpperCase() === a.symbol ? 1 : 0) + (unitsClose(a.units, r.units) ? 0.5 : 0);
-    if (s >= 0.5) scored.push({ ri, ai, s });
+    // The name (or the ticker) must match first; equal units only strengthen a match, so two different holdings that
+    // happen to have the same units are never paired (that would hide a real gap)
+    const named = Math.max(similarity(a.name, r.name), a.symbol && String(r.symbol || "").toUpperCase() === a.symbol ? 1 : 0);
+    if (named < 0.34) return;
+    scored.push({ ri, ai, s: named + (unitsClose(a.units, r.units) ? 0.5 : 0) });
   }));
   scored.sort((x, y) => y.s - x.s);
   const refDone = new Set();

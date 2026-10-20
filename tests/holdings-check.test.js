@@ -31,6 +31,8 @@ const ref = (wifeUnits = 5081.92, extraWife = []) => ({
 
 assert.ok(similarity("HDFC Flexi Cap Direct Plan Growth", "HDFC Flexi Cap Fund -Direct Plan - Growth Option") === 1, "fund names in two spellings");
 assert.ok(similarity("Fertilisers & Chemicals Travancore Ltd", "Fertilizers & Chemicals Travancore Ltd") === 1, "British and American spelling");
+assert.strictEqual(similarity("R R Kabel Ltd", "RR Kabel Ltd"), 1, "initials written apart");
+assert.ok(similarity("A Ltd", "B Ltd") < 0.34, "single-letter names are not merged into each other");
 
 // Everything matches (redemption netted; units within rounding)
 let r = compare(state, ref(), { today: "2026-10-21" });

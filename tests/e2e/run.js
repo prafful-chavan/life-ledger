@@ -294,6 +294,19 @@ const SCANNER = `(${function scan() {
     await sleep(400);
     check("deleting it removes it again", (await cdp.eval(`LifeLedgerApp.getState().insurance.length`)) === before);
 
+    // 3c. "How was this calculated?": each explanation opens, shows its steps, and its lines add up (no warning)
+    console.log("\nHow was this calculated");
+    const explainOpen = async (view_, sel) => { await view(view_); await sleep(600); return JSON.parse(await cdp.eval(`(async()=>{const b=document.querySelector(${JSON.stringify(sel)}); if(!b) return JSON.stringify({missing:true}); b.click(); await new Promise(r=>setTimeout(r,300)); const m=document.getElementById('explainModal'); const out={open:!m.hidden, title:document.getElementById('explainTitle').textContent, rows:m.querySelectorAll('.explain-row').length, warn:!!m.querySelector('.explain-warn'), total:(m.querySelector('.explain-total b')||{}).textContent||''}; m.querySelector('[data-close-modal]').click(); return JSON.stringify(out)})()`)); };
+    const exNw = await explainOpen("dashboard", '#heroCard [data-explain="networth"], [data-explain="networth"]');
+    const heroNw = await cdp.eval(`document.getElementById('heroValue').textContent`);
+    check("net worth: How? lists the classes and they add up to the figure shown", exNw.open && exNw.rows >= 3 && !exNw.warn && exNw.total.replace(/\.00$/, "") === heroNw.replace(/\.00$/, ""), JSON.stringify({ ...exNw, heroNw }));
+    const exSav = await explainOpen("dashboard", '[data-explain="savings"]');
+    check("savings rate: How? shows the salary, the spending and the rate, consistently", exSav.open && exSav.rows >= 2 && !exSav.warn && /%/.test(exSav.total), JSON.stringify(exSav));
+    const exTax = await explainOpen("tax", '[data-explain="tax:Me"]');
+    check("tax: How? shows the engine's steps and they reproduce the tax", exTax.open && exTax.rows >= 4 && !exTax.warn && /Tax ·/.test(exTax.title), JSON.stringify(exTax));
+    const exGoal = await explainOpen("goals", '[data-explain^="goal:"]');
+    check("goal: How? shows what is left over the months", exGoal.open && exGoal.rows >= 2 && !exGoal.warn && /a month/.test(exGoal.total), JSON.stringify(exGoal));
+
     // 4. Data health
     console.log("\nData health");
     const health = await cdp.eval(`(()=>{document.querySelector('#topbarMore summary').click();document.querySelector('[data-open-modal="dataHealthModal"]').click();return new Promise(r=>setTimeout(()=>r({warn:document.querySelectorAll('.dh-row.warn').length,rows:document.querySelectorAll('.dh-row').length,summary:document.querySelector('.dh-summary')&&document.querySelector('.dh-summary').innerText.replace(/\\n+/g,' | ')}),900))})()`);

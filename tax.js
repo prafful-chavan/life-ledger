@@ -76,7 +76,7 @@
     const cards = m.people.map((p) => {
       if (!p.plan) return stat(p.name, "—", esc(p.note || "No salary yet"));
       const pl = p.plan, bal = pl.balance;
-      return stat(`${p.name} · ${m.fy}`, `${inr(pl.regimes[pl.better].tax)}`, `${esc(pl.better)} regime · ${bal === 0 && !(pl.regimes[pl.better].tax > 0) ? "no tax due, no TDS needed" : bal === 0 ? "TDS covers the tax exactly" : bal > 0 ? `TDS is ${inr(bal)} more than the tax` : `${inr(-bal)} more than TDS`}`);
+      return stat(`${p.name} · ${m.fy}`, `${inr(pl.regimes[pl.better].tax)} <button type="button" class="explain-btn" data-explain="tax:${esc(p.who)}" aria-label="How ${esc(p.name)}'s tax is calculated">How?</button>`, `${esc(pl.better)} regime · ${bal === 0 && !(pl.regimes[pl.better].tax > 0) ? "no tax due, no TDS needed" : bal === 0 ? "TDS covers the tax exactly" : bal > 0 ? `TDS is ${inr(bal)} more than the tax` : `${inr(-bal)} more than TDS`}`);
     }).join("");
     const top = m.actions.slice(0, 7);
     const act = top.length ? top.map((a) => {
