@@ -85,6 +85,24 @@
         : ok("tax-engine", "Tax engine checked against references", `${what} agree, checked just now in this browser.`));
     }
 
+    // 2c) Holdings checked against INDmoney by the weekly task (it saves its summary in state.holdingsCheck)
+    {
+      const hc = s.holdingsCheck;
+      const who = { Me: "Prafful", Wife: "Archana" }, cls = { MF: "fund", IND_STOCK: "Indian stock", US_STOCK: "US stock" };
+      const kind = { units: "units differ", "missing-in-app": "in INDmoney, not in the app", "not-in-reference": "in the app, not in INDmoney" };
+      if (!hc || !hc.checkedOn) checks.push(info("holdings-ref", "Holdings not yet checked against INDmoney", "The weekly check on the Mac compares every fund and share with INDmoney and shows the result here."));
+      else {
+        const age = Math.round((now - Date.parse(hc.checkedOn)) / DAY);
+        const when = `on ${hc.checkedOn}${age > 0 ? ` (${age} day${age === 1 ? "" : "s"} ago)` : ""}`;
+        const items = (hc.gaps || []).map((g) => `${g.confirmed ? "Still there since the last check" : "New this week"} · ${who[g.who] || g.who} · ${cls[g.cls] || g.cls} · ${g.name}: ${kind[g.kind] || g.kind} (app ${g.app}, INDmoney ${g.ref}, about ${inr(Math.abs(n(g.diffValue)))})`);
+        const head = `${hc.matched} of ${hc.total} holdings match INDmoney ${when}${hc.ignored ? `; ${hc.ignored} you chose not to track` : ""}.`;
+        if (hc.status === "gaps") checks.push(warn("holdings-ref", "Holdings differ from INDmoney", `${head} A gap seen twice in a row is real: check it in the broker's own app.`, items));
+        else if (hc.status === "watch") checks.push(info("holdings-ref", "A holding differs from INDmoney this week", `${head} INDmoney can lag on linked accounts for a few days; next week's check confirms it.`, items));
+        else if (age > 10) checks.push(info("holdings-ref", "Holdings check is out of date", `${head} The weekly check has not run since.`));
+        else checks.push(ok("holdings-ref", "Holdings match INDmoney", head));
+      }
+    }
+
     // 3) Prices present and recent
     {
       const missing = [];

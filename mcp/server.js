@@ -144,7 +144,7 @@ const TOOLS = [
     const today = todayISO(), limit = a.rowsPerTable || 14, nw = A.netWorth(s, ctx.usdInr);
     return {
       brief: brief(s, a), funds: await tableFor(s, "funds", ctx, today, limit), stocks: await tableFor(s, "stocks", ctx, today, limit), usStocks: await tableFor(s, "us", ctx, today, 8),
-      tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today), taxPlan: taxPlan(s, today),
+      tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today), taxPlan: taxPlan(s, today), holdingsCheck: s.holdingsCheck || null,
     };
   } },
   { name: "holdings_table", description: "One row per holding with value, return, XIRR, trend, RSI, 50/200-day averages, the app's verdict, review-below / first-target / stretch levels with the holding's value at each, and an estimate of tax if sold today. kind = funds | stocks | us.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["funds", "stocks", "us"] }, limit: { type: "number" } }, required: ["kind"] }, run: async (s, a, ctx) => tableFor(s, a.kind, ctx, todayISO(), a.limit) },

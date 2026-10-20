@@ -1,5 +1,6 @@
 /**
- * Life Ledger MCP — fetches and decrypts the household vault (read-only).
+ * Life Ledger MCP — fetches and decrypts the household vault. Reads only, except updateField(), which may write the one
+ * whitelisted summary field (holdingsCheck) and nothing else.
  * Same scheme as the app: a PBKDF2 token authorises the pull; the vault is AES-GCM (PBKDF2 250k) with optional gzip.
  * The password is supplied by the caller and is never written to disk or logged here.
  */
@@ -25,9 +26,9 @@ async function decryptVault(vault, password) {
   return JSON.parse(plain.toString("utf8"));
 }
 
-/** Test helper: builds a vault exactly the way the app does. */
-async function encryptVault(inner, password, { compress = true } = {}) {
-  const salt = crypto.randomBytes(16), iv = crypto.randomBytes(12);
+/** Builds a vault exactly the way the app does (the app keeps the vault's salt across saves; pass it to do the same). */
+async function encryptVault(inner, password, { compress = true, salt: keepSalt } = {}) {
+  const salt = keepSalt || crypto.randomBytes(16), iv = crypto.randomBytes(12);
   const key = await pbkdf2(password, salt, 250000, 32);
   const json = Buffer.from(JSON.stringify(inner), "utf8");
   const c = crypto.createCipheriv("aes-256-gcm", key, iv);
@@ -74,4 +75,52 @@ async function fetchState({ gatewayUrl, password, fetchImpl = fetch, attempts = 
   throw new Error(`${last.message} (after ${attempts} attempts)`);
 }
 
-module.exports = { authToken, decryptVault, encryptVault, fetchState };
+/**
+ * Writes ONE top-level object field into the vault the way an app save would: pull the latest vault, set the field,
+ * stamp it with the app's own sync engine (newest stamp wins when devices merge), re-encrypt with the vault's existing
+ * salt, and push guarded by the revision that was read (compare-and-swap). A conflict means another device saved in
+ * between: read again and retry. Only `allowed` fields can be written, so this can never touch the household's records.
+ */
+const WRITABLE = new Set(["holdingsCheck"]);
+const ENTRY_KEYS = ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others", "goals", "tasks", "studies", "workouts", "habits"];
+const countEntries = (data) => ENTRY_KEYS.reduce((t, k) => t + (Array.isArray(data && data[k]) ? data[k].length : 0), 0);
+
+async function updateField({ gatewayUrl, password, field, value, fetchImpl = fetch, now = Date.now(), attempts = 3 }) {
+  if (!WRITABLE.has(field)) throw new Error(`Writing "${field}" is not allowed from here`);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("The value must be an object");
+  const Engine = require("../sync-engine.js");
+  const token = await authToken(password);
+  // Apps Script now and then answers with a page that is not the reply; ask again (a repeated push is refused as a
+  // conflict, so a retry can never apply a change twice)
+  const call = async (body) => {
+    let last;
+    for (let t = 0; t < 4; t++) {
+      try {
+        const res = await postFollow(gatewayUrl, JSON.stringify(body), fetchImpl);
+        const j = JSON.parse(await res.text());
+        if (j.ok || j.error === "unauthorized") return j;
+        last = new Error(j.error || "Gateway error");
+      } catch (e) { last = e; }
+      await new Promise((r) => setTimeout(r, 1500 * (t + 1)));
+    }
+    throw new Error(`Gateway did not answer properly: ${last && last.message}`);
+  };
+  for (let i = 0; i < attempts; i++) {
+    const j = await call({ op: "pull", token, sinceRev: 0 });
+    if (!j.ok || !j.vault) throw new Error(j.error || "Could not read the vault");
+    const inner = await decryptVault(j.vault, password);
+    const before = inner.data || {};
+    const after = { ...before, [field]: value };
+    const meta = Engine.stamp(before, after, inner.sync || Engine.emptyMeta(), now);
+    const nextInner = { ...inner, data: after, sync: meta };
+    const sealed = await encryptVault(nextInner, password, { compress: !!j.vault.compressed, salt: Buffer.from(j.vault.salt, "base64") });
+    const vault = { ...sealed, updatedAt: new Date(now).toISOString(), entryCount: countEntries(after) };
+    if (countEntries(after) !== countEntries(before)) throw new Error("Refusing to push: the record count changed");
+    const pr = await call({ op: "push", token, baseRev: j.rev || 0, vault });
+    if (pr.ok && !pr.conflict) return { rev: pr.rev, attempts: i + 1 };
+    if (!pr.ok) throw new Error(pr.error || "Push failed");
+  }
+  throw new Error(`Another device kept saving; gave up after ${attempts} tries`);
+}
+
+module.exports = { authToken, decryptVault, encryptVault, fetchState, updateField, countEntries };

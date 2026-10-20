@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.103",
-    "sha256": "ecc4d84669765abba773a7a1e54e26c9b8ee90dfe9105fcccd8c9d18520d620b"
+    "version": "1.0.104",
+    "sha256": "bb623615924d7b5a2fa87d3622ae946cfc80875ac48d31f1562aae2a07a36ccf"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -32,8 +32,8 @@
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
   },
   "data-health.js": {
-    "version": "1.0.6",
-    "sha256": "55b94188a67666f2dced2e699030bd5b5a46127ebe11775b6c87123acc007a0d"
+    "version": "1.0.7",
+    "sha256": "74e440d555e5c8e80fad4f5cb7198fa1ce7432a2709fa8bfe83e14e02927af8b"
   },
   "drive-sync.js": {
     "version": "1.0.42",

@@ -108,4 +108,17 @@ assert.doesNotThrow(() => H.run(null));
   assert.ok(bad.items.some((i) => /FY 2024-25/.test(i)) && bad.items.filter((i) => /Reference case/.test(i)).length >= 20, "each disagreement is listed");
   assert.ok(!run(base(), {}).checks.some((c) => c.id === "tax-engine"), "no self-check given: no row");
 }
+// Holdings checked against INDmoney (state.holdingsCheck, written by the weekly task)
+{
+  const row = (hc) => run({ ...base(), holdingsCheck: hc }, {}).checks.find((c) => c.id === "holdings-ref");
+  assert.strictEqual(row(null).status, "info", "not run yet");
+  const okRow = row({ checkedOn: "2026-10-15", status: "ok", matched: 56, total: 56, ignored: 1, gaps: [] });
+  assert.deepStrictEqual([okRow.status, /56 of 56 holdings match INDmoney on 2026-10-15 \(2 days ago\); 1 you chose not to track/.test(okRow.detail)], ["ok", true], okRow.detail);
+  const gap = { who: "Wife", cls: "MF", name: "Bandhan Small Cap", kind: "units", app: 5081.94, ref: 4820.5, diffValue: 14588 };
+  assert.strictEqual(row({ checkedOn: "2026-10-15", status: "watch", matched: 55, total: 56, gaps: [{ ...gap, confirmed: false }] }).status, "info", "a first-time gap may be INDmoney lagging");
+  const warnRow = row({ checkedOn: "2026-10-15", status: "gaps", matched: 55, total: 56, gaps: [{ ...gap, confirmed: true }] });
+  assert.strictEqual(warnRow.status, "warn");
+  assert.ok(/Still there since the last check · Archana · fund · Bandhan Small Cap: units differ \(app 5081.94, INDmoney 4820.5, about ₹14,588\)/.test(warnRow.items[0]), warnRow.items[0]);
+  assert.strictEqual(row({ checkedOn: "2026-09-20", status: "ok", matched: 56, total: 56, gaps: [] }).title, "Holdings check is out of date");
+}
 console.log("data-health tests passed");
