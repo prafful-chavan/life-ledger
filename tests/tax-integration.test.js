@@ -37,6 +37,12 @@ const sb = dh.checks.find((c) => c.id === "salary-breakdown");
 assert.strictEqual(sb.status, "info"); assert.ok(sb.items.length === 1 && /Archana · 2026-08/.test(sb.items[0]));
 assert.strictEqual(DH.run({ state: { income: [{ person: "Me", date: "2026-09-30", type: "Salary", amount: 200000, grossEarnings: 260000 }] }, now: "2026-10-20", reported: {} }).checks.find((c) => c.id === "salary-breakdown").status, "ok");
 
+// ── Professional tax typed into the TDS field is caught ──
+const pt = DH.run({ state: { income: ["2026-07-31", "2026-08-31", "2026-09-30"].map((d) => ({ person: "Wife", date: d, type: "Salary", amount: 57000, grossEarnings: 60837, taxTds: 200 })) }, now: "2026-10-20", reported: {} });
+const tf = pt.checks.find((c) => c.id === "tds-field");
+assert.strictEqual(tf.status, "info"); assert.ok(/Archana: 3 months show TDS of ₹200/.test(tf.items[0]));
+assert.strictEqual(DH.run({ state: { income: [{ person: "Me", date: "2026-09-30", type: "Salary", amount: 200000, grossEarnings: 260000, taxTds: 47961, professionalTax: 200 }] }, now: "2026-10-20", reported: {} }).checks.find((c) => c.id === "tds-field").status, "ok");
+
 // ── Protection page and Tax page use the same insurance rule ──
 const P = require("../protection-core.js");
 const ins = { ...state, insurance: [{ person: "Me", type: "Term life", cover: 100000 }] };

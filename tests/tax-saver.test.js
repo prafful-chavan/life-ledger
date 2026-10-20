@@ -117,3 +117,29 @@ console.log("tax saver tests passed");
   assert.ok(Array.isArray(m.taxIfSold) && m.taxIfSold.some((x) => x.key === "mf:Gain Fund"), "the household model carries it");
 }
 console.log("tax if sold tests passed");
+
+// ── salary pattern and employer TDS true-up ──
+{
+  const { engine: EN } = require("../tax-core.js");
+  const prevMonths = ["2025-04-30", "2025-05-31", "2025-06-30", "2025-07-31", "2025-08-31", "2025-09-30", "2025-10-31", "2025-11-30", "2025-12-31", "2026-01-31", "2026-02-28", "2026-03-31"];
+  const variable = (d) => ["04", "07", "10", "01"].includes(d.slice(5, 7));
+  const prevGross = prevMonths.map((d) => 240000 + (variable(d) ? 70000 : 0));
+  const prevTax = EN.computeTax({ fy: "2025-26", regime: "new", grossSalary: prevGross.reduce((a, b) => a + b, 0), basic: 72000 * 12, professionalTax: 2500 }).totalTax;
+  const mk = (d, g, tds) => ({ id: "s" + d, person: "Me", date: d, type: "Salary", grossEarnings: g, basicSalary: Math.round(g === 240000 || g === 310000 ? 72000 : 78000), hra: 30000, pf: 9000, taxTds: tds, amount: g - tds });
+  const cur = ["2026-04-30", "2026-05-31", "2026-06-30", "2026-07-31", "2026-08-31", "2026-09-30"].map((d) => mk(d, 260000 + (variable(d) ? 70000 : 0), 45000));
+  const st = { income: [...prevMonths.map((d, i) => mk(d, prevGross[i], Math.round(prevTax / 12))), ...cur], taxProfile: {} };
+  const sp = H.salaryProjection(st, "Me", "2026-27");
+  assert.strictEqual(sp.method, "last year's month-by-month pattern");
+  assert.deepStrictEqual(sp.variableMonths, ["Oct", "Jan"], "variable-pay months follow last year");
+  const scale = 260000 / 240000, expected = cur.reduce((a, r) => a + r.grossEarnings, 0) + Math.round(0) + (310000 * scale) * 2 + 260000 * 4;
+  assert.ok(Math.abs(sp.gross - expected) <= 2, `gross ${sp.gross} vs ${expected}`);
+  const mm = H.build(st, "2026-10-20"), me2 = mm.people.find((x) => x.who === "Me");
+  assert.ok(/deducted the full salary tax last year/.test(me2.salary.tdsAssumption), "last year's TDS matched the salary tax");
+  assert.strictEqual(me2.plan.tdsProjected, Math.max(me2.salary.tdsPace, me2.salary.tdsSalaryTax), "TDS is projected to rise to the salary tax");
+  assert.ok(me2.plan.tdsProjected > 45000 * 12, "more than the current monthly pace");
+  // An employer that under-deducted last year is projected at the current pace
+  const under = { income: [...prevMonths.map((d, i) => mk(d, prevGross[i], Math.round(prevTax / 24))), ...cur], taxProfile: {} };
+  const mu = H.build(under, "2026-10-20").people.find((x) => x.who === "Me");
+  assert.strictEqual(mu.plan.tdsProjected, mu.salary.tdsPace); assert.ok(/current monthly pace/.test(mu.salary.tdsAssumption));
+}
+console.log("salary pattern tests passed");

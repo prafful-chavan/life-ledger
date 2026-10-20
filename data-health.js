@@ -163,6 +163,23 @@
         : ok("salary-breakdown", "Salary records have their gross amounts", "Every salary in the last 13 months carries the payslip breakdown the tax estimate needs."));
     }
 
+    // 6c) Professional tax typed into the TDS field (₹200 a month, ₹300 in February, is Maharashtra's professional tax)
+    {
+      const since = new Date(now - 400 * DAY).toISOString().slice(0, 10);
+      const who = { Me: "Prafful", Wife: "Archana" };
+      const rows = (s.income || []).filter((x) => (!x.type || /salary/i.test(x.type)) && String(x.date || "") >= since);
+      const byPerson = {};
+      rows.forEach((x) => { const p = x.person || "Me"; (byPerson[p] = byPerson[p] || []).push(x); });
+      const items = [];
+      Object.entries(byPerson).forEach(([p, list]) => {
+        const looks = list.filter((x) => [200, 300].includes(Math.round(n(x.taxTds))) && !(n(x.professionalTax) > 0));
+        if (looks.length >= 2) items.push(`${who[p] || p}: ${looks.length} months show TDS of ₹${Math.round(n(looks[0].taxTds))} and no professional tax`);
+      });
+      checks.push(items.length
+        ? info("tds-field", "Professional tax may be recorded as TDS", "₹200 a month is professional tax, not income-tax TDS. Move it to the professional-tax field so the Tax page's TDS figures are right.", items)
+        : ok("tds-field", "TDS and professional tax look right", "No salary shows professional tax in the TDS field."));
+    }
+
     // 7) Goals: stale hand-typed progress, placeholders, overdue
     {
       const goals = s.goals || [];

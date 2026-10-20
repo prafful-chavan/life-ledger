@@ -32,8 +32,8 @@
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
   },
   "data-health.js": {
-    "version": "1.0.4",
-    "sha256": "fab600bb2edaf8157e97b9ce045378720ba79c988624ef5a0e15ae90ca9b03fe"
+    "version": "1.0.5",
+    "sha256": "04b0a2c75b4a29fbe6fef22bbb6af7546a6e9ee0d4809d9b5b29550649e62bfb"
   },
   "drive-sync.js": {
     "version": "1.0.42",
@@ -116,12 +116,12 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.2.3",
-    "sha256": "f96e4af47d004d5dbac903b7edbd37c092bd8ca60a253e2a96350ad92e235153"
+    "version": "1.2.4",
+    "sha256": "f2d041746861dece8c44ffbb926b15df2cce3444ae8d25cdde1b751e50d9a330"
   },
   "tax.js": {
-    "version": "1.2.1",
-    "sha256": "f90cbd8a59ed575da67f58c282e0978da89fffdf3181259e23a8f42f8df55214"
+    "version": "1.2.2",
+    "sha256": "154543e9660403d3777cf77540aa7fea6c421cb916d632f058bdd66f32696b2b"
   },
   "theme.css": {
     "version": "1.1.7",

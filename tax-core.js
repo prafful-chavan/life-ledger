@@ -1113,35 +1113,48 @@
     /** 1 = April … 12 = March for the month a salary record pays. */
     function payIdx(iso) { const m = +iso.slice(5, 7); return m >= 4 ? m - 3 : m + 9; }
     const MONTH_NAMES = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+    /**
+     * Salary for a financial year from the income records. Months already paid are taken as recorded. The rest follow
+     * last year's pattern for the same month (variable-pay months such as April / July / October / January), scaled to
+     * this year's regular pay; without last year's record they use a typical month.
+     * Returns { months, remainingMonths, missingMonths, gross, basic, hra, pf, tds, tdsSoFar, method, variableMonths, ... } or null.
+     */
     function salaryProjection(state, who, fy) {
       const all = (state.income || []).filter((i) => (i.person || "Me") === who && (!i.type || /salary/i.test(i.type)) && num(i.grossEarnings) > 0)
         .sort((a, b) => (a.date < b.date ? -1 : 1));
       const rows = all.filter((i) => salaryFy(i.date) === fy);
       const prevFy = `${fyStartYear(fy) - 1}-${String(fyStartYear(fy)).slice(2)}`;
-      const source = rows.length ? rows : all.filter((i) => salaryFy(i.date) === prevFy);
+      const prevRows = all.filter((i) => salaryFy(i.date) === prevFy);
+      const source = rows.length ? rows : prevRows;
       if (!source.length) return null;
       const recent = source.slice(-3), mean = (k, set = recent) => set.reduce((a, r) => a + num(r[k]), 0) / set.length;
-      // Bonus months distort the average: the typical month is the median of the last six gross figures.
+      // Regular pay = a low quantile of the gross figures, so variable-pay months do not lift it.
+      const regular = (list) => { const g = list.map((r) => num(r.grossEarnings)).sort((a, b) => a - b); return g.length ? g[Math.floor((g.length - 1) * 0.3)] : 0; };
       const grossSorted = source.slice(-6).map((r) => num(r.grossEarnings)).sort((a, b) => a - b), typical = grossSorted[Math.floor(grossSorted.length / 2)];
-      const scale = typical / (mean("grossEarnings") || typical || 1);
       const last = recent[recent.length - 1];
-      const monthly = (k) => (k === "grossEarnings" ? typical : num(last[k]));
       const sum = (k) => rows.reduce((a, r) => a + num(r[k]), 0);
-      let lastIdx = 0, missing = [];
-      if (rows.length) {
-        const have = new Set(rows.map((r) => payIdx(r.date)));
-        lastIdx = Math.max(...have);
-        for (let i = 1; i <= lastIdx; i++) if (!have.has(i)) missing.push(MONTH_NAMES[i - 1]);
-      }
+      let lastIdx = 0; const missing = [], have = new Set(rows.map((r) => payIdx(r.date)));
+      if (rows.length) { lastIdx = Math.max(...have); for (let i = 1; i <= lastIdx; i++) if (!have.has(i)) missing.push(i); }
       const remaining = rows.length ? 12 - lastIdx : 12;
-      const imputed = missing.length + remaining;   // months estimated from the typical month
+      const toEstimate = [...missing, ...Array.from({ length: remaining }, (_, k) => lastIdx + 1 + k)];
+      // Pattern from last year: same pay month, scaled by the change in regular pay.
+      const prevByIdx = new Map(prevRows.map((r) => [payIdx(r.date), num(r.grossEarnings)]));
+      const regNow = regular(rows.length ? rows : prevRows), regPrev = regular(prevRows);
+      const usePattern = rows.length >= 2 && prevRows.length >= 9 && regPrev > 0;
+      const scale = usePattern ? regNow / regPrev : 1;
+      const estGross = toEstimate.map((i) => (usePattern && prevByIdx.has(i) ? prevByIdx.get(i) * scale : usePattern ? regNow : typical));
+      const variableMonths = usePattern ? toEstimate.filter((i, k) => estGross[k] > regNow * 1.1).map((i) => MONTH_NAMES[i - 1]) : [];
+      const n = toEstimate.length;
       return {
-        fy, months: rows.length, remainingMonths: remaining, missingMonths: missing, lastPaidMonth: rows.length ? MONTH_NAMES[lastIdx - 1] : null,
-        basedOn: rows.length ? "this year so far plus a typical month" : "last year's salary",
-        gross: r0(sum("grossEarnings") + imputed * monthly("grossEarnings")), basic: r0(sum("basicSalary") + imputed * monthly("basicSalary")),
-        hra: r0(sum("hra") + imputed * monthly("hra")), pf: r0(sum("pf") + imputed * monthly("pf")),
-        tds: r0(sum("taxTds") + imputed * mean("taxTds")), professionalTax: Math.min(2500, r0(sum("professionalTax") + imputed * (num(last.professionalTax) || 200))),
-        typicalMonthlyGross: r0(typical), scale: Math.round(scale * 100) / 100, employer: last.organization || "",
+        fy, months: rows.length, remainingMonths: remaining, missingMonths: missing.map((i) => MONTH_NAMES[i - 1]), lastPaidMonth: rows.length ? MONTH_NAMES[lastIdx - 1] : null,
+        method: usePattern ? "last year's month-by-month pattern" : rows.length ? "a typical month" : "last year's salary",
+        basedOn: rows.length ? (usePattern ? "this year so far plus last year's monthly pattern" : "this year so far plus a typical month") : "last year's salary",
+        variableMonths, regularMonthlyGross: r0(regNow),
+        gross: r0(sum("grossEarnings") + estGross.reduce((a, v) => a + v, 0)), basic: r0(sum("basicSalary") + n * num(last.basicSalary)),
+        hra: r0(sum("hra") + n * num(last.hra)), pf: r0(sum("pf") + n * num(last.pf)),
+        tdsSoFar: r0(sum("taxTds")), tds: r0(sum("taxTds") + n * mean("taxTds")), professionalTax: Math.min(2500, r0(sum("professionalTax") + n * (num(last.professionalTax) || 200))),
+        typicalMonthlyGross: r0(typical), employer: last.organization || "",
+        prevYear: prevRows.length >= 10 ? { months: prevRows.length, gross: r0(prevRows.reduce((a, r) => a + num(r.grossEarnings), 0)), basic: r0(prevRows.reduce((a, r) => a + num(r.basicSalary), 0)), hra: r0(prevRows.reduce((a, r) => a + num(r.hra), 0)), tds: r0(prevRows.reduce((a, r) => a + num(r.taxTds), 0)) } : null,
       };
     }
 
@@ -1157,6 +1170,22 @@
       const g = realised.owners[who] || { equityST: 0, equityLT: 0 };
       const extra = per(pr.realisedExtra);
       const hasForeign = (state.usstocks || []).some((s) => (s.owner || "Me") === who && num(s.quantity) > 0) || !!per(pr.foreignAssets).held;
+      // TDS: an employer deducts the year's tax on salary by March, raising the monthly amount as the year goes on.
+      // Checked against last year (TDS vs the engine's salary tax); if it matched, the projection follows the salary tax.
+      const salaryOnly = { fy, grossSalary: sal.gross, basic: sal.basic, professionalTax: sal.professionalTax, employerNps: num(per(pr.employerNps)), otherIncome: 0, gains: {} };
+      // The employer deducts under the regime the employee declared; the new regime is the default.
+      const declared = (pr.regime && pr.regime[who]) || (engine.yearRules(fy).newRegime ? "new" : "old");
+      const salaryTax = engine.computeTax({ ...salaryOnly, regime: declared }).totalTax;
+      let truesUp = null;
+      if (sal.prevYear) {
+        const prevFy = `${fyStartYear(fy) - 1}-${String(fyStartYear(fy)).slice(2)}`;
+        const pt = engine.computeTax({ fy: prevFy, regime: engine.yearRules(prevFy).newRegime ? "new" : "old", grossSalary: sal.prevYear.gross, basic: sal.prevYear.basic, professionalTax: 2500, otherIncome: 0, gains: {} }).totalTax;
+        truesUp = pt > 0 ? Math.abs(sal.prevYear.tds - pt) / pt <= 0.06 : null;
+      }
+      const tdsPace = sal.tds;
+      const tdsProjected = truesUp === false ? tdsPace : Math.max(tdsPace, salaryTax);
+      sal.tdsPace = tdsPace; sal.tdsSalaryTax = salaryTax; sal.tdsAssumption = truesUp === true ? "Your employer deducted the full salary tax last year, so TDS is expected to rise to cover it by March." : truesUp === false ? "Last year's TDS did not match the salary tax, so TDS is projected at the current monthly pace." : "TDS is expected to rise to cover the salary tax by March (the usual payroll practice); check your payslips.";
+      sal.tds = r0(tdsProjected);
       return {
         plan: {
           fy, person: NAMES[who], grossSalary: sal.gross, basic: sal.basic, hraReceived: sal.hra, rentPaid: num(per(pr.rentMonthly)) * 12, metro: !!pr.metro,

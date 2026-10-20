@@ -110,7 +110,10 @@
       const pl = pp.plan, o = pl.regimes.old, n = pl.regimes.new;
       const lev = pl.levers.length ? pl.levers.map((l) => `<div class="prot-check"><div><b>${esc(l.title)}</b><div class="prot-sub">${esc(l.detail)}</div></div><div class="prot-check-right"><b>${inr(l.yearlySaving)}</b><span class="prot-sub">a year</span></div></div>`).join("") : `<div class="prot-empty">No further levers worth acting on.</div>`;
       const adv = pl.advanceTax.length ? pl.advanceTax.map((a) => `<div class="prot-check"><div>${esc(prettyDate(a.date))} ${a.date < m.asOf ? chip("muted", "past") : ""}</div><div class="prot-check-right"><b>${inr(a.cumulativeAmount)}</b><span class="prot-sub">cumulative (${a.cumulativePct}%)</span></div></div>`).join("") : `<div class="prot-empty">Tax after TDS is under ₹10,000: no advance tax needed.</div>`;
-      return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(pp.name)} · FY ${esc(m.fy)}</h3><p>${esc(pp.salary.basedOn)} · gross about ${inr(pp.salary.gross)} · TDS about ${inr(pl.tdsProjected)}</p></div>${chip(pl.better === "new" ? "good" : "warn", `${pl.better} regime is cheaper by ${inr(pl.saving)}`)}</div>
+      const sv = pp.salary;
+      const salaryLine = `${esc(sv.basedOn)}${sv.variableMonths && sv.variableMonths.length ? ` · variable pay expected in ${esc(sv.variableMonths.join(", "))}` : ""} · gross about ${inr(sv.gross)}`;
+      const tdsLine = `TDS so far ${inr(sv.tdsSoFar)}; at this month's rate ${inr(sv.tdsPace)} for the year; expected ${inr(pl.tdsProjected)} by March. ${esc(sv.tdsAssumption || "")}`;
+      return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(pp.name)} · FY ${esc(m.fy)}</h3><p>${salaryLine}</p><p class="prot-sub">${tdsLine}</p></div>${chip(pl.better === "new" ? "good" : "warn", `${pl.better} regime is cheaper by ${inr(pl.saving)}`)}</div>
         <div class="tax-compare"><div><span>New regime</span><b>${inr(n && n.tax)}</b><small>taxable ${inr(n && n.taxable)}</small></div>
           <div><span>Old regime</span><b>${inr(o.tax)}</b><small>taxable ${inr(o.taxable)} · HRA ${inr(o.hraExempt)} · deductions ${inr(o.deductions)}</small></div>
           <div><span>Marginal rate</span><b>${pl.marginalRatePct}%</b><small>+ 4% cess · file ${esc(pl.form)}</small></div></div>
