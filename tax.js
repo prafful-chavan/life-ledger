@@ -54,6 +54,13 @@
       <section class="panel tax-panel"><div class="panel-header"><div><h3>Dates that matter</h3><p>${left || "&nbsp;"}</p></div></div>${soon || `<div class="prot-empty">No dates in the next year.</div>`}</section>`;
   }
 
+  function harvestHtml(pp) {
+    const h = pp.harvest;
+    if (!h || !h.picks.length) return "";
+    const rows = h.picks.map((x) => `<div class="prot-check"><div><b>${esc(x.name)}</b><div class="prot-sub">Redeem about ${x.units.toLocaleString("en-IN")} ${x.kind === "mf" ? "units" : "shares"} (${inr(x.value)}), oldest first</div></div><div class="prot-check-right"><b>${inr(x.gain)}</b><span class="prot-sub">gain, tax-free</span></div></div>`).join("");
+    return `<h4 class="tax-h">Which units to sell and buy back</h4>${rows}<p class="prot-sub">Books ${inr(h.planned)} of the ${inr(h.target)} still free${h.shortfall ? `; ${inr(h.shortfall)} could not be covered by holdings older than 12 months with a known buy date` : ""}. Sell, then buy back the same day, before 31 March. Check exit loads first. Funds sell oldest units first.</p>`;
+  }
+
   // ── Plan ─────────────────────────────────────────────────────────────────────────────────
   function viewPlan(m) {
     const p = profile(), per = (k, who) => ((p[k] || {})[who]) ;
@@ -68,7 +75,7 @@
         <div class="tax-compare"><div><span>New regime</span><b>${inr(n && n.tax)}</b><small>taxable ${inr(n && n.taxable)}</small></div>
           <div><span>Old regime</span><b>${inr(o.tax)}</b><small>taxable ${inr(o.taxable)} · HRA ${inr(o.hraExempt)} · deductions ${inr(o.deductions)}</small></div>
           <div><span>Marginal rate</span><b>${pl.marginalRatePct}%</b><small>+ 4% cess · file ${esc(pl.form)}</small></div></div>
-        <h4 class="tax-h">Ways to pay less</h4>${lev}<h4 class="tax-h">Advance tax</h4>${adv}</section>`;
+        <h4 class="tax-h">Ways to pay less</h4>${lev}${harvestHtml(pp)}<h4 class="tax-h">Advance tax</h4>${adv}</section>`;
     }).join("");
     const dep = p.departure || {};
     const dv = m.departure;
@@ -95,9 +102,13 @@
     if (!x.open) return `<div class="tax-remedy">${esc(x.reason || "Closed.")}</div>`;
     return `<div class="tax-remedy"><b>Updated return (ITR-U):</b> ${inr(x.additionalTax)} tax + about ${inr(x.interest)} interest + ${x.pctExtra}% extra (${inr(x.extraTax)}) = about <b>${inr(x.totalToPay)}</b>. Last date ${esc(prettyDate(x.lastDate))}${x.rateRisesTo ? `; the extra rises to ${x.rateRisesTo.pct}% after ${esc(prettyDate(x.rateRisesTo.after))}` : ""}. Estimate: the portal shows the real figure.</div>`;
   }
+  function filingHtml(m) {
+    const items = m.filing.map((f) => `<label class="tax-check"><input type="checkbox" data-tax-file="${esc(f.id)}" ${f.done ? "checked" : ""} /><span>${esc(f.title)}${f.done ? ` <small class="prot-sub">· done ${esc(prettyDate(f.done))}</small>` : ""}</span></label>`).join("");
+    return `<section class="panel tax-panel"><div class="panel-header"><div><h3>Filing checklist for FY ${esc(m.fy)}</h3><p>Return due 31 July ${+m.fy.slice(0, 4) + 1}. Tick items as you collect them.</p></div></div>${items}</section>`;
+  }
   function viewReturns(m) {
-    if (!m.returnsAudit.length) return `<section class="panel tax-panel"><div class="prot-empty">No returns yet. Import your tax data on the Data tab.</div></section>`;
-    return m.returnsAudit.map((r) => {
+    if (!m.returnsAudit.length) return filingHtml(m) + `<section class="panel tax-panel"><div class="prot-empty">No returns yet. Import your tax data on the Data tab.</div></section>`;
+    return filingHtml(m) + m.returnsAudit.map((r) => {
       const who = NAMES[r.person] || r.person;
       if (r.error) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>Could not check: ${esc(r.error)}</p></div></div></section>`;
       if (r.unfiled) return `<section class="panel tax-panel"><div class="panel-header"><div><h3>${esc(who)} · FY ${esc(r.fy)}</h3><p>No return filed${r.note ? ` · ${esc(r.note)}` : ""}</p></div>${chip(r.extraTax > 0 ? "bad" : "good", r.extraTax > 0 ? `${inr(r.extraTax)} unpaid` : "nothing due")}</div>${remedyHtml(r)}</section>`;
@@ -193,6 +204,8 @@
   function onClick(e) {
     const tb = e.target.closest("[data-tax-tab]");
     if (tb) { tab = tb.dataset.taxTab; render(); return; }
+    const fchk = e.target.closest("[data-tax-file]");
+    if (fchk && fchk.type === "checkbox") { const p = profile(), fy = model.fy; p.filingDone = p.filingDone || {}; p.filingDone[fy] = { ...(p.filingDone[fy] || {}) }; if (fchk.checked) p.filingDone[fy][fchk.dataset.taxFile] = today(); else delete p.filingDone[fy][fchk.dataset.taxFile]; save().catch(() => {}); render(); return; }
     const done = e.target.closest("[data-tax-done]");
     if (done) { const p = profile(); p.done = { ...(p.done || {}), [done.dataset.taxDone]: today() }; save().catch(() => {}); render(); return; }
     const del = e.target.closest("[data-tax-del-family]");

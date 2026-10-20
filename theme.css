@@ -143,7 +143,6 @@ body[data-theme="dark"] th { background: var(--panel-soft); }
 .btn-add-set:hover,
 .btn-checkin-today:hover,
 .pagination button.active,
-.sync-log-badge,
 .adv-num,
 .adv-tab.active {
   color: var(--on-brand) !important;

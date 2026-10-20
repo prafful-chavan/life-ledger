@@ -686,3 +686,9 @@ body.cmdk-open, body.more-open { overflow: hidden; }
   .tax-deadline { grid-template-columns: 1fr; gap: 2px; }
   .tax-dep { grid-template-columns: 1fr; }
 }
+.tax-check { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; cursor: pointer; }
+.tax-check:first-of-type { border-top: 0; }
+.tax-check input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+
+/* The red notification count sits on a fixed red, so its text is always white (4.5:1 or better in both themes). */
+.sync-log-badge { background: #b91c1c !important; color: #fff !important; }

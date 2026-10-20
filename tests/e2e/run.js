@@ -213,6 +213,8 @@ const SCANNER = `(${function scan() {
     await cdp.eval(`document.querySelector('[data-tax-tab="returns"]').click()`); await sleep(300);
     const rets = await cdp.eval(`document.getElementById('taxBody').innerText`);
     check("returns tab flags the unsupported claims and the unfiled year", /Exempt allowances above Form 16/i.test(rets) && /Employer NPS \(80CCD\(2\)\) without an NPS contribution/i.test(rets) && /No return filed/.test(rets), rets.slice(0, 400));
+    await cdp.eval(`(()=>{const c=document.querySelector('[data-tax-file="form16"]'); c.click(); return 0})()`); await sleep(400);
+    check("ticking a filing-checklist item saves it", Boolean((await cdp.eval(`(LifeLedgerApp.getState().taxProfile.filingDone||{})[Object.keys(LifeLedgerApp.getState().taxProfile.filingDone||{})[0]]`)||{}).form16));
     await cdp.eval(`document.querySelector('[data-tax-tab="family"]').click()`); await sleep(300);
     const fam = await cdp.eval(`document.getElementById('taxBody').innerText`);
     check("family money explains the pre-wedding transfer", /before the wedding/i.test(fam), fam.slice(0, 300));

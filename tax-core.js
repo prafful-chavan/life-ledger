@@ -913,6 +913,7 @@
       const add = (date, title, kind, why, who) => { const d = daysTo(today, date); if (d >= -30 && d <= 400) out.push({ date, inDays: d, title, kind, why: why || "", who: who || "" }); };
       add("2026-12-31", "Last fee-free day to revise the FY 2025-26 return; FAST-DS 2026 window closes", "law", "After 31 Dec a fee of ₹1,000–5,000 applies to a revision, up to 31 Mar 2027.");
       add("2027-03-31", "Last day to revise the FY 2025-26 return", "law", "Updated-return (ITR-U) extra tax for FY 2021-22 to FY 2024-25 steps up on 1 April.");
+      for (const [yr, mo] of [[y, 1], [y, 4], [y, 7], [y, 10], [y + 1, 1]]) add(`${yr}-${String(mo).padStart(2, "0")}-01`, "Check the income-tax portal for notices", "tax", "Pending Actions → e-Proceedings and Worklist. Nothing there means no open proceedings for any year.");
       for (const yr of [y, y + 1]) {
         add(`${yr}-03-31`, "Last day of the year: book long-term gains up to the free limit, book losses, renew policies", "tax", "Each person's ₹1.25L long-term-gain exemption resets on 1 April.");
         add(`${yr}-07-31`, "Income-tax return due (ITR-1/ITR-2)", "tax", "Download AIS/TIS, Form 16 and broker reports first, run the audit.");
@@ -967,6 +968,10 @@
       }
       for (const p of model.people) {
         if (p.plan && p.plan.advanceTax && p.plan.advanceTax.length && p.plan.nextAdvance) add(`adv-${p.who}`, "medium", `Advance tax for ${p.name}`, `Pay ${inr(p.plan.nextAdvance.cumulativeAmount)} in total by ${p.plan.nextAdvance.date} to avoid interest.`, p.plan.nextAdvance.date, { who: p.name });
+        if (p.plan && p.plan.balance >= 15000 && p.salary && p.salary.remainingMonths >= 2) {
+          const per = Math.round(p.plan.balance / p.salary.remainingMonths / 100) * 100;
+          add(`tds-${p.who}`, "low", `${p.name}'s TDS is running about ${inr(p.plan.balance)} above the year's tax`, `Ask payroll to review the monthly TDS (about ${inr(per)} a month less) so the money reaches you now instead of as a refund. Share rent and deduction declarations with them.`, "", { who: p.name });
+        }
         for (const l of (p.plan && p.plan.levers) || []) {
           if (l.id === "employer-nps" && l.yearlySaving >= 10000) add(`nps-${p.who}`, "medium", `Employer NPS could save ${p.name} about ${inr(l.yearlySaving)} a year`, l.detail, "");
           if (l.id === "ltcg-harvest" && today >= `${+today.slice(0, 4)}-01-15` && today <= `${+today.slice(0, 4)}-03-31` && l.yearlySaving > 1000) add(`harvest-${p.who}`, "medium", `Book tax-free long-term gains for ${p.name} before 31 March`, l.title + ". " + l.detail, `${+today.slice(0, 4)}-03-31`);
@@ -998,6 +1003,52 @@
       return { departure: dep.date, latestForNonResidentThisYear: residency.latestDepartureForNonResident(fy), years: out };
     }
 
+    /**
+     * Which long-term equity lots to sell (and buy back) to use up a person's unused ₹1.25L exemption, best "gain per rupee sold"
+     * first. Funds and demat holdings sell oldest-first, so only the leading run of long-term lots in each holding can be sold.
+     * Lots with an unknown buy date (broker imports) are left out. Returns { target, planned, picks[], shortfall }.
+     */
+    function harvestPlan(state, who, target, today) {
+      const lots = gains.buildLots(state, num((state.fx || {}).usdInr) || 95).lots.filter((l) => l.owner === who && (l.cat === "equity" || l.cat === "hybrid") && l.dateKnown !== false);
+      const groups = new Map();
+      for (const l of lots) { const k = l.kind + "|" + l.name; (groups.get(k) || groups.set(k, []).get(k)).push(l); }
+      const cands = [];
+      for (const ls of groups.values()) {
+        ls.sort((a, b) => (a.date < b.date ? -1 : 1));
+        const run = []; for (const l of ls) { if (!gains.holding(l, today).long) break; run.push(l); }
+        const gain = run.reduce((a, l) => a + l.qty * l.price - l.cost, 0), value = run.reduce((a, l) => a + l.qty * l.price, 0);
+        if (run.length && gain > 0 && value > 0) cands.push({ name: ls[0].name, kind: ls[0].kind, run, gain, value });
+      }
+      cands.sort((a, b) => b.gain / b.value - a.gain / a.value);
+      let remaining = Math.max(0, num(target)); const picks = [];
+      for (const c of cands) {
+        if (remaining < 1) break;
+        let units = 0, value = 0, gain = 0;
+        for (const l of c.run) {
+          const lg = l.qty * l.price - l.cost;
+          if (lg <= 0 || gain + lg <= remaining) { units += l.qty; value += l.qty * l.price; gain += lg; }
+          else { const f = (remaining - gain) / lg; units += l.qty * f; value += l.qty * l.price * f; gain += lg * f; break; }
+        }
+        if (gain > 0) { picks.push({ name: c.name, kind: c.kind, units: Math.round(units * 1000) / 1000, value: r0(value), gain: r0(gain) }); remaining -= gain; }
+      }
+      return { target: r0(target), planned: r0(num(target) - remaining), picks, shortfall: r0(Math.max(0, remaining)) };
+    }
+
+    const FILING = [
+      ["form16", "Form 16 from each employer (arrives by mid-June)"], ["ais", "Annual Information Statement and TIS from the portal (AIS menu)"], ["26as", "Form 26AS"],
+      ["brokers", "Tax P&L / capital-gains report from every broker and fund house (Zerodha, Groww, Upstox, INDmoney, mutual funds)"],
+      ["us", "US account: INDmoney tax report, Form 1042-S, and the peak and year-end value for Schedule FA (calendar year)"], ["form67", "Form 67 for US tax credit, filed before the return, if US dividends were paid"],
+      ["interest", "Interest certificates and Form 16A from every bank"], ["epf", "EPF and PPF statements"],
+      ["old", "Only if you use the old regime: premium receipts, rent receipts and agreement with landlord PAN, donation receipts"],
+      ["audit", "Run this page's check against those documents before anything is filed"], ["archana", "The same for Archana, and file her return on time so her losses carry forward"],
+      ["verify", "E-verify the return within 30 days of filing"],
+    ];
+    /** The July filing checklist for a financial year, with done flags kept in profile.filingDone[fy][id]. */
+    function filingChecklist(profile, fy) {
+      const done = ((profile || {}).filingDone || {})[fy] || {};
+      return FILING.map(([id, title]) => ({ id, title, done: done[id] || null }));
+    }
+
     /** The whole picture for the Tax tab and the daily brief. */
     function build(state, today) {
       const profile = state.taxProfile || {};
@@ -1007,18 +1058,20 @@
         const inp = personInputs(state, profile, who, fy, today);
         if (!inp) { model.people.push({ who, name: NAMES[who], plan: null, note: "No salary record found for this financial year." }); continue; }
         const plan = planner.plan(inp.plan, today);
-        model.people.push({ who, name: NAMES[who], salary: inp.salary, realised: inp.realised, plan, exemptionLeft: Math.max(0, engine.RULES.equity.exemptionFromFY2425 - Math.max(0, inp.realised.ltcg)) });
+        const exemptionLeft = Math.max(0, engine.RULES.equity.exemptionFromFY2425 - Math.max(0, inp.realised.ltcg));
+        model.people.push({ who, name: NAMES[who], salary: inp.salary, realised: inp.realised, plan, exemptionLeft, harvest: exemptionLeft > 1000 ? harvestPlan(state, who, exemptionLeft, today) : null });
       }
       model.returnsAudit = returnsAudit(state, today);
       model.family = (state.taxFamily || []).map((t) => ({ ...t, result: gifts.classifyGift(t, { marriageDate: profile.marriageDate }) }));
       model.departure = departureView(profile.departure, fy);
+      model.filing = filingChecklist(profile, fy);
       model.deadlines = deadlines(model, today);
       model.actions = actions(model, state, today);
       model.law = law.lawStatus(today);
       return model;
     }
 
-    return { build, salaryProjection, salaryFy, personInputs, returnsAudit, deadlines, actions, departureView };
+    return { build, salaryProjection, salaryFy, personInputs, returnsAudit, deadlines, actions, departureView, harvestPlan, filingChecklist };
   })();
 
   return { law, engine, remedies, gifts, residency, audit, planner, gains, household };

@@ -70,4 +70,28 @@ assert.strictEqual(dv.years[0].status, "ROR"); assert.strictEqual(dv.years[1].st
 // no salary → no plan, no crash
 const empty = H.build({ income: [], taxProfile: {}, taxReturns: [] }, "2026-10-20");
 assert.ok(empty.people.every((p) => p.plan === null));
+// ── harvesting: oldest-first, long-term only, best gain per rupee first ──
+const buy = (id, fund, date, units, invested) => ({ id, fundName: fund, owner: "Me", transactionType: "PURCHASE", units, invested, purchaseDate: date, latestNav: fund === "A" ? 300 : 120 });
+const hs = { fx: { usdInr: 90 }, mutualFunds: [
+  buy("a1", "A", "2020-01-10", 100, 10000), buy("a2", "A", "2021-03-10", 100, 20000), buy("a3", "A", "2026-08-10", 100, 29000),   // A: nav 300; third lot is recent
+  buy("b1", "B", "2019-01-10", 100, 2000),                                                                                       // B: nav 120, gain 10,000 on 12,000 → better gain per rupee
+] };
+let h = H.harvestPlan(hs, "Me", 25000, "2026-10-20");
+assert.strictEqual(h.picks[0].name, "B", "highest gain per rupee sold goes first");
+assert.strictEqual(h.picks[0].gain, 10000);
+const a = h.picks.find((p) => p.name === "A");
+assert.strictEqual(a.gain, 15000); assert.strictEqual(a.units, 75, "the oldest lot (gain 20,000) is sold in part: 15,000 / 20,000 of its 100 units");
+assert.strictEqual(h.planned, 25000); assert.strictEqual(h.shortfall, 0);
+h = H.harvestPlan(hs, "Me", 500000, "2026-10-20");
+assert.ok(h.shortfall > 0 && !h.picks.some((p) => p.units > 200), "never sells the recent (short-term) lot; reports what is not covered");
+assert.deepStrictEqual(H.harvestPlan({ mutualFunds: [], fx: {} }, "Me", 10000, "2026-10-20").picks, []);
+
+// ── TDS running above the tax, filing checklist, quarterly portal check ──
+const over = { income: [...months.map((d) => salaryRow("Me", d, 120000, 40000))], taxProfile: { filingDone: { "2026-27": { form16: "2027-06-20" } } } };
+const mo = H.build(over, "2026-10-20");
+assert.ok(mo.actions.some((x) => x.id === "tds-Me"), "TDS far above the tax is flagged");
+assert.strictEqual(mo.filing.find((f) => f.id === "form16").done, "2027-06-20"); assert.strictEqual(mo.filing.find((f) => f.id === "ais").done, null);
+assert.ok(mo.deadlines.some((d) => d.date === "2027-01-01" && /notices/.test(d.title)));
+assert.ok(H.build(state, "2026-10-20").people.find((p) => p.who === "Me").harvest, "a person with exemption left gets a harvest plan");
+
 console.log("tax household tests passed");
