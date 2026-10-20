@@ -143,6 +143,10 @@ assert.ok(itr1("2023-24", { ltcgBefore: 150000 }).includes("wrong-form"), "above
 assert.ok(itr1("2024-25", { ltcgAfter: 5000, stcgAfter: 1000 }).includes("wrong-form"), "any short-term gain needs ITR-2");
 const proof = audit({ fy: "2023-24", person: "T", filed: { form: "ITR-2", regime: "old", grossSalary: 2000000, exemptAllowances: 100000, exemptBreakup: { hra: 100000 }, deductions: { "80GGC": 100000 }, totalTax: 0, taxesPaid: 0, foreignAssetsDeclared: true }, evidence: { rent: { paid: 0 }, donations: [{ amount: 100000, debitDate: "2024-06-01", recognisedParty: false }] } });
 assert.strictEqual(proof.findings.filter((f) => f.proofNeeded).map((f) => f.id).sort().join(), "80ggc,hra-proof", "HRA and the donation are marked proof-needed");
+// Negative amounts read "−₹579", never "₹-579"
+const neg = audit({ fy: "2025-26", person: "T", filed: { form: "ITR-2", regime: "new", grossSalary: 900000, totalTax: 0, taxesPaid: 0 }, evidence: { brokers: { stcgAfter: 30000, intraday: -579 } } });
+const ge = neg.findings.map((f) => f.detail).join(" ");
+assert.ok(/−₹579/.test(ge) && !/₹-/.test(ge), "negative amounts are formatted with the minus first");
 console.log("tax law, remedies and gifts tests passed");
 
 // ── residency (moving abroad) ──

@@ -116,8 +116,8 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.0.5",
-    "sha256": "5338aa3c2ebf63c4d3214ae46aaa0eb8865748f70a65134da42ba8bcd77c2d65"
+    "version": "1.0.6",
+    "sha256": "669a36413a7844f5a7957c16a6ff02f2c055173bdbbf01533f5ea98a2b46a10a"
   },
   "tax.js": {
     "version": "1.0.5",

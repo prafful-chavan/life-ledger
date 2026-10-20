@@ -475,7 +475,7 @@
   const E = engine;
   const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
   const r0 = (v) => Math.round(v);
-  const inr = (v) => "₹" + Math.round(num(v)).toLocaleString("en-IN");
+  const inr = (v) => (num(v) < 0 ? "−" : "") + "₹" + Math.abs(Math.round(num(v))).toLocaleString("en-IN");
   const sumGains = (g = {}) => num(g.stcgBefore) + num(g.stcgAfter) + num(g.ltcgBefore) + num(g.ltcgAfter);
   const sumDed = (d = {}) => Object.values(d).reduce((a, b) => a + num(b), 0);
 
