@@ -1306,10 +1306,12 @@
       const done = (model.profile && model.profile.done) || {};
       // A family loan needs the borrower's signed note; ticked off with the same Done as checklist items
       const relName = { parent: "a parent", "spouse-parent": "a parent-in-law", sibling: "a sibling", "spouse-sibling": "a sibling-in-law", child: "a child", spouse: "the spouse", other: "someone else" };
+      // Due with the CA meeting on the household's own checklist (the notes go to that meeting), if there is one
+      const caDue = (((model.profile && model.profile.checklist) || []).find((x) => x && x.id === "ca-meeting" && !done[x.id]) || {}).due || "";
       for (const t of state.taxFamily || []) {
         if (!t || !t.repaymentExpected || done[`loan-note-${t.id}`]) continue;
         add(`todo-loan-note-${t.id}`, "medium", `Get the loan note signed: ${inr(t.amount)} from ${NAMES[t.from] || t.from || "?"} to ${NAMES[t.to] || relName[t.relation] || "?"}`,
-          `One dated line signed by the borrower: amount, date given (${t.date || "?"}), interest-free, repayable on demand. Keep it with the bank transfer record; take repayments by bank transfer too.`, "");
+          `One dated line signed by the borrower: amount, date given (${t.date || "?"}), interest-free, repayable on demand. Keep it with the bank transfer record; take repayments by bank transfer too.`, caDue);
       }
       // User-supplied checklist (stored in the vault, so it can hold private items)
       for (const c of (model.profile && model.profile.checklist) || []) if (c && c.id && !done[c.id]) add(`todo-${c.id}`, c.severity || "low", c.title, c.why || "", c.due || "");

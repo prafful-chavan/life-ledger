@@ -193,5 +193,8 @@ console.log("form tests passed");
   assert.ok(a && /₹15,00,000 from Prafful to a parent/.test(a.title), "loan note action: " + (a && a.title));
   assert.ok(!acts.some((x) => x.id === "todo-loan-note-taxf-g1"), "a gift asks for no loan note");
   assert.ok(!H.build({ income: [], taxProfile: { done: { "loan-note-taxf-l1": "2026-10-21" } }, taxFamily: fam }, "2026-10-20").actions.some((x) => x.id === "todo-loan-note-taxf-l1"), "ticked Done: gone");
+  const withCa = H.build({ income: [], taxProfile: { checklist: [{ id: "ca-meeting", title: "CA", due: "2026-12-15" }] }, taxFamily: fam }, "2026-10-20").actions.find((x) => x.id === "todo-loan-note-taxf-l1");
+  assert.strictEqual(withCa.due, "2026-12-15", "due with the CA meeting");
+  assert.strictEqual(a.due, "", "no CA meeting on the checklist: no date");
 }
 console.log("family loan tests passed");
