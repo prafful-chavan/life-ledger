@@ -137,3 +137,24 @@ assert.ok(/loan/i.test(G.classifyGift({ amount: 500000, date: "2024-05-14", rela
 assert.strictEqual(G.classifyGift({ amount: 150000, date: "2024-09-09", relation: "parent" }, ctx).clubbedToGiver, false, "no clubbing for gifts to parents");
 
 console.log("tax law, remedies and gifts tests passed");
+
+// ── residency (moving abroad) ──
+const Res = require("../tools/tax/residency.js");
+const tenYears = Array.from({ length: 10 }, () => ({ resident: true, days: 330 }));
+assert.strictEqual(Res.latestDepartureForNonResident("2026-27"), "2026-09-28", "day 181 of FY 2026-27");
+assert.strictEqual(Res.daysInIndiaForDeparture("2026-27", "2026-09-28"), 181);
+assert.strictEqual(Res.daysInIndiaForDeparture("2026-27", "2027-01-15"), 290);
+let rs = Res.residentialStatus({ daysInIndia: 290, daysPrev4: 1300, citizen: true, leftForEmployment: true, prevYears: tenYears });
+assert.strictEqual(rs.status, "ROR"); assert.ok(rs.globalIncomeTaxed, "year of departure after the cut-off: worldwide income is taxed in India");
+rs = Res.residentialStatus({ daysInIndia: 120, daysPrev4: 1300, citizen: true, leftForEmployment: true, prevYears: tenYears });
+assert.strictEqual(rs.status, "NR", "a citizen leaving for employment is tested on 182 days only, not 60");
+rs = Res.residentialStatus({ daysInIndia: 120, daysPrev4: 1300, citizen: false, prevYears: tenYears });
+assert.strictEqual(rs.status, "ROR", "a non-citizen is caught by the 60 + 365 test");
+rs = Res.residentialStatus({ daysInIndia: 200, daysPrev4: 400, citizen: true, prevYears: [...Array(9)].map(() => ({ resident: false, days: 20 })).concat([{ resident: true, days: 300 }]) });
+assert.strictEqual(rs.status, "RNOR", "non-resident in 9 of the previous 10 years");
+rs = Res.residentialStatus({ daysInIndia: 130, daysPrev4: 400, citizen: true, visiting: true, indianIncome: 2000000, prevYears: tenYears });
+assert.strictEqual(rs.status, "RNOR", "citizen visiting with Indian income over ₹15L: 120-day test, RNOR");
+rs = Res.residentialStatus({ daysInIndia: 10, citizen: true, indianIncome: 2000000, taxedElsewhere: false, prevYears: tenYears });
+assert.strictEqual(rs.status, "RNOR", "deemed resident when taxed nowhere");
+assert.ok(Law.byId("residency-india") && Law.byId("uk-nic-dcc") && Law.byId("uk-fig"), "relocation rules are in the register");
+console.log("residency tests passed");
