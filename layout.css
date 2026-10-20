@@ -696,3 +696,15 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .tax-ask-card { max-width: 420px; width: 100%; padding: 20px; border-radius: 16px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(0, 0, 0, .3); display: grid; gap: 16px; }
 .tax-ask-card p { margin: 0; font-size: 15px; line-height: 1.5; }
 .tax-ask-card .prot-actions { justify-content: flex-end; }
+.tax-money { display: grid; grid-template-columns: repeat(2, minmax(0, 160px)); gap: 10px; }
+.tax-money > div { display: grid; gap: 1px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
+.tax-money span { font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.tax-money b { font-size: 18px; }
+.tax-sub { display: grid; gap: 8px; margin-top: 6px; }
+.tax-table { display: grid; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.tax-tr { display: grid; grid-template-columns: 1.2fr .7fr 1fr 1fr 1fr; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 14px; align-items: center; }
+.tax-tr:first-child { border-top: 0; }
+.tax-tr.tax-3 { grid-template-columns: 1.4fr 1fr 1fr; }
+.tax-tr.tax-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.tax-th { background: var(--panel-soft); color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
+@media (max-width: 700px) { .tax-tr { grid-template-columns: 1fr 1fr; } .tax-tr.tax-3, .tax-tr.tax-4 { grid-template-columns: 1fr 1fr; } .tax-th { display: none; } .tax-money { grid-template-columns: 1fr 1fr; } }

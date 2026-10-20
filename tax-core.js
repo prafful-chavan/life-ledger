@@ -123,6 +123,8 @@
     "2025-26": { old: { std: 50000, rebateUpTo: 5 * L, rebateMax: 12500 }, newRegime: { slabs: NEW_2025, std: 75000, rebateUpTo: 12 * L, rebateMax: 60000, marginalRelief: true, cap80CCD2Pct: 14 }, defaultRegime: "new" },
     // FY 2026-27: assumed unchanged from FY 2025-26 (first year of the Income-tax Act, 2025). Confirm with a CA.
     "2026-27": { old: { std: 50000, rebateUpTo: 5 * L, rebateMax: 12500 }, newRegime: { slabs: NEW_2025, std: 75000, rebateUpTo: 12 * L, rebateMax: 60000, marginalRelief: true, cap80CCD2Pct: 14 }, defaultRegime: "new", assumed: true },
+    // FY 2027-28: assumed unchanged from FY 2026-27. The Budget of February 2027 will say; the law watch flags changes.
+    "2027-28": { old: { std: 50000, rebateUpTo: 5 * L, rebateMax: 12500 }, newRegime: { slabs: NEW_2025, std: 75000, rebateUpTo: 12 * L, rebateMax: 60000, marginalRelief: true, cap80CCD2Pct: 14 }, defaultRegime: "new", assumed: true },
   };
 
   const RULES = {
@@ -223,7 +225,8 @@
     let specialTax = g.tax;
     // 87A: total income (including gains) must be within the limit; the rebate never covers special-rate equity gains from FY 2025-26.
     let rebate = 0;
-    if (totalIncome <= cfg.rebateUpTo) rebate = Math.min(cfg.rebateMax, normalTax + (+p.fy.slice(0, 4) >= 2025 ? 0 : specialTax));
+    if (p.nonResident) rebate = 0; // the 87A rebate is for residents only
+    else if (totalIncome <= cfg.rebateUpTo) rebate = Math.min(cfg.rebateMax, normalTax + (+p.fy.slice(0, 4) >= 2025 ? 0 : specialTax));
     else if (regime === "new" && cfg.marginalRelief) {
       const excess = totalIncome - cfg.rebateUpTo;
       if (normalTax > excess) rebate = normalTax - excess; // tax may not exceed the income above the rebate limit
@@ -654,9 +657,9 @@
   const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
   const r0 = (v) => Math.round(v);
 
-  function plan(p, asOf = new Date().toISOString().slice(0, 10)) {
+  /** The figures every scenario starts from: year rules, NPS cap, HRA, old-regime deductions, and the tax base. */
+  function inputs(p) {
     const y = E.yearRules(p.fy);
-    const fyStart = +p.fy.slice(0, 4);
     const npsCap = r0((y.newRegime ? y.newRegime.cap80CCD2Pct : 10) / 100 * num(p.basic));
     const hra = E.hraExemption({ hraReceived: p.hraReceived, rentPaid: p.rentPaid, basic: p.basic, metro: p.metro });
     const capped = E.capDeductions(p.deductionsPaid || {}, { parentsSenior: p.parentsSenior, basic: p.basic });
@@ -664,6 +667,12 @@
     const gains = { ...(p.gains || {}) };
     if (num(p.realisedLtcgYtd) || num(p.realisedStcgYtd)) { gains.ltcgAfter = num(gains.ltcgAfter) + num(p.realisedLtcgYtd); gains.stcgAfter = num(gains.stcgAfter) + num(p.realisedStcgYtd); }
     const base = { fy: p.fy, grossSalary: p.grossSalary, professionalTax: p.professionalTax, otherIncome: p.otherIncome, employerNps: p.employerNps, basic: p.basic, gains };
+    return { y, npsCap, hra, oldDed, base, capped };
+  }
+
+  function plan(p, asOf = new Date().toISOString().slice(0, 10)) {
+    const { y, npsCap, hra, oldDed, base } = inputs(p);
+    const fyStart = +p.fy.slice(0, 4);
     const cmp = E.compareRegimes(base, { old: { exemptAllowances: hra, deductions: oldDed }, newer: { exemptAllowances: 0, deductions: 0 } });
     const chosen = cmp.better;
     const current = cmp[chosen];
@@ -712,7 +721,7 @@
     };
   }
 
-  return { plan };
+  return { plan, inputs };
   })();
 
   // ════════════════════════════ gains ════════════════════════════
@@ -835,6 +844,182 @@
 
 
     return { taxCategory, buildLots, holding, unrealised, realisedThisFY, fyOf, monthsBetween };
+  })();
+
+  // ════════════════════════════ saver ════════════════════════════
+  // The tax-saving engine. Every figure is the engine's own tax with and without the move, not a rule of thumb.
+  // Levers: employer NPS (by start month), old vs new regime (and what the old regime would need), long-term-gain
+  // harvesting, waiting for a lot to turn long-term, booking losses, who should hold interest-bearing assets, running a
+  // side business in the lower-taxed spouse's name, and what a move abroad does (the 87A rebate is for residents only).
+  const saver = (function () {
+    const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
+    const r0 = (v) => Math.round(v);
+    const inr = (v) => (num(v) < 0 ? "−" : "") + "₹" + Math.abs(Math.round(num(v))).toLocaleString("en-IN");
+    const CESS = 1 + engine.RULES.cess / 100;
+    const addMonthsISO = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
+    const daysTo = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 864e5);
+    const nextFy = (fy) => `${+fy.slice(0, 4) + 1}-${String(+fy.slice(0, 4) + 2).slice(2)}`;
+
+    /** Tax for the person's plan inputs under a regime, with optional changes. */
+    function taxWith(p, regime, change = {}) {
+      const I = planner.inputs(p);
+      const base = { ...I.base, ...(change.base || {}) };
+      return engine.computeTax({ ...base, regime, exemptAllowances: regime === "old" ? I.hra : 0, deductions: regime === "old" ? I.oldDed + num(change.extraDeductions) : 0, ...(change.tax || {}) });
+    }
+    const chosenRegime = (p) => planner.plan(p, "2000-01-01").better;
+
+    /** Employer NPS: saving and out-of-pocket cost by the month the employer starts it. remaining = payroll months left this year. */
+    function npsByStart(p, remaining) {
+      const I = planner.inputs(p), regime = chosenRegime(p), monthly = I.npsCap / 12, have = num(p.employerNps);
+      const room = Math.max(0, I.npsCap - have);
+      if (room <= 0) return { cap: I.npsCap, rows: [], runRate: null };
+      const t0 = taxWith(p, regime).totalTax;
+      const rows = [0, 1, 2, 3].map((off) => {
+        const months = Math.max(0, Math.min(12, remaining - off));
+        const amount = Math.min(room, r0(monthly * months));
+        const saving = r0(t0 - taxWith(p, regime, { base: { employerNps: have + amount } }).totalTax);
+        return { startsInMonths: off + 1, months, amount, saving, netCost: amount - saving };
+      }).filter((x) => x.amount > 0);
+      const full = r0(t0 - taxWith(p, regime, { base: { employerNps: have + room } }).totalTax);
+      return { cap: I.npsCap, regime, rows, runRate: { amount: room, saving: full, netCost: room - full } };
+    }
+
+    /** New vs old with everything claimed, and the deductions the old regime would need to match the new. */
+    function regimeCheck(p) {
+      const I = planner.inputs(p), y = I.y;
+      if (!y.newRegime) return null;
+      const newTax = taxWith(p, "new").totalTax;
+      const oldNow = taxWith(p, "old").totalTax;
+      const maxDed = engine.capDeductions({ "80C": 1e9, "80D_self": 1e9, "80D_parents": 1e9, "80CCD1B": 1e9, homeLoanInterest: 0 }, { parentsSenior: p.parentsSenior, basic: p.basic });
+      const maxExtra = Math.max(0, maxDed["80C"] + maxDed["80CCD1B"] + maxDed["80D"] - I.oldDed);
+      const oldMax = taxWith(p, "old", { extraDeductions: maxExtra }).totalTax;
+      let lo = 0, hi = 3000000;
+      for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (taxWith(p, "old", { extraDeductions: mid }).totalTax > newTax) lo = mid; else hi = mid; }
+      const needed = r0(hi);
+      return { newTax, oldNow, oldMax, maxDeductions: r0(I.oldDed + maxExtra), hra: r0(I.hra), counted: r0(I.oldDed), breakevenExtra: oldNow <= newTax ? 0 : needed, extraDeductionsPossible: r0(maxExtra), verdict: oldMax < newTax ? "old" : "new", margin: r0(Math.abs(oldMax - newTax)) };
+    }
+
+    /** Long-term lots that sit on short-term equity gains and turn long-term soon: waiting cuts the rate from 20% to 12.5%. */
+    function waitList(state, who, today, withinDays = 180) {
+      const lots = gains.buildLots(state, num((state.fx || {}).usdInr) || 95).lots.filter((l) => l.owner === who && (l.cat === "equity" || l.cat === "hybrid") && l.dateKnown !== false);
+      const out = [];
+      for (const l of gains.unrealised(lots, today).perLot) {
+        if (l.long !== false || !(l.gain > 500)) continue;
+        const date = addMonthsISO(l.date, 12), d = daysTo(today, date);
+        if (d < 0 || d > withinDays) continue;
+        out.push({ name: l.name, kind: l.kind, longTermOn: date, inDays: d, gain: r0(l.gain), saving: r0(l.gain * (engine.RULES.equity.stcgAfter - engine.RULES.equity.ltcgAfter) / 100 * CESS) });
+      }
+      return out.sort((a, b) => a.inDays - b.inDays).slice(0, 10);
+    }
+
+    /** Equity holdings below cost: booking the loss carries it forward 8 years against future gains (only if returns are filed on time). */
+    function lossList(state, who, today) {
+      const lots = gains.buildLots(state, num((state.fx || {}).usdInr) || 95).lots.filter((l) => l.owner === who && (l.cat === "equity" || l.cat === "hybrid") && l.dateKnown !== false);
+      const rows = gains.unrealised(lots, today).perLot.filter((l) => l.gain < -500).map((l) => ({ name: l.name, kind: l.kind, loss: r0(-l.gain), term: l.long ? "long" : "short", valueNow: r0(l.value), futureSaving: r0(-l.gain * (l.long ? engine.RULES.equity.ltcgAfter : engine.RULES.equity.stcgAfter) / 100 * CESS) }));
+      return rows.sort((a, b) => b.loss - a.loss).slice(0, 10);
+    }
+
+    /** Income taxed at the person's own rate, and how much more each family member could receive before paying tax. */
+    function assetLocation(people, profile) {
+      const out = { members: [], savingPerLakh: 0, note: "" };
+      const me = people.find((x) => x.who === "Me" && x.plan);
+      for (const x of people) {
+        if (!x.plan) continue;
+        const regime = x.plan.better, t = x.taxNow, y = engine.yearRules(x.plan.fy);
+        const limit = y.newRegime && regime === "new" ? y.newRegime.rebateUpTo : 0;
+        const headroom = limit ? Math.max(0, limit - t.totalIncome) : 0;
+        out.members.push({ who: x.who, name: x.name, marginalRate: r0(x.plan.marginalRatePct * CESS * 10) / 10, taxableIncome: t.totalIncome, taxFreeHeadroom: r0(headroom) });
+      }
+      const par = (profile && profile.parentIncome) || {};
+      if (par.taxableIncome != null) {
+        const lim = engine.yearRules(me ? me.plan.fy : "2026-27").newRegime.rebateUpTo;
+        out.members.push({ who: "Parent", name: par.label || "A parent", marginalRate: 0, taxableIncome: num(par.taxableIncome), taxFreeHeadroom: r0(Math.max(0, lim - num(par.taxableIncome))) });
+      }
+      const top = out.members.slice().sort((a, b) => b.marginalRate - a.marginalRate)[0];
+      out.savingPerLakh = top ? r0(100000 * top.marginalRate / 100) : 0;
+      out.note = "Interest, dividends and short-term gains are taxed at the holder's slab rate. Money you give your spouse is added back to your income (sec 64); money from her own salary or from her parents' gifts is hers. A gift to a parent is not clubbed, but the parent must truly own it.";
+      return out;
+    }
+
+    /** Tax on extra business profit if it is earned by each person. profit = yearly ₹. */
+    function businessScenarios(people, profits) {
+      const rows = [];
+      for (const profit of profits) {
+        const owners = people.filter((x) => x.plan).map((x) => {
+          const p = x.inputs, I = planner.inputs(p), regime = x.plan.better;
+          const t1 = taxWith(p, regime, { base: { otherIncome: num(p.otherIncome) + profit } }).totalTax, t0 = x.taxNow.totalTax;
+          return { who: x.who, name: x.name, extraTax: r0(t1 - t0) };
+        });
+        const best = owners.slice().sort((a, b) => a.extraTax - b.extraTax)[0], worst = owners.slice().sort((a, b) => b.extraTax - a.extraTax)[0];
+        rows.push({ profit, owners, saving: worst && best ? worst.extraTax - best.extraTax : 0, bestOwner: best ? best.name : "" });
+      }
+      return rows;
+    }
+
+    /** What the 87A rebate loss costs a person who becomes a non-resident (the rebate is for residents only). */
+    function nonResidentCost(x) {
+      if (!x.plan || x.plan.better !== "new") return null;
+      const p = x.inputs, I = planner.inputs(p);
+      const t1 = engine.computeTax({ ...I.base, regime: "new", exemptAllowances: 0, deductions: 0, nonResident: true }).totalTax;
+      return { who: x.who, name: x.name, extraTax: r0(t1 - x.taxNow.totalTax) };
+    }
+
+    /**
+     * Everything together. people: household people with { who, name, plan, inputs, salary, realised, exemptionLeft, harvest }.
+     * Returns { levers[] ranked, perPerson, location, business, nonResident, totals }.
+     */
+    function build(state, people, profile, today) {
+      const fy = (people.find((x) => x.plan) || {}).plan ? people.find((x) => x.plan).plan.fy : null;
+      if (!fy) return null;
+      for (const x of people) if (x.plan) x.taxNow = engine.computeTax({ ...planner.inputs(x.inputs).base, regime: x.plan.better, exemptAllowances: x.plan.better === "old" ? planner.inputs(x.inputs).hra : 0, deductions: x.plan.better === "old" ? planner.inputs(x.inputs).oldDed : 0 });
+      const levers = [], perPerson = [];
+      for (const x of people) {
+        if (!x.plan) continue;
+        const rem = x.salary ? x.salary.remainingMonths : 12;
+        const nps = npsByStart(x.inputs, rem), rc = regimeCheck(x.inputs);
+        const wait = waitList(state, x.who, today), losses = lossList(state, x.who, today);
+        perPerson.push({ who: x.who, name: x.name, nps, regime: rc, wait, losses });
+        const first = nps.rows[0];
+        if (first && nps.runRate && nps.runRate.saving >= 3000) levers.push({
+          id: `nps-${x.who}`, who: x.name, kind: "structure", title: `Employer NPS for ${x.name}`, thisYear: first.saving, runRate: nps.runRate.saving,
+          what: `Ask payroll to route ₹${r0(nps.cap / 12).toLocaleString("en-IN")} a month (up to 14% of basic) into NPS from next month: ${inr(first.amount)} this year saves ${inr(first.saving)}; a full year (${inr(nps.runRate.amount)}) saves ${inr(nps.runRate.saving)}. Out of pocket ${inr(nps.runRate.netCost)}, invested for retirement.`,
+          needs: ["Your own NPS account (PRAN)", "Employer must offer the option"], risks: ["Locked until 60 (60% tax-free lump sum, 40% annuity)", "Reduces cash salary"], deadline: "", confidence: "high" });
+        const ltcgLeft = x.exemptionLeft;
+        if (ltcgLeft >= 5000 && x.harvest && x.harvest.picks.length) levers.push({
+          id: `harvest-${x.who}`, who: x.name, kind: "timing", title: `Book ${inr(x.harvest.planned)} of long-term gains tax-free for ${x.name}`, thisYear: 0, runRate: r0(x.harvest.planned * engine.RULES.equity.ltcgAfter / 100 * CESS),
+          what: `Sell and buy back the units listed in Plan before 31 March. It costs nothing in tax now and lowers the tax on those gains later by up to ${inr(x.harvest.planned * engine.RULES.equity.ltcgAfter / 100 * CESS)} (when the units are eventually sold above the free limit).`,
+          needs: ["Check exit loads", "Same-day buy back"], risks: ["Market can move between sell and buy", "Benefit arrives only when you finally sell"], deadline: `${+today.slice(0, 4) + (today.slice(5, 7) >= "04" ? 1 : 0)}-03-31`, confidence: "high" });
+        if (wait.length) levers.push({ id: `wait-${x.who}`, who: x.name, kind: "timing", title: `Hold ${wait.length} lot${wait.length === 1 ? "" : "s"} a little longer for ${x.name}`, thisYear: 0, runRate: wait.reduce((a, w) => a + w.saving, 0),
+          what: `${wait.map((w) => `${w.name} turns long-term on ${w.longTermOn}`).slice(0, 3).join("; ")}. Selling after that date charges 12.5% instead of 20%.`, needs: [], risks: ["Price risk while you wait"], deadline: wait[0].longTermOn, confidence: "high" });
+        if (rc && rc.verdict === "old" && rc.margin > 5000) levers.push({ id: `regime-${x.who}`, who: x.name, kind: "regime", title: `Old regime could beat the new for ${x.name}`, thisYear: rc.margin, runRate: rc.margin, what: `With every deduction claimed the old regime comes to ${inr(rc.oldMax)} against ${inr(rc.newTax)}.`, needs: ["Proofs for each deduction"], risks: ["Employer must be told in April"], deadline: "", confidence: "medium" });
+      }
+      const loc = assetLocation(people, profile);
+      const wifeHead = loc.members.find((m) => m.who === "Wife");
+      const meM = loc.members.find((m) => m.who === "Me");
+      const taxedOther = people.filter((x) => x.plan).map((x) => ({ who: x.who, name: x.name, other: num(x.inputs.otherIncome) }));
+      const meOther = (taxedOther.find((x) => x.who === "Me") || {}).other || 0;
+      if (meM && meM.marginalRate >= 20 && meOther >= 10000) levers.push({ id: "location-income", who: "Both", kind: "family", title: "Earn interest and dividends in the lower-taxed name", thisYear: r0(meOther * meM.marginalRate / 100), runRate: r0(meOther * meM.marginalRate / 100),
+        what: `Your own other income of ${inr(meOther)} is taxed at ${meM.marginalRate}%. ${wifeHead ? `${wifeHead.name} can receive about ${inr(wifeHead.taxFreeHeadroom)} more taxable income before paying any tax. ` : ""}Put new fixed-income investments in her name from her own money, or in a parent's name by a real gift. Money you give her is added back to your income.`,
+        needs: ["Her own savings or her parents' gifts", "Separate account or folio"], risks: ["Clubbing if the money came from you", "A gift to a parent must be real"], deadline: "", confidence: "high" });
+      const bizProfits = [200000, 500000, 1000000];
+      if (profile && num(profile.sideBusinessProfit) > 0) bizProfits.unshift(num(profile.sideBusinessProfit));
+      const business = businessScenarios(people, bizProfits);
+      const nri = people.map(nonResidentCost).filter(Boolean);
+      levers.sort((a, b) => (b.thisYear + b.runRate * 0.5) - (a.thisYear + a.runRate * 0.5));
+      const totals = { thisYear: levers.reduce((a, l) => a + l.thisYear, 0), runRate: levers.reduce((a, l) => a + l.runRate, 0) };
+      return { fy, levers, perPerson, location: loc, business, nonResident: nri, totals };
+    }
+
+    /** Next year's tax if salary grows by growthPct (assumed rules). */
+    function nextYear(x, growthPct) {
+      if (!x.plan) return null;
+      const g = 1 + num(growthPct) / 100, fy = nextFy(x.plan.fy);
+      const p = { ...x.inputs, fy, grossSalary: r0(x.inputs.grossSalary * g), basic: r0(x.inputs.basic * g), hraReceived: r0(x.inputs.hraReceived * g), realisedLtcgYtd: 0, realisedStcgYtd: 0, employerNps: 0, tdsProjected: 0 };
+      const pl = planner.plan(p, "2000-01-01");
+      return { fy, regime: pl.better, tax: pl.regimes[pl.better].tax, levers: pl.levers.slice(0, 3).map((l) => ({ id: l.id, saving: l.yearlySaving })) };
+    }
+
+    return { build, npsByStart, regimeCheck, waitList, lossList, assetLocation, businessScenarios, nonResidentCost, nextYear, taxWith };
   })();
 
   // ════════════════════════════ household ════════════════════════════
@@ -1061,12 +1246,17 @@
         if (!inp) { model.people.push({ who, name: NAMES[who], plan: null, note: "No salary record found for this financial year." }); continue; }
         const plan = planner.plan(inp.plan, today);
         const exemptionLeft = Math.max(0, engine.RULES.equity.exemptionFromFY2425 - Math.max(0, inp.realised.ltcg));
-        model.people.push({ who, name: NAMES[who], salary: inp.salary, realised: inp.realised, plan, exemptionLeft, harvest: exemptionLeft > 1000 ? harvestPlan(state, who, exemptionLeft, today) : null });
+        model.people.push({ who, name: NAMES[who], salary: inp.salary, realised: inp.realised, plan, inputs: inp.plan, exemptionLeft, harvest: exemptionLeft > 1000 ? harvestPlan(state, who, exemptionLeft, today) : null });
       }
       model.returnsAudit = returnsAudit(state, today);
       model.family = (state.taxFamily || []).map((t) => ({ ...t, result: gifts.classifyGift(t, { marriageDate: profile.marriageDate }) }));
       model.departure = departureView(profile.departure, fy);
       model.filing = filingChecklist(profile, fy);
+      try {
+        model.savings = saver.build(state, model.people, profile, today);
+        const growth = profile.salaryGrowthPct != null ? num(profile.salaryGrowthPct) : 8;
+        model.nextYear = { growthPct: growth, people: model.people.map((x) => ({ who: x.who, name: x.name, ...(saver.nextYear(x, growth) || {}) })) };
+      } catch (e) { model.savings = null; model.savingsError = e.message; }
       model.deadlines = deadlines(model, today);
       model.actions = actions(model, state, today);
       model.law = law.lawStatus(today);
@@ -1076,5 +1266,5 @@
     return { build, salaryProjection, salaryFy, personInputs, returnsAudit, deadlines, actions, departureView, harvestPlan, filingChecklist };
   })();
 
-  return { law, engine, remedies, gifts, residency, audit, planner, gains, household };
+  return { law, engine, remedies, gifts, residency, audit, planner, gains, saver, household };
 });

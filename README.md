@@ -146,6 +146,7 @@ The **Tax** page (sidebar → Money → Tax) is a personal Indian income-tax pla
 
 - **Today**: tax this year per person, ranked actions, and the dates that matter.
 - **Plan**: new vs old regime on your real salary records, ways to pay less (employer NPS, tax-free long-term gains and exactly which units to sell and buy back), advance tax, and a move-abroad residency view.
+- **Savings**: the tax-saving engine. Ranked moves with this-year and every-year rupee savings (employer NPS by start month, old vs new regime with everything claimed, who should earn interest and dividends, a side business in each name, timing sales, next year, what a move abroad costs), each computed as the engine's own tax with and without the move.
 - **Returns**: each filed (or unfiled) year checked against its documents, what correcting it costs (revised return, updated return), and the July filing checklist.
 - **Family money**: gifts, loans and deposits between family members, using the marriage date.
 - **Rules**: every rule the page relies on, its source and how sure we are. A monthly scheduled check looks for changes.

@@ -15,7 +15,7 @@
   const prettyDate = (iso) => { if (!iso) return "—"; const d = new Date(iso + "T00:00:00Z"); return isNaN(d) ? iso : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }); };
   const uid = (p) => `${p}-${(crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2) + Date.now())}`;
   const NAMES = { Me: "Prafful", Wife: "Archana" };
-  const TABS = [["today", "Today"], ["plan", "Plan"], ["returns", "Returns"], ["family", "Family money"], ["rules", "Rules"], ["data", "Data"]];
+  const TABS = [["today", "Today"], ["plan", "Plan"], ["savings", "Savings"], ["returns", "Returns"], ["family", "Family money"], ["rules", "Rules"], ["data", "Data"]];
   let tab = "today";
   let model = null;
 
@@ -107,6 +107,44 @@
         <label class="tax-field"><span>Days you would be in India the year after</span><input type="number" min="0" max="365" data-tax-dep="visitDays" value="${esc(dep.visitDays != null ? dep.visitDays : "")}" placeholder="30" /></label></div>${depHtml}</section>`;
   }
 
+  // ── Savings ─────────────────────────────────────────────────────────────────────────────
+  const KIND = { structure: "Salary", timing: "Timing", regime: "Regime", family: "Family", business: "Business" };
+  function viewSavings(m) {
+    const S = m.savings;
+    if (!S) return `<section class="panel tax-panel"><div class="prot-empty">The savings plan needs a salary record for this year.</div></section>`;
+    const p = profile();
+    const lev = S.levers.length ? S.levers.map((l) => `<div class="tax-finding"><div class="tax-ftitle">${chip("good", KIND[l.kind] || l.kind)} <b>${esc(l.title)}</b></div>
+        <div class="tax-money"><div><span>This year</span><b>${inr(l.thisYear)}</b></div><div><span>Every year</span><b>${inr(l.runRate)}</b></div></div>
+        <div class="prot-sub">${esc(l.what)}</div>
+        ${l.needs.length ? `<div class="prot-sub"><b>You need:</b> ${esc(l.needs.join("; "))}</div>` : ""}${l.risks.length ? `<div class="prot-sub"><b>Watch for:</b> ${esc(l.risks.join("; "))}</div>` : ""}${l.deadline ? `<div class="prot-sub"><b>By:</b> ${esc(prettyDate(l.deadline))}</div>` : ""}</div>`).join("") : `<div class="prot-empty">No lever is worth acting on right now.</div>`;
+    const nps = S.perPerson.filter((x) => x.nps.rows.length && x.nps.runRate.saving > 0).map((x) => `<div class="tax-sub"><h4 class="tax-h">${esc(x.name)}: employer NPS by start month</h4>
+        <div class="tax-table"><div class="tax-tr tax-th"><span>Starts</span><span>Months</span><span>Put in</span><span>Tax saved</span><span>Out of pocket</span></div>
+        ${x.nps.rows.map((r) => `<div class="tax-tr"><span>in ${r.startsInMonths} month${r.startsInMonths === 1 ? "" : "s"}</span><span>${r.months}</span><span>${inr(r.amount)}</span><span><b>${inr(r.saving)}</b></span><span>${inr(r.netCost)}</span></div>`).join("")}
+        <div class="tax-tr"><span><b>Full year</b></span><span>12</span><span>${inr(x.nps.runRate.amount)}</span><span><b>${inr(x.nps.runRate.saving)}</b></span><span>${inr(x.nps.runRate.netCost)}</span></div></div></div>`).join("");
+    const reg = S.perPerson.map((x) => { const r = x.regime; if (!r) return ""; return `<div class="tax-sub"><h4 class="tax-h">${esc(x.name)}: old or new regime</h4>
+        <div class="tax-compare"><div><span>New regime</span><b>${inr(r.newTax)}</b><small>nothing to claim</small></div><div><span>Old, as entered</span><b>${inr(r.oldNow)}</b><small>deductions ${inr(r.counted)}</small></div><div><span>Old, everything claimed</span><b>${inr(r.oldMax)}</b><small>deductions ${inr(r.maxDeductions)} + HRA ${inr(r.hra)}</small></div></div>
+        <p class="prot-sub">${r.margin < 500 ? "Both regimes cost about the same, so the simpler new regime is the one to keep." : r.verdict === "new" ? `The new regime wins by ${inr(r.margin)} even if every old-regime deduction were claimed. The old regime would need about ${inr(r.breakevenExtra)} more deductions than you have entered to match it.` : `With every deduction claimed the old regime wins by ${inr(r.margin)}. Tell your employer in April.`}</p></div>`; }).join("");
+    const loc = S.location;
+    const locHtml = `<div class="tax-table"><div class="tax-tr tax-th tax-3"><span>Whose name</span><span>Tax on extra income</span><span>Tax-free room left</span></div>${loc.members.map((x) => `<div class="tax-tr tax-3"><span>${esc(x.name)}</span><span>${x.marginalRate}%</span><span>${inr(x.taxFreeHeadroom)}</span></div>`).join("")}</div>
+      <p class="prot-sub">Each ₹1 lakh of interest or dividends earned in the lowest-taxed name saves up to ${inr(loc.savingPerLakh)} a year. ${esc(loc.note)}</p>`;
+    const biz = `<div class="tax-fields"><label class="tax-field"><span>Expected side-business profit per year (₹)</span><input type="number" min="0" step="10000" data-tax-num="sideBusinessProfit" value="${esc(num(p.sideBusinessProfit) || "")}" placeholder="500000" /></label></div>
+      <div class="tax-table"><div class="tax-tr tax-th tax-4"><span>Profit</span>${S.business[0] ? S.business[0].owners.map((o) => `<span>Tax if ${esc(o.name)} earns it</span>`).join("") : ""}<span>Saved</span></div>
+      ${S.business.map((b) => `<div class="tax-tr tax-4"><span>${inr(b.profit)}</span>${b.owners.map((o) => `<span>${inr(o.extraTax)}</span>`).join("")}<span><b>${inr(b.saving)}</b></span></div>`).join("")}</div>
+      <p class="prot-sub">Run it in the lower-taxed spouse's name only if she really does the work and the capital is hers: income from money you gave her, or from a business where you are employed, is added back to you (sec 64). Check the GST threshold (₹20L for services) and advance tax, and ask a CA about the presumptive scheme (44ADA for professionals, 44AD for trading).</p>`;
+    const timing = S.perPerson.map((x) => `${x.wait.length ? `<div class="tax-sub"><h4 class="tax-h">${esc(x.name)}: wait for long-term</h4>${x.wait.map((w) => `<div class="prot-check"><div><b>${esc(w.name)}</b><div class="prot-sub">Turns long-term on ${esc(prettyDate(w.longTermOn))} (${w.inDays} days)</div></div><div class="prot-check-right"><b>${inr(w.saving)}</b><span class="prot-sub">saved by waiting</span></div></div>`).join("")}</div>` : ""}${x.losses.length ? `<div class="tax-sub"><h4 class="tax-h">${esc(x.name)}: holdings below cost</h4>${x.losses.slice(0, 5).map((w) => `<div class="prot-check"><div><b>${esc(w.name)}</b><div class="prot-sub">${w.term}-term loss of ${inr(w.loss)} (worth ${inr(w.valueNow)} now)</div></div><div class="prot-check-right"><b>${inr(w.futureSaving)}</b><span class="prot-sub">off future gains</span></div></div>`).join("")}<p class="prot-sub">Booking a loss carries it forward 8 years against future gains, only if each return is filed on time. Sell only if you would sell anyway.</p></div>` : ""}`).join("");
+    const abroad = S.nonResident.filter((x) => x.extraTax > 0).map((x) => `${esc(x.name)}: about ${inr(x.extraTax)} more tax a year, because the ₹12 lakh rebate is for residents only`).join("; ");
+    const next = m.nextYear ? `<div class="tax-compare">${m.nextYear.people.filter((x) => x.tax != null).map((x) => `<div><span>${esc(x.name)} · FY ${esc(x.fy)}</span><b>${inr(x.tax)}</b><small>${esc(x.regime)} regime, salary up ${m.nextYear.growthPct}%</small></div>`).join("")}</div>
+      <div class="tax-fields"><label class="tax-field"><span>Expected yearly salary rise (%)</span><input type="number" min="0" max="60" step="1" data-tax-num="salaryGrowthPct" value="${esc(m.nextYear.growthPct)}" /></label></div>` : "";
+    return `<div class="prot-summary"><div class="prot-stat"><span>Could save this year</span><b>${inr(S.totals.thisYear)}</b><small>${S.levers.length} move${S.levers.length === 1 ? "" : "s"}, ranked below</small></div><div class="prot-stat"><span>Every year after</span><b>${inr(S.totals.runRate)}</b><small>once set up</small></div><div class="prot-stat"><span>Tax year</span><b>${esc(m.fy)}</b><small>return due 31 Jul ${+m.fy.slice(0, 4) + 1}</small></div></div>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>The moves, biggest first</h3><p>Each figure is the tax engine's own tax with and without the move.</p></div></div>${lev}</section>
+      ${nps ? `<section class="panel tax-panel"><div class="panel-header"><div><h3>Employer NPS</h3><p>The one large deduction that works in the new regime. Starting later saves less this year.</p></div></div>${nps}</section>` : ""}
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>Old or new regime</h3><p>With everything you could claim.</p></div></div>${reg}</section>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>Who should earn the interest and dividends</h3></div></div>${locHtml}</section>
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>If you start a side business</h3><p>The same profit taxed in each name.</p></div></div>${biz}</section>
+      ${timing ? `<section class="panel tax-panel"><div class="panel-header"><div><h3>Timing your sales</h3></div></div>${timing}</section>` : ""}
+      <section class="panel tax-panel"><div class="panel-header"><div><h3>Next year</h3><p>Planning for FY ${esc(m.nextYear ? m.nextYear.people[0].fy : "")}, on the assumption that the rules stay the same.</p></div></div>${next}${abroad ? `<p class="prot-sub"><b>If a move abroad makes someone a non-resident:</b> ${abroad}.</p>` : ""}</section>`;
+  }
+
   // ── Returns ──────────────────────────────────────────────────────────────────────────────
   function remedyHtml(r) {
     if (!r.remedy) return `<div class="prot-sub">Nothing to correct.</div>`;
@@ -177,11 +215,11 @@
     const m = compute();
     if (!m) { root.innerHTML = `<section class="panel tax-panel"><div class="prot-empty">The tax page could not be built. Open the console for details.</div></section>`; return; }
     const tabs = `<div class="tax-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" class="tax-tab${k === tab ? " active" : ""}" aria-selected="${k === tab}" data-tax-tab="${k}">${l}</button>`).join("")}</div>`;
-    const body = { today: viewToday, plan: viewPlan, returns: viewReturns, family: viewFamily, rules: viewRules, data: viewData }[tab](m);
+    const body = { today: viewToday, plan: viewPlan, savings: viewSavings, returns: viewReturns, family: viewFamily, rules: viewRules, data: viewData }[tab](m);
     const focus = document.activeElement && root.contains(document.activeElement) ? document.activeElement : null;
-    const key = focus && (focus.dataset.taxField || focus.dataset.taxDed || focus.dataset.taxFlag || focus.dataset.taxDep) ? [focus.dataset.taxField || focus.dataset.taxDed || focus.dataset.taxFlag || focus.dataset.taxDep, focus.dataset.who || ""] : null;
+    const key = focus && (focus.dataset.taxField || focus.dataset.taxDed || focus.dataset.taxFlag || focus.dataset.taxDep || focus.dataset.taxNum) ? [focus.dataset.taxField || focus.dataset.taxDed || focus.dataset.taxFlag || focus.dataset.taxDep || focus.dataset.taxNum, focus.dataset.who || ""] : null;
     root.innerHTML = tabs + body + note();
-    if (key) { const sel = `[data-tax-field="${key[0]}"][data-who="${key[1]}"],[data-tax-ded="${key[0]}"][data-who="${key[1]}"],[data-tax-flag="${key[0]}"],[data-tax-dep="${key[0]}"]`; const el = root.querySelector(sel); if (el && el.tagName === "INPUT") { try { el.focus(); } catch { /* ignore */ } } }
+    if (key) { const sel = `[data-tax-field="${key[0]}"][data-who="${key[1]}"],[data-tax-ded="${key[0]}"][data-who="${key[1]}"],[data-tax-flag="${key[0]}"],[data-tax-dep="${key[0]}"],[data-tax-num="${key[0]}"]`; const el = root.querySelector(sel); if (el && el.tagName === "INPUT") { try { el.focus(); } catch { /* ignore */ } } }
   }
 
   // ── events ───────────────────────────────────────────────────────────────────────────────
@@ -191,6 +229,7 @@
     if (t.dataset.taxField) { setNested(p, t.dataset.taxField, t.dataset.who, num(t.value)); }
     else if (t.dataset.taxDed) { p.deductionsPaid = p.deductionsPaid || {}; p.deductionsPaid[t.dataset.who] = p.deductionsPaid[t.dataset.who] || {}; p.deductionsPaid[t.dataset.who][t.dataset.taxDed] = num(t.value); }
     else if (t.dataset.taxFlag) { p[t.dataset.taxFlag] = t.dataset.taxFlag === "parentsSenior" ? t.value === "1" : t.value; }
+    else if (t.dataset.taxNum) { p[t.dataset.taxNum] = num(t.value); }
     else if (t.dataset.taxDep) { p.departure = p.departure || {}; p.departure[t.dataset.taxDep] = t.dataset.taxDep === "visitDays" ? num(t.value) : t.value; }
     else if (t.id === "taxImportFile") { importFile(t.files && t.files[0]); t.value = ""; return; }
     else return;

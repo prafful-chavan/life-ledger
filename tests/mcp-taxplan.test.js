@@ -16,4 +16,5 @@ assert.ok(p.returns.some((r) => r.person === "Prafful" && r.correction && r.corr
 const text = JSON.stringify(p);
 assert.ok(!/private note/.test(text), "family-money notes are not included");
 assert.ok(p.deadlines.every((d) => d.inDays >= 0 && d.inDays <= 120));
+assert.ok(p.savings && p.savings.topMoves.every((x) => x.move && Number.isFinite(x.thisYear)), "the saving moves are in the daily pack");
 console.log("mcp tax plan tests passed");

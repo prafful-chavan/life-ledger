@@ -203,13 +203,19 @@ const SCANNER = `(${function scan() {
     await view("tax");
     await sleep(900);
     const tax = JSON.parse(await cdp.eval(`(()=>{const b=document.getElementById('taxBody'); return JSON.stringify({tabs:[...b.querySelectorAll('.tax-tab')].map(t=>t.innerText), text:b.innerText, stats:b.querySelectorAll('.prot-stat').length})})()`));
-    check("tax page shows its six tabs and the two people", tax.tabs.join(",") === "Today,Plan,Returns,Family money,Rules,Data" && tax.stats >= 2 && /Prafful/.test(tax.text) && /Archana/.test(tax.text), JSON.stringify(tax.tabs));
+    check("tax page shows its seven tabs and the two people", tax.tabs.join(",") === "Today,Plan,Savings,Returns,Family money,Rules,Data" && tax.stats >= 2 && /Prafful/.test(tax.text) && /Archana/.test(tax.text), JSON.stringify(tax.tabs));
     check("tax page lists what to do next, including a user checklist item", /What to do next/.test(tax.text) && /Make a will/.test(tax.text), tax.text.slice(0, 300));
     await cdp.eval(`document.querySelector('[data-tax-tab="plan"]').click()`); await sleep(300);
     const plan = await cdp.eval(`document.getElementById('taxBody').innerText`);
     check("plan compares both regimes with rupee amounts", /new regime/i.test(plan) && /old regime/i.test(plan) && /ways to pay less/i.test(plan) && /₹[\d,]+/.test(plan), plan.slice(0, 300));
     await cdp.eval(`(()=>{const i=document.querySelector('[data-tax-field="employerNps"][data-who="Me"]'); i.value='120000'; i.dispatchEvent(new Event('change',{bubbles:true})); return 0})()`); await sleep(400);
     check("changing an input saves it to the vault state", (await cdp.eval(`LifeLedgerApp.getState().taxProfile.employerNps.Me`)) === 120000);
+    await cdp.eval(`document.querySelector('[data-tax-tab="savings"]').click()`); await sleep(400);
+    const sav = await cdp.eval(`document.getElementById('taxBody').innerText`);
+    check("savings tab ranks moves with this-year and every-year amounts", /could save this year/i.test(sav) && /the moves, biggest first/i.test(sav) && /this year/i.test(sav) && /every year/i.test(sav), JSON.stringify(sav.slice(0, 400)));
+    check("savings tab compares regimes, family income, side business and next year", /old or new regime/i.test(sav) && /who should earn/i.test(sav) && /side business/i.test(sav) && /next year/i.test(sav));
+    await cdp.eval(`(()=>{const i=document.querySelector('[data-tax-num="sideBusinessProfit"]'); i.value='300000'; i.dispatchEvent(new Event('change',{bubbles:true})); return 0})()`); await sleep(500);
+    check("a side-business profit is saved and shown in the table", (await cdp.eval(`LifeLedgerApp.getState().taxProfile.sideBusinessProfit`)) === 300000 && /₹3,00,000/.test(await cdp.eval(`document.getElementById('taxBody').innerText`)));
     await cdp.eval(`document.querySelector('[data-tax-tab="returns"]').click()`); await sleep(300);
     const rets = await cdp.eval(`document.getElementById('taxBody').innerText`);
     check("returns tab flags the unsupported claims and the unfiled year", /Exempt allowances above Form 16/i.test(rets) && /Employer NPS \(80CCD\(2\)\) without an NPS contribution/i.test(rets) && /No return filed/.test(rets), rets.slice(0, 400));
@@ -233,7 +239,7 @@ const SCANNER = `(${function scan() {
     if (process.env.TAX_SHOTS) {   // optional: save pictures of the tax page (made-up data) for a visual check
       for (const [w, h, label] of [[1280, 1000, "desktop"], [430, 932, "phone"]]) {
         await viewport(w, h); await sleep(500);
-        for (const t of ["today", "plan", "returns", "family"]) {
+        for (const t of ["today", "plan", "savings", "returns", "family"]) {
           await cdp.eval(`document.querySelector('[data-tax-tab="${t}"]').click()`); await sleep(400);
           const shot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
           fs.writeFileSync(path.join(process.env.TAX_SHOTS, `tax-${t}-${label}.png`), Buffer.from(shot.data, "base64"));
