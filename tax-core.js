@@ -998,7 +998,7 @@
       const meM = loc.members.find((m) => m.who === "Me");
       const taxedOther = people.filter((x) => x.plan).map((x) => ({ who: x.who, name: x.name, other: num(x.inputs.otherIncome) }));
       const meOther = (taxedOther.find((x) => x.who === "Me") || {}).other || 0;
-      if (meM && meM.marginalRate >= 20 && meOther >= 10000) levers.push({ id: "location-income", who: "Both", kind: "family", title: "Earn interest and dividends in the lower-taxed name", thisYear: r0(meOther * meM.marginalRate / 100), runRate: r0(meOther * meM.marginalRate / 100),
+      if (meM && meM.marginalRate >= 20 && meOther >= 10000) levers.push({ id: "location-income", who: "Both", kind: "family", title: "Earn interest and dividends in the lower-taxed name", thisYear: r0(meOther * meM.marginalRate / 100 * Math.min(12, ((people.find((x) => x.who === "Me") || {}).salary || {}).remainingMonths || 12) / 12), runRate: r0(meOther * meM.marginalRate / 100),
         what: `Your own other income of ${inr(meOther)} is taxed at ${meM.marginalRate}%. ${wifeHead ? `${wifeHead.name} can receive about ${inr(wifeHead.taxFreeHeadroom)} more taxable income before paying any tax. ` : ""}Put new fixed-income investments in her name from her own money, or in a parent's name by a real gift. Money you give her is added back to your income.`,
         needs: ["Her own savings or her parents' gifts", "Separate account or folio"], risks: ["Clubbing if the money came from you", "A gift to a parent must be real"], deadline: "", confidence: "high" });
       const bizProfits = [200000, 500000, 1000000];
