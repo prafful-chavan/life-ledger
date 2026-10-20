@@ -4698,6 +4698,18 @@ function buildAdvisorInput() {
     });
   });
 
+  // Market classes are valued the way Finance shows them: a class locked at its official close keeps that value
+  // (not a pre-market quote or a newer exchange rate), so the Advisor's total and shares match the net worth.
+  try {
+    const snap = getNetWorthSummary().snapshot;
+    [["mf", "mutualFunds"], ["stock", "stocks"], ["us", "usStocks"], ["gold", "gold"]].forEach(([cls, key]) => {
+      const rows = holdings.filter((h) => h.cls === cls), live = rows.reduce((t, h) => t + h.value, 0), target = toNumber(snap && snap[key]);
+      // Only a small drift is a pricing difference; anything larger means the holdings themselves differ, so leave it.
+      if (!(live > 0 && target > 0) || Math.abs(target / live - 1) > 0.05) return;
+      rows.forEach((h) => { h.value *= target / live; });
+    });
+  } catch (e) { console.warn("[advisor] net worth snapshot unavailable:", e); }
+
   // Cash flow: average of the last 6 complete months
   const [cy, cm] = now.split("-").map(Number);
   const months = [];
@@ -8923,6 +8935,7 @@ function buildTodaySnapshot(options = {}) {
   const asOf = {};
   const fxNow = getUsdInrRate();
   const sigNow = holdingsSignature();
+  let usKeptLocked = false;
   NWH_MARKET_CLASSES.forEach((cls) => {
     const live = dayChangeMetrics.classes[cls];
     const liveSettled = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
@@ -8945,11 +8958,21 @@ function buildTodaySnapshot(options = {}) {
       changes[cls] = toNumber(prevChanges[cls]);
       asOf[cls] = prevAsOf[cls] || '';
       settled[cls] = true;
+      if (cls === 'usStocks') usKeptLocked = true;
       return;
     }
     changes[cls] = live.held && live.hasChange ? Number(live.change.toFixed(2)) : 0;
     settled[cls] = liveSettled;
     asOf[cls] = live.fetchedAt ? new Date(live.fetchedAt).toISOString() : '';
+  });
+
+  // A session already counted in the previous day's record (no new NAV or close since: same value, same move)
+  // is not today's market move. Mutual funds before the evening NAV and weekends are the usual cases.
+  const prevRecord = (state.netWorthHistory || []).filter((e) => e.date < today).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  if (prevRecord) NWH_MARKET_CLASSES.forEach((cls) => {
+    const c = toNumber(changes[cls]), pc = toNumber(prevRecord.changes && prevRecord.changes[cls]);
+    const v = toNumber(breakdown[cls]), pv = toNumber(prevRecord[cls]);
+    if (c && pv > 0 && Math.abs(v / pv - 1) < 0.0005 && Math.abs(c - pc) <= Math.max(50, Math.abs(pc) * 0.01)) changes[cls] = 0;
   });
 
   // Totals recomputed so locked classes and live classes add up consistently
@@ -8989,7 +9012,8 @@ function buildTodaySnapshot(options = {}) {
     bankSaving: breakdown.bankSaving,
     others: breakdown.others,
     liabilities: breakdown.liabilities,
-    fxRate: fxNow,
+    // The rate the US value was computed with: while it stays locked, the rate of the lock (so a later move is noticed)
+    fxRate: usKeptLocked && toNumber(existing?.fxRate) > 0 ? toNumber(existing.fxRate) : fxNow,
     holdSig: sigNow,
     source: options.source || "daily"
   };
@@ -9531,7 +9555,12 @@ async function finalizeRecentNetWorthDays(opts = {}) {
         return;
       }
       next[c] = rebuilt;
-      changes[c] = r.changes[c];
+      // The same close as the previous day's record (a weekend or holiday, or no new NAV yet): that session's move
+      // was counted there already, so it is not this day's change.
+      const prevRow = state.netWorthHistory.filter((e) => e.date < row.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      const prevClose = prevRow && prevRow.audit && prevRow.audit.closes ? prevRow.audit.closes[c] : '';
+      const sameValue = prevRow && toNumber(prevRow[c]) > 0 && Math.abs(rebuilt / toNumber(prevRow[c]) - 1) < 0.0005;
+      changes[c] = prevClose && r.asOf[c] && prevClose === r.asOf[c] && sameValue ? 0 : r.changes[c];
       settled[c] = r.settled[c];
       closes[c] = r.asOf[c] || '';
       if (r.estimated[c] && r.estimated[c].length) estimatedHoldings.push(...r.estimated[c].map((k) => `${NWH_CLASS_LABELS[c]}: ${k}`));
@@ -12548,8 +12577,11 @@ function renderExerciseView() {
 
   // Days in month
   const daysInMonth = new Date(activeExerciseYear, activeExerciseMonth + 1, 0).getDate();
-  const avgDailySteps = Math.round(totalSteps / daysInMonth);
-  const avgDailyCalories = Math.round(totalCalories / daysInMonth);
+  // The month in progress averages over the days so far, not the whole month
+  const [tY, tM, tD] = istTodayISO().split("-").map(Number);
+  const daysCounted = tY === activeExerciseYear && tM === activeExerciseMonth + 1 ? tD : daysInMonth;
+  const avgDailySteps = Math.round(totalSteps / daysCounted);
+  const avgDailyCalories = Math.round(totalCalories / daysCounted);
   const avgCyclingSpeed = cyclingDurationMin > 0 ? (totalCyclingKm / (cyclingDurationMin / 60)).toFixed(1) : "0";
   const stepKmApprox = walkKm.toFixed(1);
 
@@ -13846,7 +13878,8 @@ function renderHabitsView() {
         return hDate && hDate.getFullYear() === now.getFullYear() && hDate.getMonth() === now.getMonth();
       }).length;
       
-      const monthRate = Math.round((thisMonthCompletions / daysInMonth) * 100);
+      // Rate over the days of the month so far (a full month would make every habit look behind until the 31st)
+      const monthRate = Math.round((thisMonthCompletions / Math.max(1, Math.min(daysInMonth, now.getDate()))) * 100);
       const todayStr = todayISO();
 
       card.innerHTML = `

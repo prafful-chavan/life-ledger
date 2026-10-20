@@ -41,6 +41,19 @@ assert.strictEqual(chg.marketLikeMoves, 0);
 assert.ok(!("mutualFunds" in chg.byClass), "unchanged classes are left out");
 assert.strictEqual(A.netWorth(state()).changeVsPrevious, undefined, "no history, no comparison");
 
+// A class the app locked at today's close keeps the locked value (same net worth as the app); a what-if rate does not
+{
+  const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+  const sl = state();
+  sl.netWorthHistory = [{ date: today, usStocks: 120 * 91, stocks: 999999, settled: { usStocks: true, stocks: false } }];
+  const l = A.netWorth(sl);
+  assert.strictEqual(l.classes.usStocks.value, 120 * 91, "locked US value used");
+  assert.deepStrictEqual(l.lockedAtClose, ["usStocks"], "an unlocked class stays live");
+  assert.strictEqual(A.netWorth(sl, 100).classes.usStocks.value, 120 * 100, "an explicit rate is a what-if, not the lock");
+  sl.netWorthHistory[0].usStocks = 120 * 200;
+  assert.strictEqual(A.netWorth(sl).classes.usStocks.value, 120 * 90, "a lock far from the holdings (rows changed) is ignored");
+}
+
 
 // Integrity: bulk duplicate rows and unexplained jumps are caught; normal data is quiet
 {

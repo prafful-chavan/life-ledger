@@ -236,7 +236,14 @@
     const isCurrentMonth = (d) => d && d.startsWith(currentMonth);
 
     // ── Income summary ──
-    const monthIncome = state.income.filter(i => isCurrentMonth(i.date));
+    // Salary is credited at the end of a month and pays for the NEXT month's spending, so when nothing has come in
+    // this month yet, the latest month's salary is set against this month's spending (the dashboard's rule).
+    let monthIncome = state.income.filter(i => isCurrentMonth(i.date));
+    let incomeLabel = "";
+    if (!monthIncome.length) {
+      const latestKey = state.income.map(i => String(i.date || "").slice(0, 7)).filter(k => /^\d{4}-\d{2}$/.test(k) && k < currentMonth).sort().pop();
+      if (latestKey) { monthIncome = state.income.filter(i => String(i.date || "").startsWith(latestKey)); incomeLabel = latestKey; }
+    }
     const totalIncome = sumField(state.income, "amount");
     const monthIncomeTotal = sumField(monthIncome, "amount");
 
@@ -458,7 +465,7 @@
   Total Liabilities: ${formatINR(totalLiabilities)}
 
 💰 THIS MONTH (${currentMonth})
-  Income: ${formatINR(monthIncomeTotal)} (${monthIncome.length} entries)
+  Income: ${formatINR(monthIncomeTotal)} (${monthIncome.length} entries${incomeLabel ? `; nothing credited yet this month, so this is the ${incomeLabel} salary, which pays for this month's spending` : ""})
   Expenses: ${formatINR(monthExpenseTotal)} (${monthExpenses.length} entries)
   Surplus/Deficit: ${formatINR(monthIncomeTotal - monthExpenseTotal)}
   Savings Rate: ${savingsRate}%

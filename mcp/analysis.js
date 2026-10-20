@@ -53,9 +53,16 @@ function netWorth(state, fxOverride) {
     bankSaving: sum(state.banksaving, (x) => x.value),
     others: sum(state.others, (x) => x.value) + sum(state.vehicles, (x) => x.value),
   };
+  // A market class the app locked at its official close today keeps that value (the app's net worth does the same,
+  // so a pre-market quote or a later exchange rate never makes the email and the app disagree). Not for a what-if rate.
+  const todayRec = fxOverride ? null : (state.netWorthHistory || []).find((h) => h.date === isoDay(Date.now() + 5.5 * 3600000));   // the app dates records in IST
+  const locked = [];
+  if (todayRec && todayRec.settled) for (const k of ["mutualFunds", "stocks", "usStocks", "gold"]) {
+    if (todayRec.settled[k] && num(todayRec[k]) > 0 && cls[k] > 0 && Math.abs(num(todayRec[k]) / cls[k] - 1) < 0.05) { cls[k] = num(todayRec[k]); locked.push(k); }
+  }
   const assets = Object.values(cls).reduce((s, v) => s + v, 0);
   const liabilities = sum(state.liabilities, (x) => x.value);
-  const out = { fxUsdInr: fx, assets: r0(assets), liabilities: r0(liabilities), netWorth: r0(assets - liabilities), classes: {} };
+  const out = { fxUsdInr: fx, lockedAtClose: locked, assets: r0(assets), liabilities: r0(liabilities), netWorth: r0(assets - liabilities), classes: {} };
   for (const [k, v] of Object.entries(cls)) out.classes[k] = { value: r0(v), sharePct: pct(v, assets) };
   const hist = (state.netWorthHistory || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
   out.history = hist.slice(-30).map((h) => ({ date: h.date, netWorth: r0(num(h.netWorth)) }));

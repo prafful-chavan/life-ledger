@@ -166,3 +166,16 @@ console.log("salary pattern tests passed");
   assert.deepStrictEqual(H.evidenceFromRecords(st, "Wife", "2024-25").evidence, {}, "nothing is invented when there is no record");
 }
 console.log("evidence prefill tests passed");
+
+// Form: capital losses carried from an earlier return need ITR-2 (ITR-1 cannot carry them)
+{
+  const inc = ["2026-04-30", "2026-05-31", "2026-06-30"].map((d) => ({ id: "w" + d, person: "Wife", date: d, type: "Salary", grossEarnings: 60000, basicSalary: 30000, amount: 56000 }));
+  const lossRet = { id: "taxr-2025-26-Wife", fy: "2025-26", person: "Wife", filed: { form: "ITR-2", regime: "new", grossSalary: 300000, gains: { stcgAfter: -12000 } }, evidence: {} };
+  const plain = H.build({ income: inc, taxProfile: {} }, "2026-10-20").people.find((x) => x.who === "Wife");
+  const withLoss = H.build({ income: inc, taxProfile: {}, taxReturns: [lossRet] }, "2026-10-20").people.find((x) => x.who === "Wife");
+  assert.strictEqual(plain.plan.form, "ITR-1", "salary only: ITR-1");
+  assert.strictEqual(withLoss.plan.form, "ITR-2", "losses brought forward: ITR-2");
+  const old = H.build({ income: inc, taxProfile: {}, taxReturns: [{ ...lossRet, fy: "2016-17" }] }, "2026-10-20").people.find((x) => x.who === "Wife");
+  assert.strictEqual(old.plan.form, "ITR-1", "a loss older than 8 years no longer counts");
+}
+console.log("form tests passed");

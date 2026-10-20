@@ -28,4 +28,15 @@ assert.ok(official.includes("Stocks: ₹75,00,000"), "uses the app's class value
 global.window = { LifeLedgerApp: { getNetWorthSnapshot: () => { throw new Error("x"); } } };
 assert.ok(AI.buildDataContext(state).includes("Net Worth:"), "falls back when the app figure is unavailable");
 delete global.window;
+// Salary-cycle rule: no income yet this month -> the latest month's salary is set against this month's spending
+{
+  const d = new Date(), ym = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+  const cur = ym(d.getFullYear(), d.getMonth() + 1), pd = new Date(d.getFullYear(), d.getMonth() - 1, 15), prev = ym(pd.getFullYear(), pd.getMonth() + 1);
+  const s = { ...state, income: [{ date: `${prev}-28`, amount: 200000, person: "Me" }, { date: `${prev}-30`, amount: 50000, person: "Wife" }], expenses: [{ date: `${cur}-05`, amount: 100000, category: "Rent" }] };
+  const ctx = AI.buildDataContext(s);
+  assert.ok(ctx.includes("Income: ₹2,50,000") && ctx.includes(`${prev} salary, which pays for this month's spending`), "latest salary used: " + ctx.slice(ctx.indexOf("THIS MONTH"), ctx.indexOf("THIS MONTH") + 260));
+  assert.ok(ctx.includes("Savings Rate: 60%"), "savings rate from that salary");
+  const withNow = AI.buildDataContext({ ...s, income: [...s.income, { date: `${cur}-01`, amount: 10, person: "Me" }] });
+  assert.ok(withNow.includes("Income: ₹10 (1 entries)"), "income credited this month is used as is");
+}
 console.log("ai-context tests passed");

@@ -651,7 +651,7 @@
    *
    * p = { fy, person, grossSalary, basic, hraReceived, rentPaid, metro, professionalTax, otherIncome, employerNps (current),
    *       gains: { stcgAfter, ltcgAfter } (further gains expected), realisedLtcgYtd / realisedStcgYtd (already booked this year), deductionsPaid: { "80C", "80D_self", "80D_parents", "80CCD1B", homeLoanInterest },
-   *       parentsSenior, tdsProjected, hasForeignAssets, hasShareSales }
+   *       parentsSenior, tdsProjected, hasForeignAssets, hasShareSales, hasLossesBroughtForward }
    */
   const E = engine;
   const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
@@ -685,7 +685,7 @@
     }
     // Long-term gains harvesting (₹1.25L exemption, 12.5%)
     const exemptionLeft = Math.max(0, E.RULES.equity.exemptionFromFY2425 - Math.max(0, num(p.realisedLtcgYtd)));
-    if (exemptionLeft > 0) levers.push({ id: "ltcg-harvest", title: `Book ₹${exemptionLeft.toLocaleString("en-IN")} more of long-term equity gains tax-free`, yearlySaving: r0(exemptionLeft * E.RULES.equity.ltcgAfter / 100 * 1.04), detail: `${num(p.realisedLtcgYtd) > 0 ? `₹${r0(p.realisedLtcgYtd).toLocaleString("en-IN")} of the ₹1.25L exemption is already used this year. ` : ""}Sell and buy back the same day before 31 March; resets your cost so future tax is lower. Leave out funds with exit loads.` });
+    if (exemptionLeft > 0) levers.push({ id: "ltcg-harvest", title: `Book ₹${r0(exemptionLeft).toLocaleString("en-IN")} more of long-term equity gains tax-free`, yearlySaving: r0(exemptionLeft * E.RULES.equity.ltcgAfter / 100 * 1.04), detail: `${num(p.realisedLtcgYtd) > 0 ? `₹${r0(p.realisedLtcgYtd).toLocaleString("en-IN")} of the ₹1.25L exemption is already used this year. ` : ""}Sell and buy back the same day before 31 March; resets your cost so future tax is lower. Leave out funds with exit loads.` });
     // Holding period
     if (num(p.gains?.stcgAfter) > 0) levers.push({ id: "hold-12m", title: "Hold equity 12+ months", yearlySaving: r0(num(p.gains.stcgAfter) * (E.RULES.equity.stcgAfter - E.RULES.equity.ltcgAfter) / 100 * 1.04), detail: "Short-term 20% vs long-term 12.5% (first ₹1.25L free)." });
     for (let i = levers.length - 1; i >= 0; i--) if (!(levers[i].yearlySaving > 0)) levers.splice(i, 1);
@@ -695,7 +695,7 @@
     const shortfall = current.totalTax - num(p.tdsProjected);
     const advance = shortfall > 10000 ? [[`${fyStart}-06-15`, 15], [`${fyStart}-09-15`, 45], [`${fyStart}-12-15`, 75], [`${fyStart + 1}-03-15`, 100]].map(([date, pct]) => ({ date, cumulativePct: pct, cumulativeAmount: r0(shortfall * pct / 100) })) : [];
 
-    const form = p.hasForeignAssets || p.hasShareSales || num(p.grossSalary) > 50 * 1e5 ? "ITR-2" : "ITR-1";
+    const form = p.hasForeignAssets || p.hasShareSales || p.hasLossesBroughtForward || num(p.grossSalary) > 50 * 1e5 ? "ITR-2" : "ITR-1";
     const calendar = [
       { date: `${fyStart}-04-30`, what: "Tell the employer your regime; start/confirm employer NPS" },
       ...advance.map((a) => ({ date: a.date, what: `Advance tax: ${a.cumulativePct}% (₹${a.cumulativeAmount.toLocaleString("en-IN")} cumulative)` })),
@@ -1193,6 +1193,9 @@
           realisedLtcgYtd: Math.max(0, g.equityLT + num(extra.ltcg)), realisedStcgYtd: g.equityST + num(extra.stcg),
           deductionsPaid: per(pr.deductionsPaid), parentsSenior: !!pr.parentsSenior, tdsProjected: sal.tds,
           hasForeignAssets: hasForeign, hasShareSales: g.equityLT !== 0 || g.equityST !== 0 || num(extra.ltcg) !== 0 || num(extra.stcg) !== 0,
+          // Capital losses carried from a return of the last 8 years: ITR-1 cannot carry them, so ITR-2 keeps them alive
+          hasLossesBroughtForward: (state.taxReturns || []).some((r) => r && r.person === who && r.kind !== "unfiled" && r.filed && r.fy < fy
+            && fyStartYear(r.fy) >= fyStartYear(fy) - 8 && (num(r.filed.gains?.stcgBefore) + num(r.filed.gains?.stcgAfter) < 0 || num(r.filed.gains?.ltcgBefore) + num(r.filed.gains?.ltcgAfter) < 0)),
         },
         salary: sal, realised: { ltcg: g.equityLT + num(extra.ltcg), stcg: g.equityST + num(extra.stcg) },
       };

@@ -76,7 +76,7 @@
     const cards = m.people.map((p) => {
       if (!p.plan) return stat(p.name, "—", esc(p.note || "No salary yet"));
       const pl = p.plan, bal = pl.balance;
-      return stat(`${p.name} · ${m.fy}`, `${inr(pl.regimes[pl.better].tax)}`, `${esc(pl.better)} regime · ${bal >= 0 ? `TDS is ${inr(bal)} more than the tax` : `${inr(-bal)} more than TDS`}`);
+      return stat(`${p.name} · ${m.fy}`, `${inr(pl.regimes[pl.better].tax)}`, `${esc(pl.better)} regime · ${bal === 0 && !(pl.regimes[pl.better].tax > 0) ? "no tax due, no TDS needed" : bal === 0 ? "TDS covers the tax exactly" : bal > 0 ? `TDS is ${inr(bal)} more than the tax` : `${inr(-bal)} more than TDS`}`);
     }).join("");
     const top = m.actions.slice(0, 7);
     const act = top.length ? top.map((a) => {
@@ -88,7 +88,7 @@
     const soon = m.deadlines.filter((d) => d.inDays >= 0).slice(0, 8).map((d) => `<div class="tax-deadline"><div class="tax-date">${esc(prettyDate(d.date))}<small>${d.inDays === 0 ? "today" : `in ${d.inDays} day${d.inDays === 1 ? "" : "s"}`}</small></div>
         <div><b>${esc(d.title)}</b>${d.who ? ` <span class="prot-sub">· ${esc(d.who)}</span>` : ""}<div class="prot-sub">${esc(d.why)}</div></div></div>`).join("");
     const left = m.people.filter((p) => p.plan).map((p) => `${esc(p.name)}: ${inr(p.exemptionLeft)} of the ₹1.25L long-term-gain exemption left (booked ${inr(Math.max(0, p.realised.ltcg))})`).join(" · ");
-    return `<div class="prot-summary">${cards}</div>
+    return `<div class="prot-summary tax-people">${cards}</div>
       <section class="panel tax-panel"><div class="panel-header"><div><h3>What to do next</h3><p>Ranked by how much it matters.</p></div></div>${act}</section>
       <section class="panel tax-panel"><div class="panel-header"><div><h3>Dates that matter</h3><p>${left || "&nbsp;"}</p></div></div>${soon || `<div class="prot-empty">No dates in the next year.</div>`}</section>`;
   }
