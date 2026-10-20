@@ -10,9 +10,9 @@
  * Pure: no DOM, no network, no personal data. Planning aid only — a CA confirms.
  */
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else root.LifeLedgerTax = factory();
-})(typeof self !== "undefined" ? self : this, function () {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./protection-core.js"));
+  else root.LifeLedgerTax = factory(root.LifeLedgerProtection);
+})(typeof self !== "undefined" ? self : this, function (Protection) {
   "use strict";
   // ════════════════════════════ law ════════════════════════════
   const law = (function () {
@@ -843,7 +843,59 @@
   }
 
 
-    return { taxCategory, buildLots, holding, unrealised, realisedThisFY, fyOf, monthsBetween };
+    /** The holding key the Wealth Advisor and the daily brief use: "mf:<fund>", "in:<SYMBOL>", "us:<SYMBOL>". */
+    const holdingKey = (l) => l.kind === "mf" ? `mf:${l.name}` : `${l.kind === "us" ? "us" : "in"}:${String(l.symbol || l.name || "").toUpperCase().replace(/\s*-EQ$/i, "").trim()}`;
+
+    /**
+     * Tax if each holding were sold today, on its own. Gains and losses inside a holding are netted the way the law does
+     * (short-term losses against any gain, long-term losses only against long-term), and each owner's unused ₹1.25L
+     * long-term exemption is applied to listed equity. Lots with no real buy date give a range.
+     * opts = { slab: { Me: 30, Wife: 5 } (marginal %), exemptionLeft: { Me, Wife }, keyOf }
+     */
+    function taxIfSold(lots, today, opts = {}) {
+      const slab = opts.slab || {}, exLeft = opts.exemptionLeft || {}, keyOf = opts.keyOf || holdingKey;
+      const out = new Map();
+      for (const l of lots) {
+        const k = keyOf(l), o = l.owner || "Me";
+        const e = out.get(k) || out.set(k, { key: k, name: l.name, owners: {}, unknown: false }).get(k);
+        const w = (e.owners[o] ||= { eqST: 0, eqLT: 0, slabST: 0, otherLT: 0, unknown: 0, unknownEq: true });
+        const g = l.qty * l.price - l.cost, h = holding(l, today), eq = l.cat === "equity" || l.cat === "hybrid";
+        if (h.unknown) { w.unknown += g; w.unknownEq = w.unknownEq && eq; e.unknown = true; continue; }
+        if (l.cat === "debt") w.slabST += g;
+        else if (eq) (h.long ? (w.eqLT += g) : (w.eqST += g));
+        else (h.long ? (w.otherLT += g) : (w.slabST += g));
+      }
+      const taxFor = (w, o, unknownAs) => {
+        let eqST = w.eqST, eqLT = w.eqLT, slabST = w.slabST, otherLT = w.otherLT;
+        if (unknownAs === "long") { if (w.unknownEq) eqLT += w.unknown; else otherLT += w.unknown; }
+        if (unknownAs === "short") { if (w.unknownEq) eqST += w.unknown; else slabST += w.unknown; }
+        // short-term losses offset anything; long-term losses only long-term
+        let st = eqST + slabST, lt = eqLT + otherLT;
+        if (st < 0) { const use = Math.min(-st, Math.max(0, lt)); lt -= use; st += use; }
+        if (lt < 0) lt = 0;
+        if (st < 0) st = 0;
+        const ltEqShare = eqLT + otherLT > 0 ? Math.max(0, eqLT) / (Math.max(0, eqLT) + Math.max(0, otherLT)) : 0;
+        const ltEq = lt * ltEqShare, ltOther = lt - ltEq;
+        const stEqShare = eqST + slabST > 0 ? Math.max(0, eqST) / (Math.max(0, eqST) + Math.max(0, slabST)) : 0;
+        const stEq = st * stEqShare, stSlab = st - stEq;
+        const exempt = Math.min(ltEq, Math.max(0, num(exLeft[o])));
+        const rate = (slab[o] != null ? num(slab[o]) : 30) / 100;
+        const tax = (stEq * 0.20 + stSlab * rate + (ltEq - exempt) * 0.125 + ltOther * 0.125) * 1.04;
+        return { tax: r0(tax), exempt: r0(exempt), gainShort: r0(st), gainLong: r0(lt) };
+      };
+      const rows = [];
+      for (const e of out.values()) {
+        const by = Object.entries(e.owners);
+        const sumOf = (unknownAs) => by.reduce((a, [o, w]) => { const t = taxFor(w, o, unknownAs); a.tax += t.tax; a.exempt += t.exempt; a.gainShort += t.gainShort; a.gainLong += t.gainLong; return a; }, { tax: 0, exempt: 0, gainShort: 0, gainLong: 0 });
+        const now = sumOf(null), gain = r0(by.reduce((a, [, w]) => a + w.eqST + w.eqLT + w.slabST + w.otherLT + w.unknown, 0));
+        const row = { key: e.key, name: e.name, gain, gainShort: now.gainShort, gainLong: now.gainLong, exemptUsed: now.exempt, tax: now.tax, unknownDates: e.unknown };
+        if (e.unknown) { const lo = sumOf("long"), hi = sumOf("short"); row.taxRange = [lo.tax, hi.tax]; row.tax = null; }
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    return { taxCategory, buildLots, holding, unrealised, realisedThisFY, fyOf, monthsBetween, taxIfSold, holdingKey };
   })();
 
   // ════════════════════════════ saver ════════════════════════════
@@ -1201,11 +1253,17 @@
         add("biz-tax", "low", "Side business: tax steps", `Business income means ITR-3 or ITR-4 (not ITR-2/ITR-1) for the owner, due 31 August ${y1 + 1}. Under the presumptive scheme, advance tax is one payment by 15 March. Ask a CA which scheme fits.`, `${y1 + 1}-03-15`, { who: "Both" });
       }
       // Protection: cover gaps are tax-adjacent (80C/80D in the old regime) and the biggest financial risk.
-      const pol = state.insurance || [];
-      const has = (who, type) => pol.some((p) => (p.person === who || p.person === "Both") && p.type === type && num(p.cover) > 0);
-      if (!has("Me", "Term life")) add("term-me", "high", "Buy term life cover", "No term cover is recorded. A pure term plan of 10–15× yearly income is the usual guide.", "");
-      if (!has("Wife", "Term life")) add("term-wife", "medium", "Term life cover for Archana", "No term cover is recorded for her.", "");
-      if (!has("Both", "Health") && !pol.some((p) => p.type === "Health" && num(p.cover) > 0)) add("health", "medium", "Record your health cover, and compare personal policies", "No health policy is recorded. Employer group cover ends when the job does; personal cover started now starts its waiting periods now.", "");
+      // Same checks and guide as the Protection page (protection-core), so both pages say the same thing.
+      if (Protection && Protection.termCheck) {
+        for (const [who, sev] of [["Me", "high"], ["Wife", "medium"]]) {
+          const t = Protection.termCheck(state, who);
+          if (t.status === "ok") continue;
+          const guide = t.income > 0 ? ` The guide is 10–15 × yearly income: ${inr(t.min)} – ${inr(t.max)}.` : "";
+          add(`term-${who === "Me" ? "me" : "wife"}`, sev, t.status === "not-set" ? `Term life cover for ${NAMES[who]}` : `${NAMES[who]}'s term cover is below the guide`, `${t.status === "not-set" ? "No term cover is recorded on the Protection page." : `Recorded cover ${inr(t.cover)}.`}${guide}`, "", { who: NAMES[who] });
+        }
+        const h = Protection.healthCheck(state);
+        if (h.status !== "ok") add("health", "medium", h.status === "not-set" ? "Record your health cover, and compare personal policies" : "Health cover is below ₹10 lakh", "Employer group cover ends when the job does; personal cover bought now starts its waiting periods now. Record policies on the Protection page.", "");
+      }
       // User-supplied checklist (stored in the vault, so it can hold private items)
       const done = (model.profile && model.profile.done) || {};
       for (const c of (model.profile && model.profile.checklist) || []) if (c && c.id && !done[c.id]) add(`todo-${c.id}`, c.severity || "low", c.title, c.why || "", c.due || "");
@@ -1285,6 +1343,12 @@
         model.people.push({ who, name: NAMES[who], salary: inp.salary, realised: inp.realised, plan, inputs: inp.plan, exemptionLeft, harvest: exemptionLeft > 1000 ? harvestPlan(state, who, exemptionLeft, today) : null });
       }
       model.returnsAudit = returnsAudit(state, today);
+      {
+        const slab = {}, exLeft = {};
+        for (const x of model.people) if (x.plan) { slab[x.who] = x.plan.marginalRatePct; exLeft[x.who] = x.exemptionLeft; }
+        const lots = gains.buildLots(state, num((state.fx || {}).usdInr) || 95).lots;
+        model.taxIfSold = gains.taxIfSold(lots, today, { slab, exemptionLeft: exLeft });
+      }
       model.family = (state.taxFamily || []).map((t) => ({ ...t, result: gifts.classifyGift(t, { marriageDate: profile.marriageDate }) }));
       model.departure = departureView(profile.departure, fy);
       model.filing = filingChecklist(profile, fy);
@@ -1299,7 +1363,38 @@
       return model;
     }
 
-    return { build, salaryProjection, salaryFy, personInputs, returnsAudit, deadlines, actions, departureView, harvestPlan, filingChecklist };
+    /**
+     * Plain-text tax briefing for Hey Prafful (the in-app AI). Figures only from the model; no family-money notes.
+     * compact = the few lines sent with every message; full = the get_module "tax" briefing.
+     */
+    function briefing(m, { compact = false } = {}) {
+      if (!m) return "";
+      const L = [`=== TAX (computed by the app's tax engine for FY ${m.fy}; planning aid, a CA confirms) ===`];
+      for (const p of m.people) {
+        if (!p.plan) { L.push(`${p.name}: no salary record for this year.`); continue; }
+        const pl = p.plan, t = pl.regimes[pl.better].tax;
+        L.push(`${p.name}: projected salary ${inr(p.salary.gross)} (${p.salary.months} months paid${p.salary.missingMonths.length ? `, ${p.salary.missingMonths.join("/")} missing` : ""}), ${pl.better} regime tax ${inr(t)} (other regime ${inr(pl.regimes[pl.better === "new" ? "old" : "new"].tax)}), projected TDS ${inr(pl.tdsProjected)} → ${pl.balance >= 0 ? `about ${inr(pl.balance)} refund` : `about ${inr(-pl.balance)} short`}${pl.nextAdvance ? `; advance tax ${inr(pl.nextAdvance.cumulativeAmount)} in total by ${pl.nextAdvance.date}` : ""}. Long-term-gain exemption left ${inr(p.exemptionLeft)} of ₹1,25,000.`);
+      }
+      if (m.savings) {
+        L.push(`SAVING MOVES: could save ${inr(m.savings.totals.thisYear)} this year, ${inr(m.savings.totals.runRate)} a year after.`);
+        m.savings.levers.slice(0, compact ? 3 : 8).forEach((l) => L.push(`- ${l.title}: ${inr(l.thisYear)} this year, ${inr(l.runRate)} a year. ${compact ? "" : l.what}`));
+      }
+      const next = m.deadlines.filter((d) => d.inDays >= 0).slice(0, compact ? 2 : 6);
+      if (next.length) L.push("NEXT TAX DATES: " + next.map((d) => `${d.date} ${d.title}`).join("; "));
+      const open = m.returnsAudit.filter((r) => r.extraTax > 0);
+      if (open.length) L.push("FILED RETURNS NEEDING CORRECTION: " + open.map((r) => `FY ${r.fy} ${NAMES[r.person] || r.person}${r.unfiled ? " (not filed)" : ""}: about ${inr(r.extraTax)} more tax on the documents${r.remedy ? r.remedy.pctExtra ? `, updated return about ${inr(r.remedy.totalToPay)} by ${r.remedy.lastDate}` : `, revised return by ${r.remedy.lastDate}` : ""}`).join("; "));
+      if (!compact) {
+        L.push("", "TOP ACTIONS:"); m.actions.slice(0, 10).forEach((a) => L.push(`- [${a.severity}] ${a.title}${a.due ? ` (by ${a.due})` : ""}: ${a.why}`));
+        if (m.taxIfSold && m.taxIfSold.length) {
+          L.push("", "TAX IF EACH HOLDING WERE SOLD TODAY (on its own, unused exemption applied):");
+          m.taxIfSold.filter((r) => Math.abs(r.gain) >= 1000).sort((a, b) => (b.tax || (b.taxRange || [0, 0])[1]) - (a.tax || (a.taxRange || [0, 0])[1])).slice(0, 25)
+            .forEach((r) => L.push(`- ${r.name}: gain ${inr(r.gain)}, tax ${r.tax != null ? inr(r.tax) : `${inr(r.taxRange[0])}–${inr(r.taxRange[1])} (buy dates unknown)`}`));
+        }
+      } else L.push('More: get_module {id: "tax"} (actions, filed returns, tax if each holding were sold).');
+      return L.join("\n");
+    }
+
+    return { build, salaryProjection, salaryFy, personInputs, returnsAudit, deadlines, actions, departureView, harvestPlan, filingChecklist, briefing };
   })();
 
   return { law, engine, remedies, gifts, residency, audit, planner, gains, saver, household };

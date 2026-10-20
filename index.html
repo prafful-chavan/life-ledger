@@ -21,19 +21,19 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.13" />
+    <link rel="stylesheet" href="layout.css?v=1.8.14" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="vault-store.js?v=1.0.8"></script>
     <script defer src="drive-sync.js?v=1.0.42"></script>
-    <script defer src="ai-agent.js?v=1.0.47"></script>
+    <script defer src="ai-agent.js?v=1.0.48"></script>
     <script src="ui-polish.js?v=1.0.3" defer></script>
     <script defer src="networth-delta.js?v=1.0.0"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
     <script defer src="hero-series.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.100"></script>
+    <script defer src="app.js?v=1.0.101"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -43,18 +43,18 @@
     <script defer src="sync-ui.js?v=1.0.0"></script>
     <script defer src="price-history.js?v=1.0.1"></script>
     <script defer src="networth-close.js?v=1.0.6"></script>
-    <script defer src="advisor-engine.js?v=2.0.4"></script>
+    <script defer src="advisor-engine.js?v=2.0.5"></script>
     <script defer src="advisor-ai.js?v=2.0.1"></script>
-    <script defer src="advisor-context.js?v=1.0.3"></script>
+    <script defer src="advisor-context.js?v=1.0.4"></script>
     <script defer src="knowledge.js?v=1.0.2"></script>
     <script defer src="knowledge-modules.js?v=1.0.0"></script>
-    <script defer src="advisor.js?v=2.0.8"></script>
+    <script defer src="advisor.js?v=2.0.9"></script>
     <script defer src="spending-core.js?v=1.0.5"></script>
-    <script defer src="data-health.js?v=1.0.3"></script>
+    <script defer src="data-health.js?v=1.0.4"></script>
     <script defer src="protection-core.js?v=1.0.0"></script>
     <script defer src="protection.js?v=1.0.0"></script>
-    <script defer src="tax-core.js?v=1.2.2"></script>
-    <script defer src="tax.js?v=1.2.0"></script>
+    <script defer src="tax-core.js?v=1.2.3"></script>
+    <script defer src="tax.js?v=1.2.1"></script>
     <script defer src="spending-import.js?v=1.0.13"></script>
   </head>
   <body class="auth-locked">
@@ -284,6 +284,16 @@
               <ul id="advCardMoves"></ul>
             </div>
             <button class="primary-button" type="button" id="advOpenBtn">Open full advisor →</button>
+          </section>
+
+          <!-- Tax (summary card; the full page is the "Tax" view) -->
+          <section class="panel adv-card tax-card" id="taxCard" hidden>
+            <div class="adv-card-text">
+              <h3>🧾 Tax this year</h3>
+              <p id="taxCardSummary"></p>
+              <ul id="taxCardLines"></ul>
+            </div>
+            <button class="secondary-button" type="button" id="taxOpenBtn">Open tax plan →</button>
           </section>
 
           <!-- AI Insights Banner -->

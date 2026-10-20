@@ -151,6 +151,18 @@
         : ok("income-gaps", "Salary has no gaps", `${(s.income || []).length} salary records across ${people.length} people.`));
     }
 
+    // 6b) Salary rows the tax estimate cannot use (pay recorded without the gross / TDS breakdown)
+    {
+      const since = new Date(now - 400 * DAY).toISOString().slice(0, 10);
+      const who = { Me: "Prafful", Wife: "Archana" };
+      const items = (s.income || []).filter((x) => (!x.type || /salary/i.test(x.type)) && String(x.date || "") >= since && n(x.amount || x.netSalary) > 0 && !(n(x.grossEarnings) > 0))
+        .sort((a, b) => (a.date < b.date ? -1 : 1))
+        .map((x) => `${who[x.person] || x.person || "?"} · ${String(x.date).slice(0, 7)}: ${inr(n(x.amount || x.netSalary))} received, no gross salary`);
+      checks.push(items.length
+        ? info("salary-breakdown", "Salary records without the gross amount", "The Tax page estimates these months from a typical month. Add the gross salary (and TDS) from the payslip to make this year's tax exact.", items)
+        : ok("salary-breakdown", "Salary records have their gross amounts", "Every salary in the last 13 months carries the payslip breakdown the tax estimate needs."));
+    }
+
     // 7) Goals: stale hand-typed progress, placeholders, overdue
     {
       const goals = s.goals || [];

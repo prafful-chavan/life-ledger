@@ -4724,8 +4724,23 @@ function buildAdvisorInput() {
   const profile = { ...(state.advisor?.profile || {}) };
   if (!profile.sipTarget) profile.sipTarget = toNumber(state.mfMonthlyTarget?.me) + toNumber(state.mfMonthlyTarget?.wife);
 
+  // Tax figures come from the Tax page's model (tax-core), so the Advisor and the Tax page never disagree.
+  let tax = null;
+  try {
+    const tm = window.LifeLedgerTaxUI?.model?.();
+    if (tm) {
+      const fy = tm.fy, endOfYear = `${+fy.slice(0, 4) + 1}-03-31`;
+      tax = {
+        taxIfSold: Object.fromEntries((tm.taxIfSold || []).map((r) => [r.key, r])),
+        harvest: now >= `${+fy.slice(0, 4) + 1}-01-15` && now <= endOfYear
+          ? tm.people.filter((p) => p.harvest && p.harvest.planned > 5000).map((p) => ({ who: p.name, amount: p.harvest.planned, by: endOfYear })) : [],
+        brief: window.LifeLedgerTaxUI.briefing(true),
+      };
+    }
+  } catch (e) { console.warn("[advisor] tax model unavailable:", e); }
+
   return {
-    now, holdings, cash, profile, mfThisMonth,
+    now, holdings, cash, profile, mfThisMonth, tax,
     profileSet: Boolean(state.advisor?.profile?.target),
     liabilities: (state.liabilities || []).map((l) => ({ name: l.name, owner: l.owner, value: toNumber(l.value), emi: toNumber(l.emi), rate: toNumber(l.rate) })),
     goals: liveGoals().map((g) => ({ name: g.name, target: toNumber(g.target), saved: toNumber(g.saved), dueDate: g.dueDate })),

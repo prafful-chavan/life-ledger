@@ -6,6 +6,7 @@
 const Advisor = require("../advisor-engine.js");
 const T = require("./technicals.js");
 const Tax = require("./tax.js");
+const { gains: G } = require("../tax-core.js");
 
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const r0 = (v) => Math.round(v);
@@ -92,6 +93,7 @@ function holdingsTable(state, kind, opts) {
   const byKey = new Map(items.map((i) => [i.key, i]));
   const lots = opts.lots || [];
   const slab = opts.slabRate || {};
+  const taxRows = new Map((opts.taxRows || G.taxIfSold(lots, today, { slab, exemptionLeft: opts.exemptionLeft || {} })).map((r) => [r.key, r]));
   const total = all.filter((h) => h.cls === cls).reduce((s, h) => s + h.value, 0);
 
   const rows = all.filter((h) => h.cls === cls).map((h) => {
@@ -103,19 +105,13 @@ function holdingsTable(state, kind, opts) {
     // Series for US stocks is in dollars while h.price is in rupees: scale levels by the same factor
     const scale = t && t.last ? h.price / t.last : 1;
     const valAt = (p) => (p == null ? null : r0(h.qty * p * scale));
+    // Tax if sold today comes from tax-core (same function as the app's Wealth Advisor and Tax page): losses netted
+    // inside the holding and each owner's unused ₹1.25L long-term exemption applied, as if this holding were sold on its own.
+    const tk = kind === "funds" ? `mf:${h.name}` : `${kind === "us" ? "us" : "in"}:${String(h.symbol || "").toUpperCase()}`;
+    const tr = taxRows.get(tk);
+    const unknown = !!(tr && tr.unknownDates);
+    const ltShare = tr && !unknown && tr.gainShort + tr.gainLong > 0 ? Math.round((tr.gainLong / (tr.gainShort + tr.gainLong)) * 100) : null;
     const hl = lots.filter((l) => (kind === "funds" ? l.kind === "mf" && l.name === h.name : kind === "us" ? l.kind === "us" && l.symbol === h.symbol : l.kind === "stock" && l.symbol === h.symbol));
-    let taxNow = 0, taxIfLong = 0, taxIfShort = 0, ltShare = 0, ltGain = 0, totalGainPos = 0, unknown = false;
-    const rateFor = (l, long) => { const slabPct = slab[l.owner] ?? 30; return l.cat === "debt" ? slabPct : long ? 12.5 : (l.cat === "equity" || l.cat === "hybrid") ? 20 : slabPct; };
-    for (const l of hl) {
-      const g = l.qty * l.price - l.cost;
-      if (g <= 0) continue;
-      const hd = Tax.holding(l, today);
-      totalGainPos += g;
-      if (hd.unknown) { unknown = true; taxIfLong += g * rateFor(l, true) / 100 * 1.04; taxIfShort += g * rateFor(l, false) / 100 * 1.04; continue; }
-      taxNow += g * (rateFor(l, hd.long) / 100) * 1.04;
-      if (hd.long) ltGain += g;
-    }
-    ltShare = totalGainPos && !unknown ? Math.round((ltGain / totalGainPos) * 100) : null;
     const dayPct = h.prevPrice ? (h.price / h.prevPrice - 1) * 100 : null;
     const unknownDates = hl.length > 0 && hl.every((l) => l.dateKnown === false);
     const firstFlow = h.flows.length ? h.flows.reduce((m, f) => (f.date < m ? f.date : m), "9999") : null;
@@ -148,7 +144,7 @@ function holdingsTable(state, kind, opts) {
         firstTarget: { price: r1(lv.firstTarget * scale), priceNative: r1(lv.firstTarget), pct: lv.firstTargetPct, holdingValue: valAt(lv.firstTarget) },
         stretchTarget: { price: r1(lv.stretchTarget * scale), priceNative: r1(lv.stretchTarget), pct: lv.stretchTargetPct, holdingValue: valAt(lv.stretchTarget) },
       } : null,
-      taxIfSoldTodayApprox: unknown ? { ifAllLongTerm: r0(taxIfLong), ifAllShortTerm: r0(taxIfShort) } : r0(taxNow), longTermSharePct: ltShare,
+      taxIfSoldTodayApprox: !tr ? 0 : unknown ? { ifAllLongTerm: tr.taxRange[0], ifAllShortTerm: tr.taxRange[1] } : tr.tax, longTermSharePct: ltShare, taxFreeExemptionUsed: tr ? tr.exemptUsed : 0,
       flags,
       confidence: a.historyDays >= 300 ? "high" : a.historyDays >= 90 ? "medium" : "low",
     };
@@ -159,7 +155,7 @@ function holdingsTable(state, kind, opts) {
     withoutHistory: rows.filter((r) => !r.technical).map((r) => r.name),
     notes: [
       "Levels are reference points from price history (200-day average, 60-day low, 52-week high). They ignore company fundamentals, results and news.",
-      "Tax is an estimate with no ₹1.25 lakh exemption netting and the slab rate you supplied; see tax_report for the proper position.",
+      "Tax if sold today: gains and losses netted inside the holding, each owner's unused ₹1.25 lakh long-term exemption applied as if this holding were sold on its own, slab rate from the tax plan. Same calculation as the app's Tax page.",
     ],
   };
 }

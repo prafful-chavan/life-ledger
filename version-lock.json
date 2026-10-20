@@ -4,24 +4,24 @@
     "sha256": "2dc96400bead420ebee49ee69b8c16992e1daf5a0cbf37cef419a010f980fba5"
   },
   "advisor-context.js": {
-    "version": "1.0.3",
-    "sha256": "f83a86c124d827ad88e561463b751f813208e9b9f451516537ab76108e85a113"
+    "version": "1.0.4",
+    "sha256": "d5e4ddf3f195dab3502935aeedec853d49040a1980ea719fed814a3fb11788f3"
   },
   "advisor-engine.js": {
-    "version": "2.0.4",
-    "sha256": "9a95a8431c08b046d1621aa835a7b91569ff7da9c55b726efd8ed27ba17817b1"
+    "version": "2.0.5",
+    "sha256": "87ab834331e4bd6dcff41214968850e679164661460f22798ef3cfec6e4cf012"
   },
   "advisor.js": {
-    "version": "2.0.8",
-    "sha256": "05bf960ed82b81041a011798ec3dc1cfb390840ff47f831b6ce58fa16e135de9"
+    "version": "2.0.9",
+    "sha256": "d37ebd56e18ed1df5c46a4259cd3c16e9fed083366364a46f71f3aaa873ad518"
   },
   "ai-agent.js": {
-    "version": "1.0.47",
-    "sha256": "94658e35c3ba52e0a93952e5e4f0dd248acf53964f3f3bc9b8ba959e097b78a9"
+    "version": "1.0.48",
+    "sha256": "a381e381e194375f1a03cea557a1d00bc1a7d1ac4079b817add6bafeaa738fc4"
   },
   "app.js": {
-    "version": "1.0.100",
-    "sha256": "ba74bd5aa76638ad0bd2ef1575429beb6b7f8b056b467a2f8d9de0a987b9147c"
+    "version": "1.0.101",
+    "sha256": "a42b5cbc5c65a5ad8f9e9447a4598f2d83f4fe0bf89890a68f4a1525ff723762"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -32,8 +32,8 @@
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
   },
   "data-health.js": {
-    "version": "1.0.3",
-    "sha256": "9b58b42cda120374aae90d06c3ba9f9295b076c0588ab0e779b4cc301e6a455a"
+    "version": "1.0.4",
+    "sha256": "fab600bb2edaf8157e97b9ce045378720ba79c988624ef5a0e15ae90ca9b03fe"
   },
   "drive-sync.js": {
     "version": "1.0.42",
@@ -56,8 +56,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.13",
-    "sha256": "433431615e15d1f1fabf7142074091c1bb2b26e6ded971dfd472c7fd3e4bfdb1"
+    "version": "1.8.14",
+    "sha256": "e3815128f9c43c0f4f8a52a49746dfcffc114d528b5d579048fdbf047c65409d"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -116,12 +116,12 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.2.2",
-    "sha256": "a5c08040a5a6703eba551b75b3a0eb1d1dee3a4976777c3ede984d0dd7a79858"
+    "version": "1.2.3",
+    "sha256": "f96e4af47d004d5dbac903b7edbd37c092bd8ca60a253e2a96350ad92e235153"
   },
   "tax.js": {
-    "version": "1.2.0",
-    "sha256": "50422bda0e9547d999c9163fc369f63d842a765cc27cb5c567b643f69c9015fc"
+    "version": "1.2.1",
+    "sha256": "f90cbd8a59ed575da67f58c282e0978da89fffdf3181259e23a8f42f8df55214"
   },
   "theme.css": {
     "version": "1.1.7",

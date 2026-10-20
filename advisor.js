@@ -249,6 +249,14 @@
       <div>Return over the last year</div></div>`;
   }
 
+  /** Tax if this holding were sold today, from the Tax page's engine (same figure there and in the daily brief). */
+  function taxNote(h) {
+    const t = h.tax;
+    if (!t || h.groupKey === "safe") return "";
+    const text = t.tax == null && t.taxRange ? `about ${inr(t.taxRange[0])}–${inr(t.taxRange[1])} (buy dates unknown)` : t.gain <= 0 ? `none: selling books a ${inr(-t.gain)} loss` : `${inr(t.tax)} on a ${inr(t.gain)} gain${t.exemptUsed > 0 ? ` (${inr(t.exemptUsed)} tax-free)` : ""}`;
+    return `<p class="adv-h-tax">Tax if sold today: ${esc(text)}</p>`;
+  }
+
   function holdingCard(h, notes) {
     const v = h.verdict;
     const note = notes && notes[h.key];
@@ -262,6 +270,7 @@
       <p class="adv-h-head">${esc(v.headline)}</p>
       ${v.reasons.length ? `<ul class="adv-h-why">${v.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
       ${note ? `<p class="adv-h-note">💬 ${esc(note)}</p>` : ""}
+      ${taxNote(h)}
       <div class="adv-h-move">What to do: ${esc(v.moveLabel)}</div>
     </article>`;
   }

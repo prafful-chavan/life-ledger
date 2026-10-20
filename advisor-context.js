@@ -62,6 +62,8 @@
       (review.actions || []).forEach((x) => L.push(`- (${x.priority}) ${x.action} ${x.asset}: ${x.summary}`));
     }
 
+    if (input.tax && input.tax.brief) L.push("\n" + input.tax.brief);
+
     const c = input.cash || {};
     L.push(`\nCASH FLOW (6-month average): income ${inr(c.monthlyIncome)}/month, expenses ${inr(c.monthlyExpenses)}/month. Largest recurring spends: ${(c.topCategories || []).map(([k, v]) => `${k} ${inr(v)}`).join(", ") || "n/a"}.`);
 

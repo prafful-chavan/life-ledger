@@ -709,3 +709,5 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .tax-th { background: var(--panel-soft); color: var(--muted); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
 @media (max-width: 700px) { .tax-tr { grid-template-columns: 1fr 1fr; } .tax-tr.tax-3, .tax-tr.tax-4 { grid-template-columns: 1fr 1fr; } .tax-th { display: none; } .tax-money { grid-template-columns: 1fr 1fr; } }
 .tax-planned { background: color-mix(in srgb, var(--good) 10%, transparent); font-weight: 600; }
+.adv-h-tax { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.tax-card #taxCardLines { color: var(--muted); }

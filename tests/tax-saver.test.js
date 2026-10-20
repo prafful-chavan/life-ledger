@@ -96,3 +96,24 @@ assert.strictEqual(E.yearRules("2027-28").assumed, true);
 // no salary → no plan, no crash
 assert.strictEqual(H.build({ income: [], taxProfile: {} }, "2026-10-20").savings, null);
 console.log("tax saver tests passed");
+
+// ── tax if sold today (shared by the Tax page, the Wealth Advisor and the daily brief) ──
+{
+  const G = require("../tax-core.js").gains;
+  const lot = (o) => ({ kind: "mf", name: "F", owner: "Me", cat: "equity", date: "2020-01-01", qty: 1, cost: 0, price: 0, ...o });
+  let r = G.taxIfSold([lot({ cost: 100000, price: 300000 })], "2026-10-20", { slab: { Me: 30 }, exemptionLeft: { Me: 125000 } })[0];
+  assert.strictEqual(r.key, "mf:F"); assert.strictEqual(r.gainLong, 200000); assert.strictEqual(r.exemptUsed, 125000);
+  assert.strictEqual(r.tax, Math.round(75000 * 0.125 * 1.04), "only the part above the unused ₹1.25L is taxed");
+  r = G.taxIfSold([lot({ cost: 100000, price: 200000 }), lot({ date: "2026-06-01", cost: 100000, price: 50000 })], "2026-10-20", { slab: { Me: 30 }, exemptionLeft: { Me: 0 } })[0];
+  assert.strictEqual(r.gainShort, 0); assert.strictEqual(r.gainLong, 50000, "a short-term loss offsets the long-term gain");
+  assert.strictEqual(r.tax, Math.round(50000 * 0.125 * 1.04));
+  r = G.taxIfSold([lot({ date: "2026-06-01", cost: 100000, price: 150000 })], "2026-10-20", { slab: { Me: 30 }, exemptionLeft: { Me: 125000 } })[0];
+  assert.strictEqual(r.tax, Math.round(50000 * 0.20 * 1.04), "short-term equity at 20%; the exemption is for long-term only");
+  r = G.taxIfSold([lot({ cat: "debt", cost: 100000, price: 110000 })], "2026-10-20", { slab: { Me: 30 }, exemptionLeft: { Me: 125000 } })[0];
+  assert.strictEqual(r.tax, Math.round(10000 * 0.30 * 1.04), "debt funds at the slab rate");
+  r = G.taxIfSold([{ kind: "stock", name: "Acme Ltd", symbol: "acme-eq", owner: "Me", cat: "equity", date: "2026-05-24", dateKnown: false, qty: 10, cost: 10000, price: 2000 }], "2026-10-20", { slab: { Me: 30 }, exemptionLeft: { Me: 0 } })[0];
+  assert.strictEqual(r.key, "in:ACME", "same key as the Wealth Advisor");
+  assert.ok(r.unknownDates && r.tax === null && r.taxRange[0] === Math.round(10000 * 0.125 * 1.04) && r.taxRange[1] === Math.round(10000 * 0.2 * 1.04), "unknown buy dates give a range");
+  assert.ok(Array.isArray(m.taxIfSold) && m.taxIfSold.some((x) => x.key === "mf:Gain Fund"), "the household model carries it");
+}
+console.log("tax if sold tests passed");

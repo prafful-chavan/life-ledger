@@ -13,6 +13,7 @@ const Fit = require("./fitness.js");
 const Cal = require("./calendar.js");
 const LawWatch = require("./lawwatch.js");
 const { taxPlan } = require("./taxplan.js");
+const TaxCore = require("../tax-core.js");
 const Market = require("./market.js");
 const Protection = require("../protection-core.js");
 const { fetchState } = require("./vault-client.js");
@@ -74,9 +75,18 @@ function taxReport(state, ctx, today) {
   const { lots, realised } = Tax.buildLots(state, fx);
   const un = Tax.unrealised(lots, today);
   const re = Tax.realisedThisFY(realised, today);
-  const profile = ctx.taxProfile || {};
   const owners = ["Me", "Wife"];
-  const incomeTax = owners.map((o) => Tax.incomeTaxEstimate(state, o, profile[o] || {}, re.owners[o] || { equityST: 0, equityLT: 0 }));
+  // Income tax comes from the same household model as the app's Tax page (salary records, the vault's tax profile, both regimes).
+  const M = TaxCore.household.build(state, today);
+  const incomeTax = M.people.map((p) => !p.plan ? { who: p.who, error: p.note || "No salary record for this year" } : {
+    who: p.who, employer: p.salary.employer, basedOn: p.salary.basedOn, monthsPaid: p.salary.months, missingMonths: p.salary.missingMonths,
+    annualGross: p.salary.gross, projectedTDS: p.plan.tdsProjected,
+    newRegime: { taxable: p.plan.regimes.new.taxable, tax: p.plan.regimes.new.tax },
+    oldRegime: { taxable: p.plan.regimes.old.taxable, tax: p.plan.regimes.old.tax, hraExempt: p.plan.regimes.old.hraExempt, deductions: p.plan.regimes.old.deductions },
+    lowerTaxRegime: p.plan.better, regimeUsed: p.plan.better, estimatedYearlyTax: p.plan.regimes[p.plan.better].tax, marginalSlabRatePct: p.plan.marginalRatePct,
+    tdsVsTax: p.plan.balance, tdsVsTaxNote: p.plan.balance >= 0 ? "Projected TDS covers the tax; the difference comes back as a refund" : "Projected TDS falls short; advance tax or more TDS is needed",
+    advanceTax: p.plan.advanceTax.filter((a) => a.date >= today),
+  });
   const exemption = Tax.RULES.equity.yearlyExemption;
   const perOwner = {};
   for (const o of owners) {
@@ -99,8 +109,7 @@ function taxReport(state, ctx, today) {
   return {
     asOf: today, financialYear: re.fy, rules: Tax.RULES.asOf, perPerson: perOwner, realisedTransactionsThisFY: re.rows,
     incomeTax: incomeTax.map((e) => ({ person: WHO[e.who], ...e, who: undefined })), slabRateUsed: { Prafful: slab.Me, Archana: slab.Wife },
-    needFromYou: { Prafful: Tax.needsFromUser(profile.Me || {}), Archana: Tax.needsFromUser(profile.Wife || {}).filter((q) => q.key !== "ais") },
-    profileFile: path.join(dir, "tax-profile.json"),
+    needFromYou: M.actions.filter((a) => a.severity !== "high").slice(0, 6).map((a) => ({ what: a.title, why: a.why })),
     dataGaps: [
       ...(lots.some((l) => l.kind === "stock" && l.dateKnown === false) ? [{ what: "Real buy dates for your Indian stocks and ETFs", why: "Every stock row in the vault carries the sheet's import date, so short-term vs long-term cannot be told. Tax on those holdings is shown as a range (all long-term vs all short-term). A broker 'tax P&L' or holdings statement with first-buy dates fixes this." }] : []),
       ...(lots.some((l) => l.kind === "us" && l.dateKnown === false) ? [{ what: "Real buy dates for US stocks", why: "Same issue; foreign shares need 24 months to be long-term." }] : []),
@@ -120,9 +129,10 @@ async function tableFor(state, kind, ctx, today, limit) {
   const fx = A.netWorth(state, ctx.usdInr).fxUsdInr || 1;
   const { lots } = Tax.buildLots(state, fx);
   const profile = ctx.taxProfile || {};
-  const used = taxReport(state, ctx, today).slabRateUsed;
-  const slabOf = { Me: used.Prafful ?? 30, Wife: used.Archana ?? 0 };
-  const t = Holdings.holdingsTable(state, kind, { today, fx, series, lots, slabRate: slabOf, profile });
+  const M = TaxCore.household.build(state, today);
+  const slabOf = {}, exLeft = {};
+  for (const p of M.people) if (p.plan) { slabOf[p.who] = p.plan.marginalRatePct; exLeft[p.who] = p.exemptionLeft; }
+  const t = Holdings.holdingsTable(state, kind, { today, fx, series, lots, slabRate: slabOf, exemptionLeft: exLeft, profile, taxRows: M.taxIfSold });
   if (limit && t.rows.length > limit) { t.omitted = t.rows.length - limit; t.omittedValue = t.rows.slice(limit).reduce((s, r) => s + r.value, 0); t.rows = t.rows.slice(0, limit); }
   t.historyUnavailableFor = failedKeys.length;
   return t;

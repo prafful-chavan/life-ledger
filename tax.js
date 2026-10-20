@@ -39,9 +39,35 @@
     });
   }
 
+  // One model per data change, shared by this page, the dashboard card, the Wealth Advisor and Hey Prafful,
+  // so every place shows the same tax figures.
+  let cacheKey = 0, cachedFor = -1;
   function compute() {
-    try { model = T().household.build(state(), today()); } catch (e) { console.warn(e); model = null; }
+    if (cachedFor === cacheKey && model) return model;
+    try { model = T().household.build(state(), today()); cachedFor = cacheKey; } catch (e) { console.warn(e); model = null; }
     return model;
+  }
+  const invalidate = () => { cacheKey++; };
+  /** Shared accessor; null until the vault is open. */
+  function sharedModel() { return App() && App().getState && T() ? compute() : null; }
+
+  // ── Dashboard card ──────────────────────────────────────────────────────────────────────
+  function renderCard() {
+    const card = $("taxCard"); if (!card) return;
+    const m = sharedModel();
+    const people = m ? m.people.filter((p) => p.plan) : [];
+    if (!people.length) { card.hidden = true; return; }
+    card.hidden = false;
+    const next = m.deadlines.find((d) => d.inDays >= 0 && (d.kind === "law" || /Advance tax for/.test(d.title))) || m.deadlines.find((d) => d.inDays >= 0);
+    $("taxCardSummary").textContent = people.map((p) => `${p.name} ${inr(p.plan.regimes[p.plan.better].tax)}`).join(" · ") + ` this year (${people[0].plan.better} regime)`;
+    const lines = [];
+    const short = people.filter((p) => p.plan.balance < -10000);
+    if (short.length) lines.push(`TDS short by ${short.map((p) => `${inr(-p.plan.balance)} (${p.name})`).join(", ")}`);
+    if (next) lines.push(`${prettyDate(next.date)}: ${next.title}`);
+    if (m.savings && m.savings.totals.runRate > 0) lines.push(`Could save ${inr(m.savings.totals.thisYear)} this year, ${inr(m.savings.totals.runRate)} a year after`);
+    const hi = m.actions.filter((a) => a.severity === "high").length;
+    if (hi) lines.push(`${hi} important tax action${hi === 1 ? "" : "s"} waiting`);
+    $("taxCardLines").innerHTML = lines.slice(0, 4).map((t) => `<li>${esc(t)}</li>`).join("");
   }
 
   // ── Today ───────────────────────────────────────────────────────────────────────────────
@@ -218,6 +244,7 @@
   function render() {
     const root = $("taxBody");
     if (!root || !App() || !T() || !App().getState) return;
+    invalidate();   // this page's own edits change the state before the save event arrives
     const m = compute();
     if (!m) { root.innerHTML = `<section class="panel tax-panel"><div class="prot-empty">The tax page could not be built. Open the console for details.</div></section>`; return; }
     const tabs = `<div class="tax-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" class="tax-tab${k === tab ? " active" : ""}" aria-selected="${k === tab}" data-tax-tab="${k}">${l}</button>`).join("")}</div>`;
@@ -280,7 +307,18 @@
     save().catch(() => {}); render();
   }
 
+  function registerWithAssistant() {
+    const K = window.LifeLedgerKnowledge;
+    if (!K || !K.registerModule) return;
+    K.registerModule({ id: "tax", title: "Tax plan", description: "this year's tax per person under both regimes, TDS vs tax and advance tax, saving moves with rupee amounts, tax dates, filed returns needing correction, tax if each holding were sold today",
+      build: () => { const m = sharedModel(); return m ? T().household.briefing(m) : "Tax plan not available yet (open the vault)."; } });
+  }
+
   function init() {
+    $("taxOpenBtn")?.addEventListener("click", () => window.LifeLedgerNav?.goToView?.("tax"));
+    window.addEventListener("ll:data-changed", () => { invalidate(); renderCard(); });
+    window.addEventListener("ll:prices-updated", () => { invalidate(); renderCard(); });
+    setTimeout(() => { renderCard(); registerWithAssistant(); }, 3200);
     const body = $("taxBody"); if (!body) return;
     body.addEventListener("click", onClick); body.addEventListener("change", onChange); body.addEventListener("submit", onSubmit);
     document.addEventListener("click", (e) => { if (e.target.closest('[data-view="tax"]')) setTimeout(render, 60); });
@@ -288,5 +326,5 @@
     setTimeout(() => { if (App()?.getState && !$("tax")?.hidden) render(); }, 3000);
   }
   window.addEventListener("load", init);
-  window.LifeLedgerTaxUI = { render, compute: () => compute() };
+  window.LifeLedgerTaxUI = { render, compute: () => compute(), model: sharedModel, briefing: (compact) => { const m = sharedModel(); return m ? T().household.briefing(m, { compact }) : ""; }, renderCard };
 })();

@@ -174,7 +174,7 @@
 
 
   // ── plain-language layer ──────────────────────────────────────────────────
-  const ACTION_LABEL = { ADD: "Add more", HOLD: "Hold", REVIEW: "Look closely", TRIM: "Reduce", REBALANCE: "Balance", PREPAY: "Pay off faster", BUILD: "Build up" };
+  const ACTION_LABEL = { ADD: "Add more", HOLD: "Hold", REVIEW: "Look closely", TRIM: "Reduce", REBALANCE: "Balance", PREPAY: "Pay off faster", BUILD: "Build up", TAX: "Tax move" };
   const STATUS_LABEL = { great: "Doing great", good: "Doing well", ok: "Okay", weak: "Falling behind", poor: "Needs attention", safe: "Safe & steady", nodata: "Too new to judge" };
   const STATUS_SCORE = { great: 100, good: 80, ok: 60, weak: 35, poor: 15, safe: 60, nodata: 55 };
   const MOVE_LABEL = { keep_adding: "Keep investing regularly", hold: "Keep holding", watch: "Keep an eye on it", review: "Look at it closely", reduce: "Consider reducing", dont_add: "Don't add more now", none: "Nothing to do" };
@@ -376,6 +376,15 @@
     const cash = input.cash || {};
     const liabilities = (input.liabilities || []).filter((l) => num(l.value) > 0);
     const goals = input.goals || [];
+    // Tax if a holding were sold today comes from the Tax page's engine (tax-core), never computed here.
+    const taxBy = (input.tax && input.tax.taxIfSold) || {};
+    const taxLine = (key) => {
+      const r = taxBy[key];
+      if (!r) return null;
+      if (r.tax == null && r.taxRange) return `If you sold all of it today: about ${inr(r.taxRange[0])}–${inr(r.taxRange[1])} tax (the buy dates are not in your records, so short- or long-term is unknown).`;
+      if (r.gain <= 0) return `Selling now would book a loss of ${inr(-r.gain)}, which carries forward against future gains if the return is filed on time.`;
+      return `If you sold all of it today: gain ${inr(r.gain)}, tax about ${inr(r.tax)}${r.exemptUsed > 0 ? ` (${inr(r.exemptUsed)} of the gain falls inside this year's tax-free ₹1.25 lakh)` : ""}.`;
+    };
     const signals = [];
     const add = (s) => signals.push({ confidence: "medium", actionLabel: ACTION_LABEL[s.action] || s.action, ...s });
 
@@ -449,7 +458,7 @@
       if (h.weight >= CFG.concentrationWatch) {
         add({ id: "conc-" + h.key, severity: h.weight >= CFG.concentrationAct ? "act" : "watch", action: "TRIM", assetKey: h.key, confidence: "high",
           title: `${h.name} is a big part of your money (${Math.round(h.weight)}%)`,
-          why: ["If one company has a bad year, it hurts your whole portfolio a lot.", "Avoid adding more. If it keeps growing, reduce slowly (check the tax on your gains first)."] });
+          why: ["If one company has a bad year, it hurts your whole portfolio a lot.", "Avoid adding more. If it keeps growing, reduce slowly.", taxLine(h.key)].filter(Boolean) });
       }
     });
     const dust = items.filter((h) => h.weight < CFG.dustPct && (h.cls === "stock" || h.cls === "us" || h.cls === "mf"));
@@ -483,7 +492,7 @@
             why: [`It is ${plainPct(m.drawdown)} below its highest price of the past year, and ${plainPct(m.r6m)} lower than 6 months ago.`,
               h.relative1y != null ? `It is also doing ${plainPct(h.relative1y)} worse than the market over a year.` : null,
               h.returnPct != null ? `Versus what you paid: ${h.returnPct >= 0 ? "up" : "down"} ${plainPct(h.returnPct)}.` : null,
-              "If the reason you bought it no longer holds, selling may be sensible. If it still holds, don't buy more just because it looks cheaper."].filter(Boolean) });
+              "If the reason you bought it no longer holds, selling may be sensible. If it still holds, don't buy more just because it looks cheaper.", taxLine(h.key)].filter(Boolean) });
         } else if (m.drawdown != null && m.drawdown <= CFG.stockWatchDrawdown && (h.relative1y == null || h.relative1y <= CFG.stockWatchRelative)) {
           add({ id: "trend-" + h.key, severity: "watch", action: "REVIEW", assetKey: h.key, confidence: conf,
             title: `${h.name} is down ${plainPct(m.drawdown)} from its high`,
@@ -500,7 +509,7 @@
         if (h.relative1y <= CFG.underperformAct && (m.r6m || 0) < (niftyR6 == null ? 0 : niftyR6)) {
           add({ id: "lag-" + h.key, severity: "act", action: "REVIEW", assetKey: h.key, confidence: conf,
             title: `${h.name} is clearly behind the market`,
-            why: [`Last year it gave ${signed(m.r1y)}; the market did ${plainPct(h.relative1y)} better. It is still behind over 6 months.`, "Compare it with other funds of the same kind, or with a plain Nifty index fund. Switching can have tax and exit-fee costs."] });
+            why: [`Last year it gave ${signed(m.r1y)}; the market did ${plainPct(h.relative1y)} better. It is still behind over 6 months.`, "Compare it with other funds of the same kind, or with a plain Nifty index fund. Switching can have tax and exit-fee costs.", taxLine(h.key)].filter(Boolean) });
         } else if (h.relative1y <= CFG.underperformWatch) {
           add({ id: "lag-" + h.key, severity: "watch", action: "REVIEW", assetKey: h.key, confidence: conf,
             title: `${h.name} is a little behind the market`,
@@ -510,7 +519,7 @@
       if ((h.kind === "stock" || h.kind === "etf") && m.vsMa200 != null && m.vsMa200 >= CFG.extendedAboveMa200 && h.weight >= 8) {
         add({ id: "ext-" + h.key, severity: "info", action: "HOLD", assetKey: h.key, confidence: conf,
           title: `${h.name} has risen very fast`,
-          why: [`Its price is ${plainPct(m.vsMa200)} above its usual level of the past 200 days, and it is ${Math.round(h.weight)}% of your money.`, "Avoid adding more now. Taking a little profit is a fair choice if it is bigger than you intended."] });
+          why: [`Its price is ${plainPct(m.vsMa200)} above its usual level of the past 200 days, and it is ${Math.round(h.weight)}% of your money.`, "Avoid adding more now. Taking a little profit is a fair choice if it is bigger than you intended.", taxLine(h.key)].filter(Boolean) });
       }
     });
 
@@ -585,6 +594,13 @@
       }
     });
 
+    // Tax-free long-term gains are a use-it-or-lose-it yearly allowance; flagged only in the last weeks of the year.
+    ((input.tax && input.tax.harvest) || []).forEach((x) => {
+      add({ id: "tax-harvest-" + x.who, severity: "info", action: "TAX", confidence: "high",
+        title: `${x.who} can book ${inr(x.amount)} of long-term gains tax-free before ${x.by.slice(8, 10)} March`,
+        why: ["Each person can take ₹1.25 lakh of long-term equity gains a year without tax; unused room does not carry over.", "Sell and buy back the same day. The Tax page lists exactly which units, oldest first."] });
+    });
+
     const order = { act: 0, watch: 1, info: 2 };
     signals.sort((a, b) => order[a.severity] - order[b.severity]);
 
@@ -635,6 +651,7 @@
         vs1yBenchmark: h.relative1y != null ? r1(h.relative1y) : null,
         historyDays: h.historyDays,
         verdict: h.verdict,
+        tax: taxBy[h.key] ? { gain: taxBy[h.key].gain, tax: taxBy[h.key].tax, taxRange: taxBy[h.key].taxRange || null, exemptUsed: taxBy[h.key].exemptUsed, unknownDates: !!taxBy[h.key].unknownDates } : null,
       })),
       liabilities: liabilities.map((l) => ({ name: l.name, owner: l.owner, value: num(l.value), emi: num(l.emi), rate: num(l.rate), yearlyInterest: num(l.rate) > 0 ? Math.round((num(l.value) * num(l.rate)) / 100) : null })),
       signals,

@@ -199,6 +199,17 @@ const SCANNER = `(${function scan() {
     await cdp.eval(`(()=>{const id=LifeLedgerApp.getState().insurance.find(p=>p.insurer==='Test Insurer').id; document.querySelector('[data-act="paid"][data-id="'+id+'"]').click(); return 0})()`);
     await sleep(500);
 
+    // 3b-2. Tax is woven into the rest of the app: dashboard card, Wealth Advisor, Hey Prafful
+    await view("dashboard"); await sleep(900);
+    const tcard = await cdp.eval(`(()=>{const c=document.getElementById('taxCard'); return JSON.stringify({shown: !!c && !c.hidden, text: c ? c.innerText : ''})})()`);
+    const tc = JSON.parse(tcard);
+    check("dashboard shows a tax card with this year's tax and the next date", tc.shown && /Tax this year/.test(tc.text) && /₹[\d,]+/.test(tc.text) && /Open tax plan/.test(tc.text), tc.text.slice(0, 200));
+    await cdp.eval(`document.getElementById('taxOpenBtn').click()`); await sleep(600);
+    check("the tax card opens the Tax page", await cdp.eval(`!document.getElementById('tax').hidden`));
+    const taxInAdvisor = await cdp.eval(`(()=>{const inp=LifeLedgerApp.getAdvisorInput(); return !!(inp.tax && inp.tax.taxIfSold && inp.tax.brief && /=== TAX/.test(inp.tax.brief))})()`);
+    check("the Wealth Advisor receives the tax engine's figures", taxInAdvisor);
+    check("Hey Prafful can read a 'tax' briefing", await cdp.eval(`(()=>{try{return !!(window.LifeLedgerKnowledge && LifeLedgerKnowledge.runTool && /=== TAX/.test(String((LifeLedgerKnowledge.runTool('get_module',{id:'tax'},LifeLedgerApp.getState())||{}).text)))}catch(e){return String(e)}})()`));
+
     // 3c. Tax page: tabs, plan numbers, audit of a filed return, family money, data round-trip
     await view("tax");
     await sleep(900);
