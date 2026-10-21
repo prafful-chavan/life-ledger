@@ -131,6 +131,7 @@ const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/
 
   // ── Weekly and month-end extras ──
   assert.ok(R.intact(R.renderBrief(base, { now: "2026-10-21" }).html) && R.intact(alertOut.html), "both the brief and the alert end with a correct length marker");
+  assert.ok(!/[^-]background:/.test(R.renderBrief(base, { now: "2026-10-21" }).html) && !/[^-]background:/.test(alertOut.html), "Gmail strips the background shorthand (header, chips, progress bars); only background-color survives");
   assert.ok(!/This week/.test(R.renderBrief(base, { now: "2026-10-21" }).html) && !/Month-end/.test(R.renderBrief(base, { now: "2026-10-21" }).html), "a plain Wednesday has neither");
   assert.ok(/Month-end/.test(R.renderBrief(base, { now: "2026-10-31" }).html), "the last day of the month");
   assert.ok(/<b>[^<]*<\/b>/.test(R.renderBrief({ ...base, brief: { ...base.brief, netWorth: { ...base.brief.netWorth, history: [{ date: "2026-10-18", netWorth: 100 }] } } }, { now: "2026-10-25" }).html.match(/This week[^]*?<\/table>/)[0]), "Sunday gets the week in review");
