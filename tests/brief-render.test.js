@@ -130,6 +130,7 @@ const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/
   assert.ok(/₹1,31,65,981 \(flat today\)$/.test(sub(144, 13165981)) && /\(up ₹1\.8 L today\)$/.test(sub(180000, 13165981)) && /\(down ₹44,930 today\)$/.test(sub(-44930, 13165981)), "flat, up, down");
 
   // ── Weekly and month-end extras ──
+  assert.ok(R.intact(R.renderBrief(base, { now: "2026-10-21" }).html) && R.intact(alertOut.html), "both the brief and the alert end with a correct length marker");
   assert.ok(!/This week/.test(R.renderBrief(base, { now: "2026-10-21" }).html) && !/Month-end/.test(R.renderBrief(base, { now: "2026-10-21" }).html), "a plain Wednesday has neither");
   assert.ok(/Month-end/.test(R.renderBrief(base, { now: "2026-10-31" }).html), "the last day of the month");
   assert.ok(/<b>[^<]*<\/b>/.test(R.renderBrief({ ...base, brief: { ...base.brief, netWorth: { ...base.brief.netWorth, history: [{ date: "2026-10-18", netWorth: 100 }] } } }, { now: "2026-10-25" }).html.match(/This week[^]*?<\/table>/)[0]), "Sunday gets the week in review");

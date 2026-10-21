@@ -54,4 +54,10 @@ assert.strictEqual(R.notices({ ...ok, holdingsCheck: { checkedOn: plus(-11), sta
 assert.ok(/last ran on 1 Sep/.test(R.notices({ ...ok, lawWatch: { stale: true, checkedOn: "2026-09-01", changes: [] } }, T)[0].text), "a law check that has fallen behind");
 const gaps = [1, 2, 3].map((i) => ({ name: "H" + i, who: "Me", confirmed: true }));
 assert.ok(/H1 \(Prafful\), H2 \(Prafful\)\./.test(R.notices({ ...ok, holdingsCheck: { checkedOn: T, status: "gaps", gaps } }, T)[0].text) && !/H3/.test(R.notices({ ...ok, holdingsCheck: { checkedOn: T, status: "gaps", gaps } }, T)[0].text), "at most two holdings named");
+
+// ── The end marker: a copy that lost its tail, or was altered, is caught ──
+assert.ok(R.intact("<p>hi</p><!-- LL-END 9 -->"), "length of what comes before the marker");
+assert.ok(!R.intact("<p>hi</p><!-- LL-END 8 -->") && !R.intact("<p>hi</p><!-- LL-END 10 -->"), "off by one either way");
+assert.ok(!R.intact("<p>hi</p>") && !R.intact(""), "no marker means a cut-off copy");
+assert.ok(!R.intact("<p>h</p><!-- LL-END 9 --><b>"), "the marker must be last");
 console.log("brief edge tests passed");

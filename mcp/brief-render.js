@@ -113,6 +113,10 @@ function notices(pack, today) {
 }
 
 // ── holdings ──
+// An invisible last line saying how long the email is, so a copy that was cut short is noticed before it is sent
+const END_MARK = /<!-- LL-END (\d+) -->\s*$/;
+const sealed = (html) => `${html}<!-- LL-END ${html.length} -->`;
+const intact = (html) => { const m = END_MARK.exec(String(html)); return !!m && Number(m[1]) === String(html).length - m[0].length; };
 function sleeveTable(rows, label, opts = {}) {
   const list = (rows || []).slice().sort((a, b) => num(b.value) - num(a.value));
   if (!list.length) return { html: "", text: "" };
@@ -141,7 +145,7 @@ function render(pack, opts = {}) {
   const crit = ((b.integrity && b.integrity.alerts) || []).filter((a) => a.level === "critical");
   if (crit.length) {
     const body = `<div style="font-size:18px;font-weight:800;color:${C.red};margin-bottom:8px">Please check your data before trusting any number today</div>${crit.map((a) => `<p style="margin:0 0 8px">${esc(a.text)}</p>`).join("")}<p style="margin:0 0 8px">Every figure may be too high or too low until this is fixed. I have made no investment or tax suggestions today.</p><p style="margin:0"><b>What to do:</b> open the app → Data health → "Remove the extra copies", or Settings → History → restore the last good snapshot.</p>`;
-    const html = wrap(card(body), today, "Data alert");
+    const html = sealed(wrap(card(body), today, "Data alert"));
     return { subject: `Life Ledger — DATA ALERT: ${crit[0].topic || "numbers look wrong"}`, html, text: `LIFE LEDGER — DATA ALERT\n\n${crit.map((a) => a.text).join("\n")}\n\nEvery figure may be wrong until this is fixed. No investment or tax suggestions were made today.\nWhat to do: open the app → Data health → "Remove the extra copies", or Settings → History → restore the last good snapshot.`, kind: "alert" };
   }
 
@@ -246,11 +250,11 @@ function render(pack, opts = {}) {
   const trust = [sc && sc.taxCases ? `Tax rules checked against ${sc.taxCases.total} official reference cases (${sc.taxCases.passed} agree)` : "", hc && hc.checkedOn ? `Holdings matched with INDmoney: ${hc.matched} of ${hc.total} on ${dateShort(hc.checkedOn)}` : ""].filter(Boolean);
   add(`<div style="font-size:11px;line-height:17px;color:${C.muted};margin:18px 2px 0">${trust.length ? `<div style="margin-bottom:6px">✓ ${esc(trust.join(" · "))}</div>` : ""}Planning estimates only. A CA should confirm before anything is filed or sold. This is not licensed investment or tax advice.</div>`, `${trust.length ? trust.join(". ") + ".\n" : ""}Planning estimates only. A CA should confirm before anything is filed or sold. Not licensed investment or tax advice.`);
 
-  return { subject, html: wrap(H.join(""), today), text: `LIFE LEDGER — ${dayName(today)} ${dateLong(today)}\n\n${T.join("\n\n")}`, kind: "brief" };
+  return { subject, html: sealed(wrap(H.join(""), today)), text: `LIFE LEDGER — ${dayName(today)} ${dateLong(today)}\n\n${T.join("\n\n")}`, kind: "brief" };
 }
 
 function wrap(inner, today, label) {
   return `<!doctype html><html><body style="margin:0;padding:0;background:${C.page}"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.page}"><tr><td align="center" style="padding:14px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;font-family:${FONT};color:${C.ink}"><tr><td style="background:${C.head};color:#fff;border-radius:12px 12px 0 0;padding:12px 18px"><span style="font-size:15px;font-weight:800;letter-spacing:.02em">Life Ledger</span><span style="float:right;font-size:12px;color:#c4cbd6;line-height:22px">${esc(label || `${dayName(today)} ${dateShort(today)}`)}</span></td></tr><tr><td style="padding:12px 0 0">${inner}</td></tr></table></td></tr></table></body></html>`;
 }
 
-module.exports = { renderBrief: render, goalNeed, todayActions, notices, status, inr, compact };
+module.exports = { renderBrief: render, intact, goalNeed, todayActions, notices, status, inr, compact };

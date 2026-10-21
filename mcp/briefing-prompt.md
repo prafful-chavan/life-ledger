@@ -12,8 +12,9 @@ Your part is three short, optional notes that the tool places in the email. Writ
    - `win` (≤ 220 characters): one real win from the last month, backed by a number that appears in the text. Leave it out if there is no honest one.
    - `idea` (`title` ≤ 80, `text` ≤ 340 characters): one finance or tax idea in plain words, tied to something in their own numbers. No jargon.
    Never invent a number, a date or a holding. Never say buy or sell. Tax is a planning estimate.
-4. Send the result of the second call with the Gmail connector to praffulchavan22@gmail.com ONLY: subject exactly as returned, `htmlBody` = `html` exactly as returned, plain body = `text` exactly as returned. Never add other recipients.
-5. If sending fails, create a Gmail draft with the same content and say so in its first line.
+4. Before sending, check the `html` you are about to send: it must end with `<!-- LL-END n -->`, where n is the number of characters before that comment (the tool counts them for you; if you cannot count, check at least that the comment is the very last thing and the html ends with `</html>` just before it). If it is missing or the html looks cut off, call `render_brief` again and copy again; if it still fails, send the plain `text` only and say in its first line that the pretty version could not be copied.
+5. Send the result of the second call with the Gmail connector to praffulchavan22@gmail.com ONLY: subject exactly as returned, `htmlBody` = `html` exactly as returned, plain body = `text` exactly as returned. Never add other recipients.
+6. If sending fails, create a Gmail draft with the same content and say so in its first line.
 
 ## If the tool fails
 Do not guess any numbers. Send a short email titled "Life Ledger — brief could not run" that states exactly what failed (the error text), then stop.
