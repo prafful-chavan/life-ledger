@@ -307,6 +307,39 @@ const SCANNER = `(${function scan() {
     const exGoal = await explainOpen("goals", '[data-explain^="goal:"]');
     check("goal: How? shows what is left over the months", exGoal.open && exGoal.rows >= 2 && !exGoal.warn && /a month/.test(exGoal.total), JSON.stringify(exGoal));
 
+    // 3d. Rules edited in the app: tax rates by year (Tax → Rules) and the rules of thumb (Protection)
+    console.log("\nEditable rules");
+    await view("tax"); await sleep(500);
+    await cdp.eval(`[...document.querySelectorAll('#tax .tax-tab')].find(b=>b.dataset.taxTab==='rules').click()`); await sleep(500);
+    const fyNow = await cdp.eval(`LifeLedgerTaxUI.model().fy`);
+    const rulesSeen = JSON.parse(await cdp.eval(`JSON.stringify({years:[...document.querySelectorAll('[data-tax-rates-edit]')].map(b=>b.dataset.taxRatesEdit), assumed:/Assumed: same as the year before/.test(document.getElementById('taxBody').innerText), assumedFlag:LifeLedgerTaxUI.model().people[0].plan.assumedRules})`));
+    check("Tax → Rules lists the years with their rates, this year marked as assumed", rulesSeen.years.includes(fyNow) && rulesSeen.assumed && rulesSeen.assumedFlag === true, JSON.stringify({ fyNow, ...rulesSeen }));
+    const submitRates = (fields) => cdp.eval(`(async()=>{document.querySelector('[data-tax-rates-edit="${fyNow}"]').click(); await new Promise(r=>setTimeout(r,300)); const f=document.getElementById('taxRatesForm'); const F=${JSON.stringify(fields)}; for (const k in F) { f.elements[k].value = F[k]; } f.requestSubmit(); await new Promise(r=>setTimeout(r,400)); return JSON.stringify({err:(document.querySelector('.tax-rates-form .explain-warn')||{}).innerText||'', asking:!!document.getElementById('taxAsk')})})()`);
+    const ratesBad = JSON.parse(await submitRates({ slabs: "400000 5\nabove 30", std: "75000", rebateUpTo: "1200000", rebateMax: "60000", cap: "14", oldStd: "50000", oldRebateUpTo: "500000", oldRebateMax: "12500", source: "Test Budget", confirmedOn: "2027-02-01" }));
+    const ratesUnchanged = await cdp.eval(`Object.keys(LifeLedgerApp.getState().taxRules||{}).length`);
+    check("a mistaken slab table is explained and not saved", /first slab/.test(ratesBad.err) && !ratesBad.asking && ratesUnchanged === 0, JSON.stringify({ ratesBad, ratesUnchanged }));
+    const taxBefore = await cdp.eval(`LifeLedgerTaxUI.model().people[0].plan.regimes.new.tax`);
+    const ratesGood = JSON.parse(await submitRates({ slabs: "400000 0\n800000 5\n1200000 10\n1600000 15\n2000000 20\n2400000 25\nabove 30", std: "100000", rebateUpTo: "1200000", rebateMax: "60000", cap: "14", oldStd: "50000", oldRebateUpTo: "500000", oldRebateMax: "12500", source: "Test Budget speech", confirmedOn: "2027-02-01" }));
+    await cdp.eval(`document.querySelector('#taxAsk [data-tax-ask="yes"]').click()`); await sleep(600);
+    const ratesSaved = JSON.parse(await cdp.eval(`JSON.stringify({rules:(LifeLedgerApp.getState().taxRules||{})['${fyNow}'], card:/Confirmed: Test Budget speech/.test(document.getElementById('taxBody').innerText), assumedGone:!/Assumed: same as the year before/.test([...document.querySelectorAll('#taxBody .tax-finding')].find(e=>e.innerText.startsWith('FY ${fyNow}')).innerText), assumedFlag:LifeLedgerTaxUI.model().people[0].plan.assumedRules, after:LifeLedgerTaxUI.model().people[0].plan.regimes.new.tax})`));
+    check("good rates ask for confirmation, save with their source, and the year is no longer assumed", ratesGood.asking && ratesSaved.rules && ratesSaved.rules.newRegime.std === 100000 && typeof ratesSaved.rules.newRegime.std === 'number' && ratesSaved.card && ratesSaved.assumedGone && ratesSaved.assumedFlag === false, JSON.stringify({ ratesGood, ratesSaved }));
+    check("the whole app follows: a bigger standard deduction lowers this person's tax", ratesSaved.after < taxBefore, JSON.stringify({ taxBefore, after: ratesSaved.after }));
+    const dhRules = JSON.parse(await cdp.eval(`(()=>{const dh=computeDataHealth(); const r=dh.checks.find(c=>c.id==='tax-engine'); return JSON.stringify({status:r&&r.status})})()`));
+    check("Data Health still runs the official cases with the edited rates (this year is not one they cover)", dhRules.status === "ok", JSON.stringify(dhRules));
+    await cdp.eval(`document.querySelector('[data-tax-rates-reset="${fyNow}"]').click()`); await sleep(300);
+    await cdp.eval(`document.querySelector('#taxAsk [data-tax-ask="yes"]').click()`); await sleep(500);
+    const ratesReset = JSON.parse(await cdp.eval(`JSON.stringify({n:Object.keys(LifeLedgerApp.getState().taxRules||{}).length, assumed:LifeLedgerTaxUI.model().people[0].plan.assumedRules, same:LifeLedgerTaxUI.model().people[0].plan.regimes.new.tax})`));
+    check("'Back to built-in' removes the edit and restores the figures", ratesReset.n === 0 && ratesReset.assumed === true && ratesReset.same === taxBefore, JSON.stringify({ ratesReset, taxBefore }));
+
+    await view("protection"); await sleep(600);
+    const guideSet0 = JSON.parse(await cdp.eval(`JSON.stringify({chip:/Term life · Prafful[\\s\\S]{0,200}In the guide/.test(document.getElementById('protectionBody').innerText), has:!!document.querySelector('[data-guide="termMultipleMin"]')})`));
+    await cdp.eval(`(()=>{const i=document.querySelector('[data-guide="termMultipleMin"]'); i.value='40'; i.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(500);
+    const guideSet1 = JSON.parse(await cdp.eval(`JSON.stringify({set:LifeLedgerApp.getState().ruleSettings, text:document.getElementById('protectionBody').innerText.match(/Common guide: [^\\n]*/)[0], below:/Term life · Prafful[\\s\\S]{0,200}Below the guide/.test(document.getElementById('protectionBody').innerText), taxAction:LifeLedgerTaxUI.model().actions.some(a=>a.id==='term-me')})`));
+    check("Protection: the term-cover multiple is a setting; the status and the Tax page follow it", guideSet0.has && guideSet0.chip && guideSet1.set.termMultipleMin === 40 && /40–40|40 ×/.test(guideSet1.text) && guideSet1.below && guideSet1.taxAction, JSON.stringify({ guideSet0, guideSet1 }));
+    await cdp.eval(`(()=>{const i=document.querySelector('[data-guide="termMultipleMin"]'); i.value=''; i.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(400);
+    const guideSet2 = await cdp.eval(`JSON.stringify({set:LifeLedgerApp.getState().ruleSettings, back:/Term life · Prafful[\\s\\S]{0,200}In the guide/.test(document.getElementById('protectionBody').innerText)})`);
+    check("an empty box goes back to the common default", JSON.parse(guideSet2).set.termMultipleMin === undefined && JSON.parse(guideSet2).back, guideSet2);
+
     // 4. Data health
     console.log("\nData health");
     const health = await cdp.eval(`(()=>{document.querySelector('#topbarMore summary').click();document.querySelector('[data-open-modal="dataHealthModal"]').click();return new Promise(r=>setTimeout(()=>r({warn:document.querySelectorAll('.dh-row.warn').length,rows:document.querySelectorAll('.dh-row').length,summary:document.querySelector('.dh-summary')&&document.querySelector('.dh-summary').innerText.replace(/\\n+/g,' | ')}),900))})()`);

@@ -734,3 +734,13 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .explain-total { border-bottom: 0; border-top: 2px solid var(--line, rgba(127, 127, 127, 0.35)); font-weight: 700; }
 .explain-after { margin-top: 10px; opacity: 0.9; }
 .explain-warn { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: rgba(185, 28, 28, 0.1); color: #b91c1c; font-size: 13px; }
+
+/* ── Editable rules (Tax → Rules, Protection guides) ── */
+.tax-rates-form { margin-top: 12px; padding: 12px; border: 1px dashed var(--line, rgba(127, 127, 127, 0.4)); border-radius: 12px; }
+.tax-rates-form textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.tax-rates-form small { display: block; margin-top: 2px; }
+.prot-guides { margin-top: 12px; }
+.prot-guides summary { cursor: pointer; font-weight: 600; color: var(--muted, inherit); }
+.prot-guide-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 8px; }
+.prot-guide { display: grid; gap: 4px; font-size: 13px; }
+.prot-guide input { width: 100%; }

@@ -326,12 +326,74 @@
           <button type="submit" class="primary-button">Add</button></form></section>`;
   }
 
+  // ── Tax rates by year (editable; the Budget changes them, not a developer) ───────────────
+  let editYear = null, ratesError = "";
+  const lakh = (v) => (v === Infinity || v == null ? "above" : v >= 100000 ? `₹${(v / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })}L` : inr(v));
+  const slabText = (slabs) => slabs.map(([up, rate], i) => `${i === slabs.length - 1 ? "above" : "up to"} ${lakh(i === slabs.length - 1 ? slabs[i - 1][0] : up)}: ${rate}%`).join(" · ");
+  const slabLines = (slabs) => slabs.map(([up, rate], i) => `${i === slabs.length - 1 ? "above" : up} ${rate}`).join("\n");
+  /** "400000 0" per line, the last "above 30" → [[400000, 0], …, [null, 30]]; ₹ and commas are ignored. */
+  function parseSlabs(text) {
+    return String(text || "").split("\n").map((l) => l.replace(/[₹,%]/g, "").trim()).filter(Boolean).map((l) => {
+      const [a, b] = l.split(/\s+/);
+      return [/^above$/i.test(a) ? null : Number(a), Number(b)];
+    });
+  }
+  function ratesPanel() {
+    const E = T().engine, rules = state().taxRules || {}, years = E.knownYears().reverse(), sample = [1200000, 1800000, 3000000];
+    const preview = (fy) => { const y = E.yearRules(fy); if (!y.newRegime) return ""; return sample.map((inc) => `${lakh(inc)} → ${inr(E.computeTax({ fy, regime: "new", grossSalary: inc + y.newRegime.std }).totalTax)}`).join(" · "); };
+    const next = `${+years[0].slice(0, 4) + 1}-${String((+years[0].slice(0, 4) + 2) % 100).padStart(2, "0")}`;
+    const card = (fy) => {
+      const y = E.yearRules(fy), n = y.newRegime, mine = rules[fy];
+      const status = mine ? chip("good", `Confirmed: ${mine.source}`) : y.assumed ? chip("warn", "Assumed: same as the year before; confirm after the Budget") : chip("muted", "Built in");
+      return `<div class="tax-finding"><div class="prot-card-top"><div class="tax-ftitle"><b>FY ${esc(fy)}</b> ${status}</div>
+        <div class="prot-actions"><button type="button" class="secondary-button" data-tax-rates-edit="${esc(fy)}">Edit rates</button>${mine ? `<button type="button" class="ghost-button" data-tax-rates-reset="${esc(fy)}">Back to built-in</button>` : ""}</div></div>
+        ${n ? `<div class="prot-sub">New regime: ${esc(slabText(n.slabs))}</div><div class="prot-sub">Standard deduction ${inr(n.std)} · rebate up to ${inr(n.rebateMax)} if income ≤ ${inr(n.rebateUpTo)} · employer NPS up to ${n.cap80CCD2Pct}% of basic</div>` : `<div class="prot-sub">The new regime did not exist this year.</div>`}
+        <div class="prot-sub">Old regime: standard deduction ${inr(y.old.std)} · rebate ${inr(y.old.rebateMax)} if income ≤ ${inr(y.old.rebateUpTo)}</div>
+        ${n ? `<div class="prot-sub">Tax on income of: ${esc(preview(fy))}</div>` : ""}${mine && mine.confirmedOn ? `<div class="prot-sub">Confirmed on ${esc(prettyDate(mine.confirmedOn))}</div>` : ""}
+        ${editYear === fy ? ratesForm(fy) : ""}</div>`;
+    };
+    return `<section class="panel tax-panel"><div class="panel-header"><div><h3>Tax rates by year</h3><p>When a Budget changes the slabs, enter them here with the source. Every figure in the app, from the Tax page to the Advisor and the daily email, uses them straight away. Edits are checked before saving, and Data Health re-runs the official reference cases.</p></div>
+      <button type="button" class="secondary-button" data-tax-rates-edit="${esc(next)}">Add FY ${esc(next)}</button></div>
+      ${editYear && !years.includes(editYear) ? `<div class="tax-finding"><b>FY ${esc(editYear)}</b> (new year, starting from FY ${esc(years[0])})${ratesForm(editYear)}</div>` : ""}
+      ${years.map(card).join("")}</section>`;
+  }
+  function ratesForm(fy) {
+    const E = T().engine, y = E.yearRules(E.knownYears().includes(fy) ? fy : E.knownYears().pop()), n = y.newRegime || { slabs: [[400000, 0], [null, 30]], std: 75000, rebateUpTo: 1200000, rebateMax: 60000, cap80CCD2Pct: 14 };
+    const f = (name, label, val, hint) => `<label class="tax-field"><span>${esc(label)}</span><input type="number" min="0" step="any" name="${name}" value="${esc(val)}" required />${hint ? `<small class="prot-sub">${esc(hint)}</small>` : ""}</label>`;
+    return `<form id="taxRatesForm" class="tax-fields tax-rates-form" data-fy="${esc(fy)}">
+      <label class="tax-field tax-wide"><span>New-regime slabs, one per line: income limit, then rate %. The last line is "above", then its rate.</span><textarea name="slabs" rows="8" required>${esc(slabLines(n.slabs))}</textarea></label>
+      ${f("std", "Standard deduction, new regime (₹)", n.std)}${f("rebateUpTo", "Rebate: income limit (₹)", n.rebateUpTo)}${f("rebateMax", "Rebate: maximum (₹)", n.rebateMax)}${f("cap", "Employer NPS cap (% of basic)", n.cap80CCD2Pct)}
+      <details class="tax-wide"><summary>Old regime</summary><div class="tax-fields">${f("oldStd", "Standard deduction (₹)", y.old.std)}${f("oldRebateUpTo", "Rebate: income limit (₹)", y.old.rebateUpTo)}${f("oldRebateMax", "Rebate: maximum (₹)", y.old.rebateMax)}</div></details>
+      <label class="tax-field tax-wide"><span>Where this comes from (required)</span><input type="text" name="source" maxlength="200" placeholder="e.g. Budget speech, 1 Feb 2027, Annexure" required /></label>
+      <label class="tax-field"><span>Confirmed on</span><input type="date" name="confirmedOn" value="${esc(today())}" required /></label>
+      ${ratesError ? `<p class="explain-warn tax-wide">${esc(ratesError).replace(/\n/g, "<br>")}</p>` : ""}
+      <div class="prot-actions tax-wide"><button type="submit" class="primary-button">Save rates</button><button type="button" class="secondary-button" data-tax-rates-cancel>Cancel</button></div></form>`;
+  }
+  async function submitRates(form) {
+    const E = T().engine, O = window.LifeLedgerTaxOracle, f = new FormData(form), fy = form.dataset.fy;
+    const n = (k) => Number(f.get(k));
+    const edit = { source: String(f.get("source") || "").trim(), confirmedOn: f.get("confirmedOn"),
+      newRegime: { slabs: parseSlabs(f.get("slabs")), std: n("std"), rebateUpTo: n("rebateUpTo"), rebateMax: n("rebateMax"), cap80CCD2Pct: n("cap") },
+      old: { std: n("oldStd"), rebateUpTo: n("oldRebateUpTo"), rebateMax: n("oldRebateMax") } };
+    const s = state(), before = { ...(s.taxRules || {}) }, candidate = { ...before, [fy]: edit };
+    const res = E.setOverrides(candidate);
+    const bad = res.problems.find((p) => p.fy === fy);
+    let failed = [];
+    if (!bad && O) failed = O.run(E).failed;
+    E.setOverrides(before);   // the saved state decides what is applied; try-outs never leak
+    if (bad) { ratesError = bad.errors.join("\n"); render(); return; }
+    if (failed.length) { ratesError = `These rates would change figures that official reference cases check (${failed.slice(0, 3).map((x) => x.id).join(", ")}${failed.length > 3 ? ` and ${failed.length - 3} more` : ""}). If the law really changed for this year, the reference cases need updating first; ask your developer. Nothing was saved.`; render(); return; }
+    if (!(await ask(`Save these rates for FY ${fy}?\n\nEvery tax figure in the app will use them, and the year will no longer be marked as assumed.`, "Save", "Cancel"))) return;
+    s.taxRules = candidate; ratesError = ""; editYear = null;
+    save().catch(() => {}); render();
+  }
+
   // ── Rules ────────────────────────────────────────────────────────────────────────────────
   function viewRules(m) {
     const L = T().law, st = m.law;
     const label = { statute: "Statute", secondary: "Commentary: confirm", author: "Author's view: confirm" };
     const cls = { statute: "good", secondary: "warn", author: "bad" };
-    return `<section class="panel tax-panel"><div class="panel-header"><div><h3>Rules this page relies on</h3><p>${L.LAW.length} rules, last checked ${esc(prettyDate(L.VERIFIED))}. ${st.weak.length} rest on professional commentary rather than the official text. A monthly check looks for changes.</p></div></div>
+    return ratesPanel() + `<section class="panel tax-panel"><div class="panel-header"><div><h3>Rules this page relies on</h3><p>${L.LAW.length} rules, last checked ${esc(prettyDate(L.VERIFIED))}. ${st.weak.length} rest on professional commentary rather than the official text. A monthly check looks for changes.</p></div></div>
       ${L.LAW.map((r) => `<div class="tax-finding"><div class="tax-ftitle">${chip(cls[r.confidence], label[r.confidence])} <b>${esc(r.topic)}</b> <span class="prot-sub">${esc([r.act1961, r.act2025].filter(Boolean).join(" → "))}</span></div>
         <div class="prot-sub">${esc(r.rule)}</div><div class="prot-sub">${(r.sources || []).filter((s) => /^https?:/.test(s)).map((s) => `<a href="${esc(s)}" target="_blank" rel="noopener noreferrer">${esc(s.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60))}</a>`).join(" · ")}</div></div>`).join("")}</section>`;
   }
@@ -394,7 +456,15 @@
   }
   function onClick(e) {
     const tb = e.target.closest("[data-tax-tab]");
-    if (tb) { tab = tb.dataset.taxTab; render(); return; }
+    if (tb) { tab = tb.dataset.taxTab; editYear = null; ratesError = ""; render(); return; }
+    const re = e.target.closest("[data-tax-rates-edit]");
+    if (re) { editYear = re.dataset.taxRatesEdit; ratesError = ""; render(); return; }
+    if (e.target.closest("[data-tax-rates-cancel]")) { editYear = null; ratesError = ""; render(); return; }
+    const rr = e.target.closest("[data-tax-rates-reset]");
+    if (rr) {
+      ask(`Go back to the built-in rates for FY ${rr.dataset.taxRatesReset}? Your edited rates for that year are removed.`, "Go back", "Keep").then((yes) => { if (!yes) return; const s = state(); const next = { ...(s.taxRules || {}) }; delete next[rr.dataset.taxRatesReset]; s.taxRules = next; save().catch(() => {}); render(); });
+      return;
+    }
     const rb = e.target.closest("[data-tax-ret]");
     if (rb) {
       const act = rb.dataset.taxRet, id = rb.dataset.id;
@@ -412,6 +482,7 @@
     if (e.target.closest("#taxExport")) exportFile();
   }
   function onSubmit(e) {
+    if (e.target.id === "taxRatesForm") { e.preventDefault(); submitRates(e.target); return; }
     if (e.target.id !== "taxFamilyForm") return;
     e.preventDefault();
     const f = new FormData(e.target), s = state();

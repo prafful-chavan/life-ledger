@@ -59,6 +59,15 @@
   // Own policies and employer group cover shown apart: the employer's cover stops when the job does.
   const coverSplit = (c) => c.employerCover > 0 ? `<div class="prot-sub">Your own policies ${inr(c.ownCover)} · employer group cover ${inr(c.employerCover)}${c.status === "employer" ? ": it ends if you leave or change jobs, so buy your own while it is active" : ""}</div>` : "";
 
+  /** The rules of thumb as settings: change them here and Protection, the Tax page and the daily email all follow. */
+  function guideEditor() {
+    const g = P().guides(state()), D = P().DEFAULT_GUIDES, mine = state().ruleSettings || {};
+    const f = (key, label, val, def, step, min, max) => `<label class="prot-guide"><span>${esc(label)}</span><input type="number" data-guide="${key}" min="${min}" max="${max}" step="${step}" value="${mine[key] != null ? esc(mine[key]) : ""}" placeholder="${esc(def)}" /><small class="prot-sub">now ${esc(val)}${mine[key] == null ? " (common default)" : ""}</small></label>`;
+    return `<details class="prot-guides"><summary>Change these guides</summary>
+      <p class="prot-sub">Term cover as a multiple of yearly income, and the family health-cover baseline. Leave a box empty for the common default. The emergency-fund target is set in Wealth Advisor → About me &amp; my goals.</p>
+      <div class="prot-guide-row">${f("termMultipleMin", "Term cover: at least (× yearly income)", g.termMultipleMin, D.termMultipleMin, 1, 1, 50)}${f("termMultipleMax", "Term cover: up to (× yearly income)", g.termMultipleMax, D.termMultipleMax, 1, 1, 60)}${f("healthBaseline", "Family health cover: at least (₹)", g.healthBaseline, D.healthBaseline, 50000, 100000, 100000000)}</div></details>`;
+  }
+
   function render() {
     const root = $("protectionBody");
     if (!root || !App() || !P()) return;
@@ -74,7 +83,7 @@
       </div>`;
     };
     const termRow = (c) => `<div class="prot-check"><div><b>Term life · ${esc(NAMES[c.who])}</b>
-        <div class="prot-sub">${c.income > 0 ? `Common guide: 10–15 × yearly income = ${inr(c.min)} – ${inr(c.max)}` : "Add a salary to see a guide"}</div>${coverSplit(c)}</div>
+        <div class="prot-sub">${c.income > 0 ? `Common guide: ${c.multipleMin === c.multipleMax ? c.multipleMin : `${c.multipleMin}–${c.multipleMax}`} × yearly income = ${inr(c.min)} – ${inr(c.max)}` : "Add a salary to see a guide"}</div>${coverSplit(c)}</div>
         <div class="prot-check-right"><b>${c.cover > 0 ? inr(c.cover) : "—"}</b> ${statusChip(c.status, "In the guide", "Below the guide")}</div></div>`;
     const h = sum.health;
     const due = sum.dueSoon.length ? `<div class="prot-alert">${sum.dueSoon.map((x) => `<div>⏰ <b>${esc(x.p.type)}${x.p.insurer ? " · " + esc(x.p.insurer) : ""}</b> ${x.s.state === "overdue" ? `was due ${Math.abs(x.s.days)} day${Math.abs(x.s.days) === 1 ? "" : "s"} ago` : x.s.days === 0 ? "is due today" : `is due in ${x.s.days} day${x.s.days === 1 ? "" : "s"}`} (${prettyDate(x.p.nextDue)}) · ${inr(x.p.premium)}</div>`).join("")}</div>` : "";
@@ -111,7 +120,8 @@
       <section class="panel"><div class="panel-header"><div><h3>Is your cover enough?</h3><p>Common rules of thumb, only a guide, not advice.</p></div></div>
         ${sum.term.map(termRow).join("")}
         <div class="prot-check"><div><b>Health cover (family)</b><div class="prot-sub">Common guide: at least ${inr(h.baseline)} in total</div>${coverSplit(h)}</div>
-          <div class="prot-check-right"><b>${h.cover > 0 ? inr(h.cover) : "—"}</b> ${statusChip(h.status, "In the guide", "Below the guide")}</div></div></section>
+          <div class="prot-check-right"><b>${h.cover > 0 ? inr(h.cover) : "—"}</b> ${statusChip(h.status, "In the guide", "Below the guide")}</div></div>
+        ${guideEditor()}</section>
 
       <section class="panel"><div class="panel-header"><div><h3>Insurance policies</h3><p>Cover, premium and renewal date for each policy.</p></div>
         <button type="button" class="primary-button" data-act="add" data-kind="insurance">Add policy</button></div>
@@ -167,6 +177,13 @@
     }
   }
   function onChange(e) {
+    const gd = e.target.closest("[data-guide]");
+    if (gd) {
+      // The rules of thumb. An empty box goes back to the default; the guides are always kept sane (see protection-core guides())
+      const s = state(), next = { ...(s.ruleSettings || {}) }, key = gd.dataset.guide;
+      if (gd.value === "") delete next[key]; else next[key] = Number(gd.value);
+      s.ruleSettings = next; save(); render(); return;
+    }
     const d = e.target.closest("[data-dob]");
     if (!d) return;
     const s = state(); s.people = s.people || {};

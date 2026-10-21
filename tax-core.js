@@ -146,7 +146,67 @@
 
   const fyOf = (iso) => { const y = +String(iso).slice(0, 4), m = +String(iso).slice(5, 7); return m >= 4 ? `${y}-${String(y + 1).slice(2)}` : `${y - 1}-${String(y).slice(2)}`; };
   const ayOf = (fy) => { const y = +fy.slice(0, 4) + 1; return `${y}-${String(y + 1).slice(2)}`; };
-  const yearRules = (fy) => { const y = YEARS[fy]; if (!y) throw new Error(`No tax rules for FY ${fy}`); return y; };
+  // Rates the household edited in the app (state.taxRules). Applied by household.build() from the vault on every build,
+  // so every consumer (Tax page, Advisor, daily brief, explanations) uses the same rates. Never mutates YEARS.
+  let ACTIVE = {};
+  const yearRules = (fy) => { const y = ACTIVE[fy] || YEARS[fy]; if (!y) throw new Error(`No tax rules for FY ${fy}`); return y; };
+  const knownYears = () => [...new Set([...Object.keys(YEARS), ...Object.keys(ACTIVE)])].sort();
+
+  /**
+   * One year's editable shape. Slabs are [[upTo|null, ratePct], ...] (null = no upper limit, the last slab).
+   * Returns { errors: [...], year } where year is the engine's internal form (Infinity for the open last slab).
+   */
+  function checkYearRules(fy, edit, base) {
+    const errors = [], n = (v) => Number(v);
+    const out = JSON.parse(JSON.stringify(base || {}));
+    const newR = edit && edit.newRegime, old = edit && edit.old;
+    if (!/^\d{4}-\d{2}$/.test(String(fy)) || +fy.slice(5) !== (+fy.slice(0, 4) + 1) % 100) errors.push("The year must look like 2027-28.");
+    if (!edit || !String(edit.source || "").trim()) errors.push("Say where this comes from (for example: Budget speech 2027, or the CBDT circular number).");
+    const nonNeg = (v, what, max) => { if (!(Number.isFinite(n(v)) && n(v) >= 0 && (max == null || n(v) <= max))) errors.push(`${what} must be a number from 0${max != null ? ` to ${max.toLocaleString("en-IN")}` : ""}.`); };
+    if (newR) {
+      const s = newR.slabs;
+      if (!Array.isArray(s) || s.length < 2) errors.push("The new regime needs at least two slabs.");
+      else {
+        let prevUp = 0, prevRate = -1;
+        s.forEach(([up, rate], i) => {
+          const last = i === s.length - 1;
+          if (last ? !(up === null || up === Infinity || up === "") : !(Number.isFinite(n(up)) && n(up) > prevUp)) errors.push(last ? "The last slab must have no upper limit." : `Slab ${i + 1}: the limit must be higher than the one before.`);
+          if (!(Number.isFinite(n(rate)) && n(rate) >= 0 && n(rate) <= 100)) errors.push(`Slab ${i + 1}: the rate must be 0–100%.`);
+          else if (n(rate) < prevRate) errors.push(`Slab ${i + 1}: rates must not fall as income rises.`);
+          if (!last) prevUp = n(up); prevRate = Number.isFinite(n(rate)) ? n(rate) : prevRate;
+        });
+        if (n(s[0][1]) !== 0) errors.push("The first slab (lowest income) is normally 0%: check it.");
+      }
+      nonNeg(newR.std, "New-regime standard deduction", 500000); nonNeg(newR.rebateUpTo, "New-regime rebate limit"); nonNeg(newR.rebateMax, "New-regime maximum rebate");
+      nonNeg(newR.cap80CCD2Pct, "Employer NPS cap (% of basic)", 30);
+      if (n(newR.rebateMax) > 0 && n(newR.rebateUpTo) <= 0) errors.push("A rebate needs an income limit.");
+    }
+    if (old) { nonNeg(old.std, "Old-regime standard deduction", 500000); nonNeg(old.rebateUpTo, "Old-regime rebate limit"); nonNeg(old.rebateMax, "Old-regime maximum rebate"); }
+    if (!errors.length) {
+      if (newR) out.newRegime = { ...(out.newRegime || {}), slabs: newR.slabs.map(([up, rate], i, a) => [i === a.length - 1 ? Infinity : n(up), n(rate)]), std: n(newR.std), rebateUpTo: n(newR.rebateUpTo), rebateMax: n(newR.rebateMax), cap80CCD2Pct: n(newR.cap80CCD2Pct), marginalRelief: newR.marginalRelief !== false };
+      if (old) out.old = { ...(out.old || {}), std: n(old.std), rebateUpTo: n(old.rebateUpTo), rebateMax: n(old.rebateMax) };
+      delete out.assumed;   // the household confirmed it from a source
+      out.source = String(edit.source).trim().slice(0, 200);
+      if (edit.confirmedOn) out.confirmedOn = String(edit.confirmedOn).slice(0, 10);
+    }
+    return { errors, year: out };
+  }
+
+  /**
+   * Applies the household's edited years ({ "2027-28": { source, confirmedOn, newRegime, old } }). A year that is not
+   * built in starts from the latest built-in year. Invalid entries are ignored and reported, never half-applied.
+   */
+  function setOverrides(overrides) {
+    const next = {}, problems = [];
+    const latest = Object.keys(YEARS).sort().pop();
+    for (const [fy, edit] of Object.entries(overrides || {})) {
+      const r = checkYearRules(fy, edit, YEARS[fy] || YEARS[latest]);
+      if (r.errors.length) problems.push({ fy, errors: r.errors }); else next[fy] = r.year;
+    }
+    ACTIVE = next;
+    return { applied: Object.keys(next), problems };
+  }
+  const overridesApplied = () => Object.keys(ACTIVE);
 
   function slabTax(taxable, slabs) {
     let tax = 0, prev = 0;
@@ -267,7 +327,7 @@
     return { old: o, new: n, better, saving: n ? Math.abs(o.totalTax - n.totalTax) : 0 };
   }
 
-  return { YEARS, RULES, fyOf, ayOf, yearRules, slabTax, marginalRate, equityGainsTax, hraExemption, capDeductions, computeTax, compareRegimes };
+  return { YEARS, RULES, fyOf, ayOf, yearRules, knownYears, checkYearRules, setOverrides, overridesApplied, slabTax, marginalRate, equityGainsTax, hraExemption, capDeductions, computeTax, compareRegimes };
   })();
 
   // ════════════════════════════ remedies ════════════════════════════
@@ -1322,14 +1382,14 @@
         for (const [who, sev] of [["Me", "high"], ["Wife", "medium"]]) {
           const t = Protection.termCheck(state, who);
           if (t.status === "ok") continue;
-          const guide = t.income > 0 ? ` The guide is 10–15 × yearly income: ${inr(t.min)} – ${inr(t.max)}.` : "";
+          const guide = t.income > 0 ? ` The guide is ${t.multipleMin === t.multipleMax ? t.multipleMin : `${t.multipleMin}–${t.multipleMax}`} × yearly income: ${inr(t.min)} – ${inr(t.max)}.` : "";
           const title = t.status === "not-set" ? `Term life cover for ${NAMES[who]}` : t.status === "employer" ? `${NAMES[who]}'s term cover is only through the employer` : `${NAMES[who]}'s term cover is below the guide`;
           const body = t.status === "not-set" ? "No term cover is recorded on the Protection page." : t.status === "employer" ? `Own policies ${inr(t.ownCover)}, employer group cover ${inr(t.employerCover)}; the group cover ends with the job.` : `Recorded cover ${inr(t.cover)}.`;
           add(`term-${who === "Me" ? "me" : "wife"}`, sev, title, `${body}${guide}`, "", { who: NAMES[who] });
         }
         const h = Protection.healthCheck(state);
         if (h.status !== "ok") {
-          const title = h.status === "not-set" ? "Record your health cover, and compare personal policies" : h.status === "employer" ? "Health cover is only through the employer: buy your own" : "Health cover is below ₹10 lakh";
+          const title = h.status === "not-set" ? "Record your health cover, and compare personal policies" : h.status === "employer" ? "Health cover is only through the employer: buy your own" : `Health cover is below ${inr(h.baseline)}`;
           const now = h.status === "employer" ? `Employer group cover ${inr(h.employerCover)}, own policies ${inr(h.ownCover)}. ` : "";
           add("health", "medium", title, `${now}Employer group cover ends when the job does (a job change or a posting abroad); personal cover bought now starts its waiting periods now. Record policies on the Protection page.`, "");
         }
@@ -1412,8 +1472,10 @@
     /** The whole picture for the Tax tab and the daily brief. */
     function build(state, today) {
       const profile = state.taxProfile || {};
+      // The rates the household confirmed in the app (Tax → Rules) replace the built-in/assumed ones for this build
+      const rules = engine.setOverrides(state.taxRules || {});
       const fy = gains.fyOf(today);
-      const model = { asOf: today, fy, ay: engine.ayOf(fy), profile, people: [], returnsAudit: [], deadlines: [], actions: [], family: [], departure: null };
+      const model = { asOf: today, fy, ay: engine.ayOf(fy), profile, people: [], returnsAudit: [], deadlines: [], actions: [], family: [], departure: null, rules };
       for (const who of PEOPLE) {
         const inp = personInputs(state, profile, who, fy, today);
         if (!inp) { model.people.push({ who, name: NAMES[who], plan: null, note: "No salary record found for this financial year." }); continue; }

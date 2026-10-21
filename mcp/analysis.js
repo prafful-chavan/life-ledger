@@ -226,7 +226,9 @@ function healthCheck(state, today, fxOverride) {
   const flags = [];
   const add = (level, topic, text) => flags.push({ level, topic, text });
   const months = monthly ? liquid / monthly : null;
-  if (months != null) add(months >= 6 ? "good" : months >= 3 ? "watch" : "act", "Emergency fund", `Bank + FDs cover ${r1(months)} months of spending (a common target is 6).`);
+  // The target is the one set in the Advisor's "About me & my goals" (6 months by default); under half of it is "act"
+  const target = num(state.advisor && state.advisor.profile && state.advisor.profile.emergencyMonths) > 0 ? num(state.advisor.profile.emergencyMonths) : 6;
+  if (months != null) add(months >= target ? "good" : months >= target / 2 ? "watch" : "act", "Emergency fund", `Bank + FDs cover ${r1(months)} months of spending (your target is ${target}).`);
   if (exp.savingsRatePct != null) add(exp.savingsRatePct >= 30 ? "good" : exp.savingsRatePct >= 15 ? "watch" : "act", "Savings rate", `${exp.savingsRatePct}% of the salary that paid ${exp.month} was left over.`);
   if (income > 0 && emi > 0) add(emi / income <= 0.3 ? "good" : "watch", "Debt load", `EMIs are ${pct(emi, income)}% of monthly take-home.`);
   const eq = nw.classes.mutualFunds.value + nw.classes.stocks.value + nw.classes.usStocks.value;
@@ -234,8 +236,8 @@ function healthCheck(state, today, fxOverride) {
   const ps = Protection.summary(state, t);
   const rs = (v) => `₹${r0(v).toLocaleString("en-IN")}`;
   const viaEmployer = (c) => c.status === "employer" ? ` Only ${rs(c.ownCover)} is your own; ${rs(c.employerCover)} is employer group cover, which ends with the job.` : "";
-  for (const w of ps.term) add(w.status === "ok" ? "good" : w.status === "low" ? "act" : "watch", `Term cover (${w.who})`, w.status === "not-set" ? "Not entered yet." : `${rs(w.cover)} against a 10–15× yearly-income guide of ${rs(w.min)}–${rs(w.max)}.${viaEmployer(w)}`);
-  add(ps.health.status === "ok" ? "good" : ps.health.status === "low" ? "act" : "watch", "Health cover", ps.health.status === "not-set" ? "Not entered yet." : `${rs(ps.health.cover)} against a ₹10 lakh baseline.${viaEmployer(ps.health)}`);
+  for (const w of ps.term) add(w.status === "ok" ? "good" : w.status === "low" ? "act" : "watch", `Term cover (${w.who})`, w.status === "not-set" ? "Not entered yet." : `${rs(w.cover)} against a ${w.multipleMin === w.multipleMax ? w.multipleMin : `${w.multipleMin}–${w.multipleMax}`}× yearly-income guide of ${rs(w.min)}–${rs(w.max)}.${viaEmployer(w)}`);
+  add(ps.health.status === "ok" ? "good" : ps.health.status === "low" ? "act" : "watch", "Health cover", ps.health.status === "not-set" ? "Not entered yet." : `${rs(ps.health.cover)} against a ${rs(ps.health.baseline)} baseline.${viaEmployer(ps.health)}`);
   for (const d of ps.dueSoon) add(d.s.state === "overdue" ? "act" : "watch", "Renewal", `${d.p.policyName || d.p.type} (${d.p.person}) ${d.s.state === "overdue" ? "is overdue" : `is due in ${d.s.days} days`}.`);
   const mfs = mutualFundReport(state, t);
   if (mfs.totalValue) {

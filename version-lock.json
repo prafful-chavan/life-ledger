@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.107",
-    "sha256": "3f8a4cf804a49f68bad660133d2b3ed49d4bacddcac2faa94c6c03562c3517b4"
+    "version": "1.0.108",
+    "sha256": "d235a2541b25af6884416f6c9f8727c0d614cdcdc85d9efe5b48af119098024c"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -60,8 +60,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.18",
-    "sha256": "134fe268ccf3f17eeb66a5d3e3b053497542d2bf7d303470c4c64b0364981410"
+    "version": "1.8.19",
+    "sha256": "d25f013f870b61cb4957756da19dce05dc000443a72c6e2f4b40954bdaaa26f7"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -84,12 +84,12 @@
     "sha256": "ae5f5d14a5cd4b1def0b96355d94bc7395c3fbc31c3edaeba84cc84583660ed4"
   },
   "protection-core.js": {
-    "version": "1.0.1",
-    "sha256": "e0a7a33b04173c02d5192d3536d8a5a68193fdde0de554d51399132714484d2f"
+    "version": "1.0.2",
+    "sha256": "c9d948fb1520a1129d76458ee5a76da5b46f5a19b731f4d50fad5aa05e1ff671"
   },
   "protection.js": {
-    "version": "1.0.2",
-    "sha256": "e6113911f585c48ed9b4307a4de6d66e41fd8badb22d2c1db8a264e1f823555a"
+    "version": "1.0.3",
+    "sha256": "3b61ba9c5e65659b95a0cc924021886840466568ae934edae121a11c258455e6"
   },
   "script-gate.js": {
     "version": "1.0.0",
@@ -120,16 +120,16 @@
     "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
   },
   "tax-core.js": {
-    "version": "1.2.12",
-    "sha256": "e5e9c319a79cc8fcffe7cde346a4cb9cc708549d55c2971f7b4f83715db2436c"
+    "version": "1.2.13",
+    "sha256": "ae1d2f3add6aead61678a1c105916198fed233bc107142c967acf8d6635b9926"
   },
   "tax-oracle.js": {
     "version": "1.0.0",
     "sha256": "a4bd3998404098703112139f1ea2c0351e8fad3db7c466af4f3faf326fbbb028"
   },
   "tax.js": {
-    "version": "1.2.5",
-    "sha256": "438376a82bbf2aa0b7039065417e7e3e5102aca145a589d6e40d975b0abd3361"
+    "version": "1.2.7",
+    "sha256": "18bac72fca7709c482b91857bd46872e1e9af96bac3764312a4ad46b6f48cab2"
   },
   "theme.css": {
     "version": "1.1.7",

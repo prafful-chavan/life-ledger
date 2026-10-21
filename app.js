@@ -34,6 +34,8 @@ const defaultData = {
   taxProfile: {},
   taxReturns: [],
   taxFamily: [],
+  taxRules: {},
+  ruleSettings: {},
   holdingsCheck: null,
   studies: [],
   workouts: [],
@@ -1174,6 +1176,9 @@ function normalizeDataCore(data) {
     taxProfile: data.taxProfile && typeof data.taxProfile === "object" && !Array.isArray(data.taxProfile) ? data.taxProfile : {},
     taxReturns: ensureIds(Array.isArray(data.taxReturns) ? data.taxReturns : [], "taxr"),
     taxFamily: ensureIds(Array.isArray(data.taxFamily) ? data.taxFamily : [], "taxf"),
+    // Rates edited in Tax → Rules ({ "2027-28": { source, newRegime, old } }) and the household's rules of thumb (Protection)
+    taxRules: data.taxRules && typeof data.taxRules === "object" && !Array.isArray(data.taxRules) ? data.taxRules : {},
+    ruleSettings: data.ruleSettings && typeof data.ruleSettings === "object" && !Array.isArray(data.ruleSettings) ? data.ruleSettings : {},
     // Holdings checked against INDmoney by the weekly task on the Mac (it writes only this field)
     holdingsCheck: data.holdingsCheck && typeof data.holdingsCheck === "object" && !Array.isArray(data.holdingsCheck) ? data.holdingsCheck : null,
     studies: ensureIds(data.studies || [], "study").map(s => {

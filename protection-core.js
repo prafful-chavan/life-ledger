@@ -80,16 +80,28 @@
   const split = (list) => list.reduce((acc, p) => { acc[isEmployer(p) ? "employerCover" : "ownCover"] += num(p.cover); return acc; }, { ownCover: 0, employerCover: 0 });
   const statusOf = (own, employer, min) => own + employer <= 0 ? "not-set" : own >= min ? "ok" : own + employer >= min ? "employer" : "low";
 
-  /** Term life cover versus 10–15 × yearly income (a common rule of thumb). */
-  function termCheck(state, who) {
-    const income = monthlyIncome(state, who) * 12;
-    const { ownCover, employerCover } = split((state.insurance || []).filter((p) => p.type === TERM && p.person === who));
-    const min = income * 10, max = income * 15;
-    return { who, income, cover: ownCover + employerCover, ownCover, employerCover, min, max, status: statusOf(ownCover, employerCover, min) };
+  /**
+   * The household's rules of thumb (state.ruleSettings, edited on the Protection page); the defaults are the common guides.
+   * Always sane: a missing or invalid value falls back to its default, and the maximum is never below the minimum.
+   */
+  const DEFAULT_GUIDES = { termMultipleMin: 10, termMultipleMax: 15, healthBaseline: 1000000 };
+  function guides(state) {
+    const s = (state && state.ruleSettings) || {}, pick = (v, d, lo, hi) => (Number.isFinite(Number(v)) && Number(v) >= lo && Number(v) <= hi && v !== "" && v !== null ? Number(v) : d);
+    const min = pick(s.termMultipleMin, DEFAULT_GUIDES.termMultipleMin, 1, 50);
+    const max = Math.max(min, pick(s.termMultipleMax, DEFAULT_GUIDES.termMultipleMax, 1, 60));
+    return { termMultipleMin: min, termMultipleMax: max, healthBaseline: pick(s.healthBaseline, DEFAULT_GUIDES.healthBaseline, 100000, 100000000) };
   }
 
-  /** Family health cover versus a common ₹10 lakh baseline. */
-  function healthCheck(state, baseline = 1000000) {
+  /** Term life cover versus a multiple of yearly income (10–15 × by default; a common rule of thumb). */
+  function termCheck(state, who) {
+    const income = monthlyIncome(state, who) * 12, g = guides(state);
+    const { ownCover, employerCover } = split((state.insurance || []).filter((p) => p.type === TERM && p.person === who));
+    const min = income * g.termMultipleMin, max = income * g.termMultipleMax;
+    return { who, income, cover: ownCover + employerCover, ownCover, employerCover, min, max, multipleMin: g.termMultipleMin, multipleMax: g.termMultipleMax, status: statusOf(ownCover, employerCover, min) };
+  }
+
+  /** Family health cover versus a baseline (₹10 lakh by default). */
+  function healthCheck(state, baseline = guides(state).healthBaseline) {
     const { ownCover, employerCover } = split((state.insurance || []).filter((p) => p.type === HEALTH));
     return { cover: ownCover + employerCover, ownCover, employerCover, baseline, status: statusOf(ownCover, employerCover, baseline) };
   }
@@ -131,5 +143,5 @@
     return out;
   }
 
-  return { ageOn, nextBirthday, annualPremium, dueStatus, advanceDue, monthlyIncome, monthlySpending, termCheck, healthCheck, summary, suggestGoals, coverOf, isEmployer, PERIODS };
+  return { ageOn, nextBirthday, annualPremium, dueStatus, advanceDue, monthlyIncome, monthlySpending, termCheck, healthCheck, guides, DEFAULT_GUIDES, summary, suggestGoals, coverOf, isEmployer, PERIODS };
 });
