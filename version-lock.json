@@ -112,8 +112,8 @@
     "sha256": "05d824523fcf66e9eed3b57a0b6fc037db51de5f080f32b11b422b2ffdc771ea"
   },
   "sync-engine.js": {
-    "version": "1.1.0",
-    "sha256": "cb63ead2d81007cd32877c2446af25783dc271785dead73109f479f928e55c21"
+    "version": "1.1.1",
+    "sha256": "307d61b5480067c5ae8ff4547d93e35221f67776afa6156f1ad066a594db6f2c"
   },
   "sync-ui.js": {
     "version": "1.0.0",

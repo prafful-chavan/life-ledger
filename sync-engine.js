@@ -30,6 +30,22 @@
     usstocks: ["currentPrice", "currentValue", "dayPnl", "prevClose", "priceDate"],
     gold: ["value"],
   };
+  /**
+   * Fields written only by a task outside the app (the Mac's weekly holdings check). Their merge ignores timestamps:
+   * a real result always beats an empty one (a freshly restored browser or an old cached copy of the app has no such
+   * field and would otherwise erase it), and between two results the later check wins.
+   */
+  const EXTERNAL = {
+    holdingsCheck: (a, b, ta, tb) => {
+      const real = (v) => v && typeof v === "object" && !Array.isArray(v);
+      if (!real(a) && !real(b)) return { value: a === undefined ? b : a, ts: Math.max(ta, tb) };
+      if (!real(a)) return { value: b, ts: tb };
+      if (!real(b)) return { value: a, ts: ta };
+      const da = String(a.checkedOn || ""), db = String(b.checkedOn || "");
+      if (da !== db) return da > db ? { value: a, ts: ta } : { value: b, ts: tb };
+      return ta >= tb ? { value: a, ts: ta } : { value: b, ts: tb };
+    },
+  };
   /** [stable part, volatile part] of a record. */
   function split(coll, item) {
     const vf = VOLATILE[coll];
@@ -202,7 +218,8 @@
         const hasR = field in rd;
         let value;
         let ts;
-        if (hasL && hasR) {
+        if (EXTERNAL[field]) ({ value, ts } = EXTERNAL[field](hasL ? lv : undefined, hasR ? rv : undefined, lt, rt));
+        else if (hasL && hasR) {
           if (newer(lv, lt, rv, rt) === "a") { value = lv; ts = lt; }
           else { value = rv; ts = rt; }
         } else if (hasL) { value = lv; ts = lt; }

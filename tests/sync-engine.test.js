@@ -76,3 +76,29 @@ const t = device({ expenses: [] }, { u: {}, d: { expenses: { gone: 1 } }, k: {} 
 assert.ok(!("gone" in E.merge(t, t, E.TOMBSTONE_TTL_MS + 10).meta.d.expenses));
 
 console.log("sync-engine tests passed");
+
+// A field written only by the Mac's weekly task (holdingsCheck): an empty copy on a device must never beat a real result,
+// whatever the timestamps say (a freshly restored browser or an old cached app has no such field, or null, stamped later)
+{
+  const E2 = require("../sync-engine.js");
+  const result = (d, extra = {}) => ({ checkedOn: d, status: "ok", matched: 56, total: 56, ...extra });
+  const dev = (value, ts) => ({ data: { holdingsCheck: value, income: [] }, meta: { ...E2.emptyMeta(), k: ts ? { holdingsCheck: ts } : {} } });
+  const cloud = dev(result("2026-10-20"), 1000);
+  for (const empty of [null, undefined]) {
+    const stale = dev(empty, 9999);
+    if (empty === undefined) delete stale.data.holdingsCheck;
+    for (const [a, b] of [[stale, cloud], [cloud, stale]]) {
+      const m = E2.merge(a, b);
+      assert.deepStrictEqual(m.data.holdingsCheck, result("2026-10-20"), `an empty ${empty} copy stamped later does not erase the result (${a === stale ? "local" : "remote"} side)`);
+    }
+  }
+  // Two real results: the later check wins, in either order
+  const newer = dev(result("2026-10-27", { matched: 55, status: "watch" }), 500), older = dev(result("2026-10-20"), 9000);
+  for (const [a, b] of [[newer, older], [older, newer]]) assert.strictEqual(E2.merge(a, b).data.holdingsCheck.checkedOn, "2026-10-27", "the later check wins even with an older stamp");
+  assert.strictEqual(E2.merge(dev(null, 5), dev(null, 6)).data.holdingsCheck, null, "nothing on either side stays empty");
+  assert.deepStrictEqual(E2.merge(dev({ x: 1 }, 5), dev({ y: 2 }, 6)).data.holdingsCheck, { y: 2 }, "results without a date fall back to the later stamp");
+  // ordinary fields are unchanged: the later edit wins, including an edit to empty
+  const f = (v, ts) => ({ data: { taxProfile: v }, meta: { ...E2.emptyMeta(), k: { taxProfile: ts } } });
+  assert.deepStrictEqual(E2.merge(f({ a: 1 }, 1), f({ a: 2 }, 2)).data.taxProfile, { a: 2 }, "ordinary fields still go by the later edit");
+}
+console.log("external field merge tests passed");
