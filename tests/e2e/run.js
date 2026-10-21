@@ -318,6 +318,8 @@ const SCANNER = `(${function scan() {
     const ratesBad = JSON.parse(await submitRates({ slabs: "400000 5\nabove 30", std: "75000", rebateUpTo: "1200000", rebateMax: "60000", cap: "14", oldStd: "50000", oldRebateUpTo: "500000", oldRebateMax: "12500", source: "Test Budget", confirmedOn: "2027-02-01" }));
     const ratesUnchanged = await cdp.eval(`Object.keys(LifeLedgerApp.getState().taxRules||{}).length`);
     check("a mistaken slab table is explained and not saved", /first slab/.test(ratesBad.err) && !ratesBad.asking && ratesUnchanged === 0, JSON.stringify({ ratesBad, ratesUnchanged }));
+    const kept = JSON.parse(await cdp.eval(`(()=>{const f=document.getElementById('taxRatesForm'); return JSON.stringify({source:f.elements.source.value, slabs:f.elements.slabs.value, date:f.elements.confirmedOn.value})})()`));
+    check("after a mistake the form keeps what was typed (source, slabs, date)", kept.source === "Test Budget" && kept.slabs === "400000 5\nabove 30" && kept.date === "2027-02-01", JSON.stringify(kept));
     const taxBefore = await cdp.eval(`LifeLedgerTaxUI.model().people[0].plan.regimes.new.tax`);
     const ratesGood = JSON.parse(await submitRates({ slabs: "400000 0\n800000 5\n1200000 10\n1600000 15\n2000000 20\n2400000 25\nabove 30", std: "100000", rebateUpTo: "1200000", rebateMax: "60000", cap: "14", oldStd: "50000", oldRebateUpTo: "500000", oldRebateMax: "12500", source: "Test Budget speech", confirmedOn: "2027-02-01" }));
     await cdp.eval(`document.querySelector('#taxAsk [data-tax-ask="yes"]').click()`); await sleep(600);

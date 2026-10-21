@@ -327,7 +327,7 @@
   }
 
   // ── Tax rates by year (editable; the Budget changes them, not a developer) ───────────────
-  let editYear = null, ratesError = "";
+  let editYear = null, ratesError = "", ratesDraft = null;   // the draft keeps what was typed when a mistake is reported
   const lakh = (v) => (v === Infinity || v == null ? "above" : v >= 100000 ? `₹${(v / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })}L` : inr(v));
   const slabText = (slabs) => slabs.map(([up, rate], i) => `${i === slabs.length - 1 ? "above" : "up to"} ${lakh(i === slabs.length - 1 ? slabs[i - 1][0] : up)}: ${rate}%`).join(" · ");
   const slabLines = (slabs) => slabs.map(([up, rate], i) => `${i === slabs.length - 1 ? "above" : up} ${rate}`).join("\n");
@@ -359,18 +359,20 @@
   }
   function ratesForm(fy) {
     const E = T().engine, y = E.yearRules(E.knownYears().includes(fy) ? fy : E.knownYears().pop()), n = y.newRegime || { slabs: [[400000, 0], [null, 30]], std: 75000, rebateUpTo: 1200000, rebateMax: 60000, cap80CCD2Pct: 14 };
-    const f = (name, label, val, hint) => `<label class="tax-field"><span>${esc(label)}</span><input type="number" min="0" step="any" name="${name}" value="${esc(val)}" required />${hint ? `<small class="prot-sub">${esc(hint)}</small>` : ""}</label>`;
+    const d = ratesDraft && ratesDraft.fy === fy ? ratesDraft.v : null, mine = (name, val) => (d && d[name] != null ? d[name] : val);
+    const f = (name, label, val, hint) => `<label class="tax-field"><span>${esc(label)}</span><input type="number" min="0" step="any" name="${name}" value="${esc(mine(name, val))}" required />${hint ? `<small class="prot-sub">${esc(hint)}</small>` : ""}</label>`;
     return `<form id="taxRatesForm" class="tax-fields tax-rates-form" data-fy="${esc(fy)}">
-      <label class="tax-field tax-wide"><span>New-regime slabs, one per line: income limit, then rate %. The last line is "above", then its rate.</span><textarea name="slabs" rows="8" required>${esc(slabLines(n.slabs))}</textarea></label>
+      <label class="tax-field tax-wide"><span>New-regime slabs, one per line: income limit, then rate %. The last line is "above", then its rate.</span><textarea name="slabs" rows="8" required>${esc(mine("slabs", slabLines(n.slabs)))}</textarea></label>
       ${f("std", "Standard deduction, new regime (₹)", n.std)}${f("rebateUpTo", "Rebate: income limit (₹)", n.rebateUpTo)}${f("rebateMax", "Rebate: maximum (₹)", n.rebateMax)}${f("cap", "Employer NPS cap (% of basic)", n.cap80CCD2Pct)}
       <details class="tax-wide"><summary>Old regime</summary><div class="tax-fields">${f("oldStd", "Standard deduction (₹)", y.old.std)}${f("oldRebateUpTo", "Rebate: income limit (₹)", y.old.rebateUpTo)}${f("oldRebateMax", "Rebate: maximum (₹)", y.old.rebateMax)}</div></details>
-      <label class="tax-field tax-wide"><span>Where this comes from (required)</span><input type="text" name="source" maxlength="200" placeholder="e.g. Budget speech, 1 Feb 2027, Annexure" required /></label>
-      <label class="tax-field"><span>Confirmed on</span><input type="date" name="confirmedOn" value="${esc(today())}" required /></label>
+      <label class="tax-field tax-wide"><span>Where this comes from (required)</span><input type="text" name="source" maxlength="200" placeholder="e.g. Budget speech, 1 Feb 2027, Annexure" value="${esc(mine("source", ""))}" required /></label>
+      <label class="tax-field"><span>Confirmed on</span><input type="date" name="confirmedOn" value="${esc(mine("confirmedOn", today()))}" required /></label>
       ${ratesError ? `<p class="explain-warn tax-wide">${esc(ratesError).replace(/\n/g, "<br>")}</p>` : ""}
       <div class="prot-actions tax-wide"><button type="submit" class="primary-button">Save rates</button><button type="button" class="secondary-button" data-tax-rates-cancel>Cancel</button></div></form>`;
   }
   async function submitRates(form) {
     const E = T().engine, O = window.LifeLedgerTaxOracle, f = new FormData(form), fy = form.dataset.fy;
+    ratesDraft = { fy, v: Object.fromEntries([...f.entries()].map(([k, v]) => [k, String(v)])) };
     const n = (k) => Number(f.get(k));
     const edit = { source: String(f.get("source") || "").trim(), confirmedOn: f.get("confirmedOn"),
       newRegime: { slabs: parseSlabs(f.get("slabs")), std: n("std"), rebateUpTo: n("rebateUpTo"), rebateMax: n("rebateMax"), cap80CCD2Pct: n("cap") },
@@ -384,7 +386,7 @@
     if (bad) { ratesError = bad.errors.join("\n"); render(); return; }
     if (failed.length) { ratesError = `These rates would change figures that official reference cases check (${failed.slice(0, 3).map((x) => x.id).join(", ")}${failed.length > 3 ? ` and ${failed.length - 3} more` : ""}). If the law really changed for this year, the reference cases need updating first; ask your developer. Nothing was saved.`; render(); return; }
     if (!(await ask(`Save these rates for FY ${fy}?\n\nEvery tax figure in the app will use them, and the year will no longer be marked as assumed.`, "Save", "Cancel"))) return;
-    s.taxRules = candidate; ratesError = ""; editYear = null;
+    s.taxRules = candidate; ratesError = ""; editYear = null; ratesDraft = null;
     save().catch(() => {}); render();
   }
 
@@ -456,10 +458,10 @@
   }
   function onClick(e) {
     const tb = e.target.closest("[data-tax-tab]");
-    if (tb) { tab = tb.dataset.taxTab; editYear = null; ratesError = ""; render(); return; }
+    if (tb) { tab = tb.dataset.taxTab; editYear = null; ratesError = ""; ratesDraft = null; render(); return; }
     const re = e.target.closest("[data-tax-rates-edit]");
-    if (re) { editYear = re.dataset.taxRatesEdit; ratesError = ""; render(); return; }
-    if (e.target.closest("[data-tax-rates-cancel]")) { editYear = null; ratesError = ""; render(); return; }
+    if (re) { editYear = re.dataset.taxRatesEdit; ratesError = ""; ratesDraft = null; render(); return; }
+    if (e.target.closest("[data-tax-rates-cancel]")) { editYear = null; ratesError = ""; ratesDraft = null; render(); return; }
     const rr = e.target.closest("[data-tax-rates-reset]");
     if (rr) {
       ask(`Go back to the built-in rates for FY ${rr.dataset.taxRatesReset}? Your edited rates for that year are removed.`, "Go back", "Keep").then((yes) => { if (!yes) return; const s = state(); const next = { ...(s.taxRules || {}) }; delete next[rr.dataset.taxRatesReset]; s.taxRules = next; save().catch(() => {}); render(); });
