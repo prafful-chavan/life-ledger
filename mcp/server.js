@@ -12,6 +12,8 @@ const Holdings = require("./holdings.js");
 const Fit = require("./fitness.js");
 const Cal = require("./calendar.js");
 const LawWatch = require("./lawwatch.js");
+const BriefRender = require("./brief-render.js");
+const TaxOracle = require("../tax-oracle.js");
 const { taxPlan } = require("./taxplan.js");
 const TaxCore = require("../tax-core.js");
 const Market = require("./market.js");
@@ -100,7 +102,8 @@ function taxReport(state, ctx, today) {
       unrealised: Object.fromEntries(Object.entries(u).map(([k, v]) => [k, Math.round(v)])),
       realisedThisFY: Object.fromEntries(Object.entries(r).map(([k, v]) => [k, Math.round(v)])),
       equityLongTermExemption: { yearly: exemption, usedThisFY: Math.round(used), left: Math.round(left) },
-      canBookTaxFreeToday: Math.round(Math.min(left, Math.max(0, u.equityLT || 0))),
+      // The Tax page's plan (units to sell, oldest first, with a known buy date), so the email and the app give one figure
+      canBookTaxFreeToday: (() => { const mp = M.people.find((x) => x.who === o); return mp && mp.harvest ? Math.round(mp.harvest.planned) : Math.round(Math.min(left, Math.max(0, u.equityLT || 0))); })(),
       longTermGainCandidates: Object.entries(ltCandidates).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, gain]) => ({ name, longTermGain: Math.round(gain) })),
       lossesAvailableToHarvest: Object.entries(lossLots).sort((a, b) => a[1].loss - b[1].loss).slice(0, 6).map(([name, v]) => ({ name, loss: Math.round(v.loss), term: v.term })),
     };
@@ -122,6 +125,29 @@ function taxReport(state, ctx, today) {
   };
 }
 
+/** The model may only add three short notes; anything else is dropped and each note is length-limited. */
+function clipNotes(n) {
+  const t = (v, max) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+  if (!n || typeof n !== "object") return {};
+  const out = {};
+  if (t(n.coach, 320)) out.coach = t(n.coach, 320);
+  if (n.idea && t(n.idea.text, 360)) out.idea = { title: t(n.idea.title, 80), text: t(n.idea.text, 360) };
+  if (t(n.win, 240)) out.win = t(n.win, 240);
+  return out;
+}
+
+/** Everything the morning email is made from. */
+async function buildPack(s, a, ctx) {
+  const today = todayISO(), limit = a.rowsPerTable || 14, nw = A.netWorth(s, ctx.usdInr);
+  return {
+    brief: brief(s, a), funds: await tableFor(s, "funds", ctx, today, limit), stocks: await tableFor(s, "stocks", ctx, today, limit), usStocks: await tableFor(s, "us", ctx, today, 8),
+    tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today), taxPlan: taxPlan(s, today), holdingsCheck: s.holdingsCheck || null,
+    // How far the numbers can be trusted: the tax engine against its official reference cases, and where the data came from
+    selfCheck: { taxCases: (() => { const r = TaxOracle.run(TaxCore.engine); return { total: r.total, passed: r.passed }; })() },
+    dataSource: s.__source || { fromCache: false },
+  };
+}
+
 // ── market-backed tables ──────────────────────────────────────────────────────────────────────
 async function tableFor(state, kind, ctx, today, limit) {
   const keys = Holdings.historyKeys(state);
@@ -140,13 +166,8 @@ async function tableFor(state, kind, ctx, today, limit) {
 
 const TOOLS = [
   { name: "household_brief", description: "Net worth, health check, last month's spending, funds, stocks, US stocks, goals, debts, protection, price freshness. A quick overview.", inputSchema: { type: "object", properties: { month: { type: "string", description: "Spending month YYYY-MM (default latest)" }, usdInr: { type: "number" } } }, run: async (s, a) => brief(s, a) },
-  { name: "daily_pack", description: "EVERYTHING for the morning email in one call: brief, per-holding tables with technicals and exit levels for funds, stocks and US stocks, tax position, fitness, milestones, calendar and SIP progress. Fetches public price history, so allow ~20s.", inputSchema: { type: "object", properties: { rowsPerTable: { type: "number" } } }, run: async (s, a, ctx) => {
-    const today = todayISO(), limit = a.rowsPerTable || 14, nw = A.netWorth(s, ctx.usdInr);
-    return {
-      brief: brief(s, a), funds: await tableFor(s, "funds", ctx, today, limit), stocks: await tableFor(s, "stocks", ctx, today, limit), usStocks: await tableFor(s, "us", ctx, today, 8),
-      tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today), taxPlan: taxPlan(s, today), holdingsCheck: s.holdingsCheck || null,
-    };
-  } },
+  { name: "daily_pack", description: "EVERYTHING for the morning email in one call: brief, per-holding tables with technicals and exit levels for funds, stocks and US stocks, tax position, fitness, milestones, calendar and SIP progress. Fetches public price history, so allow ~20s.", inputSchema: { type: "object", properties: { rowsPerTable: { type: "number" } } }, run: async (s, a, ctx) => buildPack(s, a, ctx) },
+  { name: "render_brief", description: "The finished morning email, built from the same data as daily_pack: returns { subject, html, text }. Every figure is copied from the data, so send html and text EXACTLY as returned. Optional notes: { coach: one or two warm sentences, idea: { title, text }, win: one real win backed by a number }. Allow ~20s.", inputSchema: { type: "object", properties: { notes: { type: "object", properties: { coach: { type: "string" }, idea: { type: "object", properties: { title: { type: "string" }, text: { type: "string" } } }, win: { type: "string" } } } } }, run: async (s, a, ctx) => BriefRender.renderBrief(await buildPack(s, { rowsPerTable: 8 }, ctx), { notes: clipNotes(a.notes), now: todayISO() }) },
   { name: "holdings_table", description: "One row per holding with value, return, XIRR, trend, RSI, 50/200-day averages, the app's verdict, review-below / first-target / stretch levels with the holding's value at each, and an estimate of tax if sold today. kind = funds | stocks | us.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["funds", "stocks", "us"] }, limit: { type: "number" } }, required: ["kind"] }, run: async (s, a, ctx) => tableFor(s, a.kind, ctx, todayISO(), a.limit) },
   { name: "tax_report", description: "Capital gains by lot (FIFO), tax if sold today, this year's realised gains and ₹1.25L exemption left per person, harvesting ideas, an old-vs-new regime income-tax estimate, and the list of facts a CA would still need from you.", inputSchema: { type: "object", properties: {} }, run: async (s, a, ctx) => taxReport(s, ctx, todayISO()) },
   { name: "fitness", description: "Body measurements and trend, workouts, steps, cycling vs goals, habit streaks (no names), plus net-worth milestone pace and this month's SIP progress.", inputSchema: { type: "object", properties: {} }, run: async (s, a, ctx) => { const today = todayISO(), nw = A.netWorth(s, ctx.usdInr); return { fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), sipThisMonth: Cal.sipProgress(s, today) }; } },
@@ -185,7 +206,11 @@ async function defaultLoader() {
   const { gatewayUrl } = loadJson("config.json");
   const password = keychain.read();
   if (!gatewayUrl || !password) throw new Error("Not set up yet — run: node mcp/setup.js");
-  return (await fetchState({ gatewayUrl, password })).data;
+  // More patience than a one-off read (the 10 am brief must not fail on a hiccup), and a saved copy as the last resort
+  const got = await fetchState({ gatewayUrl, password, attempts: 6, waitMs: 2000, cacheFile: path.join(dir, "last-vault.json") });
+  // Carried beside the data, never inside it, so no tool can mistake it for a household record
+  Object.defineProperty(got.data, "__source", { value: { fromCache: !!got.fromCache, cachedAt: got.cachedAt || null, reason: got.reason || null }, enumerable: false });
+  return got.data;
 }
 
 /** Handles one JSON-RPC message; returns the response object, or null for notifications. */

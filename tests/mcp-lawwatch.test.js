@@ -8,13 +8,20 @@ const Cal = require("../mcp/calendar.js");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lawwatch-"));
 const file = path.join(dir, "law-watch.json");
 
-// Never run: stale, no changes, no throw
-let w = lawWatch("2026-11-01", file);
+// Never run, and the first scheduled run is not yet due: nothing to be late about
+let w = lawWatch("2026-10-21", file);
+assert.strictEqual(w.stale, false); assert.deepStrictEqual(w.changes, []); assert.strictEqual(w.checkedOn, null);
+assert.ok(/first monthly law check is due on 2026-11-02/.test(w.note), w.note);
+assert.strictEqual(lawWatch("2026-11-01", file).stale, false, "the 1st itself is still within the day of grace");
+
+// Never run and the first run is overdue: stale, no changes, no throw
+w = lawWatch("2026-11-02", file);
 assert.strictEqual(w.stale, true); assert.deepStrictEqual(w.changes, []); assert.strictEqual(w.checkedOn, null);
+assert.strictEqual(lawWatch("2026-10-21", file, 45, "2026-10-01").stale, true, "the first-run date can be passed in");
 
 // Garbage file is treated as never run
 fs.writeFileSync(file, "not json");
-assert.strictEqual(lawWatch("2026-11-01", file).stale, true);
+assert.strictEqual(lawWatch("2026-11-05", file).stale, true);
 
 // Fresh result with a change; fields are trimmed and non-URL sources dropped
 fs.writeFileSync(file, JSON.stringify({ checkedOn: "2026-11-01", changes: [{ ruleId: "fast-ds", headline: "  FAST-DS window extended\n to 31 March 2027 ", effect: "More time to decide", source: "https://www.incometax.gov.in/x" }, { headline: "", effect: "dropped" }, { ruleId: "x", headline: "bad source", source: "javascript:alert(1)" }] }));

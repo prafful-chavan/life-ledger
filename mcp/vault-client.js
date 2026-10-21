@@ -6,6 +6,7 @@
  */
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
+const fs = require("node:fs");
 
 const AUTH_SALT = "life-ledger/sync-auth/v1";
 
@@ -58,19 +59,39 @@ async function pullOnce({ gatewayUrl, password, fetchImpl }) {
   }
   if (!j.vault) throw new Error("The vault is empty on the gateway");
   const inner = await decryptVault(j.vault, password);
-  return { data: inner.data, rev: j.rev, updatedAt: j.updatedAt };
+  return { data: inner.data, rev: j.rev, updatedAt: j.updatedAt, vault: j.vault };
+}
+
+/** The last good vault, kept as the ENCRYPTED blob the gateway sent (so nothing readable is ever written to disk). */
+function writeCache(file, got, now) {
+  try {
+    const tmp = file + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify({ savedAt: new Date(now).toISOString(), rev: got.rev, updatedAt: got.updatedAt, vault: got.vault }), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch { /* a cache that cannot be written must never break a read */ }
 }
 
 /** Pulls and decrypts the vault, retrying transient gateway failures (read-only, so a retry is always safe). */
-async function fetchState({ gatewayUrl, password, fetchImpl = fetch, attempts = 4, waitMs = 1500 }) {
+async function fetchState({ gatewayUrl, password, fetchImpl = fetch, attempts = 4, waitMs = 1500, cacheFile, now = Date.now() }) {
   let last;
   for (let i = 0; i < attempts; i++) {
-    try { return await pullOnce({ gatewayUrl, password, fetchImpl }); }
-    catch (e) {
+    try {
+      const got = await pullOnce({ gatewayUrl, password, fetchImpl });
+      if (cacheFile) writeCache(cacheFile, got, now);
+      return got;
+    } catch (e) {
       last = e;
       if (!e.retry && !(e.name === "TypeError" || e.name === "AbortError")) throw e; // wrong password etc: no point retrying
       if (i < attempts - 1) await new Promise((r) => setTimeout(r, waitMs * (i + 1)));
     }
+  }
+  // The gateway never answered properly. A saved copy lets the morning brief still run, clearly marked as older.
+  if (cacheFile && fs.existsSync(cacheFile)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+      const inner = await decryptVault(saved.vault, password);
+      return { data: inner.data, rev: saved.rev, updatedAt: saved.updatedAt, fromCache: true, cachedAt: saved.savedAt, reason: last.message };
+    } catch { /* an unreadable cache is no better than none */ }
   }
   throw new Error(`${last.message} (after ${attempts} attempts)`);
 }

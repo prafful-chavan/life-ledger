@@ -9,13 +9,18 @@ const os = require("node:os");
 const path = require("node:path");
 
 const FILE = process.env.LIFE_LEDGER_LAW_WATCH || path.join(os.homedir(), ".life-ledger-mcp", "law-watch.json");
+const FIRST_RUN_DUE = "2026-11-02";   // the monthly task is set for the 1st at 9 am; one day of grace
 const clean = (s, n) => String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, n);
 const daysBetween = (a, b) => Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10)) - Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10))) / 864e5);
 
 /** Returns { checkedOn, ageDays, stale, changes } — never throws; a missing/invalid file means "never checked". */
-function lawWatch(today, file = FILE, staleAfterDays = 45) {
+function lawWatch(today, file = FILE, staleAfterDays = 45, firstRunDue = FIRST_RUN_DUE) {
   let raw;
-  try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch { return { checkedOn: null, ageDays: null, stale: true, changes: [], note: "The monthly law check has not run yet." }; }
+  try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch {
+    // Before the first scheduled run is due there is nothing to be late about
+    if (today < firstRunDue) return { checkedOn: null, ageDays: null, stale: false, changes: [], note: `The first monthly law check is due on ${firstRunDue}.` };
+    return { checkedOn: null, ageDays: null, stale: true, changes: [], note: "The monthly law check has not run yet." };
+  }
   const checkedOn = /^\d{4}-\d{2}-\d{2}$/.test(raw && raw.checkedOn) ? raw.checkedOn : null;
   const changes = (Array.isArray(raw && raw.changes) ? raw.changes : []).slice(0, 10).map((c) => ({ ruleId: clean(c.ruleId, 40), headline: clean(c.headline, 160), effect: clean(c.effect, 240), source: /^https?:\/\//.test(c.source) ? clean(c.source, 200) : "" })).filter((c) => c.headline);
   const ageDays = checkedOn ? daysBetween(checkedOn, today) : null;

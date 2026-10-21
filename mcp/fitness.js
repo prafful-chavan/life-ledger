@@ -35,9 +35,20 @@ function fitnessReport(state, today) {
     if (within(state.workouts, from).filter((w) => w.date <= to).length >= 3) goodWeeks++;
   }
 
+  // Every session counts, as on the Exercise page: strength workouts plus cycling, cardio and any other logged activity
+  // except plain step counts (a day of steps is not a session)
+  const sessionRows = [
+    ...(state.workouts || []).map((w) => ({ date: w.date, minutes: num(w.minutes), kind: "strength" })),
+    ...(state.activities || []).filter((a) => a.type !== "steps").map((a) => ({ date: a.date, minutes: num(a.durationMin), kind: a.type || "activity" })),
+  ].filter((x) => x.date);
+  const s30 = within(sessionRows, addDays(today, -30)), s7 = within(sessionRows, addDays(today, -6));
+  const lastSession = sessionRows.map((x) => x.date).filter((d) => d <= today).sort().pop() || null;
+  let goodSessionWeeks = 0;
+  for (let i = 0; i < 8; i++) { const to = addDays(today, -7 * i), from = addDays(to, -6); if (within(sessionRows, from).filter((x) => x.date <= to).length >= 3) goodSessionWeeks++; }
   const habits = (state.habits || []).map((h) => ({ streakDays: num(h.streak), bestStreak: num(h.bestStreak) }));
   return {
     body: bodyOut,
+    sessions: { last30Days: s30.length, minutesLast30Days: s30.reduce((t, x) => t + x.minutes, 0), last7Days: s7.length, daysSinceLast: lastSession ? daysBetween(lastSession, today) : null, activeDaysLast30: new Set(s30.map((x) => x.date)).size, weeksWith3PlusOfLast8: goodSessionWeeks },
     workouts: { last30Days: w30.length, minutesLast30Days: w30.reduce((s, w) => s + num(w.minutes), 0), last7Days: w7.length, daysSinceLast: lastWorkout ? daysBetween(lastWorkout, today) : null, weeksWith3PlusSessionsOfLast8: goodWeeks },
     steps: { avgLast14Days: stepDays.length ? Math.round(stepDays.reduce((s, x) => s + x, 0) / stepDays.length) : null, daysLogged: stepDays.length, goal: goals.dailySteps || null },
     cyclingKmLast7Days: r1(cycling7), cyclingGoalKmPerWeek: goals.weeklyCyclingKm || null,
