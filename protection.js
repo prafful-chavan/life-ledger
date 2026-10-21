@@ -83,7 +83,7 @@
       </div>`;
     };
     const termRow = (c) => `<div class="prot-check"><div><b>Term life · ${esc(NAMES[c.who])}</b>
-        <div class="prot-sub">${c.income > 0 ? `Common guide: ${c.multipleMin === c.multipleMax ? c.multipleMin : `${c.multipleMin}–${c.multipleMax}`} × yearly income = ${inr(c.min)} – ${inr(c.max)}` : "Add a salary to see a guide"}</div>${coverSplit(c)}</div>
+        <div class="prot-sub">${c.income > 0 ? `Common guide: ${c.multipleMin === c.multipleMax ? c.multipleMin : `${c.multipleMin}–${c.multipleMax}`} × yearly income = ${c.min === c.max ? inr(c.min) : `${inr(c.min)} – ${inr(c.max)}`}` : "Add a salary to see a guide"}</div>${coverSplit(c)}</div>
         <div class="prot-check-right"><b>${c.cover > 0 ? inr(c.cover) : "—"}</b> ${statusChip(c.status, "In the guide", "Below the guide")}</div></div>`;
     const h = sum.health;
     const due = sum.dueSoon.length ? `<div class="prot-alert">${sum.dueSoon.map((x) => `<div>⏰ <b>${esc(x.p.type)}${x.p.insurer ? " · " + esc(x.p.insurer) : ""}</b> ${x.s.state === "overdue" ? `was due ${Math.abs(x.s.days)} day${Math.abs(x.s.days) === 1 ? "" : "s"} ago` : x.s.days === 0 ? "is due today" : `is due in ${x.s.days} day${x.s.days === 1 ? "" : "s"}`} (${prettyDate(x.p.nextDue)}) · ${inr(x.p.premium)}</div>`).join("")}</div>` : "";

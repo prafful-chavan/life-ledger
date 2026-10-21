@@ -96,6 +96,8 @@ reset();
   const brief = A.healthCheck({ ...st({ termMultipleMin: 15, termMultipleMax: 20, healthBaseline: 2000000 }, 12000000), expenses: [] }, "2026-10-21").flags;
   assert.ok(/15–20× yearly-income guide/.test(brief.find((f) => f.topic === "Term cover (Me)").text), "daily brief: term");
   assert.ok(/₹20,00,000 baseline/.test(brief.find((f) => f.topic === "Health cover").text), "daily brief: health");
+  const same = A.healthCheck({ ...st({ termMultipleMin: 12, termMultipleMax: 12 }, 12000000), expenses: [] }, "2026-10-21").flags.find((f) => f.topic === "Term cover (Me)").text;
+  assert.ok(/12× yearly-income guide of ₹1,44,00,000\./.test(same), "equal minimum and maximum read as one figure, not a range: " + same);
   assert.ok(/10–15× yearly-income guide/.test(A.healthCheck({ ...st({}, 12000000), expenses: [] }, "2026-10-21").flags.find((f) => f.topic === "Term cover (Me)").text), "defaults read as before");
 }
 

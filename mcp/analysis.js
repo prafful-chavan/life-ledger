@@ -236,7 +236,7 @@ function healthCheck(state, today, fxOverride) {
   const ps = Protection.summary(state, t);
   const rs = (v) => `₹${r0(v).toLocaleString("en-IN")}`;
   const viaEmployer = (c) => c.status === "employer" ? ` Only ${rs(c.ownCover)} is your own; ${rs(c.employerCover)} is employer group cover, which ends with the job.` : "";
-  for (const w of ps.term) add(w.status === "ok" ? "good" : w.status === "low" ? "act" : "watch", `Term cover (${w.who})`, w.status === "not-set" ? "Not entered yet." : `${rs(w.cover)} against a ${w.multipleMin === w.multipleMax ? w.multipleMin : `${w.multipleMin}–${w.multipleMax}`}× yearly-income guide of ${rs(w.min)}–${rs(w.max)}.${viaEmployer(w)}`);
+  for (const w of ps.term) add(w.status === "ok" ? "good" : w.status === "low" ? "act" : "watch", `Term cover (${w.who})`, w.status === "not-set" ? "Not entered yet." : `${rs(w.cover)} against a ${w.multipleMin === w.multipleMax ? w.multipleMin : `${w.multipleMin}–${w.multipleMax}`}× yearly-income guide of ${w.min === w.max ? rs(w.min) : `${rs(w.min)}–${rs(w.max)}`}.${viaEmployer(w)}`);
   add(ps.health.status === "ok" ? "good" : ps.health.status === "low" ? "act" : "watch", "Health cover", ps.health.status === "not-set" ? "Not entered yet." : `${rs(ps.health.cover)} against a ${rs(ps.health.baseline)} baseline.${viaEmployer(ps.health)}`);
   for (const d of ps.dueSoon) add(d.s.state === "overdue" ? "act" : "watch", "Renewal", `${d.p.policyName || d.p.type} (${d.p.person}) ${d.s.state === "overdue" ? "is overdue" : `is due in ${d.s.days} days`}.`);
   const mfs = mutualFundReport(state, t);

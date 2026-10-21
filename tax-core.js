@@ -1382,7 +1382,7 @@
         for (const [who, sev] of [["Me", "high"], ["Wife", "medium"]]) {
           const t = Protection.termCheck(state, who);
           if (t.status === "ok") continue;
-          const guide = t.income > 0 ? ` The guide is ${t.multipleMin === t.multipleMax ? t.multipleMin : `${t.multipleMin}–${t.multipleMax}`} × yearly income: ${inr(t.min)} – ${inr(t.max)}.` : "";
+          const guide = t.income > 0 ? ` The guide is ${t.multipleMin === t.multipleMax ? t.multipleMin : `${t.multipleMin}–${t.multipleMax}`} × yearly income: ${t.min === t.max ? inr(t.min) : `${inr(t.min)} – ${inr(t.max)}`}.` : "";
           const title = t.status === "not-set" ? `Term life cover for ${NAMES[who]}` : t.status === "employer" ? `${NAMES[who]}'s term cover is only through the employer` : `${NAMES[who]}'s term cover is below the guide`;
           const body = t.status === "not-set" ? "No term cover is recorded on the Protection page." : t.status === "employer" ? `Own policies ${inr(t.ownCover)}, employer group cover ${inr(t.employerCover)}; the group cover ends with the job.` : `Recorded cover ${inr(t.cover)}.`;
           add(`term-${who === "Me" ? "me" : "wife"}`, sev, title, `${body}${guide}`, "", { who: NAMES[who] });
