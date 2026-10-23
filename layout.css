@@ -781,3 +781,19 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .prot-guide-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 8px; }
 .prot-guide { display: grid; gap: 4px; font-size: 13px; }
 .prot-guide input { width: 100%; }
+
+/* Every Finance table on a phone: one card per row, two columns of label and value, buttons at the bottom */
+@media (max-width: 700px) {
+  .finance-tab:not(#finance-expenses) .table-wrap { overflow-x: visible; }
+  .finance-tab:not(#finance-expenses) .table-wrap table,
+  .finance-tab:not(#finance-expenses) .table-wrap tbody { display: block; width: 100%; min-width: 0; }
+  .finance-tab:not(#finance-expenses) .table-wrap thead { display: none; }
+  .finance-tab:not(#finance-expenses) .table-wrap tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; padding: 12px; border-bottom: 1px solid var(--line); }
+  .finance-tab:not(#finance-expenses) .table-wrap tbody tr:last-child { border-bottom: 0; }
+  .finance-tab:not(#finance-expenses) .table-wrap td { display: block; padding: 0; border: 0; text-align: left !important; white-space: normal; min-width: 0; max-width: none; overflow-wrap: anywhere; }
+  .finance-tab:not(#finance-expenses) .table-wrap td[data-label]:not([data-label=""])::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .finance-tab:not(#finance-expenses) .table-wrap td:first-child { grid-column: 1 / -1; font-weight: 700; }
+  .finance-tab:not(#finance-expenses) .table-wrap td:first-child::before { display: none; }
+  .finance-tab:not(#finance-expenses) .table-wrap td[colspan] { grid-column: 1 / -1; }
+  .finance-tab:not(#finance-expenses) .table-wrap td[data-label=""] { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+}

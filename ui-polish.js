@@ -55,9 +55,28 @@
     }
   }
 
+  // Phones show each table row as a small card, so every cell needs its column's name (read from the header)
+  function labelCells() {
+    var tables = document.querySelectorAll('.finance-tab .table-wrap table');
+    for (var t = 0; t < tables.length; t++) {
+      var heads = tables[t].querySelectorAll('thead th');
+      if (!heads.length) continue;
+      var rows = tables[t].querySelectorAll('tbody tr');
+      for (var r = 0; r < rows.length; r++) {
+        var cells = rows[r].children;
+        if (cells.length !== heads.length || cells[0].hasAttribute('data-label')) continue;
+        for (var i = 0; i < cells.length; i++) {
+          var name = (heads[i].textContent || '').replace(/[\u21C5\u25B2\u25BC\u2191\u2193\u21F5]/g, '').trim(); // drop the sort arrows
+          cells[i].setAttribute('data-label', /^actions?$/i.test(name) ? '' : name);
+        }
+      }
+    }
+  }
+
   function fitAll() {
     scheduled = false;
     tagWrapCells();
+    labelCells();
     var nodes = document.querySelectorAll(SELECTOR);
     for (var i = 0; i < nodes.length; i++) fit(nodes[i]);
   }

@@ -455,6 +455,13 @@ const SCANNER = `(${function scan() {
       const ok = fit.rows > 0 && fit.page <= fit.w + 1 && (fit.table <= fit.box + 1 && fit.actionRight <= fit.boxRight + 1);
       check(`expenses table at ${w}px (${label}${fit.side ? ", side by side" : ", stacked"}): fits, Edit and Delete reachable`, ok, JSON.stringify(fit));
     }
+    // Every Finance table on a phone: no column is pushed out of sight
+    await viewport(375, 812); await sleep(500); await view("finance");
+    const tabsFit = await cdp.eval(`(async()=>{const bad=[]; let n=0; for(const b of [...document.querySelectorAll('[data-finance-tab]')]){ b.hidden=false; b.click(); await new Promise(r=>setTimeout(r,450)); const tab=[...document.querySelectorAll('.finance-tab')].find(x=>!x.hidden&&getComputedStyle(x).display!=='none'); if(!tab) continue; for(const w of tab.querySelectorAll('.table-wrap')){ const t=w.querySelector('table'); if(!t||!t.offsetParent) continue; n++; const labelled=[...t.querySelectorAll('tbody tr td:not([colspan])')].filter(td=>!td.hasAttribute('data-label')).length; const th=t.querySelectorAll('thead th').length; const cnt=[...new Set([...t.querySelectorAll('tbody tr')].filter(r=>!r.querySelector('td[colspan]')).map(r=>r.children.length))]; if(cnt.length&&(cnt.length!==1||cnt[0]!==th)) bad.push(b.dataset.financeTab+': headers '+th+' but cells '+cnt.join('/')); if(t.scrollWidth>w.clientWidth+1||labelled) bad.push(b.dataset.financeTab+': table '+t.scrollWidth+' box '+w.clientWidth+' unlabelled '+labelled); } } return {tables:n, bad}})()`);
+    check("phone: every Finance table fits the screen (rows are cards, every cell labelled, headers match cells)", tabsFit.tables > 5 && tabsFit.bad.length === 0, JSON.stringify(tabsFit));
+    await view("exercise"); await sleep(600);
+    const heat = await cdp.eval(`(()=>{const g=document.querySelector('.heatmap-grid'); return g?{wide:g.scrollWidth>g.clientWidth+2, atEnd:g.scrollLeft>=g.scrollWidth-g.clientWidth-2}:null})()`);
+    check("phone: the activity heatmap opens at today, not a year ago", heat && heat.wide && heat.atEnd, JSON.stringify(heat));
     await viewport(1280, 900); await sleep(300);
     check("no JavaScript errors during the whole run", errors.length === 0, errors.slice(0, 4).join(" ; "));
   } catch (e) {

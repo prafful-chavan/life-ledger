@@ -7789,6 +7789,7 @@ function renderUsStockHoldingsPanel() {
       const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
       return `<span style="color:${color};font-weight:600">${formatUSD(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
     })(),
+    escapeHTML(item.demat),
   ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
 }
 
@@ -13725,6 +13726,9 @@ function renderWorkoutYearHeatmap() {
   </div>`;
 
   container.innerHTML = html;
+  // On a phone the year is wider than the screen: start at today (the right end), not at last October
+  const grid = container.querySelector(".heatmap-grid");
+  if (grid) grid.scrollLeft = grid.scrollWidth;
 }
 
 function parseBodyMetricsCSV(csvText) {
