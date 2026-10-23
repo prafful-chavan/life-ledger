@@ -793,7 +793,7 @@ body.cmdk-open, body.more-open { overflow: hidden; }
   .finance-tab:not(#finance-expenses) .table-wrap td { display: block; padding: 0; border: 0; text-align: left !important; white-space: normal; min-width: 0; max-width: none; overflow-wrap: anywhere; }
   .finance-tab:not(#finance-expenses) .table-wrap td[data-label]:not([data-label=""])::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
   .finance-tab:not(#finance-expenses) .table-wrap td:first-child { grid-column: 1 / -1; font-weight: 700; }
-  .finance-tab:not(#finance-expenses) .table-wrap td:first-child::before { display: none; }
+  .finance-tab:not(#finance-expenses) .table-wrap td[data-label]:first-child::before { display: none; }
   .finance-tab:not(#finance-expenses) .table-wrap td[colspan] { grid-column: 1 / -1; }
   .finance-tab:not(#finance-expenses) .table-wrap td[data-label=""] { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 }
