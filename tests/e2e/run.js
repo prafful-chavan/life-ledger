@@ -448,6 +448,10 @@ const SCANNER = `(${function scan() {
       await theme("light");
     }
 
+    // Expenses, side-by-side view: Note and the Edit/Delete buttons must be visible without scrolling sideways
+    await viewport(1280, 900); await sleep(500); await view("finance");
+    const fit = await cdp.eval(`(async()=>{document.querySelector('[data-finance-tab="expenses"]').click(); await new Promise(r=>setTimeout(r,700)); const t=document.getElementById('expenseTable').closest('table'); const w=t.parentElement; const a=t.querySelector('tbody tr td:last-child'); return {rows:t.querySelectorAll('tbody tr').length, table:t.scrollWidth, box:w.clientWidth, actionRight:a?Math.round(a.getBoundingClientRect().right):0, boxRight:Math.round(w.getBoundingClientRect().right)}})()`);
+    check("expenses: the table fits its box, so Edit and Delete are visible (desktop)", fit.rows > 0 && fit.table <= fit.box + 1 && fit.actionRight <= fit.boxRight + 1, JSON.stringify(fit));
     check("no JavaScript errors during the whole run", errors.length === 0, errors.slice(0, 4).join(" ; "));
   } catch (e) {
     check("the check itself ran to the end", false, e.stack || e.message);

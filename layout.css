@@ -202,6 +202,19 @@
 .table-wrap td { padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px; vertical-align: middle; }
 .table-wrap tbody tr:last-child td { border-bottom: 0; }
 #finance-expenses .table-wrap table { min-width: 0; }
+/* Expenses, side-by-side view: every column (including Edit/Delete) fits without sideways scrolling */
+@media (min-width: 901px) {
+  #finance-expenses .expense-split:not(.table-zoomed) { grid-template-columns: 280px 1fr !important; }
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap th { padding: 10px 8px; }
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td { padding: 10px 8px; white-space: normal; overflow-wrap: break-word; }
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(1),
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(3),
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(4),
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(6) { white-space: nowrap; }
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(2) { overflow-wrap: normal; min-width: 88px; }
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap th:nth-child(5),
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(5) { text-align: left; }
+}
 .table-wrap tbody tr:hover td { background: color-mix(in srgb, var(--panel-soft) 70%, transparent); }
 .table-wrap th:not(:first-child):not(:nth-child(2)),
 .table-wrap td:not(:first-child):not(:nth-child(2)) { text-align: right; }
