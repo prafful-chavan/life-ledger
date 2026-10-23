@@ -448,10 +448,14 @@ const SCANNER = `(${function scan() {
       await theme("light");
     }
 
-    // Expenses, side-by-side view: Note and the Edit/Delete buttons must be visible without scrolling sideways
-    await viewport(1280, 900); await sleep(500); await view("finance");
-    const fit = await cdp.eval(`(async()=>{document.querySelector('[data-finance-tab="expenses"]').click(); await new Promise(r=>setTimeout(r,700)); const t=document.getElementById('expenseTable').closest('table'); const w=t.parentElement; const a=t.querySelector('tbody tr td:last-child'); return {rows:t.querySelectorAll('tbody tr').length, table:t.scrollWidth, box:w.clientWidth, actionRight:a?Math.round(a.getBoundingClientRect().right):0, boxRight:Math.round(w.getBoundingClientRect().right)}})()`);
-    check("expenses: the table fits its box, so Edit and Delete are visible (desktop)", fit.rows > 0 && fit.table <= fit.box + 1 && fit.actionRight <= fit.boxRight + 1, JSON.stringify(fit));
+    // Expenses table at every screen size: Note and Edit/Delete are visible without sideways scrolling (cards below 1280px, side by side from 1280px)
+    for (const [w, h, label] of [[375, 812, "small phone"], [440, 956, "large phone"], [768, 1024, "tablet"], [900, 800, "narrow laptop"], [901, 800, "smallest laptop layout"], [1024, 768, "small laptop"], [1199, 800, "laptop, stacked"], [1279, 800, "just under side-by-side"], [1280, 800, "smallest side-by-side"], [1440, 900, "large laptop"], [1920, 1080, "monitor"], [2560, 1440, "big monitor"]]) {
+      await viewport(w, h); await sleep(500); await view("finance");
+      const fit = await cdp.eval(`(async()=>{document.querySelector('[data-finance-tab="expenses"]').click(); await new Promise(r=>setTimeout(r,700)); const t=document.getElementById('expenseTable').closest('table'); const wr=t.parentElement; const a=t.querySelector('tbody tr td:last-child'); const side=getComputedStyle(document.querySelector('.expense-split')).gridTemplateColumns.split(' ').length>1; return {w:innerWidth, side, rows:t.querySelectorAll('tbody tr').length, table:t.scrollWidth, box:wr.clientWidth, actionRight:a?Math.round(a.getBoundingClientRect().right):0, boxRight:Math.round(wr.getBoundingClientRect().right), page:document.documentElement.scrollWidth}})()`);
+      const ok = fit.rows > 0 && fit.page <= fit.w + 1 && (fit.table <= fit.box + 1 && fit.actionRight <= fit.boxRight + 1);
+      check(`expenses table at ${w}px (${label}${fit.side ? ", side by side" : ", stacked"}): fits, Edit and Delete reachable`, ok, JSON.stringify(fit));
+    }
+    await viewport(1280, 900); await sleep(300);
     check("no JavaScript errors during the whole run", errors.length === 0, errors.slice(0, 4).join(" ; "));
   } catch (e) {
     check("the check itself ran to the end", false, e.stack || e.message);

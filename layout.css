@@ -202,8 +202,31 @@
 .table-wrap td { padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px; vertical-align: middle; }
 .table-wrap tbody tr:last-child td { border-bottom: 0; }
 #finance-expenses .table-wrap table { min-width: 0; }
-/* Expenses, side-by-side view: every column (including Edit/Delete) fits without sideways scrolling */
-@media (min-width: 901px) {
+/* Expenses on phones, tablets and small laptops: each transaction is a small card, so Amount, Note, Edit and Delete are all visible */
+@media (max-width: 1279px) {
+  #finance-expenses .tall-table table, #finance-expenses .tall-table tbody, #finance-expenses .tall-table tr, #finance-expenses .tall-table td { display: block; width: 100%; }
+  #finance-expenses .tall-table thead { display: none; }
+  #finance-expenses .tall-table tbody tr { display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "cat cat amt" "date paid act" "note note note"; gap: 4px 10px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  #finance-expenses .tall-table tbody tr:last-child { border-bottom: 0; }
+  #finance-expenses .tall-table td { padding: 0; border: 0; text-align: left; white-space: normal; min-width: 0; max-width: none; }
+  #finance-expenses .tall-table td:nth-child(1) { grid-area: date; font-size: 12px; color: var(--muted); }
+  #finance-expenses .tall-table td:nth-child(2) { grid-area: cat; font-weight: 650; }
+  #finance-expenses .tall-table td:nth-child(3) { grid-area: paid; font-size: 12px; color: var(--muted); text-align: right; }
+  #finance-expenses .tall-table td:nth-child(4) { grid-area: amt; text-align: right; font-weight: 700; white-space: nowrap; }
+  #finance-expenses .tall-table td:nth-child(5) { grid-area: note; font-size: 13px; color: var(--muted); overflow-wrap: break-word; }
+  #finance-expenses .tall-table td:nth-child(5):empty { display: none; }
+  #finance-expenses .tall-table td:nth-child(6) { grid-area: act; text-align: right; white-space: nowrap; }
+  #finance-expenses .panel-header { align-items: stretch !important; }
+  #finance-expenses #expenseSearchInput { width: 100% !important; box-sizing: border-box; }
+  #finance-expenses .panel-actions { margin-left: 0 !important; width: 100%; display: flex; gap: 8px; }
+  #finance-expenses .panel-actions .secondary-button { flex: 1; }
+}
+/* Between a tablet and a laptop the category list sits above the transactions instead of beside them */
+@media (min-width: 901px) and (max-width: 1279px) {
+  #finance-expenses .expense-split:not(.table-zoomed) { grid-template-columns: 1fr !important; }
+}
+/* Expenses, side-by-side view on a laptop or monitor: every column (including Edit/Delete) fits without sideways scrolling */
+@media (min-width: 1280px) {
   #finance-expenses .expense-split:not(.table-zoomed) { grid-template-columns: 280px 1fr !important; }
   #finance-expenses .expense-split:not(.table-zoomed) .table-wrap th { padding: 10px 8px; }
   #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td { padding: 10px 8px; white-space: normal; overflow-wrap: break-word; }
@@ -214,6 +237,7 @@
   #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(2) { overflow-wrap: normal; min-width: 88px; }
   #finance-expenses .expense-split:not(.table-zoomed) .table-wrap th:nth-child(5),
   #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(5) { text-align: left; }
+  #finance-expenses .expense-split:not(.table-zoomed) .table-wrap td:nth-child(5) { overflow-wrap: anywhere; min-width: 0; max-width: none; }
 }
 .table-wrap tbody tr:hover td { background: color-mix(in srgb, var(--panel-soft) 70%, transparent); }
 .table-wrap th:not(:first-child):not(:nth-child(2)),
