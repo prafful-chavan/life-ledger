@@ -476,9 +476,19 @@ const SCANNER = `(${function scan() {
       const unsplit=await run([mk('2026-01-02',{stocks:live.stocks-10000,netWorth:live.netWorth-10000,totalAssets:live.totalAssets-10000}), mk('2026-01-08',{contributed:{mutualFunds:0,stocks:10000,usStocksUsd:0}})]);
       const none=await run([]); s.netWorthHistory=saved; LifeLedgerApp.renderAll(); return {split,unsplit,none}; })()`);
     const sp = (weekly.split[0] || []), un = (weekly.unsplit[0] || []);
-    check("weekly view: a purchase is new money and the market part is zero", /^\+₹10,000/.test(sp[2] || "") && /^₹0\.00/.test(sp[3] || "") && /^\+₹10,000/.test(sp[4] || ""), JSON.stringify(weekly.split));
-    check("weekly view: without a running total at both ends the split is not guessed", /with money in/.test(un[3] || "") && un[4] === "—", JSON.stringify(weekly.unsplit));
+    check("weekly view: a purchase is new money and the market part is zero", /^\+₹10,000/.test(sp[2] || "") && /^₹0$/.test(sp[3] || "") && /^\+₹10,000/.test(sp[4] || ""), JSON.stringify(weekly.split));
+    check("weekly view: without a running total at both ends the split is not guessed", /incl\. money in/.test(un[3] || "") && un[4] === "—", JSON.stringify(weekly.unsplit));
     check("weekly view: no records yet shows the empty message", weekly.none.length === 1 && /builds up/.test((weekly.none[0] || [""])[0]), JSON.stringify(weekly.none));
+    // The weekly table fits its box at laptop widths (every column visible without sideways scrolling)
+    for (const w of [1280, 1100, 1024, 901]) {
+      await viewport(w, 800); await sleep(400); await view("finance");
+      const fit = await cdp.eval(`(async()=>{const s=LifeLedgerApp.getState(); const saved=s.netWorthHistory.slice(); const live=LifeLedgerApp.getNetWorthSnapshot(); const mk=(date,o)=>({...live,id:'nwh-e2e-'+date,date,changes:{},contributed:undefined,...o});
+        s.netWorthHistory=[mk('2026-01-02',{stocks:live.stocks-1234567,netWorth:live.netWorth-1234567,totalAssets:live.totalAssets-1234567,contributed:{mutualFunds:0,stocks:0,usStocksUsd:0}}), mk('2026-01-08',{contributed:{mutualFunds:0,stocks:1000000,usStocksUsd:0}}), mk('2026-01-12',{stocks:live.stocks-1234567,netWorth:live.netWorth-1234567,totalAssets:live.totalAssets-1234567}), mk('2026-01-16',{})];
+        const b=document.querySelector('[data-finance-tab="networthhistory"]'); b.hidden=false; b.click(); LifeLedgerApp.renderAll(); await new Promise(r=>setTimeout(r,500));
+        const t=document.querySelector('#nwhWeeklyPanel table'), wr=t.parentElement; const r={w:innerWidth, rows:t.querySelectorAll('tbody tr').length, table:t.scrollWidth, box:wr.clientWidth}; s.netWorthHistory=saved; LifeLedgerApp.renderAll(); return r; })()`);
+      check(`weekly table at ${w}px: every column fits`, fit.rows >= 2 && fit.table <= fit.box + 1, JSON.stringify(fit));
+    }
+    await viewport(1280, 900); await sleep(300);
     // A company name with an ampersand is shown as written (it used to appear as "&amp;" because it was escaped twice)
     await viewport(1280, 900); await sleep(400); await view("finance");
     const amp = await cdp.eval(`(async()=>{const b=document.querySelector('[data-finance-tab="stocks"]'); b.hidden=false; b.click(); await new Promise(r=>setTimeout(r,600)); return [...document.querySelectorAll('#stocksTable td')].map(t=>t.textContent).join('|')})()`);

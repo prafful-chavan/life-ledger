@@ -799,3 +799,9 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 }
 /* What the day's change is made of: market, new money, your edits */
 .hero-split { flex-basis: 100%; margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+/* Week by week table (laptop and larger; phones get cards like every Finance table): whole rupees, fits its box */
+@media (min-width: 701px) {
+  #nwhWeeklyPanel .table-wrap table { min-width: 0; }
+  #nwhWeeklyPanel .table-wrap th, #nwhWeeklyPanel .table-wrap td { padding: 10px 8px; white-space: normal; }
+  #nwhWeeklyPanel .table-wrap td:first-child, #nwhWeeklyPanel .table-wrap td:nth-child(2) { white-space: nowrap; }
+}

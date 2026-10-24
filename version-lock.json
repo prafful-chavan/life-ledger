@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.123",
-    "sha256": "6b090e4fc1345c1d61ba8c6570d9b1020eeaa19fd023da2a92aab91ec9ca049c"
+    "version": "1.0.124",
+    "sha256": "42ee66c5f4a195333ebb390db70ee4c65cbf614405bb2bd53fb178bacc2949f1"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -64,8 +64,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.27",
-    "sha256": "e49d781b688a154b3b1d865085bed044462032f0f45358b95655b9b19758d2d2"
+    "version": "1.8.28",
+    "sha256": "b1fe77e78bfda25e25e5d513d87e3ca953c0cad9f476032c38e631e65141647a"
   },
   "liability-calc.js": {
     "version": "1.0.0",

@@ -4454,15 +4454,17 @@ const NWW = (typeof window !== "undefined" && window.LifeLedgerNetWorthWeekly) |
 function renderNetWorthWeekly(history) {
   const body = document.getElementById("nwhWeeklyBody");
   if (!body) return;
-  const money = (v) => (Math.abs(v) < 0.5 ? formatINR(0) : `${v > 0 ? "+" : "−"}${formatINR(Math.abs(v))}`);
+  const whole = (v) => `₹${Math.round(Math.abs(v)).toLocaleString("en-IN")}`;      // whole rupees: a week's figures do not need paise
+  const money = (v) => (Math.abs(v) < 0.5 ? whole(0) : `${v > 0 ? "+" : "−"}${whole(v)}`);
   const tone = (v) => `<span style="color:${v >= 0 ? "var(--positive, #22c55e)" : "var(--negative, #ef4444)"};font-weight:600">${money(v)}</span>`;
+  const short = (iso) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
   const weeks = NWW.weeks(history, { count: 8 });
   const sunday = (monday) => new Date(Date.parse(monday + "T00:00:00Z") + 6 * 86400000).toISOString().slice(0, 10);
   renderRows(body, weeks, (w) => [
-    `${formatDate(w.weekStart)} – ${formatDate(sunday(w.weekStart))}`,
-    formatINR(w.netWorth),
+    `${short(w.weekStart)} – ${short(sunday(w.weekStart))}`,
+    whole(w.netWorth),
     tone(w.change),
-    w.split ? tone(w.market) : `<span style="opacity:0.7" title="Money put in was not recorded before 24 Oct 2026, so market and money in cannot be told apart yet">${money(w.marketAndMoney)} <small>with money in</small></span>`,
+    w.split ? tone(w.market) : `<span style="opacity:0.8" title="Money put in was not recorded before 24 Oct 2026, so market and money in cannot be told apart yet">${money(w.marketAndMoney)}<br><small>incl. money in</small></span>`,
     w.split ? tone(w.newMoney) : '<span style="opacity:0.4">—</span>',
     tone(w.edits),
   ], "The weekly view builds up from your daily records (two or more days).", 6);
