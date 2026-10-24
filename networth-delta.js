@@ -29,22 +29,25 @@
 
   // A fund or share sale, however the row spells it (the importer once wrote "REDEEM")
   const SALE = /REDEEM|REDEMPT|SELL|SOLD|WITHDRAW|SWITCH OUT|PAYOUT|^[RS]$/i;
-  const flow = (rows, units) => (rows || []).reduce((t, r) => {
+  const dateOf = (r) => String((r && (r.purchaseDate || r.date)) || "").slice(0, 10);
+  const flow = (rows, units, asOf) => (rows || []).reduce((t, r) => {
+    if (asOf && dateOf(r) && dateOf(r) > asOf) return t;           // bought after that day: not yet put in
     const sale = SALE.test(String((r && (r.transactionType || r.type)) || "").trim());
     const amount = n(r && r.invested) || n(r && r[units]) * n(r && (r.nav || r.avgPrice));
     return t + (sale ? -1 : 1) * amount;
   }, 0);
 
   /**
-   * Money put into each investment class so far: purchases minus sale proceeds (US shares in dollars). Stored with every
-   * snapshot, so the change between two snapshots separates money you added from what the market did.
+   * Money put into each investment class so far (or, with asOf "YYYY-MM-DD", up to the end of that day): purchases minus sale
+   * proceeds (US shares in dollars). Stored with every snapshot, so the change between two snapshots separates money you added
+   * from what the market did.
    */
-  function contributions(state) {
+  function contributions(state, asOf) {
     const s = state || {};
     return {
-      mutualFunds: r2(flow(s.mutualFunds, "units")),
-      stocks: r2(flow(s.stocks, "quantity")),
-      usStocksUsd: r2(flow(s.usstocks, "quantity")),
+      mutualFunds: r2(flow(s.mutualFunds, "units", asOf)),
+      stocks: r2(flow(s.stocks, "quantity", asOf)),
+      usStocksUsd: r2(flow(s.usstocks, "quantity", asOf)),
     };
   }
 
@@ -55,14 +58,17 @@
    * snapshot without it, estimated as the value change the day's price move does not explain (shown as an estimate).
    */
   function newMoneyBetween(prev, cur, parts) {
-    const pc = prev && prev.contributed, cc = cur && cur.contributed;
+    // The earlier record has no running total (saved before it existed): the later one may carry what had been put in by
+    // the earlier record's date, worked out from the purchase dates; good, but not exact, so it is still called "about"
+    const pc = (prev && prev.contributed) || (cur && cur.contributedAtPrev), cc = cur && cur.contributed;
+    const exact = Boolean(prev && prev.contributed);
     const out = {};
     if (pc && cc) {
       const fx = n(cur.fxRate) || n(prev.fxRate);
       out.mutualFunds = n(cc.mutualFunds) - n(pc.mutualFunds);
       out.stocks = n(cc.stocks) - n(pc.stocks);
       out.usStocks = fx ? (n(cc.usStocksUsd) - n(pc.usStocksUsd)) * fx : 0;
-      return { byClass: out, exact: true };
+      return { byClass: out, exact };
     }
     for (const k of INVESTED) {
       const est = n(parts[k]) - n(cur && cur.changes && cur.changes[k]);

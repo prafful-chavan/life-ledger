@@ -1014,6 +1014,7 @@ function normalizeNetWorthHistoryEntry(entry) {
     liabilities: toNumber(entry.liabilities),
     ...(toNumber(entry.fxRate) > 0 ? { fxRate: toNumber(entry.fxRate) } : {}),
     ...(entry.contributed && typeof entry.contributed === "object" ? { contributed: { mutualFunds: toNumber(entry.contributed.mutualFunds), stocks: toNumber(entry.contributed.stocks), usStocksUsd: toNumber(entry.contributed.usStocksUsd) } } : {}),
+    ...(entry.contributedAtPrev && typeof entry.contributedAtPrev === "object" ? { contributedAtPrev: { mutualFunds: toNumber(entry.contributedAtPrev.mutualFunds), stocks: toNumber(entry.contributedAtPrev.stocks), usStocksUsd: toNumber(entry.contributedAtPrev.usStocksUsd) } } : {}),
     ...(entry.holdSig && typeof entry.holdSig === "object" ? { holdSig: entry.holdSig } : {}),
     source: entry.source || "snapshot",
     // audit trail written by the official-close check (must survive every reload and sync)
@@ -8742,6 +8743,8 @@ function buildTodaySnapshot(options = {}) {
     nowIso: new Date().toISOString(),
     // Money put in so far per class: tomorrow's change minus the change in this is the market's part
     contributed: typeof window !== "undefined" && window.LifeLedgerNetWorth ? window.LifeLedgerNetWorth.contributions(state) : null,
+    // The previous record predates the running total: work out what had been put in by its day from the purchase dates
+    contributedAtPrev: prevRecord && !prevRecord.contributed && typeof window !== "undefined" && window.LifeLedgerNetWorth ? window.LifeLedgerNetWorth.contributions(state, prevRecord.date) : null,
     source: options.source || "daily",
   });
 }

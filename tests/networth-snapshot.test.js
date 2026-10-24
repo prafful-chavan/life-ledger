@@ -61,6 +61,7 @@ assert.strictEqual(r.dayChange, -6400.46); assert.strictEqual(r.dayChangePct, Nu
 assert.deepStrictEqual(r.settled, { mutualFunds: true, stocks: true, usStocks: true, gold: true }); assert.strictEqual(r.final, true);
 assert.deepStrictEqual(r.holdSig, { mutualFunds: "1:10", stocks: "1:5", usStocks: "1:1000" }); assert.strictEqual(r.fxRate, 94.9);
 assert.strictEqual(r.contributed, undefined, "no contributed figure given: none stored"); assert.deepStrictEqual(S.assembleSnapshot(base({ contributed: { stocks: 5 } })).contributed, { stocks: 5 });
+assert.strictEqual(r.contributedAtPrev, undefined, "no earlier-day figure given: none stored"); assert.deepStrictEqual(S.assembleSnapshot(base({ contributed: { stocks: 5 }, contributedAtPrev: { stocks: 3 } })).contributedAtPrev, { stocks: 3 });
 assert.strictEqual(r.asOf.mutualFunds, new Date(ist(WED, 21, 0)).toISOString());
 
 // not all closed yet: not final, and the live move still counts

@@ -81,8 +81,8 @@ function netWorth(state, fxOverride) {
     // Market move vs money you added vs your own edits — the same split the app's dashboard shows. Exact when the
     // previous record carries `contributed`; for an older record it needs today's recorded price move, else it is left out.
     let split = null;
-    if (prev.contributed || todayRec) {
-      const cur = { date: todayISO, netWorth: out.netWorth, totalLiabilities: liabilities, ...cls, fxRate: fx, contributed: NetWorthDelta.contributions(state), changes: (todayRec && todayRec.changes) || {} };
+    {
+      const cur = { date: todayISO, netWorth: out.netWorth, totalLiabilities: liabilities, ...cls, fxRate: fx, contributed: NetWorthDelta.contributions(state), contributedAtPrev: prev.contributed ? null : NetWorthDelta.contributions(state, prev.date), changes: (todayRec && todayRec.changes) || {} };
       const s = NetWorthDelta.compare(prev, cur).split;
       split = { market: r0(s.market), newMoney: r0(s.newMoney), edits: r0(s.edits), exact: s.exact, newMoneyByClass: Object.fromEntries(Object.entries(s.newMoneyByClass).filter(([, v]) => Math.abs(v) >= 1).map(([k, v]) => [k, r0(v)])) };
     }

@@ -75,4 +75,31 @@ assert.deepStrictEqual(N.contributions({
   usstocks: [{ quantity: 1, invested: 50 }, { transactionType: "S", invested: 20 }],
 }), { mutualFunds: 550, stocks: 430, usStocksUsd: 30 });
 assert.deepStrictEqual(N.contributions(null), { mutualFunds: 0, stocks: 0, usStocksUsd: 0 });
+// ── an older record with no running total: money put in is worked out from the purchase dates ──
+const rowsDated = { mutualFunds: [{ transactionType: "PURCHASE", invested: 1000, purchaseDate: "2026-10-20" }, { transactionType: "PURCHASE", invested: 500, purchaseDate: "2026-10-23" }, { transactionType: "PURCHASE", invested: 300, purchaseDate: "2026-10-24" }, { transactionType: "REDEEM", invested: 200, purchaseDate: "2026-10-24" }, { transactionType: "PURCHASE", invested: 50 }],
+  stocks: [{ quantity: 1, invested: 700, date: "2026-10-23" }, { quantity: 1, invested: 900, date: "2026-10-25" }], usstocks: [{ quantity: 1, invested: 10, purchaseDate: "2026-10-24" }] };
+assert.deepStrictEqual(N.contributions(rowsDated), { mutualFunds: 1650, stocks: 1600, usStocksUsd: 10 }, "everything so far");
+assert.deepStrictEqual(N.contributions(rowsDated, "2026-10-23"), { mutualFunds: 1550, stocks: 700, usStocksUsd: 0 }, "by the end of 23 Oct: later purchases and sales excluded; a row with no date is always counted");
+assert.deepStrictEqual(N.contributions(rowsDated, "2026-10-24"), { mutualFunds: 1650, stocks: 700, usStocksUsd: 10 }, "a row dated that very day counts");
+assert.deepStrictEqual(N.contributions(rowsDated, "2026-10-19"), { mutualFunds: 50, stocks: 0, usStocksUsd: 0 }); assert.deepStrictEqual(N.contributions(rowsDated, ""), N.contributions(rowsDated), "no date given: all");
+// the 24 Oct case: yesterday's record has no running total, so a share price that merely moved is not mistaken for money
+r = pair({ stocks: 1513567 }, { stocks: 1495802, changes: { stocks: -27396 }, contributed: { mutualFunds: 0, stocks: 1009912, usStocksUsd: 0 }, contributedAtPrev: { mutualFunds: 0, stocks: 1000000, usStocksUsd: 0 } });
+assert.deepStrictEqual([r.split.newMoney, r.split.exact], [9912, false], "from the dates: ₹9,912 put in; still 'about', because dates are not exact"); assert.ok(addsUp(r));
+r = pair({ usStocks: 90000 }, { usStocks: 90494, changes: { usStocks: -1155 }, fxRate: 90, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 800 }, contributedAtPrev: { mutualFunds: 0, stocks: 0, usStocksUsd: 800 } });
+assert.strictEqual(r.split.newMoney, 0, "no purchases since: the estimate that read a price move as money is not used"); assert.strictEqual(r.split.market, 494, "all of it is market");
+// a previous record that does have a running total wins over the dates, and is exact
+r = pair({ stocks: 1000 }, { stocks: 1600, contributed: { mutualFunds: 0, stocks: 500, usStocksUsd: 0 }, contributedAtPrev: { mutualFunds: 0, stocks: 100, usStocksUsd: 0 } });
+const exactPrev = N.compare({ ...snap({ stocks: 1000, netWorth: 1000 }), contributed: { mutualFunds: 0, stocks: 100, usStocksUsd: 0 } }, { ...snap({ date: "2026-10-24", stocks: 1600, netWorth: 1600 }), contributed: { mutualFunds: 0, stocks: 500, usStocksUsd: 0 }, contributedAtPrev: { mutualFunds: 0, stocks: 0, usStocksUsd: 0 } });
+assert.deepStrictEqual([exactPrev.split.newMoney, exactPrev.split.exact], [400, true]);
+
+// ── limits: exchange rate missing, the estimate's threshold, the percentage ──
+r = pair({ usStocks: 90000, fxRate: 0 }, { usStocks: 99000, fxRate: 0, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 900 }, contributedAtPrev: { mutualFunds: 0, stocks: 0, usStocksUsd: 800 } });
+assert.strictEqual(r.split.newMoneyByClass.usStocks, 0, "no exchange rate known: dollars cannot be turned into rupees, so none is claimed");
+r = pair({ stocks: 100000 }, { stocks: 101000, changes: { stocks: 0 } }); assert.strictEqual(r.split.newMoney, 1000, "exactly ₹1,000 unexplained on a ₹1 lakh class: money");
+r = pair({ stocks: 100000 }, { stocks: 100999, changes: { stocks: 0 } }); assert.strictEqual(r.split.newMoney, 0, "₹999: price timing");
+r = pair({ stocks: 1000000 }, { stocks: 1004000, changes: { stocks: 0 } }); assert.strictEqual(r.split.newMoney, 4000, "₹4,000 on ₹10 lakh is above 0.3% (₹3,012): counts"); r = pair({ stocks: 1000000 }, { stocks: 1002990, changes: { stocks: 0 } }); assert.strictEqual(r.split.newMoney, 0, "₹2,990 is under 0.3% (₹3,009): not");
+r = pair({ stocks: 200 }, { stocks: 1100, changes: { stocks: 0 } }); assert.strictEqual(r.split.newMoney, 0, "a small class never counts less than ₹1,000 as money (₹900 on ₹1,100)");
+assert.strictEqual(pair({ stocks: 200 }, { stocks: 1200, changes: { stocks: 0 } }).split.newMoney, 1000, "₹1,000 on ₹1,200: money");
+assert.strictEqual(pair({ stocks: 20000 }, { stocks: 22000 }).pct, 10, "the percentage is of the previous net worth"); assert.strictEqual(N.compare({ date: "a", netWorth: 0 }, { date: "b", netWorth: 50 }).pct, 0, "no previous net worth: 0%");
+
 console.log("networth-delta tests passed");

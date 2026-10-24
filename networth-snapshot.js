@@ -78,7 +78,8 @@
    *   live: { [class]: { held, hasChange, change, fetchedAt, asOf } } for the four market classes,
    *   existing (the record already saved for today, or null), prevRecord (the latest record before today, or null),
    *   fxNow, sigNow (holdingsSignature now), keepLock(prevSettled, prevAsOf, liveSettled, fetchedAt, opts) → boolean,
-   *   id (a new id, used when there is no record yet), nowIso, source, contributed (money put in so far, optional)
+   *   id (a new id, used when there is no record yet), nowIso, source, contributed (money put in so far, optional),
+   *   contributedAtPrev (money put in by the end of the previous record's day; only for a previous record with no running total)
    * }
    * A class locked at its close earlier today keeps its locked value and move — unless the rows behind it changed, or (US
    * shares) the exchange rate moved by more than 5 paise, or a newer close arrived. Everything else is live.
@@ -156,6 +157,7 @@
       fxRate: usKeptLocked && num(existing && existing.fxRate) > 0 ? num(existing.fxRate) : fxNow,
       holdSig: sigNow,
       ...(i.contributed ? { contributed: i.contributed } : {}),
+      ...(i.contributedAtPrev ? { contributedAtPrev: i.contributedAtPrev } : {}),
       source: i.source || "daily",
     };
   }
