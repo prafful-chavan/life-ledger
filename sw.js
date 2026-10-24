@@ -1,7 +1,7 @@
 /* Life Ledger service worker — network-first so code is never stale, with an
  * offline fallback. Bump CACHE_VERSION on releases that change cached shell files. */
-const CACHE_VERSION = "ll-shell-v4";
-const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./expenses-core.js", "./networth-snapshot.js", "./auth.js", "./sync-engine.js", "./sync-client.js", "./vault-store.js", "./drive-sync.js", "./ui-polish.js", "./manifest.webmanifest"];
+const CACHE_VERSION = "ll-shell-v5";
+const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./expenses-core.js", "./networth-snapshot.js", "./salary-core.js", "./auth.js", "./sync-engine.js", "./sync-client.js", "./vault-store.js", "./drive-sync.js", "./ui-polish.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

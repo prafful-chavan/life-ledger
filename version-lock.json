@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.115",
-    "sha256": "d63c20560ace8e7687cd33028520e0dbdb005cde0ee5d5ae1fd416861822fbdb"
+    "version": "1.0.116",
+    "sha256": "f4ffa5006f5d02966affa93958ee7a303906f98199b8089e37b81e9fe2bfafd2"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -98,6 +98,10 @@
   "protection.js": {
     "version": "1.0.4",
     "sha256": "951a03ac680df4fe4eed9e791f428f323d933944c7b6637c8867ec556aeeef52"
+  },
+  "salary-core.js": {
+    "version": "1.0.0",
+    "sha256": "82b80293d503f9869bd6deafe0f7bb4ddbb203ed05550c60564ad4e43e9da42f"
   },
   "script-gate.js": {
     "version": "1.0.0",

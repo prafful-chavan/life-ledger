@@ -4436,9 +4436,9 @@ function collectSalaryParts(row, fieldConfig) {
   }, {});
 }
 
-function isSalary(item) {
-  return /salary/i.test(item.type || "salary") || item.grossEarnings || item.netSalary || item.basicSalary;
-}
+// The rules of the Salary tab (which rows are salary, totals, growth, progression) live in salary-core.js; this file only draws them.
+const SAL = (typeof window !== "undefined" && window.LifeLedgerSalary) || (typeof require === "function" ? require("./salary-core.js") : null);
+const isSalary = SAL.isSalary;
 
 function isFullBackup(data) {
   return (
@@ -5576,40 +5576,30 @@ function renderFinance() {
 
 function renderSalaryCards() {
   const container = document.getElementById("salaryCards");
-  const people = groupBy(state.income.filter(isSalary), (item) => item.person || "Me");
+  const { people, household } = SAL.personCards(state.income, toNumber);
   container.innerHTML = "";
 
-  if (Object.keys(people).length === 0) {
+  if (people.length === 0) {
     container.innerHTML = `<div class="empty-state">Upload salary data or add income entries to compare growth.</div>`;
     return;
   }
 
-  Object.entries(people).forEach(([person, entries]) => {
-    const sorted = entries.sort((a, b) => new Date(a.date) - new Date(b.date));
-    const first = sorted[0]?.netSalary || sorted[0]?.amount || 0;
-    const latestRow = sorted.at(-1);
-    const latest = latestRow?.netSalary || latestRow?.amount || 0;
-    const growth = first ? ((latest - first) / first) * 100 : 0;
+  people.forEach(({ person, firstRow, latestRow, latestNet, growthPct }) => {
     const row = document.createElement("div");
     row.className = "stack-row";
     row.innerHTML = `
       <div>
         <div class="stack-title">${escapeHTML(person)}</div>
-        <div class="stack-meta">${escapeHTML(latestRow?.source || "Salary")} • ${formatDate(latestRow?.date)} • ${formatPercent(growth)} since ${formatDate(sorted[0]?.date)}</div>
+        <div class="stack-meta">${escapeHTML(latestRow?.source || "Salary")} • ${formatDate(latestRow?.date)} • ${formatPercent(growthPct)} since ${formatDate(firstRow?.date)}</div>
       </div>
-      <div class="stack-value">${formatINR(latest)}</div>
+      <div class="stack-value">${formatINR(latestNet)}</div>
     `;
     container.append(row);
   });
 
   // Household total: what comes in each month and year, so the card is as informative as it is tall
-  const latestByPerson = Object.values(people).map((entries) => {
-    const last = entries.slice().sort((x, y) => new Date(x.date) - new Date(y.date)).at(-1);
-    return toNumber(last?.netSalary || last?.amount || 0);
-  });
-  const monthlyTotal = latestByPerson.reduce((s, v) => s + v, 0);
-  if (latestByPerson.length > 1 && monthlyTotal > 0) {
-    [["Household · per month", "Combined latest net salary", monthlyTotal], ["Household · per year", "Latest monthly net × 12", monthlyTotal * 12]].forEach(([title, meta, value]) => {
+  if (household) {
+    [["Household · per month", "Combined latest net salary", household.monthly], ["Household · per year", "Latest monthly net × 12", household.yearly]].forEach(([title, meta, value]) => {
       const row = document.createElement("div");
       row.className = "stack-row stack-total";
       row.innerHTML = `<div><div class="stack-title"></div><div class="stack-meta"></div></div><div class="stack-value"></div>`;
@@ -5627,24 +5617,16 @@ function renderSalaryProgression() {
   const badge = document.getElementById("latestSalaryBadge");
   if (!svg || !insights || !badge) return;
 
-  const allRows = state.income.filter(isSalary).sort((a, b) => new Date(a.date) - new Date(b.date));
-  const myRows = allRows.filter((row) => !/wife/i.test(row.person || ""));
-  const rows = myRows.length ? myRows : allRows;
+  const pr = SAL.progression(state.income, toNumber);
 
-  if (rows.length === 0) {
+  if (!pr) {
     svg.innerHTML = "";
     insights.innerHTML = `<div class="empty-state">Upload your salary workbook to see the 2018-to-now progression chart.</div>`;
     badge.textContent = "No salary yet";
     return;
   }
 
-  const latest = rows.at(-1);
-  const first = rows[0];
-  const highestNet = rows.reduce((best, row) => ((row.netSalary || row.amount || 0) > (best.netSalary || best.amount || 0) ? row : best), rows[0]);
-  const orgs = [...new Set(rows.map((row) => row.source || row.organization || "Salary"))];
-  const firstNet = first.netSalary || first.amount || 0;
-  const latestNet = latest.netSalary || latest.amount || 0;
-  const growth = firstNet ? ((latestNet - firstNet) / firstNet) * 100 : 0;
+  const { rows, latest, highestNet, orgs, latestNet, growthPct: growth } = pr;
 
   badge.textContent = `${formatDate(latest.date)} • ${formatINR(latestNet)}`;
   renderSalaryProgressionChart(svg, rows);
@@ -5702,18 +5684,7 @@ function renderBudgetPulse() {
 function renderIncomeTable() {
   const table = document.getElementById("incomeTable");
   const salaryRows = [...state.income].filter(isSalary);
-
-  // Calculate metrics
-  let totalNet = 0;
-  let totalTds = 0;
-  let monthsCount = salaryRows.length;
-
-  salaryRows.forEach((row) => {
-    totalNet += Number(row.netSalary || row.amount || 0);
-    totalTds += Number(row.taxTds || 0);
-  });
-
-  const avgNet = monthsCount > 0 ? (totalNet / monthsCount) : 0;
+  const { totalNet, totalTds, months: monthsCount, avgNet } = SAL.summary(salaryRows, toNumber);
 
   // Set values in DOM
   const earnedEl = document.getElementById("salaryTotalEarned");
@@ -5728,7 +5699,7 @@ function renderIncomeTable() {
 
   renderRows(
     table,
-    [...salaryRows].sort(sortByDateDesc).slice(0, 160),
+    SAL.tableRows(salaryRows, (item) => parseCalendarDate(item.date || item.dueDate)?.getTime() || 0),
     (item) => [
       formatMonth(item.date),
       item.person,
@@ -15099,11 +15070,7 @@ function formatMonth(dateValue) {
 }
 
 function componentSummary(item) {
-  const parts = salaryComponentFields
-    .map(([key, label]) => ({ label, value: toNumber(item[key]) }))
-    .filter((part) => part.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 3);
+  const parts = SAL.componentParts(item, salaryComponentFields, toNumber);
   return parts.length ? parts.map((part) => `${part.label}: ${formatINR(part.value)}`).join(", ") : "-";
 }
 
