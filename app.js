@@ -8888,172 +8888,43 @@ function captureCurrentNetWorthBreakdown() {
 }
 
 /* ── Settlement rules ─────────────────────────────────────────────────────
-   Each asset class finishes its trading "day" at a different time, so today's snapshot
-   updates live and each class is LOCKED once a price fetched after its close arrives:
-   • Indian stocks : fetched on/after 15:45 IST (any time on weekends)
-   • US stocks     : fetched while the US market is fully closed (ET weekend, <04:00 or ≥20:00)
-   • Gold          : fetched on/after 18:00 IST (GoodReturns rate for the day is out)
-   • Mutual funds  : latest NAV is dated at least the previous business day (1+ day lag is OK)
-   Past days are never modified. A class that never settled keeps its last live value. */
-const NWH_MARKET_CLASSES = ['mutualFunds', 'stocks', 'usStocks', 'gold'];
-const NWH_CLASS_LABELS = { mutualFunds: 'MF', stocks: 'Stocks', usStocks: 'US', gold: 'Gold' };
-const NWH_STOCKS_SETTLE_MIN_IST = 15 * 60 + 45;
-const NWH_GOLD_SETTLE_MIN_IST = 18 * 60;
+   The rules for when each market has closed, when a value is locked at its close and how the day's record is assembled live in
+   networth-snapshot.js (with their own tests). These are the names the rest of this file uses. */
+const NWS = (typeof window !== "undefined" && window.LifeLedgerNetWorthSnapshot) || (typeof require === "function" ? require("./networth-snapshot.js") : null);
+const NWH_MARKET_CLASSES = NWS.MARKET_CLASSES;
+const NWH_CLASS_LABELS = NWS.CLASS_LABELS;
+const NWH_STOCKS_SETTLE_MIN_IST = NWS.STOCKS_SETTLE_MIN_IST;
+const NWH_GOLD_SETTLE_MIN_IST = NWS.GOLD_SETTLE_MIN_IST;
+const zonedClock = NWS.zonedClock;
+const istClock = NWS.istClock;
+const istTodayISO = NWS.istTodayISO;
+const isUsMarketClosedAt = NWS.isUsMarketClosedAt;
+const prevBusinessDayISO = NWS.prevBusinessDayISO;
+const isNetWorthClassSettled = NWS.isClassSettled;
 
-function zonedClock(ms, timeZone) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', weekday: 'short'
-  }).formatToParts(new Date(ms)).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
-  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday);
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    minutes: Number(parts.hour) * 60 + Number(parts.minute),
-    dow
-  };
-}
-
-function istClock(ms) { return zonedClock(ms, 'Asia/Kolkata'); }
-function istTodayISO(ms = Date.now()) { return istClock(ms).date; }
-
-function isUsMarketClosedAt(ms) {
-  const et = zonedClock(ms, 'America/New_York');
-  return et.dow === 0 || et.dow === 6 || et.minutes < 4 * 60 || et.minutes >= 20 * 60;
-}
-
-function prevBusinessDayISO(dateISO) {
-  const d = new Date(`${dateISO}T00:00:00Z`);
-  do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
-  return d.toISOString().slice(0, 10);
-}
-
-// True when `fetchedAtMs` is a price fetched on IST day `dateISO` after that class's close.
-function isNetWorthClassSettled(cls, fetchedAtMs, dateISO, navISO) {
-  if (!fetchedAtMs) return false;
-  const f = istClock(fetchedAtMs);
-  if (f.date !== dateISO) return false;
-  switch (cls) {
-    case 'stocks': return f.dow === 0 || f.dow === 6 || f.minutes >= NWH_STOCKS_SETTLE_MIN_IST;
-    case 'usStocks': return isUsMarketClosedAt(fetchedAtMs);
-    case 'gold': return f.minutes >= NWH_GOLD_SETTLE_MIN_IST;
-    case 'mutualFunds': return !!navISO && navISO >= prevBusinessDayISO(dateISO);
-    default: return false;
-  }
-}
-
-/** A cheap fingerprint of what is held per market class. When it changes (rows added, removed, edited) a locked close is stale. */
-function holdingsSignature() {
-  const n = (v) => Number(v) || 0;
-  const sum = (list, f) => (list || []).reduce((t, x) => t + f(x), 0);
-  return {
-    mutualFunds: `${(state.mutualFunds || []).length}:${Math.round(sum(state.mutualFunds, (m) => (/^red/i.test(String(m.transactionType || "")) ? -1 : 1) * n(m.units)))}`,
-    stocks: `${(state.stocks || []).length}:${Math.round(sum(state.stocks, (x) => n(x.quantity)))}`,
-    usStocks: `${(state.usstocks || []).length}:${Math.round(sum(state.usstocks, (x) => n(x.quantity) * 1000))}`,
-  };
-}
+const holdingsSignature = () => NWS.holdingsSignature(state);
 
 // What today's net worth record looks like RIGHT NOW (pure: does not touch saved history).
-// Classes already locked at their close keep their locked value; the rest are live.
+// Classes already locked at their close keep their locked value; the rest are live. The rules are in networth-snapshot.js.
 function buildTodaySnapshot(options = {}) {
   const today = istTodayISO();
-  const breakdown = captureCurrentNetWorthBreakdown();
-  const dayChangeMetrics = calculatePortfolio1DayChange();
-  const existing = (state.netWorthHistory || []).find(entry => entry.date === today) || null;
-  const prevSettled = existing?.settled || {};
-  const prevChanges = existing?.changes || {};
-  const prevAsOf = existing?.asOf || {};
-
-  const settled = {};
-  const changes = {};
-  const asOf = {};
-  const fxNow = getUsdInrRate();
-  const sigNow = holdingsSignature();
-  let usKeptLocked = false;
-  NWH_MARKET_CLASSES.forEach((cls) => {
-    const live = dayChangeMetrics.classes[cls];
-    const liveSettled = !live.held || isNetWorthClassSettled(cls, live.fetchedAt, today, live.asOf);
-    const fxChanged = cls === 'usStocks' && live.held && existing && prevSettled[cls] &&
-      (!existing.fxRate || Math.abs(existing.fxRate - fxNow) > 0.05);   // US stocks are valued with the exchange rate of the moment they were locked
-    // The rows behind a class changed after it was locked (an import, a deletion, a correction): the locked value is stale.
-    // Snapshots saved before fingerprints existed fall back to "the locked value is far from what the holdings are worth now".
-    const lockedValue = existing ? toNumber(existing[cls]) : 0, liveValue = toNumber(breakdown[cls]);
-    const holdingsChanged = Boolean(existing && prevSettled[cls] && (
-      existing.holdSig && existing.holdSig[cls] !== undefined
-        ? existing.holdSig[cls] !== sigNow[cls]
-        : lockedValue > 0 && liveValue > 0 && Math.abs(lockedValue / liveValue - 1) > 0.25));
-    const NWC = typeof window !== "undefined" ? window.LifeLedgerNetWorthClose : undefined;
-    const keep = NWC?.keepLock
-      ? NWC.keepLock(prevSettled[cls], prevAsOf[cls], live.held && liveSettled, live.fetchedAt, { heldNow: live.held, lockedValue: existing ? existing[cls] : 0, fxChanged, holdingsChanged })
-      : Boolean(prevSettled[cls]);
-    if (keep) {
-      // Locked at its close earlier today (and nothing newer after the close): keep that value and gain/loss
-      breakdown[cls] = toNumber(existing[cls]);
-      changes[cls] = toNumber(prevChanges[cls]);
-      asOf[cls] = prevAsOf[cls] || '';
-      settled[cls] = true;
-      if (cls === 'usStocks') usKeptLocked = true;
-      return;
-    }
-    changes[cls] = live.held && live.hasChange ? Number(live.change.toFixed(2)) : 0;
-    settled[cls] = liveSettled;
-    asOf[cls] = live.fetchedAt ? new Date(live.fetchedAt).toISOString() : '';
-  });
-
-  // A session already counted in the previous day's record (no new NAV or close since: same value, same move)
-  // is not today's market move. Mutual funds before the evening NAV and weekends are the usual cases.
+  const NWC = typeof window !== "undefined" ? window.LifeLedgerNetWorthClose : undefined;
   const prevRecord = (state.netWorthHistory || []).filter((e) => e.date < today).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
-  if (prevRecord) NWH_MARKET_CLASSES.forEach((cls) => {
-    const c = toNumber(changes[cls]), pc = toNumber(prevRecord.changes && prevRecord.changes[cls]);
-    const v = toNumber(breakdown[cls]), pv = toNumber(prevRecord[cls]);
-    if (c && pv > 0 && Math.abs(v / pv - 1) < 0.0005 && Math.abs(c - pc) <= Math.max(50, Math.abs(pc) * 0.01)) changes[cls] = 0;
-  });
-
-  // Totals recomputed so locked classes and live classes add up consistently
-  const otherAssets = breakdown.silver + breakdown.crypto + breakdown.fd + breakdown.epf +
-    breakdown.ppf + breakdown.bonds + breakdown.bankSaving + breakdown.others;
-  breakdown.totalAssets = Number((breakdown.mutualFunds + breakdown.stocks + breakdown.usStocks + breakdown.gold + otherAssets).toFixed(2));
-  breakdown.netWorth = Number((breakdown.totalAssets - breakdown.liabilities).toFixed(2));
-
-  const dayChange = Number(NWH_MARKET_CLASSES.reduce((sum, cls) => sum + changes[cls], 0).toFixed(2));
-  const marketValue = NWH_MARKET_CLASSES.reduce((sum, cls) => sum + breakdown[cls], 0);
-  const prevMarketValue = marketValue - dayChange;
-  const dayChangePct = prevMarketValue > 0 ? Number(((dayChange / prevMarketValue) * 100).toFixed(2)) : 0;
-
-  const snapshot = {
-    id: existing ? existing.id : `nwh-${generateUUID()}`,
-    date: today,
-    timestamp: new Date().toISOString(),
-    netWorth: breakdown.netWorth,
-    totalAssets: breakdown.totalAssets,
-    totalLiabilities: breakdown.liabilities,
-    dayChange,
-    dayChangePct,
-    changes,
-    settled,
-    asOf,
-    final: NWH_MARKET_CLASSES.every(cls => settled[cls]),
-    mutualFunds: breakdown.mutualFunds,
-    stocks: breakdown.stocks,
-    usStocks: breakdown.usStocks,
-    gold: breakdown.gold,
-    silver: breakdown.silver,
-    crypto: breakdown.crypto,
-    fd: breakdown.fd,
-    epf: breakdown.epf,
-    ppf: breakdown.ppf,
-    bonds: breakdown.bonds,
-    bankSaving: breakdown.bankSaving,
-    others: breakdown.others,
-    liabilities: breakdown.liabilities,
-    // The rate the US value was computed with: while it stays locked, the rate of the lock (so a later move is noticed)
-    fxRate: usKeptLocked && toNumber(existing?.fxRate) > 0 ? toNumber(existing.fxRate) : fxNow,
-    holdSig: sigNow,
+  return NWS.assembleSnapshot({
+    today,
+    breakdown: captureCurrentNetWorthBreakdown(),
+    live: calculatePortfolio1DayChange().classes,
+    existing: (state.netWorthHistory || []).find((entry) => entry.date === today) || null,
+    prevRecord,
+    fxNow: getUsdInrRate(),
+    sigNow: holdingsSignature(),
+    keepLock: NWC && NWC.keepLock ? NWC.keepLock : null,
+    id: `nwh-${generateUUID()}`,
+    nowIso: new Date().toISOString(),
     // Money put in so far per class: tomorrow's change minus the change in this is the market's part
-    ...(typeof window !== "undefined" && window.LifeLedgerNetWorth ? { contributed: window.LifeLedgerNetWorth.contributions(state) } : {}),
-    source: options.source || "daily"
-  };
-
-  return snapshot;
+    contributed: typeof window !== "undefined" && window.LifeLedgerNetWorth ? window.LifeLedgerNetWorth.contributions(state) : null,
+    source: options.source || "daily",
+  });
 }
 
 function recordDailyNetWorthSnapshot(options = {}) {

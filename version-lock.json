@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.114",
-    "sha256": "c185a07a075a167100be4a5482a8c1fe6e2bd4f5e63e546b87b661c1326bae92"
+    "version": "1.0.115",
+    "sha256": "d63c20560ace8e7687cd33028520e0dbdb005cde0ee5d5ae1fd416861822fbdb"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -82,6 +82,10 @@
   "networth-delta.js": {
     "version": "1.0.1",
     "sha256": "9d06caa712b6f0ac3b80e6dda8cc8a4135dd306ddf1cf045bff1305e25ccc5de"
+  },
+  "networth-snapshot.js": {
+    "version": "1.0.0",
+    "sha256": "f7d927fc71083b92b9c629ac0cad72a8b6c549a768f4a8b816e482f19bb2dd20"
   },
   "price-history.js": {
     "version": "1.0.1",
