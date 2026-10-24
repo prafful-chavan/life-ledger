@@ -37,7 +37,7 @@ function build(now = new Date()) {
       mf("mf-l1", "Omega Nifty Next 50 Index Fund Of Funds Direct Plan Growth Option (formerly Omega Junior Bluechip)", "Wife", 10, 100),
     ],
     // the same share held by both of you, in two brokers
-    stocks: [stock("stk-1", "AAA", "AAA Ltd", "Me", 10, 100), stock("stk-2", "BBB", "BBB Ltd", "Wife", 5, 200), stock("stk-3", "AAA", "AAA Ltd", "Wife", 3, 100)],
+    stocks: [stock("stk-1", "AAA", "AAA & Sons Ltd", "Me", 10, 100), stock("stk-2", "BBB", "BBB Ltd", "Wife", 5, 200), stock("stk-3", "AAA", "AAA Ltd", "Wife", 3, 100)],
     usstocks: [{ id: "uss-1", symbol: "ZZZ", company: "ZZZ Inc", owner: "Me", quantity: 2, avgPrice: 90, invested: 180, currentPrice: 100, prevClose: 99, currentValue: 200, priceDate: stamp, purchaseDate: monthsAgo(3), date: monthsAgo(3), category: "Stock", demat: "Test" }],
     gold: [{ id: "gold-ring-1", name: "Ring", owner: "Wife", carat: "22K", weightGrams: 10, purchasePricePerGram: 6000, invested: 60000, value: 100000, category: "Jewellery", date: monthsAgo(6) }],
     fd: [flat("fd-1", "Me", 200000, "FD")],

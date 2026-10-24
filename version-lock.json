@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.119",
-    "sha256": "c5857a8ac049a75db40e747f0e6971400b82f694f5ee942219fcb66d4d1d46b1"
+    "version": "1.0.121",
+    "sha256": "c9836bbbd1d1803ffa805a4b2e4084e3a24225b016fa6d4d3f784f5a5061e922"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -118,6 +118,10 @@
   "spending-import.js": {
     "version": "1.0.13",
     "sha256": "7b1d01670102b0ec61aadd12d86d29eab3c0cc42f47c642c3e19900d7ed62840"
+  },
+  "stocks-panel-core.js": {
+    "version": "1.0.0",
+    "sha256": "f408152d108e06d3dd202477e38d78c33fcad0099a6332c1b0b5ece53f530b43"
   },
   "styles.css": {
     "version": "1.0.20",

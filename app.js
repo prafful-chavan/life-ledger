@@ -4440,6 +4440,15 @@ function collectSalaryParts(row, fieldConfig) {
 // The rules of the Salary tab (which rows are salary, totals, growth, progression) live in salary-core.js; this file only draws them.
 const SAL = (typeof window !== "undefined" && window.LifeLedgerSalary) || (typeof require === "function" ? require("./salary-core.js") : null);
 const isSalary = SAL.isSalary;
+// A table cell holding plain text. renderRows writes plain strings with textContent, which is already safe, so escaping them first
+// showed names like "Mahindra &amp; Mahindra" on screen; an element is always taken as it is.
+function textCell(value) {
+  const span = document.createElement("span");
+  span.textContent = value == null ? "" : String(value);
+  return span;
+}
+// The rules of the Indian and US stocks panels (rows, one line per holding, totals) live in stocks-panel-core.js.
+const STP = (typeof window !== "undefined" && window.LifeLedgerStocksPanel) || (typeof require === "function" ? require("./stocks-panel-core.js") : null);
 // The rules of the Mutual funds panel (rows, portfolio figures, SIP budget, per-fund lines, invest signal) live in mf-panel-core.js.
 const MFP = (typeof window !== "undefined" && window.LifeLedgerMfPanel) || (typeof require === "function" ? require("./mf-panel-core.js") : null);
 const mfPanelDeps = () => ({
@@ -7125,93 +7134,20 @@ function renderStockHoldingsPanel() {
     priceDateEl.textContent = sampleWithDate?.priceDate ? `Prices: ${sampleWithDate.priceDate}` : '';
   }
 
-  const allStocks = [...(state.stocks || [])];
-  const rows = allStocks
-    .filter(item => matchHoldingsOwner(item.owner || 'Me', activeHoldingsOwner))
-    .filter(item => activeStockBroker === 'All' || (item.demat || '').toLowerCase() === activeStockBroker.toLowerCase())
-    .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
+  const rows = STP.panelRows(state.stocks, activeHoldingsOwner, activeStockBroker, matchHoldingsOwner);
 
   const hasRichData = rows.some(s => s.symbol || s.company);
 
-  // Compute summary metrics directly from holding snapshots
-  let totalInvested = 0;
-  let totalCurrentValue = 0;
-  let heldSymbolCount = 0;
-  let oneDayChange = 0;
-  let hasOneDayData = false;
-  const cache = getStockPriceCache();
-
-  const holdings = rows.map(item => {
-    let sym = item.symbol || "UNKNOWN";
-    let comp = item.company || sym || "Stock";
-    let cat = item.category || "Stock";
-
-    if (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp) || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(item.isin || '')) {
-      const isinCode = (item.isin && /^IN[EF0-9][A-Z0-9]{7,}$/i.test(item.isin)) ? item.isin : (/^IN[EF0-9][A-Z0-9]{7,}$/i.test(sym) ? sym : comp);
-      const isinInfo = getIsinMapping(isinCode);
-      if (isinInfo) {
-        sym = isinInfo.symbol;
-        if (!comp || /^IN[EF0-9][A-Z0-9]{7,}$/i.test(comp) || comp === item.symbol || comp === "Stock") {
-          comp = isinInfo.company;
-        }
-        cat = isinInfo.category || cat;
-      }
-    }
-
-    const qty = toNumber(item.quantity);
-    const avgPrice = toNumber(item.avgPrice);
-    const exchangeSym = getExchangeTicker(sym);
-    const cachedItem = cache[sym] || cache[exchangeSym] || cache[item.symbol];
-    const currentPrice = toNumber(item.currentPrice || cachedItem?.price || item.avgPrice);
-    const invested = toNumber(item.invested || (qty * avgPrice));
-    const currentValue = (qty > 0 && currentPrice > 0) ? (qty * currentPrice) : toNumber(item.currentValue || invested);
-    const gain = currentValue - invested;
-    const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
-    const prevClose = item.prevClose ? toNumber(item.prevClose) : (cachedItem?.prevClose ? toNumber(cachedItem.prevClose) : null);
-    const directChange = (cachedItem?.change !== undefined && cachedItem?.change !== null) ? toNumber(cachedItem.change) : null;
-    const dayChange = prevClose ? qty * (currentPrice - prevClose) : (directChange !== null ? qty * directChange : null);
-    const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : (cachedItem?.changePct !== undefined ? toNumber(cachedItem.changePct) : null);
-
-    if (qty > 0) {
-      totalInvested += invested;
-      totalCurrentValue += currentValue;
-      heldSymbolCount++;
-      if (dayChange !== null) {
-        oneDayChange += dayChange;
-        hasOneDayData = true;
-      }
-    }
-
-    return {
-      symbol: sym,
-      company: comp,
-      category: cat,
-      exchange: item.exchange || "NSE",
-      totalQty: qty,
-      avgPrice,
-      totalInv: invested,
-      currentPrice,
-      prevClose,
-      currentValue,
-      gain,
-      gainPct,
-      dayChange,
-      dayChangePct,
-      demat: item.demat || "-",
-      id: item.id
-    };
-  });
-
-  const totalUnrealizedGain = totalCurrentValue - totalInvested;
-  const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealizedGain / totalInvested) * 100 : 0;
+  const holdings = STP.indianHoldings(rows, { num: toNumber, isinInfo: getIsinMapping, exchangeTicker: getExchangeTicker, cache: getStockPriceCache() });
+  const sm = STP.summary(holdings);
+  const { invested: totalInvested, current: totalCurrentValue, count: heldSymbolCount, oneDayChange, hasOneDay: hasOneDayData, gain: totalUnrealizedGain, gainPct: totalUnrealizedPct } = sm;
 
   // Render Summary Cards
   if (summary) {
     const gainColor = totalUnrealizedGain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     const dayChangeColor = oneDayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     const dayChangeArrow = oneDayChange >= 0 ? '▲' : '▼';
-    const oneDayPct = hasOneDayData && (totalCurrentValue - oneDayChange) > 0
-      ? (oneDayChange / (totalCurrentValue - oneDayChange)) * 100 : 0;
+    const oneDayPct = sm.oneDayPct;
 
     summary.innerHTML = `
       <article class="metric-card compact-metric">
@@ -7257,7 +7193,7 @@ function renderStockHoldingsPanel() {
 
   renderRows(table, sortedStockHoldings, (item) => [
     `<span style="font-weight:600">${escapeHTML(item.symbol)}</span>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
-    escapeHTML(item.company),
+    textCell(item.company),
     item.totalQty.toFixed(item.totalQty % 1 === 0 ? 0 : 2),
     formatINR(item.avgPrice),
     formatINR(item.totalInv),
@@ -7274,7 +7210,7 @@ function renderStockHoldingsPanel() {
       const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
       return `<span style="color:${color};font-weight:600">${formatINR(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
     })(),
-    escapeHTML(item.demat)
+    textCell(item.demat)
   ], `No stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
 }
 
@@ -7463,73 +7399,19 @@ function renderUsStockHoldingsPanel() {
   const tableEl = table.closest("table");
   const targetThead = tableEl ? tableEl.querySelector("thead") : null;
 
-  const allStocks = [...(state.usstocks || [])];
-  const rows = allStocks
-    .filter(item => matchHoldingsOwner(item.owner || 'Me', activeHoldingsOwner))
-    .filter(item => activeUsStockBroker === 'All' || (item.demat || '').toLowerCase() === activeUsStockBroker.toLowerCase())
-    .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
+  const rows = STP.panelRows(state.usstocks, activeHoldingsOwner, activeUsStockBroker, matchHoldingsOwner);
 
   const hasRichData = rows.some(s => s.symbol || s.company);
 
-  let totalInvestedUSD = 0;
-  let totalCurrentValueUSD = 0;
-  let heldSymbolCount = 0;
-  let oneDayChangeUSD = 0;
-  let hasOneDayDataUSD = false;
-
-  const cache = typeof getStockPriceCache === 'function' ? getStockPriceCache() : {};
-  const holdings = rows.map(item => {
-    const qty = toNumber(item.quantity);
-    const avgPrice = toNumber(item.avgPrice);
-    const sym = (item.symbol || '').toUpperCase().trim();
-    const cached = cache[sym] || cache[`NASDAQ:${sym}`] || cache[`NYSE:${sym}`] || cache[`NYSEARCA:${sym}`] || cache[`${sym}.US`] || cache[sym.toLowerCase()];
-    const currentPrice = toNumber(item.currentPrice || cached?.price || item.avgPrice);
-    const invested = toNumber(item.invested || (qty * avgPrice));
-    const currentValue = (qty > 0 && currentPrice > 0) ? (qty * currentPrice) : toNumber(item.currentValue || invested);
-    const gain = currentValue - invested;
-    const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
-    const prevClose = item.prevClose ? toNumber(item.prevClose) : (cached?.prevClose ? toNumber(cached.prevClose) : null);
-    const dayChange = prevClose ? qty * (currentPrice - prevClose) : (item.dayPnl !== undefined && item.dayPnl !== 0 ? toNumber(item.dayPnl) : null);
-    const dayChangePct = prevClose && currentPrice ? ((currentPrice - prevClose) / prevClose) * 100 : null;
-
-    if (qty > 0) {
-      totalInvestedUSD += invested;
-      totalCurrentValueUSD += currentValue;
-      heldSymbolCount++;
-      if (dayChange !== null) {
-        oneDayChangeUSD += dayChange;
-        hasOneDayDataUSD = true;
-      }
-    }
-
-    return {
-      symbol: item.symbol || "UNKNOWN",
-      company: item.company || item.symbol || "US Stock",
-      category: item.category || "Stock",
-      totalQty: qty,
-      avgPrice,
-      totalInv: invested,
-      currentPrice,
-      prevClose,
-      currentValue,
-      gain,
-      gainPct,
-      dayChange,
-      dayChangePct,
-      demat: item.demat || "INDmoney",
-      id: item.id
-    };
-  });
-
-  const totalUnrealizedGainUSD = totalCurrentValueUSD - totalInvestedUSD;
-  const totalUnrealizedPct = totalInvestedUSD > 0 ? (totalUnrealizedGainUSD / totalInvestedUSD) * 100 : 0;
+  const holdings = STP.usHoldings(rows, { num: toNumber, cache: typeof getStockPriceCache === 'function' ? getStockPriceCache() : {} });
+  const sm = STP.summary(holdings);
+  const { invested: totalInvestedUSD, current: totalCurrentValueUSD, count: heldSymbolCount, oneDayChange: oneDayChangeUSD, hasOneDay: hasOneDayDataUSD, gain: totalUnrealizedGainUSD, gainPct: totalUnrealizedPct } = sm;
 
   if (summary) {
     const gainColor = totalUnrealizedGainUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     const dayChangeColor = oneDayChangeUSD >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
     const dayChangeArrow = oneDayChangeUSD >= 0 ? '▲' : '▼';
-    const oneDayPct = hasOneDayDataUSD && (totalCurrentValueUSD - oneDayChangeUSD) > 0
-      ? (oneDayChangeUSD / (totalCurrentValueUSD - oneDayChangeUSD)) * 100 : 0;
+    const oneDayPct = sm.oneDayPct;
 
     summary.innerHTML = `
       <article class="metric-card compact-metric">
@@ -7574,7 +7456,7 @@ function renderUsStockHoldingsPanel() {
 
   renderRows(table, sortedUsHoldings, (item) => [
     `<span style="font-weight:600">${escapeHTML(item.symbol)}</span>${item.category === 'ETF' ? ' <span style="background:var(--brand);color:white;padding:1px 5px;border-radius:4px;font-size:0.65rem;vertical-align:middle">ETF</span>' : ''}`,
-    escapeHTML(item.company),
+    textCell(item.company),
     item.totalQty < 1 ? item.totalQty.toFixed(6) : item.totalQty.toFixed(2),
     formatUSD(item.avgPrice),
     formatUSD(item.totalInv),
@@ -7591,7 +7473,7 @@ function renderUsStockHoldingsPanel() {
       const color = item.gain >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
       return `<span style="color:${color};font-weight:600">${formatUSD(item.gain)} (${item.gain >= 0 ? '+' : ''}${item.gainPct.toFixed(2)}%)</span>`;
     })(),
-    escapeHTML(item.demat),
+    textCell(item.demat),
   ], `No US stock holdings for ${activeHoldingsOwner}. Import a sheet or add entries manually.`, 10);
 }
 
