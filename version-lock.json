@@ -19,8 +19,12 @@
     "version": "1.0.49",
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
+  "app-version.js": {
+    "version": "1.0.0",
+    "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
+  },
   "app.js": {
-    "version": "1.0.124",
+    "version": "1.0.125",
     "sha256": "42ee66c5f4a195333ebb390db70ee4c65cbf614405bb2bd53fb178bacc2949f1"
   },
   "auth.js": {
@@ -140,8 +144,8 @@
     "sha256": "307d61b5480067c5ae8ff4547d93e35221f67776afa6156f1ad066a594db6f2c"
   },
   "sync-ui.js": {
-    "version": "1.0.0",
-    "sha256": "069674e61225b9cd5a224f8f2551745d594df32186b2e8c8d05bc5e8992eb838"
+    "version": "1.0.2",
+    "sha256": "366c942c98d6638e170ab0183bef2f91bdb171efc8a5e8d0d55e7ae6a8873900"
   },
   "tax-core.js": {
     "version": "1.2.15",

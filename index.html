@@ -39,14 +39,15 @@
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.124"></script>
+    <script defer src="app.js?v=1.0.125"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
     <script defer src="sync-engine.js?v=1.1.1"></script>
     <script defer src="sync-client.js?v=1.0.4"></script>
+    <script defer src="app-version.js?v=1.0.0"></script>
     <script defer src="auth.js?v=1.0.44"></script>
-    <script defer src="sync-ui.js?v=1.0.0"></script>
+    <script defer src="sync-ui.js?v=1.0.2"></script>
     <script defer src="price-history.js?v=1.0.1"></script>
     <script defer src="networth-close.js?v=1.0.6"></script>
     <script defer src="advisor-engine.js?v=2.0.6"></script>
@@ -2551,6 +2552,23 @@
           </div>
           <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
         </div>
+
+        <div class="settings-section" id="appVersionSection">
+          <h4>This device's version</h4>
+          <p class="muted-small" style="margin-bottom: 12px;">Every browser and device you have signed in on (phone, iPad, Chrome, Safari) runs its own copy of the app. This shows which release this one is on and whether a newer one is live. Compare the release code between devices: the same code means the same version.</p>
+          <div class="settings-row">
+            <span>Release:</span>
+            <span class="status-badge" id="appReleaseCode">—</span>
+          </div>
+          <p class="muted-small" id="appVersionDetail" style="margin-top: 8px;"></p>
+          <p class="muted-small" id="appVersionStatus" style="margin-top: 8px;"></p>
+          <div style="display: flex; gap: 8px; margin-top: 12px;">
+            <button class="secondary-button" type="button" id="appVersionCheckButton" style="flex: 1;">⟳ Check for a newer version</button>
+            <button class="secondary-button" type="button" id="appVersionUpdateButton" style="flex: 1;" hidden>⬇ Update now</button>
+          </div>
+        </div>
+
+        <div class="settings-divider"></div>
 
         <div class="settings-section">
           <h4>Sync & Backup</h4>

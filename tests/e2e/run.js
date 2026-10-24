@@ -489,6 +489,17 @@ const SCANNER = `(${function scan() {
       check(`weekly table at ${w}px: every column fits`, fit.rows >= 2 && fit.table <= fit.box + 1, JSON.stringify(fit));
     }
     await viewport(1280, 900); await sleep(300);
+    // Settings → This device's version: the release code, "newest" when nothing is newer, and a newer release is noticed
+    await viewport(1280, 900); await sleep(300); await view("dashboard");
+    const ver = await cdp.eval(`(async()=>{ document.getElementById('settingsButton').click(); await new Promise(r=>setTimeout(r,1200));
+      const say=()=>({code:document.getElementById('appReleaseCode').textContent, detail:document.getElementById('appVersionDetail').textContent, status:document.getElementById('appVersionStatus').textContent, updateHidden:document.getElementById('appVersionUpdateButton').hidden, banner:!!document.getElementById('updateBanner')});
+      const live=say(); const html=await (await fetch(location.pathname+'?x='+Date.now(),{cache:'no-store'})).text(); const AV=window.LifeLedgerAppVersion; const expected=AV.releaseCode(AV.fromHtml(html));
+      const orig=window.fetch; window.fetch=(u,o)=>String(u).includes('?cb=') ? orig(u,o).then(r=>r.text()).then(t=>new Response(t.replace(/app\\.js\\?v=[0-9.]+/,'app.js?v=9.9.9'))) : orig(u,o);
+      document.getElementById('appVersionCheckButton').click(); await new Promise(r=>setTimeout(r,1500)); const newer=say(); window.fetch=orig; document.getElementById('updateBanner')?.remove();
+      document.querySelector('#settingsModal [data-close-modal]').click(); return {live, expected, newer}; })()`);
+    check("settings: this device's release code is shown and is the live release's code", /^[0-9a-f]{6}$/.test(ver.live.code) && ver.live.code === ver.expected && /app \d/.test(ver.live.detail), JSON.stringify(ver.live));
+    check("settings: on the newest release it says so and offers no update", /newest release/.test(ver.live.status) && ver.live.updateHidden === true && ver.live.banner === false, JSON.stringify(ver.live));
+    check("settings: a newer live release is noticed (message, Update now button, banner)", /newer release is live/.test(ver.newer.status) && ver.newer.updateHidden === false && ver.newer.banner === true, JSON.stringify(ver.newer));
     // A company name with an ampersand is shown as written (it used to appear as "&amp;" because it was escaped twice)
     await viewport(1280, 900); await sleep(400); await view("finance");
     const amp = await cdp.eval(`(async()=>{const b=document.querySelector('[data-finance-tab="stocks"]'); b.hidden=false; b.click(); await new Promise(r=>setTimeout(r,600)); return [...document.querySelectorAll('#stocksTable td')].map(t=>t.textContent).join('|')})()`);
