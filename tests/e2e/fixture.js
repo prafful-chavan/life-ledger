@@ -28,8 +28,16 @@ function build(now = new Date()) {
       mf("mf-a1", "Alpha Flexi Cap Fund Direct Growth", "Me", 1000, 50),
       mf("mf-b1", "Beta Index Fund Direct Growth", "Wife", 200, 100),
       mf("mf-b2", "Beta Index Fund Direct Growth", "Wife", 50, 100, "REDEMPTION"),
+      // Messy on purpose, like the real sheet: a sale spelled "REDEEM" (an old import wrote that), a fund sold out completely,
+      // and a name long enough to break a narrow card.
+      mf("mf-g1", "Gamma Value Fund Direct Growth", "Me", 400, 10),
+      mf("mf-g2", "Gamma Value Fund Direct Growth", "Me", 100, 10, "REDEEM"),
+      mf("mf-d1", "Delta Momentum Index Fund Direct Growth", "Me", 100, 20),
+      mf("mf-d2", "Delta Momentum Index Fund Direct Growth", "Me", 100, 20, "Redemption"),
+      mf("mf-l1", "Omega Nifty Next 50 Index Fund Of Funds Direct Plan Growth Option (formerly Omega Junior Bluechip)", "Wife", 10, 100),
     ],
-    stocks: [stock("stk-1", "AAA", "AAA Ltd", "Me", 10, 100), stock("stk-2", "BBB", "BBB Ltd", "Wife", 5, 200)],
+    // the same share held by both of you, in two brokers
+    stocks: [stock("stk-1", "AAA", "AAA Ltd", "Me", 10, 100), stock("stk-2", "BBB", "BBB Ltd", "Wife", 5, 200), stock("stk-3", "AAA", "AAA Ltd", "Wife", 3, 100)],
     usstocks: [{ id: "uss-1", symbol: "ZZZ", company: "ZZZ Inc", owner: "Me", quantity: 2, avgPrice: 90, invested: 180, currentPrice: 100, prevClose: 99, currentValue: 200, priceDate: stamp, purchaseDate: monthsAgo(3), date: monthsAgo(3), category: "Stock", demat: "Test" }],
     gold: [{ id: "gold-ring-1", name: "Ring", owner: "Wife", carat: "22K", weightGrams: 10, purchasePricePerGram: 6000, invested: 60000, value: 100000, category: "Jewellery", date: monthsAgo(6) }],
     fd: [flat("fd-1", "Me", 200000, "FD")],
@@ -53,6 +61,11 @@ function build(now = new Date()) {
       { id: "e3", date: monthsAgo(0, 1), amount: 5000, category: "EMI- Car, Home", note: "emi extra", paidBy: "Me" },
       { id: "e4", date: monthsAgo(1, 9), amount: 10000, category: "Groceries", note: "food", paidBy: "Wife" },
       { id: "e6", date: monthsAgo(1, 12), amount: 15000, category: "Shopping", note: "clothes", paidBy: "Me" },
+      // long notes, an unbroken word, and two identical purchases on one day (real life, not a double import)
+      { id: "e7", date: monthsAgo(1, 14), amount: 4090, category: "Clothes, Shoes etc", note: "Archana's office clothes 5 dresses like a cord set from the Mahal shop Nagpur", paidBy: "Wife" },
+      { id: "e8", date: monthsAgo(1, 15), amount: 861, category: "Fuel and Maintenance", note: "Didi_activa_5G_insurance_by_acko_purchase_receipt_number_1234567890", paidBy: "Me" },
+      { id: "e9", date: monthsAgo(1, 16), amount: 10, category: "Eating Out", note: "Chai", paidBy: "Me" },
+      { id: "e10", date: monthsAgo(1, 16), amount: 10, category: "Eating Out", note: "Chai", paidBy: "Me" },
       // this month has expenses but no income yet: savings must compare LAST month's income with LAST month's spending
       { id: "e5", date: monthsAgo(0, 1) <= today ? monthsAgo(0, 1) : today, amount: 90000, category: "Travel", note: "trip", paidBy: "Me" },
     ],
@@ -80,8 +93,8 @@ function build(now = new Date()) {
   };
 
   // Independent expectations (US stocks depend on the live exchange rate, so they are added by the runner)
-  const mfNet = 1000 * 50 + (200 - 50) * 100;
-  const stocks = 10 * 100 + 5 * 200;
+  const mfNet = 1000 * 50 + (200 - 50) * 100 + (400 - 100) * 10 + 0 /* Delta: sold out */ + 10 * 100;
+  const stocks = 10 * 100 + 5 * 200 + 3 * 100;
   const rest = 100000 /* vehicle */ + 100000 + 200000 + 100000 + 50000 + 10000 + 5000 + 2000 + 30000 + 20000;
   const assetsWithoutUs = mfNet + stocks + rest;
   const lastMonthIncome = 260000;
