@@ -144,8 +144,8 @@
     "sha256": "307d61b5480067c5ae8ff4547d93e35221f67776afa6156f1ad066a594db6f2c"
   },
   "sync-ui.js": {
-    "version": "1.0.2",
-    "sha256": "366c942c98d6638e170ab0183bef2f91bdb171efc8a5e8d0d55e7ae6a8873900"
+    "version": "1.0.3",
+    "sha256": "de335d1a694c49ee2ce98519b4a735a500f824cec2790e41035569bc6f2a432a"
   },
   "tax-core.js": {
     "version": "1.2.15",

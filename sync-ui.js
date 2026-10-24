@@ -10,7 +10,8 @@
     });
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (!hadController) return; // first install, nothing stale to replace
-      showUpdateBanner();
+      // A new service worker took over. Say "new version" only if this page really is on an older release than the live one.
+      if (AV()) checkRelease(true); else showUpdateBanner();
     });
   }
 
@@ -59,7 +60,7 @@
       const cmp = AV().compare(mine, live);
       if (status && !quiet) status.textContent = cmp.same ? `You are on the newest release (${code}).` : `A newer release is live (${AV().releaseCode(live)}; ${cmp.changed.length} file${cmp.changed.length === 1 ? "" : "s"} changed). Press Update now.`;
       if (upd) upd.hidden = cmp.same;
-      if (!cmp.same) showUpdateBanner();
+      if (!cmp.same) showUpdateBanner(); else { const bar = document.getElementById("updateBanner"); if (bar) bar.remove(); }
       return cmp;
     } catch (e) {
       if (status && !quiet) status.textContent = "Could not check (offline?). This device will keep working with the release it has.";
