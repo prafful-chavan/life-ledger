@@ -262,4 +262,4 @@ function wrap(inner, today, label) {
   return `<!doctype html><html><body style="margin:0;padding:0;background-color:${C.page}"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${C.page}"><tr><td align="center" style="padding:14px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;font-family:${FONT};color:${C.ink}"><tr><td style="background-color:${C.head};color:#fff;border-radius:12px 12px 0 0;padding:12px 18px"><span style="font-size:15px;font-weight:800;letter-spacing:.02em">Life Ledger</span><span style="float:right;font-size:12px;color:#c4cbd6;line-height:22px">${esc(label || `${dayName(today)} ${dateShort(today)}`)}</span></td></tr><tr><td style="padding:12px 0 0">${inner}</td></tr></table></td></tr></table></body></html>`;
 }
 
-module.exports = { renderBrief: render, intact, goalNeed, todayActions, notices, status, inr, compact };
+module.exports = { renderBrief: render, intact, kit: { card, chip, h2, small, wrap, sealed, esc, dayName, dateLong, daysBetween }, goalNeed, todayActions, notices, status, inr, compact };

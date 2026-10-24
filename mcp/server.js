@@ -13,6 +13,7 @@ const Fit = require("./fitness.js");
 const Cal = require("./calendar.js");
 const LawWatch = require("./lawwatch.js");
 const BriefRender = require("./brief-render.js");
+const HealthWatch = require("./health-watch.js");
 const TaxOracle = require("../tax-oracle.js");
 const { taxPlan } = require("./taxplan.js");
 const TaxCore = require("../tax-core.js");
@@ -181,6 +182,10 @@ const TOOLS = [
   { name: "health_check", description: "CA-style flags: emergency fund, savings rate, debt load, mix, insurance cover, renewals.", inputSchema: { type: "object", properties: {} }, run: async (s) => A.healthCheck(s, todayISO()) },
   { name: "protection", description: "Insurance, vehicles, cover checks and ages (no birth dates, nominees or policy numbers).", inputSchema: { type: "object", properties: {} }, run: async (s) => protectionView(s, todayISO()) },
   { name: "goals", description: "Goals with progress; goals that follow holdings use live values.", inputSchema: { type: "object", properties: {} }, run: async (s) => goalsView(s) },
+  { name: "health_watch", description: "Checks that the things that fail quietly are still working: cloud copy, price sources, holdings without a price, gaps in the net-worth history, repeated rows, the weekly INDmoney check, the monthly tax-law check, the tax engine. Returns { send, subject, html, text, problems }. Send the email only when send is true (a problem, or a Sunday). Read-only.", inputSchema: { type: "object", properties: { force: { type: "boolean" } } }, run: async (s, a) => {
+      const today = todayISO(), r = HealthWatch.check({ state: s, today, fresh: A.freshness(s), integrity: A.integrity(s), lawWatch: LawWatch.lawWatch(today), holdingsCheck: s.holdingsCheck || null, taxCases: (() => { const o = TaxOracle.run(TaxCore.engine); return { total: o.total, passed: o.passed }; })(), source: s.__source || {} });
+      return HealthWatch.render(r, { today, force: a && a.force === true });
+    } },
   { name: "data_freshness", description: "How many hours old each price source is.", inputSchema: { type: "object", properties: {} }, run: async (s) => A.freshness(s) },
 ];
 
@@ -209,7 +214,7 @@ async function defaultLoader() {
   // More patience than a one-off read (the 10 am brief must not fail on a hiccup), and a saved copy as the last resort
   const got = await fetchState({ gatewayUrl, password, attempts: 6, waitMs: 2000, cacheFile: path.join(dir, "last-vault.json") });
   // Carried beside the data, never inside it, so no tool can mistake it for a household record
-  Object.defineProperty(got.data, "__source", { value: { fromCache: !!got.fromCache, cachedAt: got.cachedAt || null, reason: got.reason || null }, enumerable: false });
+  Object.defineProperty(got.data, "__source", { value: { fromCache: !!got.fromCache, cachedAt: got.cachedAt || null, reason: got.reason || null, updatedAt: got.updatedAt || null, rev: got.rev || null }, enumerable: false });
   return got.data;
 }
 
