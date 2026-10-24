@@ -84,8 +84,8 @@
     "sha256": "e638550698d13e5de3124e78e2d6abfcdee5b75619936c386b486b3f2d445076"
   },
   "networth-delta.js": {
-    "version": "1.0.2",
-    "sha256": "78aa166040e1541be4c58d95a76315f8ee77ba8dd121be68e836acdc44090c4b"
+    "version": "1.0.3",
+    "sha256": "845f8d3d8592e74300c62f12c6e45b167746a9bf93cf81099b37a4cb2474ab81"
   },
   "networth-snapshot.js": {
     "version": "1.0.1",

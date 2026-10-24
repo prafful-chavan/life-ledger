@@ -44,11 +44,10 @@
    */
   function contributions(state, asOf) {
     const s = state || {};
-    return {
-      mutualFunds: r2(flow(s.mutualFunds, "units", asOf)),
-      stocks: r2(flow(s.stocks, "quantity", asOf)),
-      usStocksUsd: r2(flow(s.usstocks, "quantity", asOf)),
-    };
+    const out = { mutualFunds: r2(flow(s.mutualFunds, "units", asOf)), usStocksUsd: r2(flow(s.usstocks, "quantity", asOf)) };
+    // Indian share rows carry the day they were imported, not the day they were bought, so a cut-off by date means nothing for them
+    if (!asOf) out.stocks = r2(flow(s.stocks, "quantity"));
+    return { mutualFunds: out.mutualFunds, stocks: out.stocks, usStocksUsd: out.usStocksUsd };
   }
 
   const INVESTED = ["mutualFunds", "stocks", "usStocks"];
@@ -60,21 +59,26 @@
   function newMoneyBetween(prev, cur, parts) {
     // The earlier record has no running total (saved before it existed): the later one may carry what had been put in by
     // the earlier record's date, worked out from the purchase dates; good, but not exact, so it is still called "about"
-    const pc = (prev && prev.contributed) || (cur && cur.contributedAtPrev), cc = cur && cur.contributed;
-    const exact = Boolean(prev && prev.contributed);
+    const cc = cur && cur.contributed;
+    const exact = Boolean(prev && prev.contributed && cc);
+    const pc = (prev && prev.contributed) || (cur && cur.contributedAtPrev);
+    const fx = n(cur && cur.fxRate) || n(prev && prev.fxRate);
     const out = {};
-    if (pc && cc) {
-      const fx = n(cur.fxRate) || n(prev.fxRate);
-      out.mutualFunds = n(cc.mutualFunds) - n(pc.mutualFunds);
-      out.stocks = n(cc.stocks) - n(pc.stocks);
-      out.usStocks = fx ? (n(cc.usStocksUsd) - n(pc.usStocksUsd)) * fx : 0;
-      return { byClass: out, exact };
-    }
+    // per class: the difference of the running totals when both are known; otherwise the value change the day's price move
+    // does not explain (an estimate, ignored below ₹1,000 or 0.3% of the class: that is price timing, not money)
+    const known = {
+      mutualFunds: cc && pc && pc.mutualFunds !== undefined ? n(cc.mutualFunds) - n(pc.mutualFunds) : null,
+      stocks: cc && pc && pc.stocks !== undefined ? n(cc.stocks) - n(pc.stocks) : null,
+      usStocks: cc && pc && pc.usStocksUsd !== undefined ? (fx ? (n(cc.usStocksUsd) - n(pc.usStocksUsd)) * fx : 0) : null,
+    };
+    let all = true;
     for (const k of INVESTED) {
+      if (known[k] !== null) { out[k] = known[k]; continue; }
+      all = false;
       const est = n(parts[k]) - n(cur && cur.changes && cur.changes[k]);
-      out[k] = Math.abs(est) >= Math.max(1000, Math.abs(n(cur && cur[k])) * 0.003) ? est : 0;   // below that: price timing, not money
+      out[k] = Math.abs(est) >= Math.max(1000, Math.abs(n(cur && cur[k])) * 0.003) ? est : 0;
     }
-    return { byClass: out, exact: false };
+    return { byClass: out, exact: exact && all };
   }
 
   /** Change from snapshot `prev` to snapshot `cur`, with what moved. */
