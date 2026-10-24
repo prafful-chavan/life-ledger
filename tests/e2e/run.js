@@ -61,7 +61,16 @@ class CDP {
   }
 }
 
+// Chrome now and then fails to open its debugging port on a busy CI machine; one failed start must not fail the whole run
 async function launchChrome() {
+  let last;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try { return await launchChromeOnce(); } catch (e) { last = e; console.log(`  (Chrome did not start, attempt ${attempt} of 3)`); }
+  }
+  throw last;
+}
+
+async function launchChromeOnce() {
   const port = 9300 + Math.floor(Math.random() * 500);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ll-e2e-"));
   const proc = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--hide-scrollbars", ...(process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : []), "about:blank"], { stdio: "ignore" });
