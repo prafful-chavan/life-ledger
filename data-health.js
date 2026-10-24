@@ -28,7 +28,7 @@
       const k = (t.fundName || "?") + "|" + owner(t);
       const f = (byFund[k] = byFund[k] || { units: 0, nav: n(t.latestNav) || n(t.nav) });
       if (n(t.latestNav)) f.nav = n(t.latestNav);
-      f.units += (String(t.transactionType || "").toUpperCase() === "REDEMPTION" ? -1 : 1) * n(t.units);
+      f.units += (/^red/i.test(String(t.transactionType || "")) ? -1 : 1) * n(t.units); // REDEMPTION or REDEEM
     });
     return Object.values(byFund).reduce((t, f) => t + Math.max(0, f.units) * f.nav, 0);
   }

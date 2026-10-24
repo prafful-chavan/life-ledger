@@ -837,7 +837,7 @@
       const nav = num([...rows].reverse().find((t) => num(t.latestNav))?.latestNav) || num(rows[rows.length - 1].nav);
       const open = [];
       for (const t of rows) {
-        if (t.transactionType === "REDEMPTION") {
+        if (/^red/i.test(String(t.transactionType || ""))) { // REDEMPTION, or REDEEM from an older import
           let units = num(t.units);
           const proceedsPerUnit = num(t.invested) / (num(t.units) || 1);
           while (units > 1e-9 && open.length) {

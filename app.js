@@ -3775,7 +3775,7 @@ function parseMasterHoldingsWorkbook(buffer) {
         parsedMutualFunds.push({
           id: `mf-${generateUUID()}`,
           fundName: cleanName,
-          transactionType: isRedeem ? "REDEEM" : "PURCHASE",
+          transactionType: isRedeem ? "REDEMPTION" : "PURCHASE", // the one spelling every calculation (tax, Data health, MCP) expects
           units: Math.abs(units),
           nav: Math.abs(nav),
           invested: amount,

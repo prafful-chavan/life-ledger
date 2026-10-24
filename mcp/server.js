@@ -214,6 +214,16 @@ async function defaultLoader() {
 }
 
 /** Handles one JSON-RPC message; returns the response object, or null for notifications. */
+// One spelling for a fund sale, as the app itself stores it: an import once wrote "REDEEM", and code that checks for
+// "REDEMPTION" then counted the sale as a purchase (₹2.76 lakh too much in net worth). Same rule as the app's normalizer.
+const isSale = (v) => /REDEEM|REDEMPT|SELL|WITHDRAW|SWITCH OUT|PAYOUT/i.test(String(v || ""));
+function normalizeTypes(state) {
+  if (state && Array.isArray(state.mutualFunds)) {
+    state.mutualFunds = state.mutualFunds.map((t) => ({ ...t, transactionType: isSale(t.transactionType) ? "REDEMPTION" : "PURCHASE" }));
+  }
+  return state;
+}
+
 async function handle(msg, loader = defaultLoader, ctxFactory = defaultContext) {
   const reply = (result) => ({ jsonrpc: "2.0", id: msg.id, result });
   const fail = (code, message) => ({ jsonrpc: "2.0", id: msg.id, error: { code, message } });
@@ -226,7 +236,7 @@ async function handle(msg, loader = defaultLoader, ctxFactory = defaultContext) 
       const tool = TOOLS.find((t) => t.name === (msg.params || {}).name);
       if (!tool) return fail(-32602, "Unknown tool");
       try {
-        const state = await loader();
+        const state = normalizeTypes(await loader());
         const out = await tool.run(state, (msg.params || {}).arguments || {}, ctxFactory());
         return reply({ content: [{ type: "text", text: JSON.stringify(out) }] });
       } catch (e) {
@@ -254,4 +264,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { handle, brief, protectionView, taxReport, tableFor, TOOLS };
+module.exports = { handle, brief, protectionView, taxReport, tableFor, normalizeTypes, TOOLS };
