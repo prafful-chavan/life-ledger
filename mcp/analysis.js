@@ -6,6 +6,7 @@ const Advisor = require("../advisor-engine.js");
 const Protection = require("../protection-core.js");
 const Integrity = require("../holdings-integrity.js");
 const NetWorthDelta = require("../networth-delta.js");
+const NetWorthWeekly = require("../networth-weekly.js");
 
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const sum = (list, f) => (list || []).reduce((s, x) => s + num(f(x)), 0);
@@ -67,6 +68,8 @@ function netWorth(state, fxOverride) {
   for (const [k, v] of Object.entries(cls)) out.classes[k] = { value: r0(v), sharePct: pct(v, assets) };
   const hist = (state.netWorthHistory || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
   out.history = hist.slice(-30).map((h) => ({ date: h.date, netWorth: r0(num(h.netWorth)) }));
+  // Week by week: market vs money put in vs your own edits (the split only for weeks where both ends carry the running total)
+  out.weekly = NetWorthWeekly.weeks(hist, { count: 4 }).map((w) => ({ weekStart: w.weekStart, from: w.from, to: w.to, change: r0(w.change), edits: r0(w.edits), split: w.split, market: w.split ? r0(w.market) : null, newMoney: w.split ? r0(w.newMoney) : null }));
   // What moved since the last recorded day, class by class. Market moves hit funds/stocks/US/gold; manual edits and
   // repayments show up in the other classes (others, FD, bank, EPF, liabilities) — so the reader can tell them apart.
   const todayISO = isoDay(Date.now());

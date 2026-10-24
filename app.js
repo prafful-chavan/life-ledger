@@ -4447,6 +4447,31 @@ function textCell(value) {
   span.textContent = value == null ? "" : String(value);
   return span;
 }
+// The weekly view's rules (which weeks, market vs money put in vs your edits) live in networth-weekly.js; this file only draws them.
+const NWW = (typeof window !== "undefined" && window.LifeLedgerNetWorthWeekly) || (typeof require === "function" ? require("./networth-weekly.js") : null);
+
+// Week by week: how much of each week's change is the market, money you put in, and your own edits.
+function renderNetWorthWeekly(history) {
+  const body = document.getElementById("nwhWeeklyBody");
+  if (!body) return;
+  const money = (v) => (Math.abs(v) < 0.5 ? formatINR(0) : `${v > 0 ? "+" : "−"}${formatINR(Math.abs(v))}`);
+  const tone = (v) => `<span style="color:${v >= 0 ? "var(--positive, #22c55e)" : "var(--negative, #ef4444)"};font-weight:600">${money(v)}</span>`;
+  const weeks = NWW.weeks(history, { count: 8 });
+  const sunday = (monday) => new Date(Date.parse(monday + "T00:00:00Z") + 6 * 86400000).toISOString().slice(0, 10);
+  renderRows(body, weeks, (w) => [
+    `${formatDate(w.weekStart)} – ${formatDate(sunday(w.weekStart))}`,
+    formatINR(w.netWorth),
+    tone(w.change),
+    w.split ? tone(w.market) : `<span style="opacity:0.7" title="Money put in was not recorded before 24 Oct 2026, so market and money in cannot be told apart yet">${money(w.marketAndMoney)} <small>with money in</small></span>`,
+    w.split ? tone(w.newMoney) : '<span style="opacity:0.4">—</span>',
+    tone(w.edits),
+  ], "The weekly view builds up from your daily records (two or more days).", 6);
+  const note = document.getElementById("nwhWeeklyNote");
+  if (note) note.textContent = weeks.some((w) => !w.split)
+    ? "New money (purchases minus sales) is recorded from 24 Oct 2026 on, so earlier weeks show market and money in together; from the first full week after that every week is split exactly."
+    : "";
+}
+
 // The rules of the Indian and US stocks panels (rows, one line per holding, totals) live in stocks-panel-core.js.
 const STP = (typeof window !== "undefined" && window.LifeLedgerStocksPanel) || (typeof require === "function" ? require("./stocks-panel-core.js") : null);
 // The rules of the Mutual funds panel (rows, portfolio figures, SIP budget, per-fund lines, invest signal) live in mf-panel-core.js.
@@ -8947,6 +8972,8 @@ function renderNetWorthHistory() {
     const arrow = currentDayChange >= 0 ? "▲" : "▼";
     changeDisplay.innerHTML = `<span style="color:${color}; font-weight:600;">${arrow} ${deltaBasis}: ${sign}${formatINR(Math.abs(currentDayChange))} (${sign}${currentDayChangePct}%)</span>${deltaSplit ? ` <span class="muted-small">(${escapeHTML(deltaSplit)})</span>` : ""} &nbsp;•&nbsp; Total Assets: ${formatINR(latest.totalAssets || 0)} &nbsp;•&nbsp; Liabilities: ${formatINR(latest.totalLiabilities || 0)}`;
   }
+
+  renderNetWorthWeekly(history);
 
   // 2. Stats Grid
   const statsGrid = document.getElementById("nwhStatsGrid");

@@ -237,7 +237,10 @@ function render(pack, opts = {}) {
   // 11. weekly and month-end extras
   const dow = new Date(today + "T00:00:00Z").getUTCDay(), lastOfMonth = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 0)).getUTCDate() === +today.slice(8, 10);
   const hist = (nw.history || []), weekAgo = hist.filter((h) => h.date <= new Date(Date.parse(today + "T00:00:00Z") - 7 * 864e5).toISOString().slice(0, 10)).pop();
-  if (dow === 0 && weekAgo) add(h2("This week") + card(`Net worth ${num(nw.netWorth) - num(weekAgo.netWorth) >= 0 ? "up" : "down"} <b>${inr(Math.abs(num(nw.netWorth) - num(weekAgo.netWorth)))}</b> over 7 days. ${num(ses.last7Days)} session${num(ses.last7Days) === 1 ? "" : "s"} this week.`), `THIS WEEK\nNet worth ${num(nw.netWorth) - num(weekAgo.netWorth) >= 0 ? "up" : "down"} ${inr(Math.abs(num(nw.netWorth) - num(weekAgo.netWorth)))} over 7 days.`);
+  // When the week can be split exactly: how much was the market, how much was money you put in, how much your own edits
+  const wk = (nw.weekly || [])[0];
+  const weekSplit = wk && wk.split ? `Of that, the market ${signedInr(wk.market)}, money you put in ${signedInr(wk.newMoney)}${Math.abs(num(wk.edits)) >= 500 ? `, your own edits ${signedInr(wk.edits)}` : ""}.` : "";
+  if (dow === 0 && weekAgo) add(h2("This week") + card(`Net worth ${num(nw.netWorth) - num(weekAgo.netWorth) >= 0 ? "up" : "down"} <b>${inr(Math.abs(num(nw.netWorth) - num(weekAgo.netWorth)))}</b> over 7 days. ${weekSplit ? esc(weekSplit) + " " : ""}${num(ses.last7Days)} session${num(ses.last7Days) === 1 ? "" : "s"} this week.`), `THIS WEEK\nNet worth ${num(nw.netWorth) - num(weekAgo.netWorth) >= 0 ? "up" : "down"} ${inr(Math.abs(num(nw.netWorth) - num(weekAgo.netWorth)))} over 7 days.${weekSplit ? " " + weekSplit : ""}`);
   if (lastOfMonth) add(card(`<b>Month-end.</b> Today's salary credit pays for next month's spending.`), "MONTH-END: today's salary credit pays for next month's spending.");
 
   // 12. idea

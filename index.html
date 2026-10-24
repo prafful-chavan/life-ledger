@@ -36,9 +36,10 @@
     <script defer src="expenses-core.js?v=1.0.0"></script>
     <script defer src="networth-snapshot.js?v=1.0.1"></script>
     <script defer src="salary-core.js?v=1.0.0"></script>
+    <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.121"></script>
+    <script defer src="app.js?v=1.0.123"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -516,6 +517,32 @@
 
             <!-- Stats Grid -->
             <div class="metric-grid" id="nwhStatsGrid" style="margin-bottom: 20px;"></div>
+
+            <!-- Weekly: market, money put in, your own edits -->
+            <section class="panel" id="nwhWeeklyPanel">
+              <div class="panel-header">
+                <div>
+                  <h3>Week by week: market vs money you put in</h3>
+                  <p>Each week's change in net worth, split into what the market did, what you invested (purchases minus sales) and your own edits (FD, bank, loans and other values you type in).</p>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="nwh-table">
+                  <thead>
+                    <tr>
+                      <th>Week</th>
+                      <th>Net worth</th>
+                      <th>Change</th>
+                      <th>Market</th>
+                      <th>New money</th>
+                      <th>Your edits</th>
+                    </tr>
+                  </thead>
+                  <tbody id="nwhWeeklyBody"></tbody>
+                </table>
+              </div>
+              <p class="muted-small" id="nwhWeeklyNote" style="margin:10px 0 0"></p>
+            </section>
 
             <!-- Historical Table Panel -->
             <section class="panel">
