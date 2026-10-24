@@ -130,6 +130,11 @@ const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/
   assert.ok(/₹1,31,65,981 \(flat today\)$/.test(sub(144, 13165981)) && /\(up ₹1\.8 L today\)$/.test(sub(180000, 13165981)) && /\(down ₹44,930 today\)$/.test(sub(-44930, 13165981)), "flat, up, down");
 
   // ── Weekly and month-end extras ──
+  const withSplit = (split) => R.renderBrief({ ...base, brief: { ...base.brief, netWorth: { ...base.brief.netWorth, changeVsPrevious: { ...base.brief.netWorth.changeVsPrevious, delta: -17765, split } } } }, { now: "2026-10-21" }).text;
+  assert.ok(/Because of: markets −₹27,677; you invested ₹9,912 new \(Indian shares and ETFs\)\./.test(withSplit({ market: -27677, newMoney: 9912, edits: 0, exact: true, newMoneyByClass: { stocks: 9912 } })), "new money is not called a market move");
+  assert.ok(/you took out about ₹1,50,000 \(mutual funds\)/.test(withSplit({ market: -1000, newMoney: -150000, edits: 0, exact: false, newMoneyByClass: { mutualFunds: -150000 } })), "a sale, estimated");
+  assert.ok(/your own edits \+₹50,000/.test(withSplit({ market: 0, newMoney: 0, edits: 50000, exact: true, newMoneyByClass: {} })), "edits");
+  assert.ok(!/markets/.test(withSplit({ market: -17765, newMoney: 0, edits: 0, exact: true, newMoneyByClass: {} })), "all market: the usual class-by-class line");
   assert.ok(R.intact(R.renderBrief(base, { now: "2026-10-21" }).html) && R.intact(alertOut.html), "both the brief and the alert end with a correct length marker");
   assert.ok(!/[^-]background:/.test(R.renderBrief(base, { now: "2026-10-21" }).html) && !/[^-]background:/.test(alertOut.html), "Gmail strips the background shorthand (header, chips, progress bars); only background-color survives");
   assert.ok(!/This week/.test(R.renderBrief(base, { now: "2026-10-21" }).html) && !/Month-end/.test(R.renderBrief(base, { now: "2026-10-21" }).html), "a plain Wednesday has neither");

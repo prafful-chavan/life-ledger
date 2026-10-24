@@ -139,7 +139,12 @@ function render(pack, opts = {}) {
   const classNames = { mutualFunds: "mutual funds", stocks: "Indian shares and ETFs", usStocks: "US shares", gold: "gold", silver: "silver", crypto: "crypto", fd: "fixed deposits", epf: "EPF", ppf: "PPF", bonds: "bonds", bankSaving: "bank savings", others: "other assets", liabilities: "loans" };
   const market = ["mutualFunds", "stocks", "usStocks", "gold", "silver", "crypto"];
   const parts = Object.entries(ch.byClass || {}).sort((a, b2) => Math.abs(b2[1]) - Math.abs(a[1])).slice(0, 3).map(([k, v]) => `${classNames[k] || k} ${signedInr(k === "liabilities" ? -v : v)}${market.includes(k) ? " (market)" : " (you changed this)"}`);
-  const why = parts.length ? `Because of: ${parts.join("; ")}.` : "Nothing moved by more than ₹500 in any group.";
+  // Money you added is not a market gain: when it moved the total, say so (the app's dashboard shows the same split)
+  const sp = ch.split, about = sp && !sp.exact ? "about " : "";
+  const into = sp ? Object.entries(sp.newMoneyByClass || {}).sort((a, b2) => Math.abs(b2[1]) - Math.abs(a[1])).map(([k]) => classNames[k] || k).join(" and ") : "";
+  const why = sp && (Math.abs(sp.newMoney) >= 500 || Math.abs(sp.edits) >= 500)
+    ? `Because of: markets ${signedInr(sp.market)}${Math.abs(sp.newMoney) >= 500 ? `; ${sp.newMoney > 0 ? `you invested ${about}${inr(sp.newMoney)} new` : `you took out ${about}${inr(-sp.newMoney)}`}${into ? ` (${into})` : ""}` : ""}${Math.abs(sp.edits) >= 500 ? `; your own edits ${signedInr(sp.edits)} (FD, bank, loans and other values you type in)` : ""}.`
+    : parts.length ? `Because of: ${parts.join("; ")}.` : "Nothing moved by more than ₹500 in any group.";
 
   // integrity: a critical problem replaces the whole brief
   const crit = ((b.integrity && b.integrity.alerts) || []).filter((a) => a.level === "critical");

@@ -797,3 +797,5 @@ body.cmdk-open, body.more-open { overflow: hidden; }
   .finance-tab:not(#finance-expenses) .table-wrap td[colspan] { grid-column: 1 / -1; }
   .finance-tab:not(#finance-expenses) .table-wrap td[data-label=""] { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 }
+/* What the day's change is made of: market, new money, your edits */
+.hero-split { flex-basis: 100%; margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: var(--muted); }

@@ -463,6 +463,10 @@ const SCANNER = `(${function scan() {
     const heat = await cdp.eval(`(()=>{const g=document.querySelector('.heatmap-grid'); return g?{wide:g.scrollWidth>g.clientWidth+2, atEnd:g.scrollLeft>=g.scrollWidth-g.clientWidth-2}:null})()`);
     check("phone: the activity heatmap opens at today, not a year ago", heat && heat.wide && heat.atEnd, JSON.stringify(heat));
     await viewport(1280, 900); await sleep(300);
+    // The day's change says how much was new money: yesterday's record with ₹10,000 less in shares and ₹10,000 less put in
+    await view("dashboard"); await sleep(400);
+    const split = await cdp.eval(`(async()=>{const s=LifeLedgerApp.getState(); const NW=window.LifeLedgerNetWorth; const saved=s.netWorthHistory.slice(); const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata'}).format(new Date()); let rec=s.netWorthHistory.find(e=>e.date===today); if(!rec) return {noToday:true}; const c=NW.contributions(s); const y=new Date(Date.parse(today+'T00:00:00Z')-864e5).toISOString().slice(0,10); s.netWorthHistory=s.netWorthHistory.filter(e=>e.date>=today).concat([{...rec, id:'nwh-e2e-y', date:y, stocks:rec.stocks-10000, netWorth:rec.netWorth-10000, totalAssets:rec.totalAssets-10000, changes:{}, contributed:{...c, stocks:c.stocks-10000}}]); LifeLedgerApp.renderAll(); await new Promise(r=>setTimeout(r,300)); const t=(document.querySelector('#heroDelta .hero-split')||{}).textContent||''; s.netWorthHistory=saved; LifeLedgerApp.renderAll(); return {t}})()`);
+    check("dashboard: a purchase shows as new money, not as a market gain", /new money \+₹10,000/.test(split.t || "") && /^Market ₹0/.test(split.t || ""), JSON.stringify(split));
     check("no JavaScript errors during the whole run", errors.length === 0, errors.slice(0, 4).join(" ; "));
   } catch (e) {
     check("the check itself ran to the end", false, e.stack || e.message);

@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.111",
-    "sha256": "28285a384d74619da1afa926c7a7324081713f01242c635158a83a6af4f5588f"
+    "version": "1.0.113",
+    "sha256": "90207b23148a2323ba05b86599dbbea9d038e99aba6942ee9b18f4d1f5776abe"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -60,8 +60,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.26",
-    "sha256": "5de5a12c96d30032fd5b17ccd0fd3a4ce7915852d66c97569a020c3cedb65311"
+    "version": "1.8.27",
+    "sha256": "e49d781b688a154b3b1d865085bed044462032f0f45358b95655b9b19758d2d2"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -76,8 +76,8 @@
     "sha256": "e638550698d13e5de3124e78e2d6abfcdee5b75619936c386b486b3f2d445076"
   },
   "networth-delta.js": {
-    "version": "1.0.0",
-    "sha256": "f6a6d87cb525c7e77dddafdfb301409cfb21b7e07b039fa132b6e8591e52d65d"
+    "version": "1.0.1",
+    "sha256": "9d06caa712b6f0ac3b80e6dda8cc8a4135dd306ddf1cf045bff1305e25ccc5de"
   },
   "price-history.js": {
     "version": "1.0.1",

@@ -1013,6 +1013,8 @@ function normalizeNetWorthHistoryEntry(entry) {
     others: toNumber(entry.others),
     liabilities: toNumber(entry.liabilities),
     ...(toNumber(entry.fxRate) > 0 ? { fxRate: toNumber(entry.fxRate) } : {}),
+    ...(entry.contributed && typeof entry.contributed === "object" ? { contributed: { mutualFunds: toNumber(entry.contributed.mutualFunds), stocks: toNumber(entry.contributed.stocks), usStocksUsd: toNumber(entry.contributed.usStocksUsd) } } : {}),
+    ...(entry.holdSig && typeof entry.holdSig === "object" ? { holdSig: entry.holdSig } : {}),
     source: entry.source || "snapshot",
     // audit trail written by the official-close check (must survive every reload and sync)
     ...(entry.audit && typeof entry.audit === "object" ? { audit: entry.audit } : {})
@@ -4869,6 +4871,13 @@ function renderHeroCard(nw, day) {
     note.className = "hero-note";
     note.textContent = day.prevDate ? `vs ${formatDate(day.prevDate)}` : "market move today";
     deltaEl.append(pill, note);
+    const splitText = dayChangeSplitText(nw.delta);
+    if (splitText) {
+      const split = document.createElement("div");
+      split.className = "hero-split";
+      split.textContent = splitText.charAt(0).toUpperCase() + splitText.slice(1);
+      deltaEl.append(split);
+    }
   } else {
     const note = document.createElement("span");
     note.className = "hero-note";
@@ -4919,6 +4928,21 @@ function renderHeroCard(nw, day) {
     wrap.addEventListener("pointerleave", hideHeroTip);
     wrap.addEventListener("pointerdown", (e) => showHeroTip(e, wrap));
   }
+}
+
+/**
+ * "Market −₹27,677 · new money +₹9,912 · your edits +₹5,000": what a day's change is made of, so buying more
+ * never looks like a market gain. Empty when the whole change is market movement.
+ */
+function dayChangeSplitText(delta) {
+  const s = delta && delta.split;
+  if (!s) return "";
+  const money = (v) => (Math.abs(v) < 1 ? formatINR(0) : `${v >= 0 ? "+" : "−"}${formatINR(Math.abs(v))}`);
+  const bits = [];
+  if (Math.abs(s.newMoney) >= 1) bits.push(`${s.newMoney >= 0 ? "new money" : "money taken out"} ${s.exact ? "" : "about "}${money(s.newMoney)}`);
+  if (Math.abs(s.edits) >= 1) bits.push(`your edits ${money(s.edits)}`);
+  if (!bits.length) return "";
+  return [`market ${money(s.market)}`, ...bits].join(" · ");
 }
 
 function heroDayInfo(nw) {
@@ -5001,7 +5025,8 @@ function renderMetrics() {
   const dayColor = dayChange >= 0 ? 'var(--positive, #22c55e)' : 'var(--negative, #ef4444)';
   const dayArrow = dayChange >= 0 ? '▲' : '▼';
   const hasDayData = hasDelta || Boolean(nw.snapshot && (nw.marketMove || nw.marketMovePct));
-  const marketHint = nw.marketMove ? ` · market move ${nw.marketMove >= 0 ? '+' : '−'}${formatINR(Math.abs(nw.marketMove))}` : '';
+  const splitHint = dayChangeSplitText(nw.delta);
+  const marketHint = splitHint ? ` · ${splitHint}` : (nw.marketMove ? ` · market move ${nw.marketMove >= 0 ? '+' : '−'}${formatINR(Math.abs(nw.marketMove))}` : '');
 
   renderHeroCard(nw, { has: hasDayData, change: dayChange || 0, pct: dayPct || 0, prevDate: hasDelta ? nw.prevDate : null });
 
@@ -9066,6 +9091,8 @@ function buildTodaySnapshot(options = {}) {
     // The rate the US value was computed with: while it stays locked, the rate of the lock (so a later move is noticed)
     fxRate: usKeptLocked && toNumber(existing?.fxRate) > 0 ? toNumber(existing.fxRate) : fxNow,
     holdSig: sigNow,
+    // Money put in so far per class: tomorrow's change minus the change in this is the market's part
+    ...(typeof window !== "undefined" && window.LifeLedgerNetWorth ? { contributed: window.LifeLedgerNetWorth.contributions(state) } : {}),
     source: options.source || "daily"
   };
 
@@ -9374,6 +9401,7 @@ function renderNetWorthHistory() {
   const currentDayChange = latestDelta ? latestDelta.change : (latest.dayChange ?? 0);
   const currentDayChangePct = latestDelta ? latestDelta.pct : (latest.dayChangePct ?? 0);
   const deltaBasis = latestDelta ? `vs ${formatDate(latestDelta.prevDate)}` : "market move";
+  const deltaSplit = latestDelta ? dayChangeSplitText(latestDelta) : "";
 
   // 1. Banner
   const nwDisplay = document.getElementById("nwhLatestNetWorthDisplay");
@@ -9385,7 +9413,7 @@ function renderNetWorthHistory() {
     const sign = currentDayChange >= 0 ? "+" : "";
     const color = currentDayChange >= 0 ? "var(--positive, #16a34a)" : "var(--negative, #dc2626)";
     const arrow = currentDayChange >= 0 ? "▲" : "▼";
-    changeDisplay.innerHTML = `<span style="color:${color}; font-weight:600;">${arrow} ${deltaBasis}: ${sign}${formatINR(Math.abs(currentDayChange))} (${sign}${currentDayChangePct}%)</span> &nbsp;•&nbsp; Total Assets: ${formatINR(latest.totalAssets || 0)} &nbsp;•&nbsp; Liabilities: ${formatINR(latest.totalLiabilities || 0)}`;
+    changeDisplay.innerHTML = `<span style="color:${color}; font-weight:600;">${arrow} ${deltaBasis}: ${sign}${formatINR(Math.abs(currentDayChange))} (${sign}${currentDayChangePct}%)</span>${deltaSplit ? ` <span class="muted-small">(${escapeHTML(deltaSplit)})</span>` : ""} &nbsp;•&nbsp; Total Assets: ${formatINR(latest.totalAssets || 0)} &nbsp;•&nbsp; Liabilities: ${formatINR(latest.totalLiabilities || 0)}`;
   }
 
   // 2. Stats Grid

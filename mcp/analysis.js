@@ -5,6 +5,7 @@
 const Advisor = require("../advisor-engine.js");
 const Protection = require("../protection-core.js");
 const Integrity = require("../holdings-integrity.js");
+const NetWorthDelta = require("../networth-delta.js");
 
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const sum = (list, f) => (list || []).reduce((s, x) => s + num(f(x)), 0);
@@ -77,9 +78,17 @@ function netWorth(state, fxOverride) {
     const liabDelta = liabilities - num(prev.liabilities);
     if (Math.abs(liabDelta) >= 500) byClass.liabilities = r0(liabDelta);
     const market = ["mutualFunds", "stocks", "usStocks", "gold", "silver", "crypto"].reduce((t, k) => t + (byClass[k] || 0), 0);
+    // Market move vs money you added vs your own edits — the same split the app's dashboard shows. Exact when the
+    // previous record carries `contributed`; for an older record it needs today's recorded price move, else it is left out.
+    let split = null;
+    if (prev.contributed || todayRec) {
+      const cur = { date: todayISO, netWorth: out.netWorth, totalLiabilities: liabilities, ...cls, fxRate: fx, contributed: NetWorthDelta.contributions(state), changes: (todayRec && todayRec.changes) || {} };
+      const s = NetWorthDelta.compare(prev, cur).split;
+      split = { market: r0(s.market), newMoney: r0(s.newMoney), edits: r0(s.edits), exact: s.exact, newMoneyByClass: Object.fromEntries(Object.entries(s.newMoneyByClass).filter(([, v]) => Math.abs(v) >= 1).map(([k, v]) => [k, r0(v)])) };
+    }
     out.changeVsPrevious = {
       previousDate: prev.date, previousNetWorth: r0(num(prev.netWorth)), delta: out.netWorth - r0(num(prev.netWorth)),
-      byClass, marketLikeMoves: r0(market),
+      byClass, marketLikeMoves: r0(market), split,
       note: "Positive liabilities delta means debt grew (bad for net worth). Round-number moves in others/FD/bank/EPF/liabilities are usually the household's own edits or payments, not markets.",
     };
   }

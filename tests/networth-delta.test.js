@@ -39,4 +39,40 @@ const cmp = compare(h[1], h[2]);
 assert.strictEqual(cmp.change, d.get("c").change);
 assert.deepStrictEqual(cmp.parts, d.get("c").parts);
 
+// ── Market vs new money vs your edits: always adds up to the change ──
+const N = require("../networth-delta.js");
+const snap = (o) => ({ date: "2026-10-23", netWorth: 0, mutualFunds: 0, stocks: 0, usStocks: 0, gold: 0, fd: 0, bankSaving: 0, totalLiabilities: 0, fxRate: 90, ...o });
+const nwOf = (s) => s.mutualFunds + s.stocks + s.usStocks + s.gold + s.fd + s.bankSaving - s.totalLiabilities;
+const pair = (a, b) => { const p = snap(a), q = snap({ date: "2026-10-24", ...b }); p.netWorth = nwOf(p); q.netWorth = nwOf(q); return N.compare(p, q); };
+const addsUp = (r) => Math.abs(r.split.market + r.split.newMoney + r.split.edits - r.change) < 0.01;
+
+// Bought ₹9,912 of a gold ETF on a day the market took ₹27,677 off shares (the 24 Oct case)
+let r = pair({ stocks: 1513567, contributed: { mutualFunds: 0, stocks: 1000000, usStocksUsd: 0 } }, { stocks: 1495802, contributed: { mutualFunds: 0, stocks: 1009912, usStocksUsd: 0 } });
+assert.deepStrictEqual([r.split.newMoney, r.split.market, r.split.edits, r.split.exact], [9912, -27677, 0, true]); assert.ok(addsUp(r));
+// A fund sale: the proceeds leave as money taken out, the market part is whatever the price did
+r = pair({ mutualFunds: 800000, contributed: { mutualFunds: 600000, stocks: 0, usStocksUsd: 0 } }, { mutualFunds: 649000, contributed: { mutualFunds: 450000, stocks: 0, usStocksUsd: 0 } });
+assert.deepStrictEqual([r.split.newMoney, r.split.market], [-150000, -1000]); assert.ok(addsUp(r));
+// US shares: dollars put in, at today's rate; a pure exchange-rate move is market
+r = pair({ usStocks: 90000, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 800 } }, { usStocks: 99000, fxRate: 90, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 900 } });
+assert.deepStrictEqual([r.split.newMoneyByClass.usStocks, r.split.market], [9000, 0]);
+r = pair({ usStocks: 90000, fxRate: 90, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 800 } }, { usStocks: 91000, fxRate: 91, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 800 } });
+assert.deepStrictEqual([r.split.newMoney, r.split.market], [0, 1000]);
+// Your own edits (FD added, loan repaid) are neither market nor new money
+r = pair({ fd: 100000, totalLiabilities: 40000, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 0 } }, { fd: 150000, totalLiabilities: 0, contributed: { mutualFunds: 0, stocks: 0, usStocksUsd: 0 } });
+assert.deepStrictEqual([r.split.edits, r.split.market, r.split.newMoney], [90000, 0, 0]); assert.ok(addsUp(r));
+// An older snapshot without `contributed`: estimated from the day's recorded price move, and marked as an estimate
+r = pair({ stocks: 1513567 }, { stocks: 1495802, changes: { stocks: -27396 }, contributed: { mutualFunds: 0, stocks: 1, usStocksUsd: 0 } });
+assert.deepStrictEqual([r.split.newMoney, r.split.exact], [9631, false]); assert.ok(addsUp(r));
+// …a small gap is price timing, not money (₹1,000 or 0.3% of the class, whichever is larger)
+r = pair({ stocks: 1500000 }, { stocks: 1499000, changes: { stocks: -1500 } });
+assert.strictEqual(r.split.newMoney, 0, "₹500 unexplained on ₹15 lakh is timing");
+r = pair({ stocks: 100000 }, { stocks: 103000, changes: { stocks: 0 } });
+assert.strictEqual(r.split.newMoney, 3000, "₹3,000 on ₹1 lakh is money");
+// contributions(): purchases minus sale proceeds, any spelling of a sale, falling back to units × price
+assert.deepStrictEqual(N.contributions({
+  mutualFunds: [{ transactionType: "PURCHASE", invested: 1000 }, { transactionType: "REDEEM", invested: 300 }, { transactionType: "REDEMPTION", invested: 200 }, { units: 10, nav: 5 }],
+  stocks: [{ quantity: 2, invested: 500 }, { transactionType: "SELL", invested: 100 }, { quantity: 3, avgPrice: 10 }],
+  usstocks: [{ quantity: 1, invested: 50 }, { transactionType: "S", invested: 20 }],
+}), { mutualFunds: 550, stocks: 430, usStocksUsd: 30 });
+assert.deepStrictEqual(N.contributions(null), { mutualFunds: 0, stocks: 0, usStocksUsd: 0 });
 console.log("networth-delta tests passed");

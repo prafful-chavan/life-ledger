@@ -27,24 +27,77 @@
     return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
   }
 
+  // A fund or share sale, however the row spells it (the importer once wrote "REDEEM")
+  const SALE = /REDEEM|REDEMPT|SELL|SOLD|WITHDRAW|SWITCH OUT|PAYOUT|^[RS]$/i;
+  const flow = (rows, units) => (rows || []).reduce((t, r) => {
+    const sale = SALE.test(String((r && (r.transactionType || r.type)) || "").trim());
+    const amount = n(r && r.invested) || n(r && r[units]) * n(r && (r.nav || r.avgPrice));
+    return t + (sale ? -1 : 1) * amount;
+  }, 0);
+
+  /**
+   * Money put into each investment class so far: purchases minus sale proceeds (US shares in dollars). Stored with every
+   * snapshot, so the change between two snapshots separates money you added from what the market did.
+   */
+  function contributions(state) {
+    const s = state || {};
+    return {
+      mutualFunds: r2(flow(s.mutualFunds, "units")),
+      stocks: r2(flow(s.stocks, "quantity")),
+      usStocksUsd: r2(flow(s.usstocks, "quantity")),
+    };
+  }
+
+  const INVESTED = ["mutualFunds", "stocks", "usStocks"];
+
+  /**
+   * Money added (+) or taken out (−) per class between two snapshots. Exact when both carry `contributed`; for an older
+   * snapshot without it, estimated as the value change the day's price move does not explain (shown as an estimate).
+   */
+  function newMoneyBetween(prev, cur, parts) {
+    const pc = prev && prev.contributed, cc = cur && cur.contributed;
+    const out = {};
+    if (pc && cc) {
+      const fx = n(cur.fxRate) || n(prev.fxRate);
+      out.mutualFunds = n(cc.mutualFunds) - n(pc.mutualFunds);
+      out.stocks = n(cc.stocks) - n(pc.stocks);
+      out.usStocks = fx ? (n(cc.usStocksUsd) - n(pc.usStocksUsd)) * fx : 0;
+      return { byClass: out, exact: true };
+    }
+    for (const k of INVESTED) {
+      const est = n(parts[k]) - n(cur && cur.changes && cur.changes[k]);
+      out[k] = Math.abs(est) >= Math.max(1000, Math.abs(n(cur && cur[k])) * 0.003) ? est : 0;   // below that: price timing, not money
+    }
+    return { byClass: out, exact: false };
+  }
+
   /** Change from snapshot `prev` to snapshot `cur`, with what moved. */
   function compare(prev, cur) {
     const prevNw = netWorthOf(prev);
     const change = r2(netWorthOf(cur) - prevNw);
+    const parts = {
+      mutualFunds: r2(n(cur.mutualFunds) - n(prev.mutualFunds)),
+      stocks: r2(n(cur.stocks) - n(prev.stocks)),
+      usStocks: r2(n(cur.usStocks) - n(prev.usStocks)),
+      gold: r2(n(cur.gold) - n(prev.gold)),
+      cashOthers: r2(cashOthers(cur) - cashOthers(prev)),
+      // liabilities going up lowers net worth
+      liabilities: r2(-(n(cur.totalLiabilities) - n(prev.totalLiabilities))),
+    };
+    // change = market + new money + your edits, exactly (market is what is left once the other two are known)
+    const nm = newMoneyBetween(prev, cur, parts);
+    const newMoneyByClass = {};
+    for (const k of INVESTED) newMoneyByClass[k] = r2(nm.byClass[k]);
+    const newMoney = r2(INVESTED.reduce((t, k) => t + newMoneyByClass[k], 0));
+    const edits = r2(parts.cashOthers + parts.liabilities);
+    const split = { market: r2(change - newMoney - edits), newMoney, edits, newMoneyByClass, exact: nm.exact };
     return {
+      split,
       change,
       pct: prevNw ? r2((change / Math.abs(prevNw)) * 100) : 0,
       prevDate: prev.date,
       gapDays: daysBetween(prev.date, cur.date),
-      parts: {
-        mutualFunds: r2(n(cur.mutualFunds) - n(prev.mutualFunds)),
-        stocks: r2(n(cur.stocks) - n(prev.stocks)),
-        usStocks: r2(n(cur.usStocks) - n(prev.usStocks)),
-        gold: r2(n(cur.gold) - n(prev.gold)),
-        cashOthers: r2(cashOthers(cur) - cashOthers(prev)),
-        // liabilities going up lowers net worth
-        liabilities: r2(-(n(cur.totalLiabilities) - n(prev.totalLiabilities))),
-      },
+      parts,
     };
   }
 
@@ -59,5 +112,5 @@
     return out;
   }
 
-  return { compare, computeDeltas, cashOthers, netWorthOf };
+  return { compare, computeDeltas, cashOthers, netWorthOf, contributions };
 });
