@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.116",
-    "sha256": "f4ffa5006f5d02966affa93958ee7a303906f98199b8089e37b81e9fe2bfafd2"
+    "version": "1.0.118",
+    "sha256": "20cc77e6214e92ff19a91c9471bbca21203638d14006ef38abdf2f10b40f2ca3"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -70,6 +70,10 @@
   "liability-calc.js": {
     "version": "1.0.0",
     "sha256": "f85a15be1821daa9c18b589e14ed6c6582894588983d2f9858102b0adf398ff6"
+  },
+  "mf-panel-core.js": {
+    "version": "1.0.0",
+    "sha256": "06fe7270092e50fec5be267b682d5fc4ec97ecc0c1b8dff11cb8e0e488e593e5"
   },
   "nav.js": {
     "version": "1.1.6",

@@ -4439,6 +4439,13 @@ function collectSalaryParts(row, fieldConfig) {
 // The rules of the Salary tab (which rows are salary, totals, growth, progression) live in salary-core.js; this file only draws them.
 const SAL = (typeof window !== "undefined" && window.LifeLedgerSalary) || (typeof require === "function" ? require("./salary-core.js") : null);
 const isSalary = SAL.isSalary;
+// The rules of the Mutual funds panel (rows, portfolio figures, SIP budget, per-fund lines, invest signal) live in mf-panel-core.js.
+const MFP = (typeof window !== "undefined" && window.LifeLedgerMfPanel) || (typeof require === "function" ? require("./mf-panel-core.js") : null);
+const mfPanelDeps = () => ({
+  costBasis: calcMfCostBasis, isRedemption, num: toNumber, xirr: calculateXIRR, now: Date.now(), matchOwner: matchHoldingsOwner,
+  history: (fundName) => { const codeObj = getFundCodesCache()[fundName]; return codeObj?.schemeCode ? getMfHistoryCache()[codeObj.schemeCode]?.data : null; },
+  navVs30d: computeNavVs30dAvg,
+});
 
 function isFullBackup(data) {
   return (
@@ -5897,100 +5904,15 @@ function renderMutualFundsPanel() {
     navDateEl.textContent = sampleWithDate?.navDate ? `NAV: ${sampleWithDate.navDate}` : '';
   }
 
-  const rows = [...state.mutualFunds]
-    .filter((item) => matchHoldingsOwner(item.owner, activeHoldingsOwner))
-    .sort((a, b) => new Date(b.purchaseDate || b.date || '1970-01-01') - new Date(a.purchaseDate || a.date || '1970-01-01'));
-
-  // Calculate invested/units with Average Cost Method (like Groww)
-  // The 'invested' field on REDEMPTION = redemption proceeds, NOT cost basis.
-  // So we compute avgCostPerUnit from purchases, then subtract cost of redeemed units.
-  let invested = 0;
-  const currentByFund = {};
-  const fundGroups = {};
-  rows.forEach(t => {
-    const key = t.fundName || "Unknown";
-    if (!fundGroups[key]) fundGroups[key] = [];
-    fundGroups[key].push(t);
-    if (!currentByFund[key]) currentByFund[key] = { units: 0, latestNav: t.latestNav || t.nav || 0 };
-    if (t.latestNav) currentByFund[key].latestNav = toNumber(t.latestNav);
-  });
-  Object.entries(fundGroups).forEach(([key, txns]) => {
-    const basis = calcMfCostBasis(txns);
-    invested += basis.invested;
-    currentByFund[key].units = basis.netUnits;
-  });
-  const current = Object.values(currentByFund).reduce((total, f) => total + f.units * f.latestNav, 0);
-  const gain = current - invested;
-  const roi = invested ? (gain / invested) * 100 : 0;
-
-  // Calculate overall portfolio XIRR (redemptions are positive inflows)
-  const portfolioFlows = rows.map(t => {
-    const isRed = isRedemption(t);
-    return {
-      date: new Date(t.purchaseDate || t.date || Date.now()),
-      amount: isRed ? +toNumber(t.invested) : -toNumber(t.invested)
-    };
-  });
-  if (current > 0) {
-    portfolioFlows.push({
-      date: new Date(),
-      amount: current
-    });
-  }
-  const portfolioXirr = calculateXIRR(portfolioFlows);
-
-  // ── 1-Day change across the entire portfolio ──────────────────────────────
-  // Sum (units × latestNav) - (units × prevNav) for all holdings with prevNav
-  let oneDayChange = 0;
-  let oneDayHasPrev = false;
-  {
-    const byFundPrev = {};
-    rows.forEach(t => {
-      const key = t.fundName || 'Unknown';
-      if (!byFundPrev[key]) byFundPrev[key] = { txns: [], latestNav: t.latestNav || t.nav || 0, prevNav: t.prevNav || null };
-      byFundPrev[key].txns.push(t);
-      if (t.latestNav) byFundPrev[key].latestNav = toNumber(t.latestNav);
-      if (t.prevNav)  { byFundPrev[key].prevNav = toNumber(t.prevNav); oneDayHasPrev = true; }
-    });
-    Object.values(byFundPrev).forEach(f => {
-      const netUnits = calcMfCostBasis(f.txns).netUnits;
-      if (f.prevNav) oneDayChange += netUnits * (f.latestNav - f.prevNav);
-    });
-  }
-  const oneDayPct = oneDayHasPrev && current > 0 ? (oneDayChange / (current - oneDayChange)) * 100 : 0;
+  const deps = mfPanelDeps();
+  const rows = MFP.panelRows(state.mutualFunds, activeHoldingsOwner, matchHoldingsOwner);
+  const { invested, current, gain, roi, xirr: portfolioXirr, oneDayChange, oneDayHasPrev, oneDayPct } = MFP.portfolio(rows, deps);
 
   // ── Monthly SIP Budget ──────────────────────────────────────
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+  const now = new Date(deps.now);
   const monthName = now.toLocaleString('en-IN', { month: 'long' });
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const daysRemaining = daysInMonth - now.getDate();
-  
-  // Calculate this month's investments by owner
-  const thisMonthInvestments = state.mutualFunds.filter(t => {
-    if (isRedemption(t)) return false;
-    const d = new Date(t.purchaseDate || t.date);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-  });
-  
-  let sipInvestedThisMonth = 0;
-  let sipTarget = 0;
-  if (activeHoldingsOwner === 'Both') {
-    sipInvestedThisMonth = thisMonthInvestments.reduce((s, t) => s + toNumber(t.invested), 0);
-    sipTarget = toNumber(state.mfMonthlyTarget?.me || 100000) + toNumber(state.mfMonthlyTarget?.wife || 100000);
-  } else if (activeHoldingsOwner === 'Wife') {
-    sipInvestedThisMonth = thisMonthInvestments.filter(t => (t.owner || 'Me') === 'Wife').reduce((s, t) => s + toNumber(t.invested), 0);
-    sipTarget = toNumber(state.mfMonthlyTarget?.wife || 100000);
-  } else {
-    sipInvestedThisMonth = thisMonthInvestments.filter(t => matchHoldingsOwner(t.owner, 'Me')).reduce((s, t) => s + toNumber(t.invested), 0);
-    sipTarget = toNumber(state.mfMonthlyTarget?.me || 100000);
-  }
-  const sipRemaining = Math.max(0, sipTarget - sipInvestedThisMonth);
-  const sipPct = sipTarget > 0 ? Math.min(100, (sipInvestedThisMonth / sipTarget) * 100) : 0;
-  const dayPct = ((now.getDate()) / daysInMonth) * 100;
-  const isBehind = sipPct < (dayPct - 15); // More than 15% behind pace
-  const sipTargetKey = activeHoldingsOwner === 'Wife' ? 'wife' : 'me';
+  const { invested: sipInvestedThisMonth, target: sipTarget, remaining: sipRemaining, pct: sipPct, isBehind, daysRemaining, targetKey: sipTargetKey } =
+    MFP.sipBudget(state.mutualFunds, activeHoldingsOwner, state.mfMonthlyTarget, deps);
 
   if (summary) {
     const navDateLabel = (() => {
@@ -6052,73 +5974,7 @@ function renderMutualFundsPanel() {
   }
 
   if (activeMfView === "holdings") {
-    const groups = groupBy(rows, item => item.fundName);
-    const holdings = Object.entries(groups).map(([fundName, txns]) => {
-      // Average Cost Method (like Groww) — per-fund aggregation
-      const basis = calcMfCostBasis(txns);
-      const totalUnits = basis.netUnits;
-      const totalInvested = basis.invested;
-
-      const latestNav = txns[0].latestNav || txns[0].nav;
-      const prevNav = txns[0].prevNav || null;
-      const currentValue = totalUnits * latestNav;
-      const gain = currentValue - totalInvested;
-      const roi = totalInvested ? (gain / totalInvested) * 100 : 0;
-      const avgNav = basis.avgCost; // Average cost per unit from purchases
-
-      // 1-Day change for this holding
-      const dayChange = prevNav ? totalUnits * (latestNav - prevNav) : null;
-      const dayChangePct = prevNav && latestNav ? ((latestNav - prevNav) / prevNav) * 100 : null;
-
-      // XIRR: purchases are outflows (negative), redemptions are inflows (positive)
-      const cashFlows = txns.map(t => {
-        const isRed = isRedemption(t);
-        return {
-          date: new Date(t.purchaseDate || t.date || Date.now()),
-          amount: isRed ? +toNumber(t.invested) : -toNumber(t.invested)
-        };
-      });
-      if (totalUnits > 0) {
-        cashFlows.push({
-          date: new Date(),
-          amount: currentValue
-        });
-      }
-      const xirr = calculateXIRR(cashFlows);
-
-      const codesCache = getFundCodesCache();
-      const codeObj = codesCache[fundName];
-      let navVs30d = null;
-      let lowestNav30d = null;
-      if (codeObj?.schemeCode) {
-        const historyCache = getMfHistoryCache();
-        const cached = historyCache[codeObj.schemeCode];
-        if (cached?.data && cached.data.length > 0) {
-          const slice30 = cached.data.slice(-30);
-          lowestNav30d = Math.min(...slice30.map(d => d.nav));
-          if (cached.data.length >= 30) {
-            navVs30d = computeNavVs30dAvg(cached.data);
-          }
-        }
-      }
-
-      return {
-        fundName,
-        totalUnits,
-        avgNav,
-        totalInvested,
-        latestNav,
-        prevNav,
-        currentValue,
-        gain,
-        roi,
-        xirr,
-        dayChange,
-        dayChangePct,
-        navVs30d,
-        lowestNav30d,
-      };
-    });
+    const holdings = MFP.holdings(rows, deps);
 
     // Apply user-selected sort (default: currentValue desc)
     const sortedHoldings = sortHoldings(holdings, mfSortCol, mfSortDir);
@@ -6150,17 +6006,9 @@ function renderMutualFundsPanel() {
         formatINR(item.latestNav),
         item.lowestNav30d !== null ? formatINR(item.lowestNav30d) : '<span style="opacity:0.4">—</span>',
         (() => {
-          if (item.latestNav === null || item.lowestNav30d === null) return '<span style="opacity:0.4">—</span>';
-          const diffPct = ((item.latestNav - item.lowestNav30d) / item.lowestNav30d) * 100;
-          if (item.latestNav <= item.lowestNav30d) {
-            return '<span class="nav-timing-badge badge-low" style="margin:0;font-size:0.7rem;padding:2px 6px;">🔥 Invest Today (30D Low)</span>';
-          } else if (diffPct <= 1.5) {
-            return '<span class="nav-timing-badge badge-below" style="margin:0;font-size:0.7rem;padding:2px 6px;">▼ Buy (Near Low)</span>';
-          } else if (diffPct <= 4) {
-            return '<span class="nav-timing-badge badge-fair" style="margin:0;font-size:0.7rem;padding:2px 6px;">● Hold (Fair)</span>';
-          } else {
-            return '<span class="nav-timing-badge badge-high" style="margin:0;font-size:0.7rem;padding:2px 6px;">▲ Wait (High NAV)</span>';
-          }
+          const signal = MFP.investSignal(item.latestNav, item.lowestNav30d);
+          const badge = { low: ["badge-low", "🔥 Invest Today (30D Low)"], near: ["badge-below", "▼ Buy (Near Low)"], fair: ["badge-fair", "● Hold (Fair)"], high: ["badge-high", "▲ Wait (High NAV)"] }[signal];
+          return badge ? `<span class="nav-timing-badge ${badge[0]}" style="margin:0;font-size:0.7rem;padding:2px 6px;">${badge[1]}</span>` : '<span style="opacity:0.4">—</span>';
         })(),
         formatINR(item.currentValue),
         (() => {
@@ -16952,6 +16800,10 @@ if (typeof module !== 'undefined' && module.exports) {
     parseMasterHoldingsWorkbook,
     addSystemLog,
     matchHoldingsOwner,
+    calcMfCostBasis,
+    calculateXIRR,
+    isRedemption,
+    computeNavVs30dAvg,
     MASTER_ISIN_MAP,
     STOCK_EXCHANGE_TICKER_MAP,
     getExchangeTicker,
