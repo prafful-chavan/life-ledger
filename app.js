@@ -5750,26 +5750,17 @@ function renderIncomeTable() {
   );
 }
 
+// The rules of the Expenses tab (grouping, filtering, sorting, paging) live in expenses-core.js; this file only draws them.
+const expenseDeps = () => ({ monthKey: toMonthKey, num: toNumber, category: catOf });
+
 function getExpenseMonthIndex() {
   if (expenseMonthIndexCache) return expenseMonthIndexCache;
-  const byMonth = new Map();
-  state.expenses.forEach((expense) => {
-    const key = toMonthKey(expense.date);
-    if (!key) return;
-    if (!byMonth.has(key)) byMonth.set(key, { total: 0, categories: {}, rows: [] });
-    const bucket = byMonth.get(key);
-    const amount = toNumber(expense.amount);
-    bucket.total += amount;
-    const category = catOf(expense);
-    bucket.categories[category] = (bucket.categories[category] || 0) + amount;
-    bucket.rows.push(expense);
-  });
-  expenseMonthIndexCache = byMonth;
-  return byMonth;
+  expenseMonthIndexCache = window.LifeLedgerExpenses.monthIndex(state.expenses, expenseDeps());
+  return expenseMonthIndexCache;
 }
 
 function listExpenseMonths() {
-  return [...getExpenseMonthIndex().keys()].sort().reverse();
+  return window.LifeLedgerExpenses.listMonths(getExpenseMonthIndex());
 }
 
 function renderExpenseExplorer(refreshMonthList = true) {
@@ -5794,9 +5785,7 @@ function renderExpenseExplorer(refreshMonthList = true) {
         option.textContent = formatMonthKeyLabel(key);
         monthSelect.append(option);
       });
-      if (!activeExpenseMonth || !months.includes(activeExpenseMonth)) {
-        activeExpenseMonth = months[0];
-      }
+      activeExpenseMonth = window.LifeLedgerExpenses.pickMonth(months, activeExpenseMonth);
       monthSelect.value = activeExpenseMonth;
     }
   }
@@ -5813,47 +5802,15 @@ function renderExpenseExplorer(refreshMonthList = true) {
   const allRows = bucket?.rows || [];
 
   const searchInput = document.getElementById("expenseSearchInput");
-  const searchVal = searchInput ? searchInput.value.toLowerCase().trim() : "";
-
-  const filteredRows = allRows.filter(item => {
-    const norm = normalizeOwner(item.paidBy || "Both");
-    if (activeExpenseOwner !== "Both" && norm !== activeExpenseOwner && norm !== "Both") return false;
-
-    if (searchVal) {
-      const category = String(item.category || "").toLowerCase();
-      const note = String(item.note || "").toLowerCase();
-      const paidBy = String(item.paidBy || "").toLowerCase();
-      const amount = String(item.amount || "");
-      const date = String(item.date || "");
-      if (!category.includes(searchVal) && 
-          !note.includes(searchVal) && 
-          !paidBy.includes(searchVal) &&
-          !amount.includes(searchVal) &&
-          !date.includes(searchVal)) {
-        return false;
-      }
-    }
-    return true;
+  const view = window.LifeLedgerExpenses.monthView(allRows, {
+    owner: activeExpenseOwner, search: searchInput ? searchInput.value : "", page: activeExpensePage, pageSize: EXPENSE_PAGE_SIZE,
+    normalizeOwner, category: catOf, num: toNumber, time: (item) => parseCalendarDate(item.date || item.dueDate)?.getTime() || 0,
   });
-
-  const total = sum(filteredRows, "amount");
-  const categoryMap = {};
-  filteredRows.forEach(item => {
-    const cat = catOf(item);
-    categoryMap[cat] = (categoryMap[cat] || 0) + toNumber(item.amount);
-  });
-  const categories = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
-
-  const rows = [...filteredRows].sort(sortByDateDesc);
-  const totalPages = Math.max(1, Math.ceil(rows.length / EXPENSE_PAGE_SIZE));
-  activeExpensePage = clamp(activeExpensePage, 0, totalPages - 1);
-  const pageRows = rows.slice(activeExpensePage * EXPENSE_PAGE_SIZE, (activeExpensePage + 1) * EXPENSE_PAGE_SIZE);
+  const { total, categories, pageRows, totalPages } = view;
+  activeExpensePage = view.page;
 
   if (summary) {
-    const txnCount = rows.length;
-    const avg = txnCount ? total / txnCount : 0;
-    const topCatName = categories[0]?.[0] || "-";
-    const topCatVal = categories[0]?.[1] || 0;
+    const txnCount = view.count, avg = view.average, topCatName = view.top.name, topCatVal = view.top.value;
     summary.innerHTML = `
       <article class="metric-card compact-metric">
         <div class="label">Month total (${activeExpenseOwner})</div>
@@ -5913,8 +5870,8 @@ function renderExpenseExplorer(refreshMonthList = true) {
   );
 
   if (pageInfo) {
-    pageInfo.textContent = rows.length
-      ? `Page ${activeExpensePage + 1} of ${totalPages} • showing ${pageRows.length} of ${rows.length}`
+    pageInfo.textContent = view.count
+      ? `Page ${activeExpensePage + 1} of ${totalPages} • showing ${pageRows.length} of ${view.count}`
       : "";
   }
 }

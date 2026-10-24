@@ -20,8 +20,8 @@
     "sha256": "6f4916a70c17f70bed28ac50570264d8c94ae044bcff07a97d32ef8d9203310c"
   },
   "app.js": {
-    "version": "1.0.113",
-    "sha256": "90207b23148a2323ba05b86599dbbea9d038e99aba6942ee9b18f4d1f5776abe"
+    "version": "1.0.114",
+    "sha256": "c185a07a075a167100be4a5482a8c1fe6e2bd4f5e63e546b87b661c1326bae92"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -38,6 +38,10 @@
   "drive-sync.js": {
     "version": "1.0.42",
     "sha256": "e12193c74adbb7cbaa4ef8be663e369ddcbcd36e2d7a054f1b279e3325fa2f5f"
+  },
+  "expenses-core.js": {
+    "version": "1.0.0",
+    "sha256": "e29e61bbb5d5058a42dd593b6fd8a368f28b576d35dc946b57cdd65c2dee15da"
   },
   "explain.js": {
     "version": "1.0.1",
