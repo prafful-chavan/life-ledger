@@ -1,5 +1,6 @@
 const assert = require("assert");
 const ai = require("../ai-agent.js");
+ai.setConsentGate(async () => true);   // consent is tested in ai-consent.test.js
 const K = require("../knowledge.js");
 
 const state = {

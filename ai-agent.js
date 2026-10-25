@@ -94,6 +94,7 @@
   async function fetchGeminiWithFallback(method, makeInit) {
     const key = encodeURIComponent(getGeminiKey());
     const extra = method === "streamGenerateContent" ? "alt=sse&" : "";
+    await requireConsent("gemini");
     let last = null;
     for (const model of geminiModelChain()) {
       const res = await fetch(`${GEMINI_API_BASE}/${encodeURIComponent(model)}:${method}?${extra}key=${key}`, makeInit(model));
@@ -101,6 +102,14 @@
       last = { res, model };
     }
     return last;
+  }
+
+  // Nothing is sent to an AI service until the household has agreed (asked once per provider by the app; see setConsentGate).
+  let consentGate = null;
+  function setConsentGate(fn) { consentGate = typeof fn === "function" ? fn : null; }
+  async function requireConsent(provider) {
+    if (!consentGate) throw new Error("AI use is not approved yet: nothing was sent.");
+    if (!(await consentGate(provider))) throw new Error("AI use was not approved: nothing was sent.");
   }
 
   function getOpenRouterKey() {
@@ -868,6 +877,7 @@ PERSONALITY & RULES:
     const payload = buildOpenRouterPayload(userMessage, dataContext, chatHistory, model, false);
 
     try {
+      await requireConsent("openrouter");
       const response = await fetch(OPENROUTER_ENDPOINT, {
         method: "POST",
         headers: {
@@ -917,6 +927,7 @@ PERSONALITY & RULES:
     const payload = buildOpenRouterPayload(userMessage, dataContext, chatHistory, model, true);
 
     try {
+      await requireConsent("openrouter");
       const response = await fetch(OPENROUTER_ENDPOINT, {
         method: "POST",
         headers: {
@@ -1116,6 +1127,7 @@ PERSONALITY & RULES:
       const useTools = round < MAX_TOOL_ROUNDS && Date.now() - started < TOOL_DEADLINE_MS;
       const body = { systemInstruction: { parts: [{ text: systemText }] }, contents, generationConfig: { temperature: 0.6, maxOutputTokens: 8192 } };
       if (useTools) body.tools = tools;
+      await requireConsent("gemini");
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
       if (!res.ok) {
         const errText = await res.text();
@@ -1154,6 +1166,7 @@ PERSONALITY & RULES:
       const useTools = round < MAX_TOOL_ROUNDS && Date.now() - started < TOOL_DEADLINE_MS;
       const body = { model: getOpenRouterModel(), messages, temperature: 0.6, max_tokens: 8192 };
       if (useTools) body.tools = tools;
+      await requireConsent("openrouter");
       const res = await fetch(OPENROUTER_ENDPOINT, {
         method: "POST", signal,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getOpenRouterKey()}`, "HTTP-Referer": APP_REFERER, "X-Title": APP_TITLE },
@@ -1296,6 +1309,7 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
         if (!cand) throw new Error(data?.promptFeedback?.blockReason ? `Gemini blocked the request: ${data.promptFeedback.blockReason}` : "Gemini returned no answer.");
         text = (cand.content?.parts || []).map((p) => p.text || "").join("");
       } else {
+        await requireConsent("openrouter");
         const res = await fetch(OPENROUTER_ENDPOINT, {
           method: "POST", signal: controller.signal,
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${getOpenRouterKey()}`, "HTTP-Referer": APP_REFERER, "X-Title": APP_TITLE },
@@ -1336,6 +1350,7 @@ Keep it concise, actionable, and energizing. Use bullet points.`;
     setOpenRouterModel,
     getApiKey,
     setApiKey,
+    setConsentGate,
     getModel,
     setModel,
     buildGeminiContents,

@@ -571,6 +571,22 @@ const SCANNER = `(${function scan() {
       check(`dashboards at ${w}px: no tab or table overflows its panel`, fit.bad.length === 0 && fit.page <= 1, JSON.stringify(fit));
     }
     await viewport(1280, 900); await sleep(300);
+    // AI permission: nothing is sent to an AI service until the household says yes; it can be withdrawn in Settings
+    console.log("\nAI permission");
+    const ai = JSON.parse(await cdp.eval(`(async()=>{ const out={}; const sent=[]; const of=window.fetch; window.fetch=(u,o)=>{ if(/generativelanguage|openrouter/.test(String(u))) { sent.push(String(u)); return Promise.resolve(new Response(JSON.stringify({candidates:[{content:{parts:[{text:'{"summary":"ok"}'}]}}]}),{status:200})); } return of(u,o); };
+      const AI=window.LifeLedgerAI; AI.setProvider('gemini'); AI.setGeminiKey('test-key'); const S=()=>LifeLedgerApp.getState();
+      const asked=[]; const oc=window.confirm;
+      window.confirm=(m)=>{asked.push(m); return false}; try { await AI.generateStructured({system:'s',user:'u'}); out.declined='sent' } catch(e){ out.declined=String(e.message) }
+      out.sentAfterNo=sent.length; out.consentAfterNo=(S().advisor&&S().advisor.aiConsent&&S().advisor.aiConsent.gemini)||''; out.question=(asked[0]||'').slice(0,160);
+      window.confirm=(m)=>{asked.push(m); return true}; try { const r=await AI.generateStructured({system:'s',user:'u'}); out.accepted=r&&r.summary } catch(e){ out.accepted='ERR '+e.message }
+      out.sentAfterYes=sent.length; out.consentAfterYes=(S().advisor&&S().advisor.aiConsent&&S().advisor.aiConsent.gemini)?'saved':'';
+      const n=asked.length; try { await AI.generateStructured({system:'s',user:'u'}); } catch(e){} out.askedAgain=asked.length-n;
+      document.getElementById('settingsButton').click(); await new Promise(r=>setTimeout(r,700)); out.line=document.getElementById('aiConsentLine').textContent; document.getElementById('aiConsentWithdraw').click(); await new Promise(r=>setTimeout(r,400));
+      out.afterWithdraw=(S().advisor.aiConsent.gemini||'')===''; out.lineAfter=document.getElementById('aiConsentLine').textContent.slice(0,40); document.querySelector('#settingsModal [data-close-modal]').click();
+      window.fetch=of; window.confirm=oc; return JSON.stringify(out); })()`));
+    check("AI: without a yes nothing is sent and nothing is saved, and the question names what is sent", /not approved/.test(ai.declined) && ai.sentAfterNo === 0 && !ai.consentAfterNo && /net worth, holdings, income/.test(ai.question), JSON.stringify(ai));
+    check("AI: after a yes the request goes out, the permission is saved and not asked again", ai.accepted === "ok" && ai.sentAfterYes === 1 && ai.consentAfterYes === "saved" && ai.askedAgain === 0, JSON.stringify(ai));
+    check("AI: Settings shows the permission and Withdraw clears it", /You allowed sending/.test(ai.line) && ai.afterWithdraw && /Nothing is sent/.test(ai.lineAfter), JSON.stringify(ai));
     // Settings → This device's version: the release code, "newest" when nothing is newer, and a newer release is noticed
     await viewport(1280, 900); await sleep(300); await view("dashboard");
     const ver = await cdp.eval(`(async()=>{ document.getElementById('settingsButton').click(); await new Promise(r=>setTimeout(r,1200));

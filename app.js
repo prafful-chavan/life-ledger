@@ -554,6 +554,7 @@ function bootstrapApp(initialState) {
   state = normalizeData(initialState || defaultData);
   recalculateGoldHoldingsValues();   // normalizeData priced gold with the PREVIOUS state's rate; redo it with this state's
   reconcileGeminiKey();
+  window.LifeLedgerAI?.setConsentGate?.(askAiConsent);
   if (!isAppInitialized) {
     bindTheme();
     bindNavigation();
@@ -2043,7 +2044,36 @@ function bindExport() {
   });
 }
 
+// ── AI permission ────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Questions to the AI assistant and the advisor's review send a summary of your finances to the AI provider you chose. That only
+// happens after you have said yes once for that provider; you can take it back in Settings.
+const AI_PROVIDER_LABEL = { gemini: "Google (Gemini)", openrouter: "OpenRouter and the AI model you chose there" };
+function aiConsentAt(provider) { return (state.advisor && state.advisor.aiConsent && state.advisor.aiConsent[provider]) || ""; }
+function setAiConsent(provider, on) {
+  state.advisor = { ...(state.advisor || {}), aiConsent: { ...((state.advisor && state.advisor.aiConsent) || {}), [provider]: on ? new Date().toISOString() : "" } };
+  saveData(true);
+  renderAiConsent();
+}
+async function askAiConsent(provider) {
+  if (aiConsentAt(provider)) return true;
+  const who = AI_PROVIDER_LABEL[provider] || provider;
+  const yes = confirm(`Send your question and a summary of your finances to ${who}?\n\nThis can include your net worth, holdings, income, expenses, tax and goals. ${who.split(" ")[0]} processes it under its own terms, outside this app.\n\nNothing is sent unless you press OK. You can take this back in Settings → AI Agent.`);
+  if (yes) setAiConsent(provider, true);
+  return yes;
+}
+function renderAiConsent() {
+  const line = document.getElementById("aiConsentLine"), button = document.getElementById("aiConsentWithdraw");
+  if (!line || !button) return;
+  const given = Object.keys(AI_PROVIDER_LABEL).filter((p) => aiConsentAt(p));
+  line.textContent = given.length
+    ? `🔒 You allowed sending a summary of your finances to ${given.map((p) => `${AI_PROVIDER_LABEL[p]} (since ${formatDate(aiConsentAt(p).slice(0, 10))})`).join(" and ")}.`
+    : "🔒 Nothing is sent to an AI service until you agree, the first time you ask. Your finances are summarised and sent to the provider you choose below.";
+  button.hidden = given.length === 0;
+}
+
 function bindAiSettings() {
+  document.getElementById("aiConsentWithdraw")?.addEventListener("click", () => { Object.keys(AI_PROVIDER_LABEL).forEach((p) => { if (aiConsentAt(p)) setAiConsent(p, false); }); toast("AI permission withdrawn. Nothing will be sent until you agree again."); });
+  renderAiConsent();
   // Provider Tabs & Panels
   const tabGemini = document.getElementById("tabProviderGemini");
   const tabOpenRouter = document.getElementById("tabProviderOpenRouter");

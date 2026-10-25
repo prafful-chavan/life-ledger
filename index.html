@@ -35,7 +35,7 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="vault-store.js?v=1.0.8"></script>
     <script defer src="drive-sync.js?v=1.0.42"></script>
-    <script defer src="ai-agent.js?v=1.0.49"></script>
+    <script defer src="ai-agent.js?v=1.0.50"></script>
     <script src="ui-polish.js?v=1.0.4" defer></script>
     <script defer src="networth-delta.js?v=1.0.3"></script>
     <script defer src="liability-calc.js?v=1.0.0"></script>
@@ -51,7 +51,7 @@
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.130"></script>
+    <script defer src="app.js?v=1.0.131"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -2587,6 +2587,11 @@
             <span id="settingsAiStatus" class="status-badge">Checking...</span>
           </div>
           <p class="muted-small" style="margin-bottom: 12px;">Choose your AI provider: Direct <strong>Google AI Studio</strong> (100% Free Gemini keys) or <strong>OpenRouter</strong> (Multi-model aggregator). You can configure one or both!</p>
+
+          <div class="settings-consent" id="aiConsentBox">
+            <p class="muted-small" id="aiConsentLine" style="margin: 0 0 8px;"></p>
+            <button class="secondary-button" type="button" id="aiConsentWithdraw" hidden>Withdraw permission</button>
+          </div>
 
           <!-- Provider Switcher Tabs -->
           <div class="ai-provider-toggle-wrap" role="tablist" aria-label="AI Provider Selection">

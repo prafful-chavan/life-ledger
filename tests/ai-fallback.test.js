@@ -1,5 +1,6 @@
 const assert = require("assert");
 const AI = require("../ai-agent.js");
+AI.setConsentGate(async () => true);   // consent is tested in ai-consent.test.js
 
 const ok = (text) => ({ ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text }] } }] }), text: async () => "" });
 const fail = (status) => ({ ok: false, status, text: async () => "{}", json: async () => ({}) });
