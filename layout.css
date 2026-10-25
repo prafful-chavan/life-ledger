@@ -1018,3 +1018,65 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .privacy-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
 .privacy-list strong { color: var(--ink); }
 .settings-consent { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
+
+/* ── Portfolio mix (Dashboard): portfolio-views.js ─────────────────────────────────────────────────────────────────────── */
+.pf-panel { margin-top: 16px; }
+.pf-panel .dv { gap: 16px; }
+.pf-c0 { --pf: var(--brand); } .pf-c1 { --pf: var(--good); } .pf-c2 { --pf: var(--accent); } .pf-c3 { --pf: var(--accent-2); }
+.pf-c4 { --pf: color-mix(in srgb, var(--brand) 55%, var(--panel)); } .pf-c5 { --pf: var(--negative); } .pf-c6 { --pf: color-mix(in srgb, var(--good) 55%, var(--panel)); }
+.pf-c7 { --pf: color-mix(in srgb, var(--accent) 55%, var(--panel)); } .pf-c8 { --pf: color-mix(in srgb, var(--accent-2) 55%, var(--panel)); } .pf-c9 { --pf: var(--muted); }
+.pf-g-equity { --pf: var(--brand); } .pf-g-debt { --pf: var(--good); } .pf-g-gold { --pf: var(--accent); } .pf-g-cash { --pf: var(--accent-2); } .pf-g-other { --pf: var(--muted); }
+path[class^="pf-c"], circle[class^="pf-c"] { fill: var(--pf); stroke: var(--panel); stroke-width: 2; }
+circle[class^="pf-c"] { fill: none; stroke: var(--pf); }
+path[class^="pf-c"]:hover { opacity: .82; }
+.pf-sw, .dv-swatch[class*="pf-"], .dc-stack > i[class*="pf-g-"] { background-color: var(--pf); }
+.pf-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; flex: 0 0 auto; }
+.pf-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.pf-grid { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.pf-ring { display: flex; flex-direction: column; gap: 14px; align-items: center; min-width: 0; }
+.pf-donut { width: 100%; max-width: 280px; }
+.dc-donut-top { fill: var(--ink); font-size: 19px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.dc-donut-sub { fill: var(--muted); font-size: 11px; }
+.pf-legend { width: 100%; display: grid; gap: 6px; }
+.pf-leg { display: flex; align-items: center; font-size: 13px; min-width: 0; }
+.pf-leg-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-leg b { font-variant-numeric: tabular-nums; }
+.pf-pivot { min-width: 0; }
+.pf-table th:first-child, .pf-table td:first-child { text-align: left; }
+.pf-table th:not(:first-child), .pf-table td:not(:first-child) { text-align: right; }
+.pf-main td { font-weight: 500; }
+.pf-toggle, .pf-plain { display: inline-flex; align-items: center; gap: 0; background: none; border: 0; padding: 0; font: 650 13.5px inherit; font-family: inherit; color: var(--ink); cursor: pointer; text-align: left; }
+.pf-plain { cursor: default; }
+.pf-caret { margin-left: 6px; color: var(--muted); font-size: 11px; }
+.pf-sub td { background: var(--panel-soft); font-size: 12.5px; color: var(--ink-2); }
+.pf-indent { padding-left: 18px; }
+.pf-indent.deep { padding-left: 34px; }
+.pf-part td { font-weight: 600; }
+.pf-total td { border-top: 2px solid var(--line); font-weight: 700; }
+.pf-link { background: none; border: 0; padding: 0; color: var(--brand); font: 600 13px inherit; font-family: inherit; cursor: pointer; text-decoration: underline; }
+.pf-compare { margin-top: 4px; }
+.pf-bars { display: grid; gap: 10px; }
+.pf-bar-row { display: grid; grid-template-columns: minmax(80px, 160px) 1fr; gap: 12px; align-items: center; font-size: 13px; font-weight: 600; }
+.pf-bar-row .dc-stack { height: 20px; }
+@media (max-width: 900px) { .pf-grid { grid-template-columns: 1fr; } .pf-donut { max-width: 240px; } }
+@media (max-width: 700px) {
+  .pf-panel .table-wrap { overflow-x: visible; }
+  .pf-panel .table-wrap table, .pf-panel .table-wrap tbody { display: block; width: 100%; min-width: 0; }
+  .pf-panel .table-wrap thead { display: none; }
+  .pf-panel .table-wrap tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .pf-panel .table-wrap td { display: block; padding: 0; border: 0; text-align: left !important; white-space: normal; min-width: 0; overflow-wrap: anywhere; }
+  .pf-panel .table-wrap td[data-label]:not([data-label=""])::before { content: attr(data-label); display: block; font-size: 10.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 1px; }
+  .pf-panel .table-wrap td:first-child { grid-column: 1 / -1; }
+  .pf-panel .table-wrap td:first-child::before { display: none; }
+  .pf-panel .table-wrap td[colspan] { grid-column: 1 / -1; }
+  .pf-bar-row { grid-template-columns: 1fr; gap: 4px; }
+}
+.pf-c10 { --pf: #0d9488; } .pf-c11 { --pf: #db2777; }
+.dv .pf-table td:not(:first-child), .dv .pf-table th:not(:first-child) { white-space: nowrap; overflow-wrap: normal; padding-left: 8px; padding-right: 8px; }
+.dv .pf-table td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 150px; }
+@media (max-width: 700px) { .dv .pf-table td:not(:first-child) { white-space: normal; overflow-wrap: anywhere; } }
+@media (max-width: 700px) { .pf-donut .dc-svg { min-width: 0; } .pf-donut { overflow: visible; } }
+@media (max-width: 700px) { .pf-panel .table-wrap td:first-child[data-label]::before { display: none !important; } }
+.dv-tools { min-width: 0; max-width: 100%; }
+.dv-seg { min-width: 0; }
+@media (max-width: 700px) { .dv-card-head > .dv-tools { flex: 1 1 100%; } }

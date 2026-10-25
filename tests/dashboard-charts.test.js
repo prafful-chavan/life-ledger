@@ -135,4 +135,19 @@ assert.ok(Ch.bar({ pct: 10, markers: [{ pct: 80, cls: "m" }] }).includes("left:8
 const st = Ch.stack([{ label: "A", value: 300, cls: "a" }, { label: "B", value: 100, cls: "b" }, { label: "Z", value: 0, cls: "z" }, { label: "N", value: -5, cls: "n" }], "split");
 assert.ok(st.includes("width:75%") && st.includes("width:25%") && !st.includes('class="z"') && !st.includes('class="n"')); assert.strictEqual(Ch.stack([], "x"), ""); assert.strictEqual(Ch.stack([{ label: "a", value: 0 }], "x"), ""); assert.ok(Ch.stack([{ label: "<x>", value: 1 }], "t").includes('title="&lt;x&gt;"'));
 
+// ── donut ──
+{
+  const items = [{ key: "a", label: "Mutual <funds>", value: 600, cls: "s0", text: "₹6" }, { key: "b", label: "Stocks", value: 300, cls: "s1" }, { key: "c", label: "Zero", value: 0, cls: "s2" }, { key: "d", label: "Negative", value: -5, cls: "s3" }, { key: "e", label: "Gold", value: 100, cls: "s4" }];
+  const svg = Ch.donut({ items, top: "₹10L", bottom: "total <x>", label: "Mix <t>" });
+  noNaN(svg); assert.strictEqual((svg.match(/<path class="s\d"/g) || []).length, 3, "zero and negative values are not drawn"); inside(svg, 260, 260); noOverlap(svg, "donut centre");
+  assert.ok(svg.includes("Mutual &lt;funds&gt; · ₹6 · 60%") && svg.includes("Stocks · 30%") && svg.includes("Gold · 10%"), "each slice names itself and its share"); assert.ok(svg.includes('aria-label="Mix &lt;t&gt;"') && svg.includes("total &lt;x&gt;"));
+  // the slices fill the ring: the first starts at the top, the last ends where the first began
+  const ds = [...svg.matchAll(/<path class="s\d" data-key="\w" d="M([\d.]+) ([\d.]+)A[\d. ]+ 0 (\d) 1 ([\d.]+) ([\d.]+)L/g)].map((m) => ({ x0: +m[1], y0: +m[2], big: +m[3], x1: +m[4], y1: +m[5] }));
+  assert.ok(Math.abs(ds[0].x0 - 130) < 0.2 && ds[0].y0 < 20, "the first slice starts at twelve o'clock"); assert.strictEqual(ds[0].big, 1, "a slice over half the ring takes the long way round"); assert.strictEqual(ds[1].big, 0);
+  assert.ok(Math.abs(ds[0].x1 - ds[1].x0) < 0.2 && Math.abs(ds[1].x1 - ds[2].x0) < 0.2 && Math.abs(ds[2].x1 - ds[0].x0) < 0.3 && Math.abs(ds[2].y1 - ds[0].y0) < 0.3, "slices meet end to end and close the ring");
+  const one = Ch.donut({ items: [{ key: "a", label: "All", value: 5, cls: "s0" }] }); assert.ok(one.includes("<circle") && !one.includes("<path"), "one slice is a plain ring"); noNaN(one);
+  assert.strictEqual(Ch.donut({ items: [] }), ""); assert.strictEqual(Ch.donut({ items: [{ key: "a", label: "x", value: 0, cls: "s" }] }), "");
+  assert.ok(Ch.donut({ items, size: 100 }).includes('viewBox="0 0 100 100"'));
+}
+
 console.log("dashboard-charts: all checks passed");

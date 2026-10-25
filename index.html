@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.33" />
+    <link rel="stylesheet" href="layout.css?v=1.8.36" />
     <script defer src="script-gate.js?v=1.0.1"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -45,13 +45,15 @@
     <script defer src="salary-core.js?v=1.0.1"></script>
     <script defer src="salary-insights-core.js?v=1.0.0"></script>
     <script defer src="spending-insights-core.js?v=1.0.2"></script>
-    <script defer src="dashboard-settings.js?v=1.0.0"></script>
-    <script defer src="dashboard-charts.js?v=1.0.3"></script>
+    <script defer src="dashboard-settings.js?v=1.0.1"></script>
+    <script defer src="dashboard-charts.js?v=1.0.4"></script>
+    <script defer src="portfolio-core.js?v=1.0.0"></script>
+    <script defer src="portfolio-views.js?v=1.0.1"></script>
     <script defer src="dashboard-views.js?v=1.0.2"></script>
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.134"></script>
+    <script defer src="app.js?v=1.0.136"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -329,6 +331,16 @@
           </div>
 
           <div class="metric-grid" id="metricGrid"></div>
+
+          <section class="panel large-panel pf-panel" id="portfolioPanel" aria-labelledby="portfolioTitle">
+            <div class="panel-header">
+              <div>
+                <h3 id="portfolioTitle">Portfolio mix</h3>
+                <p>What you hold, who holds it, and how the mix compares with a standard reference. Information from your own records, not advice.</p>
+              </div>
+            </div>
+            <div id="portfolioMix" class="dv"></div>
+          </section>
 
           <div class="dashboard-layout">
             <section class="panel large-panel">

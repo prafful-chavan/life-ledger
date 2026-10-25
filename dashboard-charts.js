@@ -272,6 +272,32 @@
     return `<div class="dc-heat" role="table" aria-label="${esc(o.label || "Heat grid")}">${head}${body}</div>`;
   }
 
+  /**
+   * A ring chart. items = [{ key, label, value, cls }] (positive values only are drawn; cls styles the slice). The centre shows two
+   * lines of text. Each slice carries data-key and a <title> with its label, value text (item.text) and share.
+   */
+  function donut(o) {
+    const items = (o.items || []).filter((i) => i.value > 0), total = items.reduce((t, i) => t + i.value, 0);
+    const size = o.size || 260, c = size / 2, outer = c - 6, inner = outer * (o.hole || 0.62);
+    if (!(total > 0)) return "";
+    const pt = (r, a) => [r1(c + r * Math.sin(a)), r1(c - r * Math.cos(a))];
+    let angle = 0, body = "";
+    for (const it of items) {
+      const sweep = (it.value / total) * Math.PI * 2, tip = `${esc(it.label)}${it.text ? " · " + esc(it.text) : ""} · ${r1((it.value / total) * 100)}%`;
+      if (items.length === 1) {
+        body += `<circle class="${esc(it.cls)}" data-key="${esc(it.key)}" cx="${c}" cy="${c}" r="${r1((outer + inner) / 2)}" fill="none" stroke-width="${r1(outer - inner)}"><title>${tip}</title></circle>`;
+      } else {
+        const a0 = angle, a1 = angle + sweep, big = sweep > Math.PI ? 1 : 0;
+        const [x0, y0] = pt(outer, a0), [x1, y1] = pt(outer, a1), [x2, y2] = pt(inner, a1), [x3, y3] = pt(inner, a0);
+        body += `<path class="${esc(it.cls)}" data-key="${esc(it.key)}" d="M${x0} ${y0}A${r1(outer)} ${r1(outer)} 0 ${big} 1 ${x1} ${y1}L${x2} ${y2}A${r1(inner)} ${r1(inner)} 0 ${big} 0 ${x3} ${y3}Z"><title>${tip}</title></path>`;
+      }
+      angle += sweep;
+    }
+    if (o.top) body += `<text class="dc-donut-top" x="${c}" y="${c - 4}" text-anchor="middle">${esc(o.top)}</text>`;
+    if (o.bottom) body += `<text class="dc-donut-sub" x="${c}" y="${c + 16}" text-anchor="middle">${esc(o.bottom)}</text>`;
+    return `<svg class="dc-svg dc-donut" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(o.label || "Share of the total")}">${body}</svg>`;
+  }
+
   /** A tiny trend line with a soft area. values = numbers, oldest first. */
   function sparkline(values, o) {
     const w = (o && o.width) || 96, h = (o && o.height) || 26, list = (values || []).filter((v) => Number.isFinite(v));
@@ -295,5 +321,5 @@
     return `<div class="dc-stack" role="img" aria-label="${esc(label || "")}">${list.map((p) => `<i class="${esc(p.cls || "")}" style="width:${r1((p.value / total) * 100)}%" title="${esc(p.label)}"></i>`).join("")}</div>`;
   }
 
-  return { esc, short, niceMax, niceTicks, labelStep, placeLabels, textWidth, monthLabel, monthShort, timeline, columns, bridge, ladder, heatmap, sparkline, bar, stack };
+  return { esc, short, niceMax, niceTicks, labelStep, placeLabels, textWidth, monthLabel, monthShort, timeline, columns, bridge, ladder, heatmap, donut, sparkline, bar, stack };
 });

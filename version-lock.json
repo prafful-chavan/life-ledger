@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.134",
-    "sha256": "1130b49d31e993426a3e023b80eca317704b2bfe14b4c2552dd018f4835b28f5"
+    "version": "1.0.136",
+    "sha256": "dd67b85589d0a9cf0b21d9a7ea16c3fbbe34ea7dc58f553be7dcb023808fde26"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -36,12 +36,12 @@
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
   },
   "dashboard-charts.js": {
-    "version": "1.0.3",
-    "sha256": "308182af591fcaeff2b0b9023f8bf1925d0456e2080a37e2807c854253785977"
+    "version": "1.0.4",
+    "sha256": "89622eee4d6cc2ecf476b0a58bcf8f13c25fbf4a2bd88d1761c7f415590a6900"
   },
   "dashboard-settings.js": {
-    "version": "1.0.0",
-    "sha256": "8e06edfdaaaaef66034c44a00c7114bf68f0ab9c3804943c21cd3bba247fa313"
+    "version": "1.0.1",
+    "sha256": "1a4dca1490112c115a37a092e108c89f39f1ae69e6e9b1a194e79a49eaa649c1"
   },
   "dashboard-views.js": {
     "version": "1.0.2",
@@ -80,8 +80,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.33",
-    "sha256": "5e8c1423679a6a25e0e2c4864c431cae1c953b5d88f0795745a90e3eff496e5d"
+    "version": "1.8.36",
+    "sha256": "bd4fbbfe607974de79fd119f77330e68a0ee8a555265a16e2fae5bbda9d980ee"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -110,6 +110,14 @@
   "networth-weekly.js": {
     "version": "1.0.0",
     "sha256": "277383bc4d488b274fad195da17f2caeeb63861f17cf6d788ad772f62d6a98e3"
+  },
+  "portfolio-core.js": {
+    "version": "1.0.0",
+    "sha256": "63cbb6f7baf20db751926c5a5aa5adfd2a6a8f69749bbaa2fe1eadab4731febf"
+  },
+  "portfolio-views.js": {
+    "version": "1.0.1",
+    "sha256": "3a956b731fcce96e82ccc01272e57c192bef907c3309b305c814da598de47c41"
   },
   "price-history.js": {
     "version": "1.0.1",

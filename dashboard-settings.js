@@ -2,7 +2,8 @@
  * Life Ledger — the household's choices for the Salary and Spending dashboards (pure; no DOM, no network).
  *
  * { salary:   { marks: { person: { "YYYY-MM": "oneoff" | "regular" } }, inflationPct },
- *   spending: { budgets: { category: monthlyRupees }, fixed: { category: true | false } } }
+ *   spending: { budgets: { category: monthlyRupees }, fixed: { category: true | false } },
+ *   portfolio: { reference: "target" | "balanced" | "aggressive" | "conservative" | "age", includeOther: boolean } }
  *
  * `clean` accepts anything (an old vault, a hand-edited file) and returns only what is valid, so the dashboards never meet a
  * bad value. The `set…` functions return a new settings object and never change the one they are given.
@@ -18,6 +19,8 @@
   const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
   const validYm = (ym) => /^\d{4}-(0[1-9]|1[0-2])$/.test(ym);
   const MARKS = ["oneoff", "regular"];
+  const REFERENCES = ["target", "balanced", "aggressive", "conservative", "age"];
+  const DEFAULT_REFERENCE = "target";
 
   /** A yearly price rise from text or a number: a finite value from 0 to 30, else null. */
   function parseInflation(value) {
@@ -52,7 +55,9 @@
     const fixed = {};
     if (isObject(spend.fixed)) for (const [cat, v] of Object.entries(spend.fixed)) if (typeof v === "boolean" && cat.trim()) fixed[cat] = v;
     const inflation = parseInflation(sal.inflationPct);
-    return { salary: { marks, inflationPct: inflation === null ? DEFAULT_INFLATION_PCT : inflation }, spending: { budgets, fixed } };
+    const pf = isObject(src.portfolio) ? src.portfolio : {};
+    const portfolio = { reference: REFERENCES.includes(pf.reference) ? pf.reference : DEFAULT_REFERENCE, includeOther: pf.includeOther === true };
+    return { salary: { marks, inflationPct: inflation === null ? DEFAULT_INFLATION_PCT : inflation }, spending: { budgets, fixed }, portfolio };
   }
 
   /** Mark a month as a one-off, as regular, or (mark = null) back to the automatic rule. */
@@ -91,5 +96,14 @@
     return { ...s, spending: { ...s.spending, fixed } };
   }
 
-  return { INFLATION_MIN, INFLATION_MAX, DEFAULT_INFLATION_PCT, BUDGET_MAX, parseInflation, parseBudget, clean, setMark, setInflation, setBudget, setFixed };
+  /** Choose the reference mix and/or whether other assets (vehicles …) count in the portfolio. Anything invalid is ignored. */
+  function setPortfolio(settings, patch) {
+    const s = clean(settings), p = patch || {};
+    const next = { ...s.portfolio };
+    if (REFERENCES.includes(p.reference)) next.reference = p.reference;
+    if (typeof p.includeOther === "boolean") next.includeOther = p.includeOther;
+    return { ...s, portfolio: next };
+  }
+
+  return { REFERENCES, DEFAULT_REFERENCE, INFLATION_MIN, INFLATION_MAX, DEFAULT_INFLATION_PCT, BUDGET_MAX, parseInflation, parseBudget, clean, setMark, setInflation, setBudget, setFixed, setPortfolio };
 });

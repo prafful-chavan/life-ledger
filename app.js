@@ -565,6 +565,7 @@ function bootstrapApp(initialState) {
     bindModals();
     bindFinanceTabs();
     bindDashboards();
+    bindPortfolio();
     initStockCSVImport();
     bindCareerTabs();
     bindImports();
@@ -4578,6 +4579,7 @@ function renderAll() {
   renderExpenseMix();
   renderNetWorth();
   renderTodayFocus();
+  renderPortfolio();
   renderFinance();
   renderCareer();
   renderGoals();
@@ -5578,6 +5580,54 @@ function bindDashboards() {
     el.addEventListener("change", onChange);
     el.addEventListener("keydown", (event) => { if (event.key === "Enter" && event.target.matches("input[data-act]")) event.target.blur(); });
   }
+}
+
+// ── Portfolio mix (Dashboard) ─────────────────────────────────────────────────────────────────────────────────────────────
+// portfolio-core.js works out the shares, portfolio-views.js draws them; the values come from the same helpers as net worth, so the
+// total here is the total everywhere else.
+const PFC = (typeof window !== "undefined" && window.LifeLedgerPortfolio) || (typeof require === "function" ? require("./portfolio-core.js") : null);
+const PFV = (typeof window !== "undefined" && window.LifeLedgerPortfolioViews) || (typeof require === "function" ? require("./portfolio-views.js") : null);
+const portfolioUi = { view: "kind", open: new Set() };
+function portfolioHelpers() {
+  return {
+    mfValue: (txns) => {
+      let latest = toNumber(txns[0].latestNav || txns[0].nav || 0);
+      txns.forEach((t) => { if (t.latestNav) latest = toNumber(t.latestNav); });
+      return Math.max(0, calcMfCostBasis(txns).netUnits) * latest;
+    },
+    stockValue: (txns) => calcStockTotalValue(txns),
+    usStockValue: (txns) => calcStockTotalValue(txns) * getUsdInrRate(),
+    goldValue: goldItemValue,
+  };
+}
+function portfolioModel() {
+  const settings = dashboardSettings().portfolio;
+  const alloc = PFC.allocate(PFC.positionsOf(state, portfolioHelpers()), { groupOf: window.LifeLedgerAdvisor.groupOf, includeOther: settings.includeOther });
+  const today = todayISO();
+  const ages = [state.people?.me?.dob, state.people?.wife?.dob].map((dob) => (dob ? PFC.ageOn(dob, today) : null)).filter((a) => a !== null);
+  const ownTarget = state.advisor?.profile?.target;
+  let ref = PFC.referenceFor(settings.reference, { target: ownTarget || window.LifeLedgerAdvisor.DEFAULT_PROFILE?.target, ages });
+  // Until a target is set in the Advisor profile, "My target" is the advisor's default mix, and says so
+  if (ref && settings.reference === "target" && !ownTarget) ref = { ...ref, label: "Default target", note: "The advisor's default mix, because no target is set yet. Set your own in the Advisor profile." };
+  return { alloc, ref, rows: PFC.compare(alloc.groups, ref, alloc.total), ui: { view: portfolioUi.view, reference: settings.reference, open: [...portfolioUi.open], includeOther: settings.includeOther } };
+}
+function renderPortfolio() {
+  const el = document.getElementById("portfolioMix");
+  if (!el || !PFV || !window.LifeLedgerAdvisor) return;
+  el.innerHTML = PFV.portfolio(portfolioModel(), { fmt: dashFmt, names: DASH_NAMES });
+}
+function bindPortfolio() {
+  document.getElementById("portfolioMix")?.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-act]");
+    if (!target) return;
+    const { act, id } = target.dataset;
+    if (act === "pf-view") portfolioUi.view = id === "group" ? "group" : "kind";
+    else if (act === "pf-open") { if (portfolioUi.open.has(id)) portfolioUi.open.delete(id); else portfolioUi.open.add(id); }
+    else if (act === "pf-ref") { state.dashboardSettings = DSET.setPortfolio(state.dashboardSettings, { reference: id }); saveData(true); }
+    else if (act === "pf-other") { state.dashboardSettings = DSET.setPortfolio(state.dashboardSettings, { includeOther: !dashboardSettings().portfolio.includeOther }); saveData(true); }
+    else return;
+    renderPortfolio();
+  });
 }
 
 function renderFinance() {
@@ -7551,17 +7601,17 @@ function calcStockTotalValue(stockList) {
   }, 0);
 }
 
+// One gold item's value: what was typed, else its weight at today's rate for its carat
+function goldItemValue(item) {
+  const val = toNumber(item.value);
+  if (val > 0) return val;
+  const weight = toNumber(item.weightGrams || item.weight);
+  if (weight > 0) return Number((weight * getCaratGoldRate(item.carat)).toFixed(2));
+  return 0;
+}
+
 function calcGoldTotalValue() {
-  return (state.gold || []).reduce((total, item) => {
-    const val = toNumber(item.value);
-    if (val > 0) return total + val;
-    const weight = toNumber(item.weightGrams || item.weight);
-    if (weight > 0) {
-      const rate = getCaratGoldRate(item.carat);
-      return total + Number((weight * rate).toFixed(2));
-    }
-    return total;
-  }, 0);
+  return (state.gold || []).reduce((total, item) => total + goldItemValue(item), 0);
 }
 
 function investmentHoldingsTotal() {

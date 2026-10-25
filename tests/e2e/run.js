@@ -571,6 +571,36 @@ const SCANNER = `(${function scan() {
       check(`dashboards at ${w}px: no tab or table overflows its panel`, fit.bad.length === 0 && fit.page <= 1, JSON.stringify(fit));
     }
     await viewport(1280, 900); await sleep(300);
+    // Portfolio mix on the Dashboard: totals match the rest of the app, the owner pivot adds up, the reference switch works, it fits every width
+    console.log("\nPortfolio mix");
+    await viewport(1280, 900); await sleep(300); await view("dashboard"); await sleep(600);
+    const pf = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const snap=LifeLedgerApp.getNetWorthSnapshot(); const el=document.getElementById('portfolioMix');
+      out.rendered=!!el&&/holding type/i.test(el.innerText)&&!!el.querySelector('svg.dc-donut'); const num=(t)=>Number(String(t).replace(/[^0-9.]/g,''));
+      const totalRow=()=>[...el.querySelectorAll('tr.pf-total td')].map(td=>td.innerText.trim()); out.totalInvest=num(totalRow().slice(-2)[0]);
+      const shares=[...el.querySelectorAll('tr.pf-main td:last-child span')].map(s=>num(s.textContent)); out.shareSum=Math.round(shares.reduce((a,b)=>a+b,0)*10)/10;
+      const owners=[...el.querySelectorAll('tr.pf-total td')].slice(1,-2).map(td=>num(td.innerText)); out.ownerSum=owners.reduce((a,b)=>a+b,0);
+      out.snapAssets=snap.totalAssets; out.otherAndVehicles=(snap.others||0);
+      el.querySelector('[data-act="pf-other"]')?.click(); await w(250); out.totalAll=num([...el.querySelectorAll('tr.pf-total td')].slice(-2)[0].innerText);
+      el.querySelector('[data-act="pf-other"]')?.click(); await w(250);
+      out.settingSaved=((LifeLedgerApp.getState().dashboardSettings||{}).portfolio||{}).includeOther;
+      const before=el.querySelector('.pf-bar-row:nth-child(2) span').textContent; el.querySelector('[data-act="pf-ref"][data-id="aggressive"]').click(); await w(250); out.refBefore=before; out.refAfter=el.querySelector('.pf-bar-row:nth-child(2) span').textContent; out.refSaved=((LifeLedgerApp.getState().dashboardSettings||{}).portfolio||{}).reference;
+      el.querySelector('[data-act="pf-ref"][data-id="target"]').click(); await w(200);
+      el.querySelector('[data-act="pf-open"][data-id="mf"]').click(); await w(250); out.opened=!!el.querySelector('.pf-sub'); el.querySelector('[data-act="pf-open"][data-id="mf"]').click(); await w(200);
+      el.querySelector('[data-act="pf-view"][data-id="group"]').click(); await w(250); out.groupView=/what it is in/i.test(el.innerText)&&/equity/i.test(el.innerText); el.querySelector('[data-act="pf-view"][data-id="kind"]').click(); await w(200);
+      out.nan=/NaN|undefined|\\[object/.test(el.innerText); return JSON.stringify(out); })()`));
+    check("portfolio: the investments total is the net-worth total less other assets and vehicles; with them it equals total assets", near(pf.totalAll, pf.snapAssets, 1) && pf.totalInvest <= pf.totalAll && pf.rendered, JSON.stringify(pf));
+    check("portfolio: shares add to 100% and the owner columns add to the total", Math.abs(pf.shareSum - 100) <= 0.6 && near(pf.ownerSum, pf.totalInvest, 2) && !pf.nan, JSON.stringify(pf));
+    check("portfolio: choices (reference mix, other assets) are saved; rows open; the exposure view works", pf.refSaved === "aggressive" && pf.refBefore !== pf.refAfter && pf.opened && pf.groupView, JSON.stringify(pf));
+    const pfk = JSON.parse(await cdp.eval(`(()=>{ const snap=LifeLedgerApp.getNetWorthSnapshot(); const m=window.portfolioModel().alloc; const by=Object.fromEntries(m.kinds.map(k=>[k.key,k.value])); const map={mf:'mutualFunds',stock:'stocks',us:'usStocks',gold:'gold',silver:'silver',crypto:'crypto',fd:'fd',epf:'epf',ppf:'ppf',bonds:'bonds',bank:'bankSaving'}; const diffs={}; for(const [k,f] of Object.entries(map)) { const a=by[k]||0, b=snap[f]||0; if (Math.abs(a-b)>1) diffs[k]=[a,b]; } return JSON.stringify({diffs, n:Object.keys(by).length}); })()`));
+    check("portfolio: every kind's value equals the same figure the net-worth snapshot uses (mutual funds, stocks, US stocks, gold, FDs …)", Object.keys(pfk.diffs).length === 0 && pfk.n >= 5, JSON.stringify(pfk));
+    for (const w of [390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(400);
+      const fit = await cdp.eval(`(()=>{ const p=document.getElementById('portfolioPanel'); const bad=[]; if (p.scrollWidth-p.clientWidth>1) bad.push('panel '+(p.scrollWidth-p.clientWidth)); p.querySelectorAll('.table-wrap').forEach(t=>{ if (t.scrollWidth>t.clientWidth+1) bad.push('table '+(t.scrollWidth-t.clientWidth)); });
+        if (innerWidth>=1024) p.querySelectorAll('tr.pf-main').forEach(r=>{ if (r.offsetHeight>64) bad.push('a row wraps its numbers ('+r.offsetHeight+'px)'); });
+        const d=p.querySelector('svg.dc-donut'); if (d && d.getBoundingClientRect().width>innerWidth) bad.push('ring wider than the screen'); return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, bad}); })()`);
+      const fj = JSON.parse(fit); check(`portfolio at ${w}px: fits, no wrapped numbers, ring inside the screen`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await viewport(1280, 900); await sleep(300);
     // The SQLite and spreadsheet readers are served from this site and still run under the Content-Security-Policy
     const vend = JSON.parse(await cdp.eval(`(async()=>{ const out={}; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='vendor/sqljs-1.8.0/sql-wasm.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
       const SQL=await window.initSqlJs({locateFile:(f)=>'vendor/sqljs-1.8.0/'+f}); const db=new SQL.Database(); db.run('create table t(a); insert into t values (41),(1);'); out.sum=db.exec('select sum(a) from t')[0].values[0][0];
