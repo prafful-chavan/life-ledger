@@ -84,6 +84,7 @@ function syncMeta_() {
 function syncHandle_(req) {
   var op = req && req.op;
   if (!op) return { ok: false, error: "missing op" };
+  if (op === "fitnessIngest") return fitnessIngest_(req);   // iPhone Shortcut upload: guarded by its own key, not the vault token
   if (!req.token) return { ok: false, error: "missing token" };
   if (!syncTokenOk_(req.token)) return { ok: false, error: "unauthorized" };
   // Only writes need the global lock. Reads (pull, backups) and the slow Dropbox lookups must NOT hold it,
@@ -101,6 +102,8 @@ function syncHandle_(req) {
       if (!state.tokenHash) return { ok: false, error: "unauthorized" };
       return spendingHandle_(op, req.source, req.fileId);
     }
+
+    if (op === "fitnessPull") return fitnessPull_(folder, req.since);
 
     if (op === "pull") {
       if (!state.vault) return { ok: true, rev: 0, empty: true };
