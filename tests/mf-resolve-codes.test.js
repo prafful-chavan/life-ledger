@@ -35,5 +35,10 @@ global.fetch = async (url) => {
   global.fetch = async () => { throw new Error("must not be called"); };
   r = await resolveSchemeCodes(["120828"]);
   assert.strictEqual(r["120828"].schemeCode, 120828, "a six-digit code needs no lookup");
+  // every fund-price call carries a fresh query value, so mfapi.in cannot answer from its cache without the CORS header
+  assert.ok(calls.some((u) => /\/mf\/search\?q=[^&]+&cb=\d+$/.test(u)), "the search call carries cb=");
+  assert.ok(calls.filter((u) => /\/mf\/\d+/.test(u)).every((u) => /[?&]cb=\d+/.test(u)), "scheme calls carry cb=");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "app.js"), "utf8");
+  assert.strictEqual((src.match(/https:\/\/api\.mfapi\.in\//g) || []).length, 1, "app.js builds every mfapi.in address through mfapiUrl()");
   console.log("mf-resolve-codes: all checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });

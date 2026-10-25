@@ -526,6 +526,9 @@ function reconcileGeminiKey() {
 // Career, so neither delays the first screen any more.
 // Served from this site (vendor/, pinned by hash in vendor/VERSIONS.md), not from a third-party CDN: code that runs next to your unlocked data.
 const XLSX_URL = "vendor/xlsx-0.20.3.full.min.js";
+// mfapi.in answers some requests from a cache that leaves out the header browsers need (CORS), so those fail in the page (seen live
+// 2026-10-26). A fresh query value makes it answer from its own server, with the header.
+const mfapiUrl = (path) => `https://api.mfapi.in/${path}${path.includes("?") ? "&" : "?"}cb=${Date.now()}`;
 const INTERVIEW_DB_URL = "interview-db.js?v=1.0.8";
 const scriptLoads = {};
 function loadScriptOnce(src) {
@@ -15261,7 +15264,7 @@ async function resolveSchemeCodes(fundNames, options = {}) {
     // The search endpoint is small and always readable: ask it per fund instead.
     const searchSchemes = async (text) => {
       try {
-        const res = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(text)}`, { signal: AbortSignal.timeout(8000) });
+        const res = await fetch(mfapiUrl(`mf/search?q=${encodeURIComponent(text)}`), { signal: AbortSignal.timeout(8000) });
         const list = res.ok ? await res.json() : [];
         return Array.isArray(list) ? list : [];
       } catch (e) { return []; }
@@ -15324,7 +15327,7 @@ async function resolveSchemeCodes(fundNames, options = {}) {
       for (const { scheme } of topCandidates) {
         let fullSchemeName = scheme.schemeName;
         try {
-          const detailRes = await fetch(`https://api.mfapi.in/mf/${scheme.schemeCode}`, { signal: AbortSignal.timeout(3000) });
+          const detailRes = await fetch(mfapiUrl(`mf/${scheme.schemeCode}`), { signal: AbortSignal.timeout(3000) });
           const detailData = await detailRes.json();
           if (detailData && detailData.meta && detailData.meta.scheme_name) {
             fullSchemeName = detailData.meta.scheme_name;
@@ -15559,7 +15562,7 @@ async function refreshMutualFundNAVs(force = false, silent = false) {
       if (!force && !isNavStale(cached)) return;
 
       try {
-        const response = await fetch(`https://api.mfapi.in/mf/${code}`, { signal: AbortSignal.timeout(5000) });
+        const response = await fetch(mfapiUrl(`mf/${code}`), { signal: AbortSignal.timeout(5000) });
         if (!response.ok) return;
         const json = await response.json();
 
@@ -15964,7 +15967,7 @@ async function fetchHistoricalNAV(schemeCode) {
     return cached.data;
   }
   try {
-    const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}`);
+    const res = await fetch(mfapiUrl(`mf/${schemeCode}`));
     if (!res.ok) return cached?.data || [];
     const json = await res.json();
     if (json?.status === 'SUCCESS' && Array.isArray(json.data) && json.data.length > 0) {
