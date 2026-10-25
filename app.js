@@ -1269,6 +1269,14 @@ function bindNavigation() {
 }
 
 function bindModals() {
+  // (these two used inline onclick handlers, which the Content-Security-Policy does not allow)
+  document.getElementById("chatClearBtn")?.addEventListener("click", () => { if (confirm("Clear chat history?")) { state.chat = []; saveData(); renderChat(); } });
+  document.getElementById("bodyMetricsModalClose2")?.addEventListener("click", () => { document.getElementById("bodyMetricsModal").hidden = true; });
+  document.getElementById("syncLogBody")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-log-filter], [data-log-clear]");
+    if (!button) return;
+    if (button.hasAttribute("data-log-clear")) { systemLogs = []; openSyncLogModal("all"); } else openSyncLogModal(button.dataset.logFilter);
+  });
   document.querySelectorAll("[data-open-modal]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.kind === "gold") {
@@ -3096,12 +3104,8 @@ async function resolveIsinOnline(isin) {
 
   // 2. Secondary: Groww Search API (Master database for Indian securities)
   const growwSearchUrl = `https://groww.in/v1/api/search/v1/entity?app=false&page=0&q=${encodeURIComponent(cleanIsin)}&size=5`;
-  const growwEndpoints = [
-    growwSearchUrl,
-    `https://corsproxy.io/?${encodeURIComponent(growwSearchUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(growwSearchUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(growwSearchUrl)}`
-  ];
+  // No third-party relay sites: a relay sees every ISIN you look up (your holdings) and could return false data.
+  const growwEndpoints = [growwSearchUrl];
 
   for (const url of growwEndpoints) {
     try {
@@ -3133,9 +3137,6 @@ async function resolveIsinOnline(isin) {
   const yahooSearchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(cleanIsin)}`;
   const yahooEndpoints = [
     yahooSearchUrl,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooSearchUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(yahooSearchUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooSearchUrl)}`,
     `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(cleanIsin)}`
   ];
 
@@ -6683,15 +6684,10 @@ async function fetchStockPriceSingleSymbolFast(symbol, isUS = false) {
     } catch {}
   }
 
-  // 2. High-speed Yahoo Chart fetch via resilient public CORS gateways
+  // 2. Yahoo Chart straight from the browser (no third-party relay sites: they would see which securities you hold)
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
   const yahooUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
-  const gateways = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-    `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl2)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`
-  ];
+  const gateways = [yahooUrl, yahooUrl2];
 
   for (const url of gateways) {
     try {
@@ -7834,37 +7830,7 @@ async function fetchLiveGoldPrice(force = false) {
     }
   }
 
-  // Fallback: GoodReturns Mumbai (same source) through public CORS gateways. These relays are slow and flaky, so they only run
-  // when your own proxy (above) could not answer.
-  try {
-    const grUrl = 'https://www.goodreturns.in/gold-rates/mumbai.html';
-    const gateways = [
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(grUrl)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(grUrl)}`
-    ];
-    for (const gw of gateways) {
-      try {
-        const res = await fetch(gw, { signal: AbortSignal.timeout(4000) });
-        if (!res.ok) continue;
-        const gr = parseGoodReturnsGold(await res.text());
-        if (!gr) continue;
-        state.goldPrice = {
-          price24k: gr.price24k,
-          price22k: Number((gr.price24k * (22 / 24)).toFixed(2)),
-          prevClose24k: gr.prevClose24k,
-          prevClose22k: gr.prevClose22k,
-          lastFetched: new Date().toISOString(),
-          source: "goodreturns-mumbai"
-        };
-        recalculateGoldHoldingsValues();
-        persist();
-        renderGold();
-        return state.goldPrice.price24k;
-      } catch {}
-    }
-  } catch (e) {
-    console.warn("[Gold API] GoodReturns attempt failed:", e);
-  }
+  // (No fallback through public relay sites: a relay could return a false gold rate, which would change your net worth.)
 
   // 2. Direct real-time endpoint: api.gold-api.com (LBMA spot converted using live USD/INR FX)
   try {
@@ -14944,10 +14910,10 @@ function openSyncLogModal(filterLevel = "all") {
 
   body.innerHTML = `
     <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
-      <button class="owner-pill ${filterLevel === 'all' ? 'active' : ''}" type="button" onclick="openSyncLogModal('all')">All Logs (${systemLogs.length})</button>
-      <button class="owner-pill ${filterLevel === 'issues' ? 'active' : ''}" type="button" onclick="openSyncLogModal('issues')">⚠️ Issues &amp; Warnings (${systemLogs.filter(l => l.level==='error'||l.level==='warning').length})</button>
-      <button class="owner-pill ${filterLevel === 'sync' ? 'active' : ''}" type="button" onclick="openSyncLogModal('sync')">☁ Drive Sync History</button>
-      <button class="secondary-button" type="button" style="margin-left: auto; padding: 4px 10px; font-size: 0.75rem;" onclick="systemLogs=[]; openSyncLogModal('all');">🗑️ Clear Log</button>
+      <button class="owner-pill ${filterLevel === 'all' ? 'active' : ''}" type="button" data-log-filter="all">All Logs (${systemLogs.length})</button>
+      <button class="owner-pill ${filterLevel === 'issues' ? 'active' : ''}" type="button" data-log-filter="issues">⚠️ Issues &amp; Warnings (${systemLogs.filter(l => l.level==='error'||l.level==='warning').length})</button>
+      <button class="owner-pill ${filterLevel === 'sync' ? 'active' : ''}" type="button" data-log-filter="sync">☁ Drive Sync History</button>
+      <button class="secondary-button" type="button" style="margin-left: auto; padding: 4px 10px; font-size: 0.75rem;" data-log-clear>🗑️ Clear Log</button>
     </div>
     <div class="table-wrap" style="max-height: 400px; overflow-y: auto;">
       ${logsToDisplay.length === 0 ? '<div style="padding: 20px; text-align: center; opacity: 0.6;">No log entries captured yet.</div>' : `

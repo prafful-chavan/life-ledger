@@ -14,6 +14,12 @@
   else {
     const gate = factory(root, {});
     root.LifeLedgerScriptGate = gate;
+    // Never run inside someone else's frame (a hidden frame could trick a tap on your own screen). GitHub Pages cannot send
+    // X-Frame-Options, so the page checks for itself.
+    if (root.top !== root.self) {
+      try { root.document.documentElement.innerHTML = ""; } catch { /* nothing to clear */ }
+      throw new Error("Life Ledger does not run inside a frame.");
+    }
     // Install: route every fetch through the governor (script.google.com calls are queued; the rest pass through).
     if (root.fetch && !root.__scriptGateInstalled) {
       root.__scriptGateInstalled = true;

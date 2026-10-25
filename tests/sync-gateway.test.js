@@ -58,6 +58,7 @@ function makeGatewayRuntime() {
     files, locks,
     call: (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).t),
     meta: () => JSON.parse(vm.runInContext("JSON.stringify(syncMeta_())", ctx)),
+    run: (code) => vm.runInContext(code, ctx),
   };
 }
 
@@ -190,6 +191,25 @@ function makeDevice(gw, name) {
   gw.call({ op: "push", token: anyToken, baseRev: 0, vault: { ciphertext: "x" } });
   gw.call({ op: "snapshotNow", token: anyToken });
   assert.strictEqual(gw.locks.n, before + 2, "push and snapshotNow still take the lock");
+
+  // An empty gateway cannot be claimed with a made-up token; only a proper 64-character lower-case hex token is accepted
+  {
+    const fresh = makeGatewayRuntime();
+    const vaultBody = { ciphertext: "c", entryCount: 1 };
+    for (const weak of ["x", "password", "A".repeat(64), "a".repeat(63), "a".repeat(65), "g".repeat(64), "a".repeat(64) + "\n", "../" + "a".repeat(61), " " + "a".repeat(63)]) {
+      assert.strictEqual(fresh.call({ op: "push", token: weak, baseRev: 0, vault: vaultBody }).error, "unauthorized", "refused: " + JSON.stringify(weak));
+    }
+    assert.strictEqual(fresh.meta().exists, false, "nothing was stored by the refused attempts");
+    assert.strictEqual(fresh.call({ op: "pull", token: "short" }).error, "unauthorized"); assert.strictEqual(fresh.call({ op: "listBackups", token: "short" }).error, "unauthorized"); assert.strictEqual(fresh.call({ op: "spendingMeta", token: "short", source: "me" }).error, "unauthorized");
+    assert.strictEqual(fresh.call({ op: "push" }).error, "missing token"); assert.strictEqual(fresh.call({ token: "a".repeat(64) }).error, "missing op");
+    const good = "a1".repeat(32);
+    assert.strictEqual(fresh.call({ op: "push", token: good, baseRev: 0, vault: vaultBody }).ok, true, "a proper token claims it");
+    assert.strictEqual(fresh.call({ op: "pull", token: "b2".repeat(32), sinceRev: 0 }).error, "unauthorized", "another proper token is then refused");
+    assert.strictEqual(fresh.call({ op: "pull", token: good, sinceRev: 0 }).ok, true);
+    // the comparison itself
+    assert.strictEqual(fresh.run('syncSame_("abc","abc")'), true); assert.strictEqual(fresh.run('syncSame_("abc","abd")'), false); assert.strictEqual(fresh.run('syncSame_("abc","ab")'), false); assert.strictEqual(fresh.run('syncSame_("","")'), true); assert.strictEqual(fresh.run('syncSame_("a".repeat(64),"a".repeat(63)+"b")'), false);
+    assert.strictEqual(fresh.run('syncTokenOk_("' + good + '")'), true); assert.strictEqual(fresh.run('syncTokenOk_("")'), false); assert.strictEqual(fresh.run('syncTokenOk_(null)'), false);
+  }
 
   console.log("sync-gateway tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

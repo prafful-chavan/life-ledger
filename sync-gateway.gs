@@ -38,6 +38,20 @@ function syncHash_(token) {
   return raw.map(function (b) { return ("0" + (b & 0xff).toString(16)).slice(-2); }).join("");
 }
 
+// The token is 64 lowercase hex characters (the app derives it that way). Anything else is refused, so nobody can claim an empty
+// gateway with a made-up token, and tokens are compared without stopping at the first difference.
+function syncTokenOk_(token) {
+  return /^[0-9a-f]{64}$/.test(String(token));
+}
+
+function syncSame_(a, b) {
+  a = String(a); b = String(b);
+  if (a.length !== b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 function syncBackups_(folder) {
   var out = [];
   var it = folder.getFiles();
@@ -69,6 +83,7 @@ function syncHandle_(req) {
   var op = req && req.op;
   if (!op) return { ok: false, error: "missing op" };
   if (!req.token) return { ok: false, error: "missing token" };
+  if (!syncTokenOk_(req.token)) return { ok: false, error: "unauthorized" };
   // Only writes need the global lock. Reads (pull, backups) and the slow Dropbox lookups must NOT hold it,
   // or one device's spending import makes every other device's sync wait and time out.
   var lock = (op === "push" || op === "snapshotNow") ? LockService.getScriptLock() : null;
@@ -77,7 +92,7 @@ function syncHandle_(req) {
     var folder = syncFolder_();
     var state = syncReadState_(folder);
     var h = syncHash_(req.token);
-    if (state.tokenHash && state.tokenHash !== h) return { ok: false, error: "unauthorized" };
+    if (state.tokenHash && !syncSame_(state.tokenHash, h)) return { ok: false, error: "unauthorized" };
 
     // Spending Tracker backups (Dropbox → browser). Same token guard as vault sync.
     if (op === "spendingMeta" || op === "spendingLatest") {

@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.129",
-    "sha256": "5b560ed0d8f4fcfc568737a87b60e254c21ec8220e3d99e7be434005052a22a9"
+    "version": "1.0.130",
+    "sha256": "3922a702cc1c9f0a6c3a08958b8c33e0a2b1fae4571df890c671da976d5085d3"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -136,8 +136,8 @@
     "sha256": "d7fc8309e9776a1c83317c61df4345a1eec38bbd123d3fdec82697079c3adb7b"
   },
   "script-gate.js": {
-    "version": "1.0.0",
-    "sha256": "da75b5982dc7083f868b099f154e9aaf77e971ef6d7bf0d9b147484b08bf8df3"
+    "version": "1.0.1",
+    "sha256": "53a4e7d1d54b0c630b31fe8817498437dfdda4adf352b1065d7866dcd7151a6d"
   },
   "spending-core.js": {
     "version": "1.0.5",

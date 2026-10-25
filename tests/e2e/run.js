@@ -122,6 +122,9 @@ const SCANNER = `(${function scan() {
     }
   });
   await Promise.all([cdp.send("Page.enable"), cdp.send("Runtime.enable"), cdp.send("Network.enable")]);
+  // Live market prices would change the made-up household's numbers in the middle of a run (and differ from day to day), so the
+  // price services are blocked: the fixture's own gold rate and prices stay in force and the totals can be checked exactly.
+  await cdp.send("Network.setBlockedURLs", { urls: ["*://api.gold-api.com/*", "*://open.er-api.com/*", "*://api.frankfurter.dev/*", "*://query1.finance.yahoo.com/*", "*://query2.finance.yahoo.com/*", "*://groww.in/*"] });
   const viewport = (width, height) => cdp.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: width < 700 });
   const goto = async (url) => { await cdp.send("Page.navigate", { url }); await sleep(2500); };
   const noAnim = () => cdp.eval(`(()=>{let s=document.getElementById('__noanim');if(!s){s=document.createElement('style');s.id='__noanim';s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s)}})()`);
