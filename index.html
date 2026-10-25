@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.32" />
+    <link rel="stylesheet" href="layout.css?v=1.8.33" />
     <script defer src="script-gate.js?v=1.0.1"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -51,7 +51,7 @@
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.131"></script>
+    <script defer src="app.js?v=1.0.132"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -2577,6 +2577,20 @@
           <button class="secondary-button" type="button" id="spendingSyncNowButton" style="width: 100%;">⟳ Import now</button>
           <button class="secondary-button" type="button" id="spendingResetWifeButton" style="width: 100%; margin-top: 8px;">↺ Re-import wife's expenses</button>
           <button class="secondary-button" type="button" id="spendingRebuildButton" style="width: 100%; margin-top: 8px;">🛠 Rebuild all expenses from both Spending apps</button>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section" id="privacySection">
+          <h4>🔐 Privacy &amp; your data</h4>
+          <ul class="privacy-list">
+            <li><strong>Encrypted before it leaves this device.</strong> Your records are locked with your password (AES-256) before they are saved or synced. Google Drive and the sync service only ever hold the locked copy, and nobody, including the app's author, can open it without your password.</li>
+            <li><strong>What does leave your devices:</strong> the locked vault (to your own Google account), the names or ISIN codes of securities when prices are looked up (never amounts), and, only after you say yes, a summary of your finances to the AI provider you choose.</li>
+            <li><strong>Not done:</strong> no ads, no analytics, no selling or sharing of your data.</li>
+            <li><strong>This device:</strong> “Remember this device” keeps a key (not your password) for 30 days; sign out to remove it.</li>
+            <li><strong>Your copy:</strong> “Export backup” saves everything as a file you own. That file is not encrypted, so keep it private.</li>
+            <li><strong>Not financial or tax advice.</strong> Figures and ideas are information from your own records. Check with a registered adviser or a chartered accountant before you act.</li>
+          </ul>
         </div>
 
         <div class="settings-divider"></div>

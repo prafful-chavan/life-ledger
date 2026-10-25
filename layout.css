@@ -1015,3 +1015,6 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .dv-kpis { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
 .dc-cut-label, .dc-value, .dc-end-label, .dc-ref-label { paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
 .dv-swatch.dc-rate { background-color: var(--good); }
+.privacy-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.privacy-list strong { color: var(--ink); }
+.settings-consent { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }

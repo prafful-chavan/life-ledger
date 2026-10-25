@@ -2033,7 +2033,11 @@ function updateAiModeBadge() {
 function bindExport() {
   document.querySelectorAll("#exportDataButton, #settingsExportDataButton").forEach(btn => {
     btn.addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      if (!confirm("This backup file is NOT encrypted: anyone who gets it can read all your finances. Keep it somewhere private and delete it when you no longer need it.\n\nSave the backup?")) return;
+      // The AI keys are not part of a backup: they stay in the vault only
+      const copy = JSON.parse(JSON.stringify(state));
+      if (copy.advisor) delete copy.advisor.aiKeys;
+      const blob = new Blob([JSON.stringify(copy, null, 2)], { type: "application/json" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.download = `life-ledger-backup-${todayISO()}.json`;

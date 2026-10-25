@@ -587,6 +587,17 @@ const SCANNER = `(${function scan() {
     check("AI: without a yes nothing is sent and nothing is saved, and the question names what is sent", /not approved/.test(ai.declined) && ai.sentAfterNo === 0 && !ai.consentAfterNo && /net worth, holdings, income/.test(ai.question), JSON.stringify(ai));
     check("AI: after a yes the request goes out, the permission is saved and not asked again", ai.accepted === "ok" && ai.sentAfterYes === 1 && ai.consentAfterYes === "saved" && ai.askedAgain === 0, JSON.stringify(ai));
     check("AI: Settings shows the permission and Withdraw clears it", /You allowed sending/.test(ai.line) && ai.afterWithdraw && /Nothing is sent/.test(ai.lineAfter), JSON.stringify(ai));
+    // Backups: a warning before the file is saved, and no AI keys inside it
+    const exp = JSON.parse(await cdp.eval(`(async()=>{ const out={}; const S=LifeLedgerApp.getState(); S.advisor={...(S.advisor||{}), aiKeys:{gemini:'SECRET-AI-KEY-123', geminiAt:1}};
+      const oc=window.confirm, ou=URL.createObjectURL; let blobText=null; const asked=[];
+      URL.createObjectURL=(b)=>{ b.text().then(t=>{blobText=t}); return 'blob:x'; };
+      window.confirm=(m)=>{asked.push(m); return false}; document.getElementById('exportDataButton').click(); await new Promise(r=>setTimeout(r,300)); out.declinedSaved = blobText!==null; out.warning=(asked[0]||'').slice(0,60);
+      window.confirm=(m)=>{asked.push(m); return true}; document.getElementById('exportDataButton').click(); await new Promise(r=>setTimeout(r,500));
+      out.saved = blobText!==null; out.hasKey = /SECRET-AI-KEY-123|aiKeys/.test(blobText||''); out.hasData = /"expenses"/.test(blobText||'');
+      delete S.advisor.aiKeys; window.confirm=oc; URL.createObjectURL=ou; return JSON.stringify(out); })()`));
+    check("backup: asks first (warning says it is not encrypted), saves nothing on 'no'", /NOT encrypted/.test(exp.warning) && exp.declinedSaved === false, JSON.stringify(exp));
+    check("backup: a saved backup holds the data but never the AI keys", exp.saved && exp.hasData && !exp.hasKey, JSON.stringify(exp));
+    check("settings: a Privacy & your data section says what stays, what leaves and what is not done", await cdp.eval(`(()=>{const t=document.getElementById('privacySection').innerText; return /Encrypted before it leaves/.test(t) && /ISIN/.test(t) && /no ads, no analytics/i.test(t) && /Not financial or tax advice/.test(t)})()`));
     // Settings → This device's version: the release code, "newest" when nothing is newer, and a newer release is noticed
     await viewport(1280, 900); await sleep(300); await view("dashboard");
     const ver = await cdp.eval(`(async()=>{ document.getElementById('settingsButton').click(); await new Promise(r=>setTimeout(r,1200));
