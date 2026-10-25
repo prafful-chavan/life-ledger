@@ -212,7 +212,7 @@
    */
   function bridge(o) {
     const items = o.items || [];
-    const w = o.width || 640, h = o.height || 260, padL = 54, padR = 12, padT = 26, padB = 46;
+    const w = o.width || 640, h = o.height || 260, padL = 54, padR = 12, padT = 26, padB = 50;
     if (!items.length) return "";
     let run = 0;
     const bars = items.map((it) => {
@@ -229,7 +229,7 @@
       body += `<rect class="${esc(b.cls || (b.kind === "total" ? "dc-b-total" : b.value < 0 ? "dc-b-down" : "dc-b-up"))}" x="${r1(cx - bw / 2)}" y="${r1(y1)}" width="${r1(bw)}" height="${r1(Math.max(1.5, y2 - y1))}" rx="3"/>`;
       if (i < bars.length - 1) body += `<line class="dc-connect" x1="${r1(cx + bw / 2)}" x2="${r1(cx + slot - bw / 2)}" y1="${r1(y(b.end))}" y2="${r1(y(b.end))}"/>`;
       body += `<text class="dc-value" x="${r1(cx)}" y="${r1(y1) - 6}" text-anchor="middle">${esc((b.kind === "delta" && b.value > 0 ? "+" : "") + fmt(b.value))}</text>`;
-      wrapTwo(b.label, Math.max(5, Math.floor((slot - 6) / 6.3))).forEach((t, k) => { body += `<text class="dc-axis" x="${r1(cx)}" y="${h - padB + 16 + k * 13}" text-anchor="middle">${esc(t)}</text>`; });
+      wrapTwo(b.label, Math.max(5, Math.floor((slot - 6) / 6.3))).forEach((t, k) => { body += `<text class="dc-axis" x="${r1(cx)}" y="${h - padB + 16 + k * 15}" text-anchor="middle">${esc(t)}</text>`; });
     });
     return frame(w, h, o.label || "Bridge", body);
   }
@@ -240,7 +240,7 @@
    */
   function ladder(o) {
     const items = o.items || [];
-    const w = o.width || 720, h = o.height || 280, padL = 54, padR = 12, padT = 34, padB = 44;
+    const w = o.width || 720, h = o.height || 280, padL = 54, padR = 12, padT = 34, padB = 48;
     if (!items.length) return "";
     const { ticks, top } = niceTicks(Math.max(...items.map((i) => i.value), 1) * 1.12, 4);
     const y = (v) => padT + (1 - Math.min(top, v) / top) * (h - padT - padB);
@@ -250,7 +250,7 @@
       const cx = padL + (i + 0.5) * slot, yy = y(it.value);
       body += `<rect class="dc-b-total" x="${r1(cx - bw / 2)}" y="${r1(yy)}" width="${r1(bw)}" height="${r1(h - padB - yy)}" rx="3"/>`;
       body += `<text class="dc-value" x="${r1(cx)}" y="${r1(yy) - 7}" text-anchor="middle">${esc(short(it.value))}</text>`;
-      wrapTwo(it.label, Math.max(5, Math.floor((slot - 6) / 6.3))).forEach((t, k) => { body += `<text class="dc-axis" x="${r1(cx)}" y="${h - padB + 16 + k * 13}" text-anchor="middle">${esc(t)}</text>`; });
+      wrapTwo(it.label, Math.max(5, Math.floor((slot - 6) / 6.3))).forEach((t, k) => { body += `<text class="dc-axis" x="${r1(cx)}" y="${h - padB + 16 + k * 15}" text-anchor="middle">${esc(t)}</text>`; });
       if (i > 0 && it.text) {
         const px = cx - slot / 2, y0 = y(items[i - 1].value), tw = textWidth(it.text), my = (y0 + yy) / 2;
         body += `<line class="dc-connect" x1="${r1(cx - slot + bw / 2)}" x2="${r1(cx - bw / 2)}" y1="${r1(y0)}" y2="${r1(yy)}"/><rect class="dc-badge" x="${r1(px - tw / 2)}" y="${r1(my - 9)}" width="${r1(tw)}" height="16" rx="8"/><text class="dc-badge-text" x="${r1(px)}" y="${r1(my + 2.5)}" text-anchor="middle">${esc(it.text)}</text>`;

@@ -6,7 +6,7 @@ function texts(svg) {
   return [...svg.matchAll(/<text class="([^"]*)" x="([\d.]+)" y="([\d.]+)"(?: text-anchor="(\w+)")?>([^<]*)<\/text>/g)].map((m) => {
     const t = m[5].replace(/&[a-z#0-9]+;/g, "x"), width = Ch.textWidth(t) - 4, x = Number(m[2]), anchor = m[4] || "start";
     const x0 = anchor === "middle" ? x - width / 2 : anchor === "end" ? x - width : x;
-    return { cls: m[1], text: t, x0, x1: x0 + width, y0: Number(m[3]) - 10, y1: Number(m[3]) + 2 };
+    return { cls: m[1], text: t, x0, x1: x0 + width, y0: Number(m[3]) - 11, y1: Number(m[3]) + 3 };
   });
 }
 

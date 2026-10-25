@@ -36,8 +36,8 @@
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
   },
   "dashboard-charts.js": {
-    "version": "1.0.2",
-    "sha256": "cbc613cab8a828571cec380543e7566ce925dc1a380893d87c39705b4275d307"
+    "version": "1.0.3",
+    "sha256": "308182af591fcaeff2b0b9023f8bf1925d0456e2080a37e2807c854253785977"
   },
   "dashboard-settings.js": {
     "version": "1.0.0",
