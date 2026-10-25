@@ -36,6 +36,7 @@ const defaultData = {
   taxFamily: [],
   taxRules: {},
   ruleSettings: {},
+  dashboardSettings: {},
   holdingsCheck: null,
   studies: [],
   workouts: [],
@@ -558,6 +559,7 @@ function bootstrapApp(initialState) {
     bindNavigation();
     bindModals();
     bindFinanceTabs();
+    bindDashboards();
     initStockCSVImport();
     bindCareerTabs();
     bindImports();
@@ -1182,6 +1184,8 @@ function normalizeDataCore(data) {
     // Rates edited in Tax → Rules ({ "2027-28": { source, newRegime, old } }) and the household's rules of thumb (Protection)
     taxRules: data.taxRules && typeof data.taxRules === "object" && !Array.isArray(data.taxRules) ? data.taxRules : {},
     ruleSettings: data.ruleSettings && typeof data.ruleSettings === "object" && !Array.isArray(data.ruleSettings) ? data.ruleSettings : {},
+    // The household's choices for the Salary and Spending dashboards: one-off months, price rise, budgets, fixed or flexible
+    dashboardSettings: data.dashboardSettings && typeof data.dashboardSettings === "object" && !Array.isArray(data.dashboardSettings) ? data.dashboardSettings : {},
     // Holdings checked against INDmoney by the weekly task on the Mac (it writes only this field)
     holdingsCheck: data.holdingsCheck && typeof data.holdingsCheck === "object" && !Array.isArray(data.holdingsCheck) ? data.holdingsCheck : null,
     studies: ensureIds(data.studies || [], "study").map(s => {
@@ -1319,6 +1323,7 @@ function bindFinanceTabs() {
       if (activeFinanceTab === "expenses") renderExpenseExplorer();
       if (activeFinanceTab === "gold") renderGold();
       if (activeFinanceTab === "networthhistory") renderNetWorthHistory();
+      if (activeFinanceTab === "overview") renderDashboards();
     });
   });
 
@@ -1682,34 +1687,6 @@ function bindFinanceTabs() {
     });
   });
 
-  const toggleTrendSalary = document.getElementById("toggleTrendSalary");
-  const toggleTrendExpenses = document.getElementById("toggleTrendExpenses");
-  const salaryTrendContent = document.getElementById("salaryTrendContent");
-  const expenseAnalysisArea = document.getElementById("expenseAnalysisArea");
-  const trendSectionTitle = document.getElementById("trendSectionTitle");
-  const trendSectionDesc = document.getElementById("trendSectionDesc");
-  const latestSalaryBadge = document.getElementById("latestSalaryBadge");
-  
-  toggleTrendSalary?.addEventListener("click", () => {
-    toggleTrendSalary.classList.add("active");
-    toggleTrendExpenses?.classList.remove("active");
-    if (salaryTrendContent) salaryTrendContent.style.display = "block";
-    if (expenseAnalysisArea) expenseAnalysisArea.style.display = "none";
-    if (trendSectionTitle) trendSectionTitle.textContent = "Salary progression";
-    if (trendSectionDesc) trendSectionDesc.textContent = "Monthly gross and net in-hand salary across your organizations from 2018 onward.";
-    if (latestSalaryBadge) latestSalaryBadge.style.display = "inline-flex";
-  });
-  
-  toggleTrendExpenses?.addEventListener("click", () => {
-    toggleTrendExpenses.classList.add("active");
-    toggleTrendSalary?.classList.remove("active");
-    if (salaryTrendContent) salaryTrendContent.style.display = "none";
-    if (expenseAnalysisArea) expenseAnalysisArea.style.display = "block";
-    if (trendSectionTitle) trendSectionTitle.textContent = "Expense Pro Analysis";
-    if (trendSectionDesc) trendSectionDesc.textContent = "Detailed breakdown of all-time expenses, biggest purchases, and budget optimizations.";
-    if (latestSalaryBadge) latestSalaryBadge.style.display = "none";
-    renderExpensesAnalysis();
-  });
 }
 
 function bindCareerTabs() {
@@ -5188,156 +5165,6 @@ function renderCashflowChart() {
   `;
 }
 
-function renderSalaryProgressionChart(svg, rows) {
-  const panelColor = cssVar("--panel");
-  const lineColor = cssVar("--line");
-  const mutedColor = cssVar("--muted");
-  const inkColor = cssVar("--ink");
-  const width = 900;
-  const height = 320;
-  const padding = { top: 38, right: 26, bottom: 44, left: 72 };
-
-  const values = rows.flatMap((row) => [row.grossEarnings || 0, row.netSalary || row.amount || 0]);
-  const maxValue = Math.max(1, ...values);
-  const xStep = (width - padding.left - padding.right) / Math.max(1, rows.length - 1);
-  const y = (value) => height - padding.bottom - (value / maxValue) * (height - padding.top - padding.bottom);
-  const x = (index) => padding.left + index * xStep;
-
-  // Modern company color list (theme variable fallbacks + high contrast trendy colors)
-  const COMPANY_COLORS = [
-    "var(--brand)",
-    "var(--accent)",
-    "var(--accent-2)",
-    "var(--good)",
-    "var(--danger)",
-    "#8b5cf6", // Purple
-    "#ec4899", // Pink
-    "#06b6d4"  // Cyan
-  ];
-
-  // Map organizations to colors
-  const orgs = [...new Set(rows.map((row) => row.source || row.organization || "Salary"))];
-  const companyColorMap = {};
-  orgs.forEach((org, idx) => {
-    companyColorMap[org] = COMPANY_COLORS[idx % COMPANY_COLORS.length];
-  });
-
-  // Build grid lines
-  const gridLines = [0, 0.25, 0.5, 0.75, 1]
-    .map((tick) => {
-      const yy = padding.top + tick * (height - padding.top - padding.bottom);
-      const value = maxValue * (1 - tick);
-      return `<line x1="${padding.left}" y1="${yy}" x2="${width - padding.right}" y2="${yy}" stroke="${lineColor}" />
-        <text x="10" y="${yy + 4}" fill="${mutedColor}" font-size="12">${compactINR(value)}</text>`;
-    })
-    .join("");
-
-  // Build line segments for net and gross salary
-  let chartLines = "";
-  let transitions = "";
-
-  for (let i = 1; i < rows.length; i++) {
-    const prev = rows[i - 1];
-    const curr = rows[i];
-    const prevOrg = prev.source || prev.organization || "Salary";
-    const currOrg = curr.source || curr.organization || "Salary";
-    const color = companyColorMap[currOrg];
-
-    const x1 = x(i - 1);
-    const x2 = x(i);
-    const yNet1 = y(prev.netSalary || prev.amount || 0);
-    const yNet2 = y(curr.netSalary || curr.amount || 0);
-    const yGross1 = y(prev.grossEarnings || prev.netSalary || prev.amount || 0);
-    const yGross2 = y(curr.grossEarnings || curr.netSalary || curr.amount || 0);
-
-    // Draw net segment
-    chartLines += `<line x1="${x1}" y1="${yNet1}" x2="${x2}" y2="${yNet2}" stroke="${color}" stroke-width="4" stroke-linecap="round" />`;
-
-    // Draw gross segment (dashed/opacity)
-    chartLines += `<line x1="${x1}" y1="${yGross1}" x2="${x2}" y2="${yGross2}" stroke="${color}" stroke-width="2.5" stroke-dasharray="3 3" stroke-linecap="round" opacity="0.6" />`;
-
-    // Check transition
-    if (prevOrg !== currOrg) {
-      transitions += `
-        <line x1="${x2}" y1="${padding.top}" x2="${x2}" y2="${height - padding.bottom}" stroke="${lineColor}" stroke-dasharray="2 4" stroke-width="1.5"></line>
-      `;
-    }
-  }
-
-  // Fallback for single data point
-  if (rows.length === 1) {
-    const single = rows[0];
-    const org = single.source || single.organization || "Salary";
-    const color = companyColorMap[org];
-    const xVal = padding.left + (width - padding.left - padding.right) / 2;
-    chartLines += `
-      <circle cx="${xVal}" cy="${y(single.netSalary || single.amount || 0)}" r="6" fill="${color}"></circle>
-      <circle cx="${xVal}" cy="${y(single.grossEarnings || single.netSalary || single.amount || 0)}" r="4" fill="${color}" opacity="0.6"></circle>
-    `;
-  }
-
-  // Add dots at intervals
-  const dots = rows
-    .filter((_, index) => index === 0 || index === rows.length - 1 || index % 6 === 0)
-    .map((row) => {
-      const index = rows.indexOf(row);
-      const org = row.source || row.organization || "Salary";
-      const color = companyColorMap[org];
-      return `<circle cx="${x(index)}" cy="${y(row.netSalary || row.amount || 0)}" r="5.5" fill="${color}" stroke="${panelColor}" stroke-width="2"></circle>`;
-    })
-    .join("");
-
-  // Build year vertical grid lines
-  const yearLabels = rows
-    .map((row, index) => ({ date: new Date(row.date), index }))
-    .filter((item, index, list) => index === 0 || item.date.getFullYear() !== list[index - 1].date.getFullYear())
-    .map(
-      ({ date, index }) => `
-        <line x1="${x(index)}" y1="${padding.top}" x2="${x(index)}" y2="${height - padding.bottom}" stroke="${lineColor}" stroke-dasharray="4 6"></line>
-        <text x="${x(index) + 4}" y="${height - 14}" fill="${mutedColor}" font-size="12">${date.getFullYear()}</text>
-      `
-    )
-    .join("");
-
-  // Build Legend
-  let legendHtml = `
-    <g transform="translate(72, 20)">
-      <line x1="0" y1="0" x2="16" y2="0" stroke="${inkColor}" stroke-width="3"></line>
-      <text x="22" y="4" fill="${inkColor}" font-size="12" font-weight="700">Net</text>
-      <line x1="60" y1="0" x2="76" y2="0" stroke="${inkColor}" stroke-width="2" stroke-dasharray="2 2" opacity="0.7"></line>
-      <text x="82" y="4" fill="${inkColor}" font-size="12" font-weight="700">Gross</text>
-    </g>
-  `;
-
-  // Draw company legend items
-  let legendX = 240;
-  const legendItems = orgs
-    .map((org) => {
-      const color = companyColorMap[org];
-      const item = `
-        <g transform="translate(${legendX}, 20)">
-          <circle cx="0" cy="-1" r="5.5" fill="${color}"></circle>
-          <text x="10" y="3" fill="${inkColor}" font-size="12" font-weight="700">${escapeHTML(org)}</text>
-        </g>
-      `;
-      legendX += org.length * 6.5 + 32;
-      return item;
-    })
-    .join("");
-
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.innerHTML = `
-    <rect width="${width}" height="${height}" rx="8" fill="${panelColor}"></rect>
-    ${gridLines}
-    ${transitions}
-    ${yearLabels}
-    ${chartLines}
-    ${dots}
-    ${legendHtml}
-    ${legendItems}
-  `;
-}
-
 function renderExpenseMix() {
   const currentExpenses = state.expenses.filter((expense) => isTargetDashboardMonth(expense.date));
   const byCategory = groupSum(currentExpenses, (expense) => catOf(expense), "amount");
@@ -5604,125 +5431,104 @@ function renderFinanceSummary() {
   });
 }
 
+// ── Salary and Spending dashboards (Finance → Overview) ──────────────────────────────────────────────────────────────────
+// The rules live in salary-insights-core.js, spending-insights-core.js and dashboard-settings.js, the drawing in
+// dashboard-charts.js and dashboard-views.js; this only gathers the data, puts the markup in place and saves the household's choices.
+const SIC = (typeof window !== "undefined" && window.LifeLedgerSalaryInsights) || (typeof require === "function" ? require("./salary-insights-core.js") : null);
+const SPC = (typeof window !== "undefined" && window.LifeLedgerSpendingInsights) || (typeof require === "function" ? require("./spending-insights-core.js") : null);
+const DSET = (typeof window !== "undefined" && window.LifeLedgerDashboardSettings) || (typeof require === "function" ? require("./dashboard-settings.js") : null);
+const DCH = (typeof window !== "undefined" && window.LifeLedgerDashboardCharts) || (typeof require === "function" ? require("./dashboard-charts.js") : null);
+const DVW = (typeof window !== "undefined" && window.LifeLedgerDashboardViews) || (typeof require === "function" ? require("./dashboard-views.js") : null);
+const DASH_NAMES = { Me: "Prafful", Wife: "Archana" };
+const INR0 = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
+const dashFmt = {
+  inr: (n) => INR0.format(Math.round(Number.isFinite(n) ? n : 0)),
+  pct: (n, digits = 0) => `${Number(n).toFixed(digits)}%`,
+  month: (ym) => DCH.monthLabel(ym),
+};
+const dashUi = { salaryTab: "timeline", salaryPerson: "", salaryYm: "", showReal: false, spendTab: "savings", spendYm: "" };
+try { Object.assign(dashUi, JSON.parse(localStorage.getItem("ll-dash-ui") || "{}"), { salaryYm: "", spendYm: "" }); } catch (_) { /* private mode: the defaults are fine */ }
+function rememberDashUi() { try { localStorage.setItem("ll-dash-ui", JSON.stringify({ salaryTab: dashUi.salaryTab, salaryPerson: dashUi.salaryPerson, showReal: dashUi.showReal, spendTab: dashUi.spendTab })); } catch (_) { /* not stored */ } }
+
+function dashboardSettings() { return DSET.clean(state.dashboardSettings); }
+function saveDashboardSettings(next) {
+  state.dashboardSettings = next;
+  saveData(true);
+  renderDashboards(true);
+}
+
+function renderDashboards(force = false) {
+  const salaryEl = document.getElementById("salaryDash"), spendEl = document.getElementById("spendingDash");
+  if (!salaryEl || !spendEl || activeFinanceTab !== "overview") return;
+  // Do not redraw under a field someone is typing in (a price refresh or a sync can call render at any moment)
+  const typing = document.activeElement;
+  if (!force && typing && typing.matches && typing.matches("input") && (salaryEl.contains(typing) || spendEl.contains(typing))) return;
+  const settings = dashboardSettings();
+  const model = SIC.analyze(state.income, toNumber, isSalary, { marks: settings.salary.marks, inflationPct: settings.salary.inflationPct });
+  // A phone shows the chart wider than the screen: keep where it was scrolled, and start at the latest month
+  const scrolls = [salaryEl, spendEl].map((el) => { const c = el.querySelector(".dc-chart"); return c ? c.scrollLeft : null; });
+  salaryEl.innerHTML = DVW.salary(model, { tab: dashUi.salaryTab, person: dashUi.salaryPerson, ym: dashUi.salaryYm, showReal: dashUi.showReal }, { fmt: dashFmt, names: DASH_NAMES });
+  const incomeByMonth = {};
+  if (model.household) model.household.rows.forEach((row) => { incomeByMonth[row.ym] = row.net; });
+  const today = todayISO();
+  const spending = SPC.analyze(state.expenses, { num: toNumber, catOf, incomeByMonth, today, budgets: settings.spending.budgets, fixed: settings.spending.fixed });
+  spendEl.innerHTML = DVW.spending(spending, { tab: dashUi.spendTab, ym: dashUi.spendYm }, { fmt: dashFmt, names: DASH_NAMES, day: Number(today.slice(8, 10)) });
+  [salaryEl, spendEl].forEach((el, i) => { const c = el.querySelector(".dc-chart"); if (c) c.scrollLeft = scrolls[i] === null ? c.scrollWidth : scrolls[i]; });
+}
+
+function bindDashboards() {
+  const salaryEl = document.getElementById("salaryDash"), spendEl = document.getElementById("spendingDash");
+  const onClick = (event) => {
+    const target = event.target.closest("[data-act], .dc-hit");
+    if (!target) return;
+    const inSalary = salaryEl.contains(target);
+    if (target.classList.contains("dc-hit")) {
+      if (inSalary) dashUi.salaryYm = target.dataset.ym; else dashUi.spendYm = target.dataset.ym;
+      return renderDashboards(true);
+    }
+    const { act, id, ym, person, cat } = target.dataset;
+    if (act === "salary-tab") { dashUi.salaryTab = id; dashUi.salaryYm = ""; }
+    else if (act === "person") { dashUi.salaryPerson = id; dashUi.salaryYm = ""; }
+    else if (act === "spend-tab") { dashUi.spendTab = id; dashUi.spendYm = ""; }
+    else if (act === "real") dashUi.showReal = !dashUi.showReal;
+    else if (act === "pick") dashUi.salaryYm = ym;
+    else if (act === "mark") { dashUi.salaryYm = ym; return saveDashboardSettings(DSET.setMark(state.dashboardSettings, person, ym, target.dataset.mark === "auto" ? null : target.dataset.mark)); }
+    else if (act === "fixed") return saveDashboardSettings(DSET.setFixed(state.dashboardSettings, cat, target.dataset.fixed === "yes"));
+    else if (act === "budget-use") return saveDashboardSettings(DSET.setBudget(state.dashboardSettings, cat, target.dataset.amount));
+    else if (act === "budget-clear") return saveDashboardSettings(DSET.setBudget(state.dashboardSettings, cat, ""));
+    else return;
+    rememberDashUi();
+    renderDashboards(true);
+  };
+  // A typed value is kept when the field is left or Enter is pressed (not on every keystroke, which would redraw under the cursor)
+  const onChange = (event) => {
+    const input = event.target.closest("input[data-act]");
+    if (!input) return;
+    if (input.dataset.act === "inflation") {
+      if (DSET.parseInflation(input.value) === null) { toast("Enter a yearly price rise between 0 and 30."); return renderDashboards(true); }
+      return saveDashboardSettings(DSET.setInflation(state.dashboardSettings, input.value));
+    }
+    if (input.dataset.act === "budget") {
+      if (input.value.trim() !== "" && DSET.parseBudget(input.value) === null) { toast("Enter the monthly budget as a number of rupees."); return renderDashboards(true); }
+      return saveDashboardSettings(DSET.setBudget(state.dashboardSettings, input.dataset.cat, input.value));
+    }
+  };
+  for (const el of [salaryEl, spendEl]) {
+    el.addEventListener("click", onClick);
+    el.addEventListener("change", onChange);
+    el.addEventListener("keydown", (event) => { if (event.key === "Enter" && event.target.matches("input[data-act]")) event.target.blur(); });
+  }
+}
+
 function renderFinance() {
   renderFinanceSummary();
-  renderSalaryCards();
-  renderSalaryProgression();
-  renderBudgetPulse();
+  renderDashboards();
   renderIncomeTable();
   renderExpenseExplorer();
   renderHoldingsTabs();
   renderLiabilities();
-  renderExpensesAnalysis();
   // Heavy (one row per day of history) and invisible unless its tab is open; the tab switch draws it.
   if (activeFinanceTab === "networthhistory") renderNetWorthHistory();
-}
-
-function renderSalaryCards() {
-  const container = document.getElementById("salaryCards");
-  const { people, household } = SAL.personCards(state.income, toNumber);
-  container.innerHTML = "";
-
-  if (people.length === 0) {
-    container.innerHTML = `<div class="empty-state">Upload salary data or add income entries to compare growth.</div>`;
-    return;
-  }
-
-  people.forEach(({ person, firstRow, latestRow, latestNet, growthPct }) => {
-    const row = document.createElement("div");
-    row.className = "stack-row";
-    row.innerHTML = `
-      <div>
-        <div class="stack-title">${escapeHTML(person)}</div>
-        <div class="stack-meta">${escapeHTML(latestRow?.source || "Salary")} • ${formatDate(latestRow?.date)} • ${formatPercent(growthPct)} since ${formatDate(firstRow?.date)}</div>
-      </div>
-      <div class="stack-value">${formatINR(latestNet)}</div>
-    `;
-    container.append(row);
-  });
-
-  // Household total: what comes in each month and year, so the card is as informative as it is tall
-  if (household) {
-    [["Household · per month", "Combined latest net salary", household.monthly], ["Household · per year", "Latest monthly net × 12", household.yearly]].forEach(([title, meta, value]) => {
-      const row = document.createElement("div");
-      row.className = "stack-row stack-total";
-      row.innerHTML = `<div><div class="stack-title"></div><div class="stack-meta"></div></div><div class="stack-value"></div>`;
-      row.querySelector(".stack-title").textContent = title;
-      row.querySelector(".stack-meta").textContent = meta;
-      row.querySelector(".stack-value").textContent = formatINR(value);
-      container.append(row);
-    });
-  }
-}
-
-function renderSalaryProgression() {
-  const svg = document.getElementById("salaryProgressionChart");
-  const insights = document.getElementById("salaryInsights");
-  const badge = document.getElementById("latestSalaryBadge");
-  if (!svg || !insights || !badge) return;
-
-  const pr = SAL.progression(state.income, toNumber);
-
-  if (!pr) {
-    svg.innerHTML = "";
-    insights.innerHTML = `<div class="empty-state">Upload your salary workbook to see the 2018-to-now progression chart.</div>`;
-    badge.textContent = "No salary yet";
-    return;
-  }
-
-  const { rows, latest, highestNet, orgs, latestNet, growthPct: growth } = pr;
-
-  badge.textContent = `${formatDate(latest.date)} • ${formatINR(latestNet)}`;
-  renderSalaryProgressionChart(svg, rows);
-
-  const chips = [
-    { label: "Latest net in-hand", value: `${formatINR(latestNet)} (${latest.source || "Salary"})` },
-    { label: "Latest gross", value: formatINR(latest.grossEarnings || latestNet) },
-    { label: "Highest net month", value: `${formatINR(highestNet.netSalary || highestNet.amount)} (${formatDate(highestNet.date)})` },
-    { label: "2018-to-now growth", value: formatPercent(growth) },
-    { label: "Organizations", value: orgs.join(" → ") },
-    { label: "Latest tax + PF", value: `${formatINR((latest.taxTds || 0) + (latest.pf || 0))}` },
-    { label: "Latest basic + HRA", value: `${formatINR((latest.basicSalary || 0) + (latest.hra || 0))}` },
-    { label: "Rows imported", value: `${rows.length} salary months` },
-  ];
-
-  insights.innerHTML = "";
-  chips.forEach((chip) => {
-    const element = document.createElement("div");
-    element.className = "insight-chip";
-    element.innerHTML = `
-      <div class="label">${escapeHTML(chip.label)}</div>
-      <div class="value">${escapeHTML(chip.value)}</div>
-    `;
-    insights.append(element);
-  });
-}
-
-function renderBudgetPulse() {
-  const container = document.getElementById("budgetPulse");
-  const currentExpenses = state.expenses.filter((expense) => isCurrentMonth(expense.date));
-  const categories = Object.entries(groupSum(currentExpenses, (expense) => catOf(expense), "amount")).sort(
-    (a, b) => b[1] - a[1]
-  );
-  container.innerHTML = "";
-
-  if (categories.length === 0) {
-    container.innerHTML = `<div class="empty-state">Your monthly category pulse will appear after expense import.</div>`;
-    return;
-  }
-
-  categories.slice(0, 5).forEach(([category, value]) => {
-    const row = document.createElement("div");
-    row.className = "stack-row";
-    row.innerHTML = `
-      <div>
-        <div class="stack-title">${escapeHTML(category)}</div>
-        <div class="stack-meta">${Math.round((value / Math.max(1, sum(currentExpenses, "amount"))) * 100)}% of this month's spend</div>
-      </div>
-      <div class="stack-value">${formatINR(value)}</div>
-    `;
-    container.append(row);
-  });
 }
 
 function renderIncomeTable() {
@@ -16082,128 +15888,6 @@ function bindDashboard() {
     activeDashboardMonth = event.target.value;
     renderMetrics();
     renderExpenseMix();
-  });
-}
-
-function renderExpensesAnalysis() {
-  const metricsContainer = document.getElementById("expenseAnalysisMetrics");
-  const biggestPurchasesContainer = document.getElementById("biggestPurchasesList");
-  const budgetOptimizationContainer = document.getElementById("budgetOptimizationList");
-  
-  if (!metricsContainer || !biggestPurchasesContainer || !budgetOptimizationContainer) return;
-  
-  const allExpenses = [...state.expenses];
-  if (allExpenses.length === 0) {
-    metricsContainer.innerHTML = "";
-    biggestPurchasesContainer.innerHTML = `<div class="empty-state">Upload expenses to see your pro analysis dashboard.</div>`;
-    budgetOptimizationContainer.innerHTML = `<div class="empty-state">Upload expenses to see budget advice.</div>`;
-    return;
-  }
-  
-  const totalSpent = sum(allExpenses, "amount");
-  
-  // Calculate average per month based on unique months in expenses only
-  const expenseMonths = new Set();
-  allExpenses.forEach(e => {
-    const key = toMonthKey(e.date);
-    if (key) expenseMonths.add(key);
-  });
-  const monthsCount = Math.max(1, expenseMonths.size);
-  const avgMonthlySpend = totalSpent / monthsCount;
-  
-  const sortedByAmount = [...allExpenses].sort((a, b) => toNumber(b.amount) - toNumber(a.amount));
-  
-  // Discretionary spend identification
-  const discretionaryKeywords = /shop|dining|restaurant|food|swiggy|zomato|movie|entertainment|travel|uber|ola|cab|pub|party|gift|leisure/i;
-  let discretionaryTotal = 0;
-  allExpenses.forEach(e => {
-    const cat = String(e.category || "").toLowerCase();
-    const note = String(e.note || "").toLowerCase();
-    if (discretionaryKeywords.test(cat) || discretionaryKeywords.test(note)) {
-      discretionaryTotal += toNumber(e.amount);
-    }
-  });
-  const discretionaryPct = Math.round((discretionaryTotal / totalSpent) * 100);
-  
-  metricsContainer.innerHTML = `
-    <article class="metric-card compact-metric">
-      <div class="label">Total Paid Till Now</div>
-      <div class="value">${formatINR(totalSpent)}</div>
-      <div class="hint">Across ${monthsCount} months</div>
-    </article>
-    <article class="metric-card compact-metric">
-      <div class="label">Avg Monthly Spend</div>
-      <div class="value">${formatINR(avgMonthlySpend)}</div>
-      <div class="hint">All-time average</div>
-    </article>
-    <article class="metric-card compact-metric">
-      <div class="label">Discretionary Spend</div>
-      <div class="value">${formatINR(discretionaryTotal)}</div>
-      <div class="hint">${discretionaryPct}% of all time spend</div>
-    </article>
-  `;
-  
-  biggestPurchasesContainer.innerHTML = "";
-  sortedByAmount.slice(0, 5).forEach(item => {
-    const row = document.createElement("div");
-    row.className = "stack-row";
-    row.innerHTML = `
-      <div>
-        <div class="stack-title">${escapeHTML(item.note || item.category || "Purchase")}</div>
-        <div class="stack-meta">${formatDate(item.date)} • ${escapeHTML(item.category)} • Paid by ${escapeHTML(item.paidBy || "Both")}</div>
-      </div>
-      <div class="stack-value" style="color: var(--danger); font-weight:600;">${formatINR(item.amount)}</div>
-    `;
-    biggestPurchasesContainer.append(row);
-  });
-  
-  const catSums = {};
-  allExpenses.forEach(e => {
-    const cat = catOf(e);
-    catSums[cat] = (catSums[cat] || 0) + toNumber(e.amount);
-  });
-  const sortedCategories = Object.entries(catSums).sort((a, b) => b[1] - a[1]);
-  
-  budgetOptimizationContainer.innerHTML = "";
-  const optimizationTips = [];
-  
-  if (discretionaryPct > 40) {
-    optimizationTips.push({
-      title: "High Discretionary Spending ⚠️",
-      desc: `Your discretionary spending (dining, shopping, cabs) represents ${discretionaryPct}% of total expenses. Target keeping this under 30% to boost savings.`,
-      action: `Potential monthly savings: ${formatINR((discretionaryTotal * 0.2) / monthsCount)} (at 20% cut)`
-    });
-  } else {
-    optimizationTips.push({
-      title: "Balanced Discretionary Spending ✅",
-      desc: `Your discretionary spending is at ${discretionaryPct}% of total expenses, which is within the healthy budget zone.`,
-      action: "Keep tracking discretionary categories month-on-month."
-    });
-  }
-  
-  sortedCategories.slice(0, 3).forEach(([cat, val]) => {
-    const monthlyVal = val / monthsCount;
-    const potentialSaving = monthlyVal * 0.15;
-    optimizationTips.push({
-      title: `Optimize ${cat} Spend`,
-      desc: `You spend an average of ${formatINR(monthlyVal)} per month on ${cat}.`,
-      action: `Reducing this by 15% would save ${formatINR(potentialSaving)} monthly.`
-    });
-  });
-  
-  optimizationTips.forEach(tip => {
-    const itemEl = document.createElement("div");
-    itemEl.className = "stack-row";
-    itemEl.style.flexDirection = "column";
-    itemEl.style.alignItems = "stretch";
-    itemEl.style.padding = "10px 0";
-    itemEl.style.borderBottom = "1px solid var(--line)";
-    itemEl.innerHTML = `
-      <div style="font-weight: 700; color: var(--brand); font-size: 0.9rem; margin-bottom: 2px;">${escapeHTML(tip.title)}</div>
-      <div style="font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; line-height: 1.4;">${escapeHTML(tip.desc)}</div>
-      <div style="font-size: 0.8rem; font-weight: 600; color: var(--ink);">${escapeHTML(tip.action)}</div>
-    `;
-    budgetOptimizationContainer.append(itemEl);
   });
 }
 

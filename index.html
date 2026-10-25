@@ -21,7 +21,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.28" />
+    <link rel="stylesheet" href="layout.css?v=1.8.31" />
     <script defer src="script-gate.js?v=1.0.0"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -35,11 +35,16 @@
     <script defer src="hero-series.js?v=1.0.0"></script>
     <script defer src="expenses-core.js?v=1.0.0"></script>
     <script defer src="networth-snapshot.js?v=1.0.1"></script>
-    <script defer src="salary-core.js?v=1.0.0"></script>
+    <script defer src="salary-core.js?v=1.0.1"></script>
+    <script defer src="salary-insights-core.js?v=1.0.0"></script>
+    <script defer src="spending-insights-core.js?v=1.0.0"></script>
+    <script defer src="dashboard-settings.js?v=1.0.0"></script>
+    <script defer src="dashboard-charts.js?v=1.0.0"></script>
+    <script defer src="dashboard-views.js?v=1.0.0"></script>
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.125"></script>
+    <script defer src="app.js?v=1.0.127"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -432,71 +437,24 @@
 
           <div class="finance-tab active" id="finance-overview">
             <div class="metric-grid finance-summary" id="financeSummary" aria-label="Finance summary"></div>
-            <div class="split-grid">
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <h3>Salary growth</h3>
-                    <p>Latest monthly net salary by person.</p>
-                  </div>
-                </div>
-                <div id="salaryCards" class="stack-list"></div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <h3>Monthly budget pulse</h3>
-                    <p>Expected versus actual home spending.</p>
-                  </div>
-                </div>
-                <div id="budgetPulse" class="stack-list"></div>
-              </section>
-            </div>
-
-            <section class="panel large-panel salary-progression-panel">
-              <div class="panel-header" style="flex-wrap: wrap; gap: 12px; align-items: center;">
+            <section class="panel large-panel dv-panel" id="salaryDashboard" aria-labelledby="salaryDashTitle">
+              <div class="panel-header">
                 <div>
-                  <h3 id="trendSectionTitle">Salary progression</h3>
-                  <p id="trendSectionDesc">Monthly gross and net in-hand salary across your organizations from 2018 onward.</p>
-                </div>
-                <div style="display: flex; gap: 8px; align-items: center;" class="trend-actions">
-                  <div class="owner-toggle" style="margin-bottom: 0; display: flex; gap: 6px;" id="overviewTrendToggle">
-                    <button class="owner-pill active" type="button" id="toggleTrendSalary">Salary Trend</button>
-                    <button class="owner-pill" type="button" id="toggleTrendExpenses">Expense Analysis</button>
-                  </div>
-                  <span class="status-dot good" id="latestSalaryBadge">Latest salary</span>
+                  <h3 id="salaryDashTitle">Salary growth</h3>
+                  <p>How your take-home pay has grown job by job, what each hike was, where the gross goes, and the household together. One-off months (a bonus, a settlement) are shown but left out of raises and averages.</p>
                 </div>
               </div>
-              <div id="salaryTrendContent">
-                <div class="chart-area">
-                  <svg class="line-chart salary-chart" id="salaryProgressionChart" role="img" aria-label="Salary progression chart"></svg>
-                </div>
-                <div class="salary-insights" id="salaryInsights"></div>
-              </div>
-              <div id="expenseAnalysisArea" style="display: none;">
-                <div class="metric-grid compact" id="expenseAnalysisMetrics" style="margin-bottom: 20px;"></div>
-                <div class="expense-pro-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-                  <section class="panel soft-panel" style="margin-bottom: 0;">
-                    <div class="panel-header">
-                      <div>
-                        <h3>Biggest Purchases 💸</h3>
-                        <p>Largest single transactions overall.</p>
-                      </div>
-                    </div>
-                    <div id="biggestPurchasesList" class="stack-list"></div>
-                  </section>
-                  <section class="panel soft-panel" style="margin-bottom: 0;">
-                    <div class="panel-header">
-                      <div>
-                        <h3>Budget Optimization 🎯</h3>
-                        <p>Opportunities to reduce costs.</p>
-                      </div>
-                    </div>
-                    <div id="budgetOptimizationList" class="stack-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
-                  </section>
+              <div id="salaryDash" class="dv"></div>
+            </section>
+
+            <section class="panel large-panel dv-panel" id="spendingDashboard" aria-labelledby="spendingDashTitle">
+              <div class="panel-header">
+                <div>
+                  <h3 id="spendingDashTitle">Spending</h3>
+                  <p>How much of your pay is left after spending, where the money goes, your budgets, and the payments that stand out.</p>
                 </div>
               </div>
+              <div id="spendingDash" class="dv"></div>
             </section>
           </div>
  

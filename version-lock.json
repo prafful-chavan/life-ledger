@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.125",
-    "sha256": "42ee66c5f4a195333ebb390db70ee4c65cbf614405bb2bd53fb178bacc2949f1"
+    "version": "1.0.126",
+    "sha256": "2baa52c6d3b77bb0d18864d3cf40500cfb80c543148a0a5498a478fd9127e4e4"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -34,6 +34,18 @@
   "cmdk-core.js": {
     "version": "1.0.0",
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
+  },
+  "dashboard-charts.js": {
+    "version": "1.0.0",
+    "sha256": "4776efe5ce68c18e6fa0c902b51b21c9fe95f90b2218a5fa666abd22a4f9368a"
+  },
+  "dashboard-settings.js": {
+    "version": "1.0.0",
+    "sha256": "8e06edfdaaaaef66034c44a00c7114bf68f0ab9c3804943c21cd3bba247fa313"
+  },
+  "dashboard-views.js": {
+    "version": "1.0.0",
+    "sha256": "ab2e053a8ca305ae1c97241a89f26a8ba79698a5e4993183454b2a6395b74abd"
   },
   "data-health.js": {
     "version": "1.0.8",
@@ -68,8 +80,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.28",
-    "sha256": "b1fe77e78bfda25e25e5d513d87e3ca953c0cad9f476032c38e631e65141647a"
+    "version": "1.8.29",
+    "sha256": "19b790eecb66237aa9521365de653cb8c0d66d2f0c3de5c9d6052c1afcf0ffd6"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -112,8 +124,12 @@
     "sha256": "951a03ac680df4fe4eed9e791f428f323d933944c7b6637c8867ec556aeeef52"
   },
   "salary-core.js": {
+    "version": "1.0.1",
+    "sha256": "0632c1c63dc07efa40b1345b5a4adad4f88aa795663d1c5ca127708e9529fa2f"
+  },
+  "salary-insights-core.js": {
     "version": "1.0.0",
-    "sha256": "82b80293d503f9869bd6deafe0f7bb4ddbb203ed05550c60564ad4e43e9da42f"
+    "sha256": "d7fc8309e9776a1c83317c61df4345a1eec38bbd123d3fdec82697079c3adb7b"
   },
   "script-gate.js": {
     "version": "1.0.0",
@@ -126,6 +142,10 @@
   "spending-import.js": {
     "version": "1.0.13",
     "sha256": "7b1d01670102b0ec61aadd12d86d29eab3c0cc42f47c642c3e19900d7ed62840"
+  },
+  "spending-insights-core.js": {
+    "version": "1.0.0",
+    "sha256": "f5dccfbd80016ad54955aca0ff2e2f6aba3149dad4dd11ee7521e80cf1ced4ad"
   },
   "stocks-panel-core.js": {
     "version": "1.0.0",

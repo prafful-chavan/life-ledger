@@ -1,5 +1,5 @@
-// The Salary tab's rules: which income rows are salary, totals, each person's growth, the household's combined pay,
-// the progression summary and a month's largest components.
+// The Salary tab's rules: which income rows are salary, totals, the table's rows and a month's largest components.
+// (The growth dashboard's rules are tested in salary-insights-core.test.js.)
 const assert = require("assert");
 const Sal = require("../salary-core.js");
 
@@ -33,50 +33,10 @@ const many = Array.from({ length: 200 }, (_, i) => ({ id: "m" + i, date: new Dat
 assert.strictEqual(Sal.tableRows(many, t).length, 160, "160 rows at most"); assert.strictEqual(Sal.tableRows(many, t)[0].id, "m199", "the newest 160"); assert.strictEqual(Sal.tableRows(many, t, 5).length, 5, "any limit");
 const src = [{ id: "a", date: "2026-01-01" }, { id: "b", date: "2026-02-01" }]; Sal.tableRows(src, t); assert.deepStrictEqual(src.map((r) => r.id), ["a", "b"], "the list is not reordered in place");
 
-// ── a card per person ──
-const inc = [
-  row({ person: "Me", date: "2024-01-01", netSalary: 100000, source: "Acme" }), row({ person: "Me", date: "2026-09-01", netSalary: 150000, source: "TCS" }), row({ person: "Me", date: "2025-01-01", netSalary: 120000 }),
-  row({ person: "Wife", date: "2025-06-01", netSalary: 50000, source: "Ascent" }), row({ person: "Wife", date: "2026-09-01", netSalary: 60000, source: "Ascent" }),
-  { type: "Interest", person: "Me", date: "2026-09-02", amount: 999 },
-];
-let pc = Sal.personCards(inc, num);
-assert.deepStrictEqual(pc.people.map((p) => p.person), ["Me", "Wife"], "in order of first appearance; interest is not salary");
-assert.deepStrictEqual([pc.people[0].firstNet, pc.people[0].latestNet, pc.people[0].growthPct], [100000, 150000, 50], "first and latest by date, whatever the order of the rows");
-assert.strictEqual(pc.people[0].latestRow.source, "TCS"); assert.strictEqual(pc.people[0].firstRow.date, "2024-01-01");
-assert.deepStrictEqual([pc.people[1].firstNet, pc.people[1].latestNet, pc.people[1].growthPct], [50000, 60000, 20]);
-assert.deepStrictEqual(pc.household, { monthly: 210000, yearly: 2520000 }, "combined latest net, times 12");
-pc = Sal.personCards([row({ person: "Me", date: "2026-01-01", netSalary: 90 })], num); assert.strictEqual(pc.household, null, "one person: no household line"); assert.strictEqual(pc.people[0].growthPct, 0, "a single payslip: no growth");
-pc = Sal.personCards([row({ person: "Me", date: "2026-01-01", netSalary: 0, amount: 0 }), row({ person: "Wife", date: "2026-01-01", netSalary: 0, amount: 0 })], num); assert.strictEqual(pc.household, null, "no pay at all: no household line");
-pc = Sal.personCards([row({ date: "2026-01-01", netSalary: 5 }), row({ person: "", date: "2026-02-01", netSalary: 8 })], num); assert.deepStrictEqual(pc.people.map((p) => p.person), ["Me"], "no person means Me"); assert.strictEqual(pc.people[0].growthPct, 60);
-pc = Sal.personCards([row({ person: "Me", date: "2026-01-01", netSalary: 100 }), row({ person: "Me", date: "2026-02-01", netSalary: 80 })], num); assert.strictEqual(pc.people[0].growthPct, -20, "a drop is negative growth");
-pc = Sal.personCards([row({ person: "Me", date: "2026-01-01", netSalary: 0, amount: 0 }), row({ person: "Me", date: "2026-02-01", netSalary: 80 })], num); assert.strictEqual(pc.people[0].growthPct, 0, "no first pay: growth cannot be worked out, so 0");
-assert.deepStrictEqual(Sal.personCards([], num), { people: [], household: null }); assert.deepStrictEqual(Sal.personCards(null, num), { people: [], household: null });
-const keep = inc.slice(); Sal.personCards(inc, num); assert.deepStrictEqual(inc.map((r) => r.date), keep.map((r) => r.date), "the rows are not reordered in place");
-
-// ── progression: your own salary when there is any ──
-let pg = Sal.progression(inc, num);
-assert.deepStrictEqual(pg.rows.map((r) => r.date), ["2024-01-01", "2025-01-01", "2026-09-01"], "only Me, oldest first");
-assert.strictEqual(pg.latest.netSalary, 150000); assert.strictEqual(pg.first.netSalary, 100000); assert.strictEqual(pg.highestNet.netSalary, 150000);
-assert.deepStrictEqual(pg.orgs, ["Acme", "Salary", "TCS"], "organisations in order; a row without one is 'Salary'"); assert.strictEqual(pg.growthPct, 50);
-assert.deepStrictEqual([pg.firstNet, pg.latestNet], [100000, 150000]);
-pg = Sal.progression(inc.filter((r) => r.person === "Wife"), num); assert.deepStrictEqual(pg.rows.map((r) => r.person), ["Wife", "Wife"], "only Archana's rows: they are used");
-pg = Sal.progression([row({ person: "Archana's wife account", date: "2026-01-01", netSalary: 1 }), row({ person: "Me", date: "2026-02-01", netSalary: 2 })], num); assert.strictEqual(pg.rows.length, 1, "anything with 'wife' in the name is not yours");
-assert.strictEqual(Sal.progression([], num), null); assert.strictEqual(Sal.progression([{ type: "Interest", amount: 5 }], num), null, "no salary rows: nothing");
-pg = Sal.progression([row({ date: "2026-01-01", netSalary: 100, source: "A" }), row({ date: "2026-02-01", netSalary: 300, source: "A" }), row({ date: "2026-03-01", netSalary: 200, organization: "B" })], num);
-assert.strictEqual(pg.highestNet.date, "2026-02-01", "the highest net month, not the latest"); assert.deepStrictEqual(pg.orgs, ["A", "B"], "a repeated organisation once; 'organization' is read too"); assert.strictEqual(pg.growthPct, 100);
-pg = Sal.progression([row({ date: "2026-01-01", netSalary: 100 }), row({ date: "2026-02-01", netSalary: 100 })], num); assert.strictEqual(pg.highestNet.date, "2026-01-01", "a tie keeps the earlier month");
-pg = Sal.progression([row({ date: "2026-01-01", amount: 0, netSalary: 0, grossEarnings: 5 })], num); assert.strictEqual(pg.growthPct, 0, "no first net: growth 0");
-
 // ── a month's largest components ──
 const fields = [["basicSalary", "Basic"], ["hra", "HRA"], ["lta", "LTA"], ["bonus", "Bonus"], ["food", "Food"]];
 assert.deepStrictEqual(Sal.componentParts({ basicSalary: 80000, hra: 64000, lta: 5000, bonus: 20000, food: 0 }, fields, num), [{ label: "Basic", value: 80000 }, { label: "HRA", value: 64000 }, { label: "Bonus", value: 20000 }], "top three, largest first; zeros and the fourth are dropped");
 assert.deepStrictEqual(Sal.componentParts({ lta: 1, hra: 1 }, fields, num).map((p) => p.label), ["HRA", "LTA"], "equal values keep the field order");
 assert.deepStrictEqual(Sal.componentParts({}, fields, num), [], "nothing"); assert.deepStrictEqual(Sal.componentParts({ basicSalary: -5 }, fields, num), [], "negative is not a component"); assert.deepStrictEqual(Sal.componentParts({ hra: "₹1,200" }, fields, num), [{ label: "HRA", value: 1200 }]);
-
-// small amounts still count
-pc = Sal.personCards([row({ person: "Me", date: "2026-01-01", netSalary: 0.5 }), row({ person: "Wife", date: "2026-01-01", netSalary: 0.5 })], num); assert.deepStrictEqual(pc.household, { monthly: 1, yearly: 12 }, "₹1 a month combined is still a household line");
-pg = Sal.progression([row({ date: "2026-01-01", netSalary: 0, amount: 0, grossEarnings: 9 }), row({ date: "2026-02-01", netSalary: 0, amount: 0, grossEarnings: 9 })], num); assert.strictEqual(pg.highestNet.date, "2026-01-01", "all zero: the earlier month");
-pg = Sal.progression([row({ date: "2026-01-01", netSalary: 0, amount: 0, grossEarnings: 9 }), row({ date: "2026-02-01", netSalary: 1 })], num); assert.strictEqual(pg.highestNet.date, "2026-02-01", "₹1 beats zero");
-pg = Sal.progression([row({ date: "2026-01-01", netSalary: 1 }), row({ date: "2026-02-01", netSalary: 1 })], num); assert.strictEqual(pg.highestNet.date, "2026-01-01", "₹1 vs ₹1: the earlier");
 
 console.log("salary-core tests passed");

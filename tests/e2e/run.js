@@ -489,6 +489,44 @@ const SCANNER = `(${function scan() {
       check(`weekly table at ${w}px: every column fits`, fit.rows >= 2 && fit.table <= fit.box + 1, JSON.stringify(fit));
     }
     await viewport(1280, 900); await sleep(300);
+    // Salary and Spending dashboards (Finance → Overview): every tab draws, choices are saved, nothing overflows at any width
+    console.log("\nSalary and Spending dashboards");
+    await view("finance"); await cdp.eval(`document.querySelector('[data-finance-tab="overview"]').click(); 0`); await sleep(700);
+    const dash = await cdp.eval(`(async()=>{ const out={sal:{},sp:{}}; const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
+      for (const t of ['timeline','hikes','takehome','household']) { document.querySelector('#salaryDash [data-act="salary-tab"][data-id="'+t+'"]').click(); await wait(150); const el=document.getElementById('salaryDash'); out.sal[t]={len:el.innerText.length, bad:/NaN|undefined|\\[object/.test(el.innerText), svg:el.querySelectorAll('svg.dc-svg').length}; }
+      for (const t of ['savings','categories','budgets','unusual']) { document.querySelector('#spendingDash [data-act="spend-tab"][data-id="'+t+'"]').click(); await wait(150); const el=document.getElementById('spendingDash'); out.sp[t]={len:el.innerText.length, bad:/NaN|undefined|\\[object/.test(el.innerText), svg:el.querySelectorAll('svg.dc-svg').length}; }
+      return out; })()`);
+    check("salary dashboard: all four tabs draw readable content (no NaN / undefined)", Object.values(dash.sal).every((t) => t.len > 150 && !t.bad), JSON.stringify(dash.sal));
+    check("salary dashboard: the timeline and household tabs carry a chart", dash.sal.timeline.svg === 1 && dash.sal.household.svg === 1, JSON.stringify(dash.sal));
+    check("spending dashboard: all four tabs draw readable content (no NaN / undefined)", Object.values(dash.sp).every((t) => t.len > 100 && !t.bad), JSON.stringify(dash.sp));
+    // household choices are kept in the vault data and change the numbers
+    const choices = await cdp.eval(`(async()=>{ const wait=(ms)=>new Promise(r=>setTimeout(r,ms)); const S=()=>LifeLedgerApp.getState();
+      document.querySelector('#salaryDash [data-act="salary-tab"][data-id="timeline"]').click(); await wait(150);
+      const pick=document.querySelector('#salaryDash .dc-hit'); pick.dispatchEvent(new MouseEvent('click',{bubbles:true})); await wait(150);
+      const ym=pick.dataset.ym; const before=document.querySelector('#salaryDash .dv-detail-head').innerText;
+      const markBtn=document.querySelector('#salaryDash [data-act="mark"]'); const mark=markBtn.dataset.mark; markBtn.click(); await wait(250);
+      const marks=JSON.parse(JSON.stringify((S().dashboardSettings||{}).salary||{})).marks; const after=document.querySelector('#salaryDash .dv-detail-head').innerText;
+      const back=document.querySelector('#salaryDash [data-act="mark"][data-mark="auto"]'); back && back.click(); await wait(250); const cleared=((S().dashboardSettings||{}).salary||{}).marks||{};
+      document.querySelector('#spendingDash [data-act="spend-tab"][data-id="budgets"]').click(); await wait(150);
+      const inp=document.querySelector('#spendingDash input[data-act="budget"]'); const cat=inp.dataset.cat; inp.value='12,345'; inp.dispatchEvent(new Event('change',{bubbles:true})); await wait(300);
+      const budget=(((S().dashboardSettings||{}).spending||{}).budgets||{})[cat]; const shown=document.getElementById('spendingDash').innerText.includes('12,345');
+      document.querySelector('#spendingDash [data-act="budget-clear"]').click(); await wait(250); const gone=!((((S().dashboardSettings||{}).spending||{}).budgets||{})[cat]);
+      document.querySelector('#salaryDash [data-act="salary-tab"][data-id="household"]').click(); await wait(150);
+      const infl=document.getElementById('dvInflation'); infl.value='7'; infl.dispatchEvent(new Event('change',{bubbles:true})); await wait(300); const inflSaved=((S().dashboardSettings||{}).salary||{}).inflationPct;
+      const infl2=document.getElementById('dvInflation'); infl2.value='99'; infl2.dispatchEvent(new Event('change',{bubbles:true})); await wait(300); const inflKept=((S().dashboardSettings||{}).salary||{}).inflationPct;
+      return {ym,mark,before,after,marks,cleared,cat,budget,shown,gone,inflSaved,inflKept}; })()`);
+    check("dashboards: marking a month saves it and flips its status; 'automatic' removes the mark", choices.marks && Object.values(choices.marks).some((m) => m[choices.ym] === choices.mark) && choices.before !== choices.after && Object.keys(choices.cleared).length === 0, JSON.stringify(choices));
+    check("dashboards: a typed budget is saved and shown, and Remove clears it", choices.budget === 12345 && choices.shown && choices.gone, JSON.stringify(choices));
+    check("dashboards: the price-rise setting saves a valid value and ignores an invalid one", choices.inflSaved === 7 && choices.inflKept === 7, JSON.stringify(choices));
+    for (const w of [390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(400);
+      const fit = await cdp.eval(`(async()=>{ const wait=(ms)=>new Promise(r=>setTimeout(r,ms)); const bad=[]; const page=document.documentElement;
+        const scan=async(root,sel,ids)=>{ for (const id of ids) { document.querySelector(sel+'[data-id="'+id+'"]').click(); await wait(120); const box=document.getElementById(root); const p=box.closest('.panel'); const r={tab:id, over:p.scrollWidth-p.clientWidth}; box.querySelectorAll('.table-wrap').forEach(t=>{ if (t.scrollWidth>t.clientWidth+1) r.table=(t.scrollWidth-t.clientWidth); }); if (r.over>1||r.table) bad.push(r); } };
+        await scan('salaryDash','#salaryDash [data-act="salary-tab"]',['timeline','hikes','takehome','household']); await scan('spendingDash','#spendingDash [data-act="spend-tab"]',['savings','categories','budgets','unusual']);
+        return {w:innerWidth, page:page.scrollWidth-page.clientWidth, bad}; })()`);
+      check(`dashboards at ${w}px: no tab or table overflows its panel`, fit.bad.length === 0 && fit.page <= 1, JSON.stringify(fit));
+    }
+    await viewport(1280, 900); await sleep(300);
     // Settings → This device's version: the release code, "newest" when nothing is newer, and a newer release is noticed
     await viewport(1280, 900); await sleep(300); await view("dashboard");
     const ver = await cdp.eval(`(async()=>{ document.getElementById('settingsButton').click(); await new Promise(r=>setTimeout(r,1200));
