@@ -223,4 +223,21 @@ const old = [...monthly("2024-01", Array(12).fill(40000), "Rare"), ...monthly("2
 assert.strictEqual(run(old, { today: "2026-06-01" }).unusualItems.filter((u) => u.date === "2025-12-20").length, 1, "40,000 against a usual of 1,000 in the last year");
 
 assert.strictEqual(run(monthly("2025-01", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 30000].map((v) => v + 1), "Lumpy"), { today: "2026-06-01" }).suggestions.Lumpy, 10000, "a lumpy category is suggested by its average, not its middle month");
+// ── heat levels: 1×, 1.25×, 1.6×, 2.5× of the category's own average ──
+for (const [v, lvl] of [[0, 0], [99, 0], [100, 0], [101, 1], [125, 1], [126, 2], [160, 2], [161, 3], [250, 3], [251, 4], [10000, 4]]) assert.strictEqual(S.heatLevel(v, 100), lvl, `${v} against an average of 100`);
+assert.strictEqual(S.heatLevel(100, 0), 0, "no average to compare with"); assert.strictEqual(S.heatLevel(-5, 100), 0, "a negative month is not heated");
+// ── rolling and previous-year savings rates ──
+{
+  const inc3 = {}; for (let i = 0; i < 30; i++) inc3[S.shiftYm("2024-12", i)] = 200;
+  const sp3 = monthly("2025-01", [...Array(12).fill(100), ...Array(12).fill(150)], "Food");
+  const r3 = run(sp3, { today: "2027-06-01", incomeByMonth: inc3 });
+  near(r3.savings.ratePct, 25); near(r3.savings.prevRatePct, 50, "the twelve months before the last twelve");
+  assert.strictEqual(r3.months[4].rollingRatePct, null, "fewer than six months of pay in the window: no rate");
+  near(r3.months[5].rollingRatePct, 50, "six months are enough"); near(r3.months[23].rollingRatePct, 25, "a full window of the latest twelve");
+  assert.strictEqual(run(monthly("2025-01", Array(12).fill(100)), { today: "2027-06-01", incomeByMonth: inc3 }).savings.prevRatePct, null, "no earlier year: no previous rate");
+  const part = run(monthly("2025-01", Array(7).fill(100)), { today: "2025-07-10", incomeByMonth: inc3 }); assert.strictEqual(part.months[6].rollingRatePct, null, "the part-month has no rolling rate");
+  const food = run(monthly("2025-01", [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 400], "Food"), { today: "2027-06-01" }).categories[0];
+  assert.deepStrictEqual(food.levels.slice(-2), [0, 4], "a spike month is far above the category's own average (400 vs a 125 average)");
+  assert.strictEqual(food.levels.length, 12);
+}
 console.log("spending-insights-core: all checks passed");

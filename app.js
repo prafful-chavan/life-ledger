@@ -5446,9 +5446,9 @@ const dashFmt = {
   pct: (n, digits = 0) => `${Number(n).toFixed(digits)}%`,
   month: (ym) => DCH.monthLabel(ym),
 };
-const dashUi = { salaryTab: "timeline", salaryPerson: "", salaryYm: "", showReal: false, spendTab: "savings", spendYm: "" };
+const dashUi = { salaryTab: "timeline", salaryPerson: "", salaryYm: "", showReal: false, range: "all", spendTab: "savings", spendYm: "" };
 try { Object.assign(dashUi, JSON.parse(localStorage.getItem("ll-dash-ui") || "{}"), { salaryYm: "", spendYm: "" }); } catch (_) { /* private mode: the defaults are fine */ }
-function rememberDashUi() { try { localStorage.setItem("ll-dash-ui", JSON.stringify({ salaryTab: dashUi.salaryTab, salaryPerson: dashUi.salaryPerson, showReal: dashUi.showReal, spendTab: dashUi.spendTab })); } catch (_) { /* not stored */ } }
+function rememberDashUi() { try { localStorage.setItem("ll-dash-ui", JSON.stringify({ salaryTab: dashUi.salaryTab, salaryPerson: dashUi.salaryPerson, showReal: dashUi.showReal, range: dashUi.range, spendTab: dashUi.spendTab })); } catch (_) { /* not stored */ } }
 
 function dashboardSettings() { return DSET.clean(state.dashboardSettings); }
 function saveDashboardSettings(next) {
@@ -5467,7 +5467,7 @@ function renderDashboards(force = false) {
   const model = SIC.analyze(state.income, toNumber, isSalary, { marks: settings.salary.marks, inflationPct: settings.salary.inflationPct });
   // A phone shows the chart wider than the screen: keep where it was scrolled, and start at the latest month
   const scrolls = [salaryEl, spendEl].map((el) => { const c = el.querySelector(".dc-chart"); return c ? c.scrollLeft : null; });
-  salaryEl.innerHTML = DVW.salary(model, { tab: dashUi.salaryTab, person: dashUi.salaryPerson, ym: dashUi.salaryYm, showReal: dashUi.showReal }, { fmt: dashFmt, names: DASH_NAMES });
+  salaryEl.innerHTML = DVW.salary(model, { tab: dashUi.salaryTab, person: dashUi.salaryPerson, ym: dashUi.salaryYm, showReal: dashUi.showReal, range: dashUi.range }, { fmt: dashFmt, names: DASH_NAMES });
   const incomeByMonth = {};
   if (model.household) model.household.rows.forEach((row) => { incomeByMonth[row.ym] = row.net; });
   const today = todayISO();
@@ -5491,6 +5491,7 @@ function bindDashboards() {
     else if (act === "person") { dashUi.salaryPerson = id; dashUi.salaryYm = ""; }
     else if (act === "spend-tab") { dashUi.spendTab = id; dashUi.spendYm = ""; }
     else if (act === "real") dashUi.showReal = !dashUi.showReal;
+    else if (act === "range") dashUi.range = id;
     else if (act === "pick") dashUi.salaryYm = ym;
     else if (act === "mark") { dashUi.salaryYm = ym; return saveDashboardSettings(DSET.setMark(state.dashboardSettings, person, ym, target.dataset.mark === "auto" ? null : target.dataset.mark)); }
     else if (act === "fixed") return saveDashboardSettings(DSET.setFixed(state.dashboardSettings, cat, target.dataset.fixed === "yes"));
@@ -5513,7 +5514,27 @@ function bindDashboards() {
       return saveDashboardSettings(DSET.setBudget(state.dashboardSettings, input.dataset.cat, input.value));
     }
   };
+  // Hovering (or touching) a month shows its figures and a guide line
+  const onMove = (event) => {
+    const wrap = event.target.closest && event.target.closest(".dc-chart");
+    if (!wrap) return;
+    const hit = event.target.closest(".dc-hit");
+    const old = wrap.querySelector(".dv-tip");
+    wrap.querySelectorAll(".dc-cross").forEach((c) => c.setAttribute("visibility", "hidden"));
+    if (!hit || !hit.dataset.tip) { if (old) old.remove(); return; }
+    const svg = wrap.querySelector("svg"), cross = svg.querySelector(".dc-cross");
+    if (cross) { const cx = Number(hit.getAttribute("x")) + Number(hit.getAttribute("width")) / 2; cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible"); }
+    const tip = old || Object.assign(document.createElement("div"), { className: "dv-tip" });
+    tip.textContent = hit.dataset.tip;
+    if (!old) wrap.append(tip);
+    const box = wrap.getBoundingClientRect(), r = hit.getBoundingClientRect(), half = Math.min(140, tip.offsetWidth / 2);
+    tip.style.left = Math.max(half, Math.min(box.width - half, r.left - box.left + r.width / 2)) - tip.offsetWidth / 2 + "px";
+    tip.style.top = "4px";
+  };
+  const onLeave = (event) => { const wrap = event.target.closest && event.target.closest(".dc-chart"); if (wrap) { wrap.querySelector(".dv-tip")?.remove(); wrap.querySelectorAll(".dc-cross").forEach((c) => c.setAttribute("visibility", "hidden")); } };
   for (const el of [salaryEl, spendEl]) {
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerleave", onLeave);
     el.addEventListener("click", onClick);
     el.addEventListener("change", onChange);
     el.addEventListener("keydown", (event) => { if (event.key === "Enter" && event.target.matches("input[data-act]")) event.target.blur(); });

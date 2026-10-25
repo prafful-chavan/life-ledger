@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.128",
-    "sha256": "db96f36742f87ccc1761cde178fcff96bf916c58c28bf8e6be65bd5993a07d98"
+    "version": "1.0.129",
+    "sha256": "5b560ed0d8f4fcfc568737a87b60e254c21ec8220e3d99e7be434005052a22a9"
   },
   "auth.js": {
     "version": "1.0.44",
@@ -36,16 +36,16 @@
     "sha256": "31f7b391bad45b9fbb1fcdc4440dc1ba34119e7bef47a802239a52ab05a9d5bf"
   },
   "dashboard-charts.js": {
-    "version": "1.0.1",
-    "sha256": "e8db1e55da7a0c24f5393de00d81708d0183866d3d0d7a45bf548f83e949f5d3"
+    "version": "1.0.2",
+    "sha256": "cbc613cab8a828571cec380543e7566ce925dc1a380893d87c39705b4275d307"
   },
   "dashboard-settings.js": {
     "version": "1.0.0",
     "sha256": "8e06edfdaaaaef66034c44a00c7114bf68f0ab9c3804943c21cd3bba247fa313"
   },
   "dashboard-views.js": {
-    "version": "1.0.1",
-    "sha256": "5de50496f7627314081abcb9f4a449855086102a3c174084b81c903740be7fe6"
+    "version": "1.0.2",
+    "sha256": "396d27aa7294aa9e4a1017b51e63f4506e59ef36ddae7681eb60e8d8b3b6d131"
   },
   "data-health.js": {
     "version": "1.0.8",
@@ -80,8 +80,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.31",
-    "sha256": "7b3d9da8977061ea507ae87e4fc1a013dd37596c34b41b633d80de6e76f7a14f"
+    "version": "1.8.32",
+    "sha256": "409198ae94abd0ba4c3f574e26e0a50c4c079e22465a1601c21d78c8940b5f8f"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -144,8 +144,8 @@
     "sha256": "7b1d01670102b0ec61aadd12d86d29eab3c0cc42f47c642c3e19900d7ed62840"
   },
   "spending-insights-core.js": {
-    "version": "1.0.1",
-    "sha256": "6ad92fb39046b30b613f7743118123a3b96092340dac539ee7724c22c494dfc3"
+    "version": "1.0.2",
+    "sha256": "f75badc0aba6a62fc6d758a23dec77ba80e77daa675f4605ef40cf70fa914051"
   },
   "stocks-panel-core.js": {
     "version": "1.0.0",

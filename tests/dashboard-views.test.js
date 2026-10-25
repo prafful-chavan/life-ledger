@@ -1,6 +1,7 @@
 // The dashboards' markup: every tab draws for ordinary, thin and hostile data; text from the data is escaped; the buttons carry
 // what the page needs; nothing prints NaN or undefined.
 const assert = require("assert");
+const { noOverlap } = require("./helpers/chart-overlap.js");
 const SI = require("../salary-insights-core.js");
 const SP = require("../spending-insights-core.js");
 const Sal = require("../salary-core.js");
@@ -33,12 +34,13 @@ for (const [tab] of V.SALARY_TABS) {
 }
 let html = V.salary(model, { tab: "timeline", person: "Me" }, { fmt, names });
 assert.ok(html.includes("Prafful") && html.includes("Archana"), "people are called by name"); assert.ok(html.includes('data-act="person" data-id="Wife"'));
-assert.ok(html.includes("Steady monthly pay") && html.includes("Since first payslip") && html.includes("Growth a year") && html.includes("Best month"));
+assert.ok(html.includes('data-act="range" data-id="5y"') && html.includes('data-act="range" data-id="all"'), "range buttons");
+assert.ok(html.includes("Steady monthly pay") && html.includes("Since first payslip") && html.includes("Growth a year") && html.includes("Take-home share") && html.includes("Next milestone"), "the five headline figures");
+assert.ok(html.includes("dv-delta") && html.includes("dc-spark"), "a change chip and a trend line on the headline");
 assert.ok(html.includes('class="dc-chart"') && html.includes("<svg"), "the chart is there");
-assert.ok(html.includes("Show in today&#39;s rupees") === false && html.includes("Show in today's rupees"), "plain text, not escaped twice");
+assert.ok(html.includes('data-act="real"') && html.includes("Today's rupees") && !html.includes("Today&#39;s rupees"), "plain text, not escaped twice");
 assert.ok(!html.includes('class="dc-real"'), "no today's-rupees line until asked");
 assert.ok(V.salary(model, { tab: "timeline", person: "Me", showReal: true }, { fmt, names }).includes('class="dc-real"'));
-assert.ok(V.salary(model, { tab: "timeline", person: "Me", showReal: true }, { fmt, names }).includes("In today&#39;s rupees") === false);
 // the selected month and its buttons
 let d = V.salary(model, { tab: "timeline", person: "Me", ym: "2025-08" }, { fmt, names });
 assert.ok(d.includes("Aug 2025") && d.includes("One-off") && d.includes("This is a regular month"), "an automatic one-off can be turned back into a regular month");
@@ -51,15 +53,15 @@ d = V.salary(marked, { tab: "timeline", person: "Me", ym: "2025-08" }, { fmt, na
 d = V.salary(model, { tab: "timeline", person: "Me", ym: "1999-01" }, { fmt, names }); assert.ok(d.includes("Sep 2026") || d.includes(fmt.month(model.views.Me.last.ym)), "an unknown month falls back to the latest");
 // hikes
 html = V.salary(model, { tab: "hikes", person: "Me" }, { fmt, names });
-assert.ok(html.includes("Job changes") && html.includes("Raises inside a job") && html.includes("Year by year")); assert.ok(html.includes("+"), "a hike has a sign"); assert.ok(html.includes("2025-26") || html.includes("2024-25"));
-assert.ok(html.includes("dc-bar"), "a bar for the step");
-assert.ok(V.salary(model, { tab: "hikes", person: "Wife" }, { fmt, names }).includes("No job change yet."), "a single job has no change");
+assert.ok(html.includes("Pay ladder") && html.includes("Raises inside a job") && html.includes("Year by year")); assert.ok(html.includes("+"), "a hike has a sign"); assert.ok(html.includes("2025-26") || html.includes("2024-25"));
+assert.ok(html.includes("dc-badge-text") && html.includes("dc-b-total"), "the ladder shows the step between jobs"); assert.ok(html.includes("dc-bar"), "a bar for the year's pay");
+assert.ok(V.salary(model, { tab: "hikes", person: "Wife" }, { fmt, names }).includes("Only one job so far."), "a single job has no change");
 // take-home
-html = V.salary(model, { tab: "takehome", person: "Me" }, { fmt, names }); assert.ok(html.includes("Where the pay goes") && html.includes("dc-stack") && html.includes("In your account") && html.includes("Income tax (TDS)"));
+html = V.salary(model, { tab: "takehome", person: "Me" }, { fmt, names }); assert.ok(html.includes("Where the gross pay goes") && html.includes("dc-b-net") && html.includes("In your account") && html.includes("Income tax (TDS)"), "a bridge from gross to net");
 const nogross = SI.analyze(income.map((r) => ({ ...r, grossEarnings: 0 })), num, Sal.isSalary, {});
 html = V.salary(nogross, { tab: "takehome", person: "Me" }, { fmt, names }); clean(html); assert.ok(html.includes("no gross figure"), "no gross: says so rather than inventing a split"); assert.ok(html.includes("—"));
 // household
-html = V.salary(model, { tab: "household" }, { fmt, names }); assert.ok(html.includes("Household steady pay") && html.includes("Archana&#39;s share"), "escaped apostrophe renders as one"); assert.ok(html.includes('data-act="inflation"') && html.includes('value="5"'));
+html = V.salary(model, { tab: "household" }, { fmt, names }); assert.ok(html.includes("Household steady pay") && html.includes("Pay split") && html.includes("Archana"), "household headline and the split"); assert.ok(html.includes('data-act="inflation"') && html.includes('value="5"'));
 assert.ok(!html.includes('data-act="person"'), "no person switch on the household tab"); assert.ok(html.includes("dc-p0") && html.includes("dc-p1"));
 html = V.salary(SI.analyze(income.filter((r) => r.person === "Me"), num, Sal.isSalary, {}), { tab: "household" }, { fmt, names }); clean(html);
 // thin data
@@ -88,12 +90,12 @@ for (const [tab] of V.SPEND_TABS) {
   const html2 = V.spending(sp, { tab }, { fmt, names, day: 25 }); clean(html2, tab); noRawEvil(html2);
   assert.ok(html2.includes(`data-act="spend-tab" data-id="${tab}"`));
 }
-html = V.spending(sp, { tab: "savings" }, { fmt, names, day: 25 }); assert.ok(html.includes("left over") && html.includes("dc-rate") && html.includes("Salary credited at the end of a month")); assert.ok(html.includes("A usual month") && html.includes("Fixed bills"));
+html = V.spending(sp, { tab: "savings" }, { fmt, names, day: 25 }); assert.ok(html.includes("left over") && html.includes("dc-rate") && html.includes("salary credited the month before")); assert.ok(html.includes("A usual month") && html.includes("Kept after spending") && html.includes("Fixed bills") && html.includes("Biggest riser"), "the five headline figures"); assert.ok(html.includes("dc-fixed") && html.includes("dc-level"), "spend columns with the pay line");
 html = V.spending(sp, { tab: "categories" }, { fmt, names, day: 25 }); assert.ok(html.includes('data-act="fixed" data-cat="EMI- Car" data-fixed="no"') , "a fixed category offers to become flexible"); assert.ok(html.includes('data-act="fixed" data-cat="Groceries" data-fixed="yes"'));
-assert.ok(html.includes("dc-fixed") && html.includes("dc-flex"));
+assert.ok(html.includes("dc-fixed") && html.includes("dc-flex") && html.includes("dc-heat-cell"), "the heat grid");
 html = V.spending(sp, { tab: "budgets" }, { fmt, names, day: 25 }); assert.ok(html.includes('data-act="budget-clear" data-cat="Groceries"') && html.includes('data-act="budget"') && html.includes("Set a budget")); assert.ok(html.includes("so far"));
 assert.ok(html.includes('data-act="budget-use"') && /data-amount="\d+"/.test(html), "a suggestion button with a number");
-html = V.spending(sp, { tab: "unusual" }, { fmt, names, day: 25 }); assert.ok(html.includes("Unusual months") && html.includes("Big one-off payments") && html.includes("Who paid") && html.includes("Archana") && html.includes("Prafful")); assert.ok(html.includes("who paid, not who the money was for"));
+html = V.spending(sp, { tab: "unusual" }, { fmt, names, day: 25 }); assert.ok(html.includes("Anatomy of the latest unusual month") && html.includes("Unusual months") && html.includes("Big one-off payments") && html.includes("Who paid") && html.includes("Archana") && html.includes("Prafful")); assert.ok(html.includes("who paid, not who the money was for"));
 assert.ok(html.includes("Mar 2026"), "the big purchase month appears");
 // empty and thin
 assert.ok(V.spending(SP.analyze([], { num, catOf: (e) => e.category, incomeByMonth: {}, today: "2026-09-25" }), { tab: "savings" }, { fmt }).includes("Add or import expenses"));
@@ -107,4 +109,14 @@ const old = SP.analyze([{ id: "o", date: "2019-06-02", amount: 10000, category: 
 assert.ok(V.spending(old, { tab: "savings" }, { fmt, names }).includes("Spending is tracked from"), "the start of tracking is stated"); assert.ok(V.spending(old, { tab: "savings" }, { fmt, names }).includes("Jun 2019"));
 assert.ok(!V.spending(sp, { tab: "savings" }, { fmt, names }).includes("Spending is tracked from") || sp.tracked.notTracked.length > 0);
 
+// ── no two labels overlap in any chart of any tab ──
+{
+  const Ch = require("../dashboard-charts.js");
+  const everything = [];
+  for (const [tab] of V.SALARY_TABS) for (const person of ["Me", "Wife"]) for (const range of ["all", "3y", "1y"]) everything.push(V.salary(model, { tab, person, range, showReal: range === "3y" }, { fmt, names }));
+  for (const [tab] of V.SPEND_TABS) everything.push(V.spending(sp, { tab }, { fmt, names, day: 25 }));
+  let svgs = 0;
+  for (const html of everything) for (const m of html.matchAll(/<svg class="dc-svg"[\s\S]*?<\/svg>/g)) { noOverlap(m[0], "view chart"); svgs++; }
+  assert.ok(svgs >= 20, "charts were checked: " + svgs);
+}
 console.log("dashboard-views: all checks passed");

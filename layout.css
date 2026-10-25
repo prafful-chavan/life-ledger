@@ -811,7 +811,6 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 .dv { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .dv-tabs, .dv-people { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; }
 .dv-people { padding-top: 2px; }
-.dv-kpis { margin: 0 !important; }
 .dv-kpi .value { font-size: clamp(18px, 1.7vw, 24px); }
 .dv-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .dv-h { margin: 8px 0 0; font-size: 14px; font-weight: 700; letter-spacing: 0.01em; }
@@ -930,3 +929,89 @@ body.cmdk-open, body.more-open { overflow: hidden; }
   .dc-chart { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .dc-chart .dc-svg { min-width: 640px; }
 }
+
+/* ── Dashboards, analyst layout ─────────────────────────────────────────────────────────────────────────────────────────── */
+.dv-panel { padding: 18px 20px; }
+.dv-bar-top { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; }
+.dv-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--panel-soft); border: 1px solid var(--line); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.dv-seg::-webkit-scrollbar { display: none; }
+.dv-seg-btn { flex: 0 0 auto; min-height: 34px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: 600 13.5px inherit; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.dv-seg-btn:hover { color: var(--ink); }
+.dv-seg-btn.active { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12), inset 0 0 0 1px var(--line); }
+.dv-seg.small .dv-seg-btn { min-height: 28px; padding: 0 10px; font-size: 12.5px; }
+.dv-seg.who .dv-seg-btn.active { background: var(--brand); color: var(--on-brand); box-shadow: none; }
+.dv-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.dv-kpis.three { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.dv-kpi { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); min-width: 0; overflow: hidden; }
+.dv-kpi-label { font-size: 11px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.dv-kpi-value { font-size: clamp(20px, 1.9vw, 26px); font-weight: 750; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.15; overflow-wrap: anywhere; }
+.dv-kpi-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--muted); min-width: 0; }
+.dv-kpi-spark { height: 34px; margin: 4px -4px -4px; }
+.dv-kpi-spark .dc-spark { width: 100%; height: 34px; }
+.dv-kpi-bar { margin-top: 6px; }
+.dv-delta { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dv-delta.good { color: var(--good); background: color-mix(in srgb, var(--good) 13%, transparent); }
+.dv-delta.bad { color: var(--negative); background: color-mix(in srgb, var(--negative) 12%, transparent); }
+.dv-delta.flat { color: var(--muted); background: var(--panel-soft); }
+.dv-card { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.dv-card-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; justify-content: space-between; }
+.dv-card-head h4 { margin: 0; font-size: 15px; font-weight: 700; }
+.dv-card-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 78ch; }
+.dv-card-head p strong { color: var(--ink); }
+.dv-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dv-toggle { min-height: 28px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: 600 12.5px inherit; font-family: inherit; cursor: pointer; }
+.dv-toggle.active { background: color-mix(in srgb, var(--accent-2) 14%, var(--panel)); color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 45%, var(--line)); }
+.dv-body { gap: 14px; }
+.dv-key.col { width: 8px; height: 12px; border: 0; border-radius: 2px; background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.dv-key.colo { width: 8px; height: 12px; border: 0; border-radius: 2px; background: var(--accent); }
+.dv-key.level { border-top-width: 3px; }
+.dv-legend { margin-top: -2px; }
+.dc-col { fill: color-mix(in srgb, var(--muted) 38%, transparent); }
+.dc-col-oneoff { fill: color-mix(in srgb, var(--accent) 75%, transparent); }
+.dc-cut { stroke: var(--panel); stroke-width: 2.4; fill: none; }
+.dc-cut-label { fill: var(--watch); font-size: 11px; font-weight: 650; }
+.dc-area { fill: color-mix(in srgb, var(--brand) 14%, transparent); }
+.dc-end { fill: var(--brand); stroke: var(--panel); stroke-width: 2; }
+.dc-end-label { fill: var(--ink); font-size: 12px; font-weight: 700; }
+.dc-badge { fill: color-mix(in srgb, var(--good) 16%, var(--panel)); stroke: color-mix(in srgb, var(--good) 40%, var(--line)); stroke-width: 1; }
+.dc-badge-text { fill: var(--good); font-size: 11px; font-weight: 700; }
+.dc-jobline { stroke: color-mix(in srgb, var(--muted) 55%, transparent); stroke-width: 1; stroke-dasharray: 3 3; }
+.dc-cross { stroke: var(--ink); stroke-width: 1; opacity: .35; pointer-events: none; }
+.dc-connect { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: .7; }
+.dc-value { fill: var(--ink); font-size: 12px; font-weight: 700; }
+.dc-b-total { fill: color-mix(in srgb, var(--brand) 78%, transparent); }
+.dc-b-net { fill: var(--good); }
+.dc-b-down { fill: var(--negative); }
+.dc-b-up { fill: var(--accent); }
+.dc-fixed.dc-flag, .dc-flex.dc-flag { stroke: var(--negative); stroke-width: 1.4; }
+.dc-spark-area { fill: color-mix(in srgb, var(--brand) 16%, transparent); stroke: none; }
+.dc-spark path:last-child { stroke: var(--brand); }
+.dc-bar.budget > i { background: var(--good); }
+.dc-tick.budget { background: var(--ink); opacity: .75; width: 2px; }
+.dc-tick.proj { background: var(--accent); width: 4px; border-radius: 2px; opacity: 1; }
+.dc-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.dc-heat { display: grid; gap: 3px; min-width: 760px; }
+.dc-heat-row { display: grid; gap: 3px; align-items: stretch; }
+.dc-heat-head span { font-size: 10.5px; color: var(--muted); text-align: center; padding-bottom: 2px; }
+.dc-heat-label { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
+.dc-heat-cell { display: flex; align-items: center; justify-content: center; min-height: 30px; border-radius: 6px; font-size: 10.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); background: var(--panel-soft); }
+.dc-heat-cell.l1 { background: color-mix(in srgb, var(--accent) 22%, var(--panel-soft)); }
+.dc-heat-cell.l2 { background: color-mix(in srgb, var(--accent) 42%, var(--panel-soft)); }
+.dc-heat-cell.l3 { background: color-mix(in srgb, var(--negative) 48%, var(--panel-soft)); color: var(--ink); }
+.dc-heat-cell.l4 { background: color-mix(in srgb, var(--negative) 78%, var(--panel-soft)); color: #fff; font-weight: 700; }
+.dv-cellbar { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
+.dv-cellbar .dc-bar { height: 5px; }
+.dv-tip { position: absolute; z-index: 5; padding: 7px 10px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 600; line-height: 1.4; max-width: 280px; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.dc-chart { position: relative; }
+.dc-hit:hover { fill: color-mix(in srgb, var(--brand) 7%, transparent); }
+@media (max-width: 700px) {
+  .dv-panel { padding: 14px 12px; }
+  .dv-card { padding: 14px 12px 12px; border-radius: 14px; }
+  .dv-kpis { grid-template-columns: 1fr 1fr; }
+  .dv-kpis.three { grid-template-columns: 1fr; }
+  .dv-seg.main { width: 100%; }
+  .dv-seg.main .dv-seg-btn { flex: 1 0 auto; }
+}
+.dv-kpis { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
+.dc-cut-label, .dc-value, .dc-end-label, .dc-ref-label { paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
+.dv-swatch.dc-rate { background-color: var(--good); }

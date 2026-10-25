@@ -27,6 +27,10 @@
   const NEAR_SHARE = 0.8;
   const PACE_FROM_DAY = 5;
   /** Categories that recur at about the same amount every month, unless the household says otherwise. */
+  /** How far above a category's own average a month is, for the heat grid: up to 1× is level 0; then 1.25×, 1.6×, 2.5×. */
+  const HEAT_STEPS = [1, 1.25, 1.6, 2.5];
+  /** Months of pay needed before a savings rate is worked out for a window. */
+  const RATE_MIN = 6;
   const FIXED_WORDS = /\b(emi|rent|pg|insurance|policy|recharges?|ott|wifi|subscription|loan|fees?)\b/i;
 
   const median = (list) => {
@@ -42,6 +46,13 @@
   const shiftYm = (ym, delta) => fromIndex(ymIndex(ym) + delta);
   const daysInMonth = (ym) => new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).getUTCDate();
   const pct = (from, to) => (from ? ((to - from) / from) * 100 : null);
+
+  /** 0–4: how far a month's spend is above the category's own average (0 when there is nothing to compare with). */
+  function heatLevel(value, average) {
+    if (!(average > 0) || !(value > 0)) return 0;
+    const ratio = value / average;
+    return HEAT_STEPS.filter((step) => ratio > step).length;
+  }
 
   /** Is a category fixed? The household's choice first ({category: true|false}), else the name. */
   function isFixed(category, overrides) {
@@ -161,6 +172,13 @@
       r.savingsRateEveryday = r.pay !== null ? ((r.pay - r.everydayTotal) / r.pay) * 100 : null;
     }
 
+    // a rolling twelve-month savings rate for each month (needs six months with pay in its window)
+    monthRows.forEach((r, i) => {
+      const win = monthRows.slice(Math.max(0, i - 11), i + 1).filter((m) => !m.partial && m.pay !== null);
+      const pay = win.reduce((t, m) => t + m.pay, 0);
+      r.rollingRatePct = !r.partial && win.length >= RATE_MIN ? ((pay - win.reduce((t, m) => t + m.total, 0)) / pay) * 100 : null;
+    });
+
     // savings across the last twelve complete months
     const rated = window12.map((ym) => rowOf.get(ym)).filter((r) => r.pay !== null);
     const sumPay = rated.reduce((t, r) => t + r.pay, 0), sumSpent = rated.reduce((t, r) => t + r.total, 0);
@@ -175,6 +193,9 @@
       worst: rated.length ? rated.reduce((b, r) => (r.savingsRatePct < b.savingsRatePct ? r : b)).ym : null,
       overspent: rated.filter((r) => r.saved < 0).length,
     };
+    const before12 = completeYms.slice(-24, -12).map((ym) => rowOf.get(ym)).filter((r) => r.pay !== null);
+    const prevPay = before12.reduce((t, r) => t + r.pay, 0);
+    savings.prevRatePct = before12.length >= RATE_MIN ? ((prevPay - before12.reduce((t, r) => t + r.total, 0)) / prevPay) * 100 : null;
 
     // categories: twelve-month total and share, and the last six months against the six before
     const total12 = window12.reduce((t, ym) => t + totals[ym], 0);
@@ -189,6 +210,7 @@
         name, fixed: fixedOf(name), total, sharePct: total12 ? (total / total12) * 100 : 0,
         monthlyAvg: window12.length ? total / window12.length : 0, series,
         recentAvg: recent, beforeAvg: before, changePct: recent !== null && before ? pct(before, recent) : null,
+        levels: series.map((v) => heatLevel(v, total / (window12.length || 1))),
       };
     }).filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
     const movers = categories.filter((c) => c.changePct !== null && Math.abs(c.recentAvg - c.beforeAvg) >= 500);
@@ -258,6 +280,6 @@
 
   return {
     RAMP_SHARE, USUAL_MONTHS, USUAL_MIN, UNUSUAL_MONTH, ITEM_FLOOR, ITEM_TIMES, ITEM_HISTORY_MIN, NEAR_SHARE, PACE_FROM_DAY,
-    median, shiftYm, daysInMonth, isFixed, trackedMonths, categoryNorms, analyze,
+    HEAT_STEPS, RATE_MIN, median, shiftYm, daysInMonth, heatLevel, isFixed, trackedMonths, categoryNorms, analyze,
   };
 });
