@@ -118,7 +118,7 @@ const SCANNER = `(${function scan() {
     if (m.method === "Runtime.exceptionThrown") errors.push("exception: " + ((m.params.exceptionDetails.exception || {}).description || m.params.exceptionDetails.text));
     if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") {
       const t = m.params.args.map((a) => a.value || a.description || "").join(" ");
-      if (!/Failed to load resource|net::ERR|ERR_INTERNET|gsi|fonts\.g|Failed to resolve scheme codes/i.test(t)) errors.push("console.error: " + t);
+      if (!/Failed to load resource|net::ERR|ERR_INTERNET|gsi|fonts\.g/i.test(t)) errors.push("console.error: " + t);
     }
   });
   await Promise.all([cdp.send("Page.enable"), cdp.send("Runtime.enable"), cdp.send("Network.enable")]);

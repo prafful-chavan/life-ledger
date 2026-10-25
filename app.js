@@ -15233,12 +15233,17 @@ async function resolveSchemeCodes(fundNames, options = {}) {
     return cache;
   }
   
-  toast("Fetching mutual fund master list to resolve codes...");
+  toast("Looking up mutual fund codes...");
   try {
-    const response = await fetch("https://api.mfapi.in/mf");
-    if (!response.ok) throw new Error("Failed to fetch mutual fund master list.");
-    const allFunds = await response.json();
-    
+    // mfapi.in's full list (11 MB) is served from a cache that sends no CORS header, so browsers cannot read it (2026-10-25).
+    // The search endpoint is small and always readable: ask it per fund instead.
+    const searchSchemes = async (text) => {
+      try {
+        const res = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(text)}`, { signal: AbortSignal.timeout(8000) });
+        const list = res.ok ? await res.json() : [];
+        return Array.isArray(list) ? list : [];
+      } catch (e) { return []; }
+    };
     function cleanAndNormalize(str) {
       if (!str) return "";
       let cleaned = str.toLowerCase().replace(/[^a-z0-9\s]+/g, ' ');
@@ -15262,14 +15267,15 @@ async function resolveSchemeCodes(fundNames, options = {}) {
       const queryWords = queryNorm.split(/\s+/).filter(w => w.length > 1 && !["fund", "funds", "mutual", "scheme", "plan", "option"].includes(w));
       const amcWord = queryWords[0];
 
-      let candidates = allFunds.filter(f => {
+      const rawWords = query.toLowerCase().replace(/[^a-z0-9\s]+/g, " ").split(/\s+/).filter(w => w.length > 1 && !["fund", "funds", "direct", "regular", "growth", "plan", "option", "idcw", "dividend"].includes(w));
+      let found = await searchSchemes(rawWords.slice(0, 3).join(" "));
+      if (found.length === 0 && rawWords.length > 1) found = await searchSchemes(rawWords.slice(0, 2).join(" "));
+      if (found.length === 0) found = await searchSchemes(rawWords[0] || amcWord);
+      let candidates = found.filter(f => {
         const sName = f.schemeName.toLowerCase();
         return sName.includes(amcWord) && queryWords.slice(1).some(w => sName.includes(w));
       });
-
-      if (candidates.length === 0) {
-        candidates = allFunds.filter(f => f.schemeName.toLowerCase().includes(amcWord));
-      }
+      if (candidates.length === 0) candidates = found.filter(f => f.schemeName.toLowerCase().includes(amcWord));
 
       const scored = candidates.map(scheme => {
         const sName = cleanAndNormalize(scheme.schemeName);
@@ -16372,6 +16378,7 @@ async function renderMfInsightsPanel() {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    resolveSchemeCodes,
     liveGoals,
     goalTrackedValue,
     __setStateForTest: (next) => { state = next; goalLiveCache.at = 0; },

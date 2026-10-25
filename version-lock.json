@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.127",
-    "sha256": "ab08c7cabaf7f4e3342c311ac57b3467f0ad83f1295fe6b84af75638fff7afdf"
+    "version": "1.0.128",
+    "sha256": "db96f36742f87ccc1761cde178fcff96bf916c58c28bf8e6be65bd5993a07d98"
   },
   "auth.js": {
     "version": "1.0.44",
