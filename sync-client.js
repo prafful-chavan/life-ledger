@@ -42,6 +42,12 @@
     listeners.forEach((fn) => { try { fn(status); } catch { /* ignore */ } });
   }
 
+  /** The gateway token: the one kept from a remembered session, else derived from the password. */
+  async function tokenOf() {
+    const kept = host.getToken && host.getToken();
+    return kept || deriveToken(host.getPassword());
+  }
+
   async function deriveToken(password) {
     if (token && tokenFor === password) return token;
     const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
@@ -91,7 +97,7 @@
     const E = Engine();
     if (host.beforeSync) await host.beforeSync();
     const state = readState();
-    const token_ = await deriveToken(host.getPassword());
+    const token_ = await tokenOf();
     const pulled = await post({ op: "pull", token: token_, sinceRev: state.rev || 0 });
 
     let local = host.getLocal();
@@ -158,6 +164,9 @@
   }
 
   const api = {
+    /** The gateway token for a password (also kept, in place of the password, when a device is remembered). */
+    deriveToken: (password) => deriveToken(password),
+
     init(h) {
       host = h;
       document.addEventListener("visibilitychange", () => { if (!document.hidden) api.sync("visible"); });
@@ -203,24 +212,24 @@
 
     /** Authenticated gateway call for add-on features (e.g. spending import). */
     async call(op, extra) {
-      const t = await deriveToken(host.getPassword());
+      const t = await tokenOf();
       return post({ op, token: t, ...(extra || {}) });
     },
 
     async listBackups() {
-      const t = await deriveToken(host.getPassword());
+      const t = await tokenOf();
       return (await post({ op: "listBackups", token: t })).backups || [];
     },
 
     async loadBackup(id) {
-      const t = await deriveToken(host.getPassword());
+      const t = await tokenOf();
       const res = await post({ op: "getBackup", token: t, id });
       const inner = await host.decryptVault(res.backup.vault);
       return { data: inner.data, at: res.backup.updatedAt, rev: res.backup.rev };
     },
 
     async snapshotNow() {
-      const t = await deriveToken(host.getPassword());
+      const t = await tokenOf();
       await post({ op: "snapshotNow", token: t });
     },
 

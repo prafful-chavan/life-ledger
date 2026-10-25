@@ -28,8 +28,8 @@
     "sha256": "5b560ed0d8f4fcfc568737a87b60e254c21ec8220e3d99e7be434005052a22a9"
   },
   "auth.js": {
-    "version": "1.0.44",
-    "sha256": "b80295c0672382640498a19a14a827e83f63ee6190a13089425b588767ffd25f"
+    "version": "1.0.45",
+    "sha256": "874a516b903dc66f8406bed99b4670c768685a52ec81d70df767153d46230879"
   },
   "cmdk-core.js": {
     "version": "1.0.0",
@@ -123,6 +123,10 @@
     "version": "1.0.4",
     "sha256": "951a03ac680df4fe4eed9e791f428f323d933944c7b6637c8867ec556aeeef52"
   },
+  "remember-core.js": {
+    "version": "1.0.0",
+    "sha256": "4dae42ad2ef0fcd84896ced6952dbc165b572619d0e979fecdc18cf37a876a15"
+  },
   "salary-core.js": {
     "version": "1.0.1",
     "sha256": "0632c1c63dc07efa40b1345b5a4adad4f88aa795663d1c5ca127708e9529fa2f"
@@ -156,8 +160,8 @@
     "sha256": "8c038acf487240d913c22a5019ddfdc20bb9ed20ee4634cfc05dad4860978966"
   },
   "sync-client.js": {
-    "version": "1.0.4",
-    "sha256": "05d824523fcf66e9eed3b57a0b6fc037db51de5f080f32b11b422b2ffdc771ea"
+    "version": "1.0.5",
+    "sha256": "305b46a82d6d6950210efbbc9ecf5ded1b8ee0b4314356d16fb2c06b5f649278"
   },
   "sync-engine.js": {
     "version": "1.1.1",

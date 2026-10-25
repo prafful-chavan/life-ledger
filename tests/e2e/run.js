@@ -141,6 +141,42 @@ const SCANNER = `(${function scan() {
     check("a new vault is created and the app opens", ready);
     check("the heavy files are not loaded at start-up", !requested.some((p) => /interview-db|xlsx/.test(p)), requested.filter((p) => /interview-db|xlsx/.test(p)).join(", "));
 
+    // 1a. "Remember this device" never keeps the password: a non-extractable key does the remembering
+    console.log("\nRemember this device");
+    const PW = "e2e-throwaway-pass-1";
+    const waitReady = async () => { let ok = false; for (let i = 0; i < 40 && !ok; i++) { await sleep(500); ok = await cdp.eval(`Boolean(window.LifeLedgerApp && document.getElementById('appShell') && !document.getElementById('appShell').classList.contains('hidden'))`); } return ok; };
+    const rememberLook = () => cdp.eval(`(async()=>{ const all=[]; for (const st of [localStorage, sessionStorage]) for (let i=0;i<st.length;i++) all.push(st.key(i)+'='+st.getItem(st.key(i)));
+      const rec = await new Promise((res)=>{ const r=indexedDB.open('lifeLedgerRemember',1); r.onupgradeneeded=()=>r.result.createObjectStore('k'); r.onsuccess=()=>{ const g=r.result.transaction('k').objectStore('k').get('v2'); g.onsuccess=()=>res(g.result||null); g.onerror=()=>res(null); }; r.onerror=()=>res(null); });
+      return {leak: all.some((x)=>x.includes(${JSON.stringify(PW)})), marker: localStorage.getItem('lifeLedgerRemember:v2'), legacy: localStorage.getItem('lifeLedgerRemember:v1'), rec: rec && {v: rec.v, type: rec.key && rec.key.type, extractable: rec.key && rec.key.extractable, days: Math.round((rec.expiresAt-Date.now())/86400000), token: /^[0-9a-f]{64}$/.test(rec.token||''), hasPassword: JSON.stringify(Object.keys(rec)).includes('password')} }; })()`);
+    const rem1 = await rememberLook();
+    check("remembering this device keeps no copy of the password in browser storage", !rem1.leak && rem1.rec && !rem1.rec.hasPassword && !rem1.legacy, JSON.stringify(rem1));
+    check("what is kept is a non-extractable key, valid for 30 days, and the sync token", rem1.rec && rem1.rec.v === 2 && rem1.rec.type === "secret" && rem1.rec.extractable === false && rem1.rec.days >= 29 && rem1.rec.days <= 30 && rem1.rec.token && rem1.marker, JSON.stringify(rem1));
+    await goto(base);
+    check("reopening the app unlocks it from the remembered key, no password typed", await waitReady());
+    // saving after a remembered unlock works without the password, and the change survives another reopen
+    await cdp.eval(`(async()=>{ const s=LifeLedgerApp.getState(); s.taxProfile={...(s.taxProfile||{}), e2eRemember: 'kept'}; await LifeLedgerAuth.saveAppData(s); await new Promise(r=>setTimeout(r,1500)); return 1; })()`);
+    await goto(base); await waitReady();
+    check("a change saved after a remembered unlock is still there after reopening", await cdp.eval(`(LifeLedgerApp.getState().taxProfile||{}).e2eRemember === 'kept'`));
+    // an old record that held the password in plain text is converted and deleted
+    await cdp.eval(`(async()=>{ await new Promise((res)=>{ const r=indexedDB.open('lifeLedgerRemember',1); r.onsuccess=()=>{ const t=r.result.transaction('k','readwrite'); t.objectStore('k').delete('v2'); t.oncomplete=()=>res(); }; });
+      localStorage.removeItem('lifeLedgerRemember:v2'); localStorage.setItem('lifeLedgerRemember:v1', JSON.stringify({expiresAt: Date.now()+5*86400000, password: ${JSON.stringify(PW)}, ok:true})); return 1; })()`);
+    await goto(base);
+    check("an old plain-text record still unlocks once, then is converted", await waitReady());
+    const rem2 = await rememberLook();
+    check("the plain-text password is gone after the conversion; the safe key is in its place", !rem2.leak && !rem2.legacy && rem2.rec && rem2.rec.extractable === false && rem2.rec.days >= 4 && rem2.rec.days <= 5, JSON.stringify(rem2));
+    // a bad remembered record (an extractable key) is refused and the app asks for the password
+    await cdp.eval(`(async()=>{ const k = await crypto.subtle.generateKey({name:'AES-GCM',length:256}, true, ['encrypt','decrypt']);
+      await new Promise((res)=>{ const r=indexedDB.open('lifeLedgerRemember',1); r.onsuccess=()=>{ const t=r.result.transaction('k','readwrite'); t.objectStore('k').put({v:2, expiresAt:Date.now()+86400000, key:k, salt:'AAAA', token:'a'.repeat(64)}, 'v2'); t.oncomplete=()=>res(); }; }); return 1; })()`);
+    await goto(base); await sleep(1500);
+    check("a remembered record with a readable key is refused: the password screen shows", await cdp.eval(`document.getElementById('appShell').classList.contains('hidden')`) && (await rememberLook()).rec === null);
+    await cdp.eval(`(()=>{document.getElementById('loginPassword').value=${JSON.stringify(PW)}; document.getElementById('loginForm')?.requestSubmit?.() || document.getElementById('loginButton')?.click(); return 1})()`);
+    check("typing the password still unlocks, and remembers safely again", await waitReady() && (await rememberLook()).rec && (await rememberLook()).rec.extractable === false);
+    await cdp.eval(`LifeLedgerAuth.logout(); 0`); await sleep(800);
+    const rem3 = await rememberLook();
+    check("signing out forgets the remembered key", rem3.rec === null && !rem3.marker, JSON.stringify(rem3));
+    await cdp.eval(`(()=>{document.getElementById('loginPassword').value=${JSON.stringify(PW)}; document.getElementById('loginForm')?.requestSubmit?.() || document.getElementById('loginButton')?.click(); return 1})()`);
+    check("after signing out, typing the password unlocks again", await waitReady());
+
     // 1b. Protection on a brand-new vault: the empty ₹0 rows are put in place once
     console.log("\nProtection");
     await view("protection");

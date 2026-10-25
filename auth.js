@@ -3,7 +3,10 @@
  */
 (function () {
   const SESSION_KEY = "lifeLedgerSession:v1";
+  // Old "remember" record: it held the master password in plain text. Only read (and deleted) to convert it, never written.
   const REMEMBER_KEY = "lifeLedgerRemember:v1";
+  // New marker: when the remembered session ends. No secret is in it (see remember-core.js).
+  const REMEMBER_MARK = "lifeLedgerRemember:v2";
   const SESSION_HOURS = 12;
   const REMEMBER_DAYS = 30;
   const PBKDF2_ITERATIONS = 250000;
@@ -144,14 +147,38 @@
     return JSON.parse(dec().decode(jsonBytes));
   }
 
+  /** Where the remembered key lives: IndexedDB, which can hold a non-extractable key (localStorage cannot). */
+  function rememberStore() {
+    const open = () => new Promise((resolve, reject) => {
+      const req = indexedDB.open("lifeLedgerRemember", 1);
+      req.onupgradeneeded = () => req.result.createObjectStore("k");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const run = async (mode, fn) => {
+      const db = await open();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction("k", mode);
+        const out = fn(tx.objectStore("k"));
+        tx.oncomplete = () => { db.close(); resolve(out && out.result); };
+        tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+      });
+    };
+    return {
+      get: () => run("readonly", (st) => st.get("v2")),
+      put: (rec) => run("readwrite", (st) => st.put(rec, "v2")),
+      del: () => run("readwrite", (st) => st.delete("v2")),
+    };
+  }
+
   function readSession() {
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(REMEMBER_KEY);
+      const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(REMEMBER_MARK) || localStorage.getItem(REMEMBER_KEY);
       if (!raw) return null;
       const session = JSON.parse(raw);
       if (!session?.expiresAt || Date.now() > session.expiresAt) {
         sessionStorage.removeItem(SESSION_KEY);
-        localStorage.removeItem(REMEMBER_KEY);
+        localStorage.removeItem(REMEMBER_MARK);
         return null;
       }
       return session;
@@ -167,7 +194,9 @@
 
   function clearSession() {
     sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(REMEMBER_MARK);
     localStorage.removeItem(REMEMBER_KEY);
+    try { rememberStore().del().catch(() => {}); } catch { /* no IndexedDB: nothing was kept */ }
     unlockedPayload = null;
   }
 
@@ -175,38 +204,30 @@
     return document.getElementById("rememberDevice")?.checked !== false;
   }
 
-  function readRememberedPassword() {
-    try {
-      const raw = localStorage.getItem(REMEMBER_KEY);
-      if (!raw) return null;
-      const data = JSON.parse(raw);
-      if (!data?.expiresAt || Date.now() > data.expiresAt) {
-        localStorage.removeItem(REMEMBER_KEY);
-        return null;
-      }
-      return data.password || null;
-    } catch {
-      return null;
-    }
-  }
-
-  function saveRememberedPassword(password) {
+  /**
+   * Keep this device signed in for 30 days WITHOUT keeping the password: the vault's key (non-extractable), its salt and the sync
+   * token go to IndexedDB; only the end date goes to localStorage. Called with the live key right after a successful unlock.
+   */
+  async function saveRemembered(password, key, salt) {
     const shortExpiry = Date.now() + SESSION_HOURS * 60 * 60 * 1000;
-    if (!rememberPasswordEnabled() || !password) {
-      localStorage.removeItem(REMEMBER_KEY);
+    localStorage.removeItem(REMEMBER_KEY);
+    const R = window.LifeLedgerRemember;
+    if (!rememberPasswordEnabled() || !key || !salt || !R || !window.LifeLedgerSync?.deriveToken || typeof indexedDB === "undefined") {
+      localStorage.removeItem(REMEMBER_MARK);
+      try { await rememberStore().del(); } catch { /* nothing was kept */ }
       writeSession(shortExpiry);
       return;
     }
-    const longExpiry = Date.now() + REMEMBER_DAYS * 24 * 60 * 60 * 1000;
-    localStorage.setItem(
-      REMEMBER_KEY,
-      JSON.stringify({
-        expiresAt: longExpiry,
-        password,
-        ok: true,
-      })
-    );
-    writeSession(longExpiry);
+    try {
+      const token = await window.LifeLedgerSync.deriveToken(password);
+      const rec = R.newRecord({ key, salt: bytesToBase64(salt), token, now: Date.now() });
+      localStorage.setItem(REMEMBER_MARK, JSON.stringify(await R.save(rememberStore(), rec, Date.now())));
+      writeSession(rec.expiresAt);
+    } catch (e) {
+      console.warn("[auth.js] Could not remember this device:", e && e.message);
+      localStorage.removeItem(REMEMBER_MARK);
+      writeSession(shortExpiry);
+    }
   }
 
   function vaultInnerPayload(data, totpSecret, sync) {
@@ -542,9 +563,10 @@
     };
   }
 
+  const remoteKeyCache = new Map();
   async function openVault(password, vault) {
     const salt = base64ToBytes(vault.salt);
-    const key = await deriveAesKey(password, salt);
+    const key = remoteKeyCache.get(vault.salt) || await deriveAesKey(password, salt);
     return decryptJson(key, vault.iv, vault.ciphertext, vault.compressed || false);
   }
 
@@ -592,7 +614,7 @@
     const password = unlockedPayload._sessionPassword;
     const salt = unlockedPayload._salt;
     const sessionKey = unlockedPayload._sessionKey;
-    if (!password || !vaultMeta) throw new Error("Session expired — sign in again");
+    if (!(password || sessionKey) || !vaultMeta) throw new Error("Session expired — sign in again");
     const vault = await buildVault(
       password,
       vaultInnerPayload(unlockedPayload.data, unlockedPayload.totpSecret, unlockedPayload.sync),
@@ -640,12 +662,13 @@
     return { data: snapshotData, meta: merged.meta, vault, remoteBehind, liveChanged };
   }
 
-  const remoteKeyCache = new Map();
   async function decryptRemoteVault(remoteVault) {
     const password = unlockedPayload._sessionPassword;
     const cacheKey = remoteVault.salt;
     let key = remoteKeyCache.get(cacheKey);
     if (!key) {
+      // A vault with another salt means the password was changed elsewhere; the remembered key cannot open it
+      if (!password) throw new Error("Session expired — sign in again");
       key = await deriveAesKey(password, base64ToBytes(remoteVault.salt));
       remoteKeyCache.set(cacheKey, key);
     }
@@ -658,6 +681,7 @@
     Sync.init({
       isReady: () => Boolean(unlockedPayload && vaultMeta),
       getPassword: () => unlockedPayload._sessionPassword,
+      getToken: () => unlockedPayload._sessionToken,
       getLocal: () => ({
         data: unlockedPayload.data,
         meta: unlockedPayload.sync || window.LifeLedgerSyncEngine.emptyMeta(),
@@ -778,14 +802,16 @@
     pollBackoffMultiplier = 1;
   }
 
-  function unlockApp(inner, password, salt = null, key = null) {
+  function unlockApp(inner, password, salt = null, key = null, extra = {}) {
     unlockedPayload = { 
       ...inner, 
-      _sessionPassword: password,
+      _sessionPassword: password,   // null when the session was restored from the remembered key (the password is not kept)
+      _sessionToken: extra.token || null,
       _salt: salt,
       _sessionKey: key
     };
-    saveRememberedPassword(password);
+    if (key && salt) remoteKeyCache.set(bytesToBase64(salt), key);
+    if (password) saveRemembered(password, key, salt);
     try {
       if (inner.gatewayUrl && !localStorage.getItem("lifeLedgerStockProxyUrl")) {
         localStorage.setItem("lifeLedgerStockProxyUrl", inner.gatewayUrl);
@@ -847,17 +873,31 @@
 
   async function tryAutoUnlock() {
     if (!vaultMeta) return false;
-    const remembered = readRememberedPassword();
-    if (!remembered) return false;
+    const R = window.LifeLedgerRemember;
+    if (!R || typeof indexedDB === "undefined") { localStorage.removeItem(REMEMBER_KEY); return false; }
     try {
+      const store = rememberStore();
+      // An older version kept the password itself in plain text: convert it to the safe form and delete it.
+      const legacyRaw = localStorage.getItem(REMEMBER_KEY);
+      if (legacyRaw) {
+        localStorage.removeItem(REMEMBER_KEY);
+        const mig = await R.migrateLegacy(legacyRaw, async (pw) => {
+          const salt = base64ToBytes(vaultMeta.salt);
+          return { key: await deriveAesKey(pw, salt), salt: vaultMeta.salt, token: await window.LifeLedgerSync.deriveToken(pw) };
+        }, Date.now());
+        if (mig) { await store.put(mig.record); localStorage.setItem(REMEMBER_MARK, JSON.stringify(R.marker(mig.record))); }
+      }
+      const rec = await R.load(store, Date.now());
+      if (!rec) { localStorage.removeItem(REMEMBER_MARK); return false; }
+      if (rec.salt !== vaultMeta.salt) { await store.del(); localStorage.removeItem(REMEMBER_MARK); return false; }   // password changed elsewhere
       const salt = base64ToBytes(vaultMeta.salt);
-      const key = await deriveAesKey(remembered, salt);
-      const inner = await decryptJson(key, vaultMeta.iv, vaultMeta.ciphertext, vaultMeta.compressed || false);
+      const inner = await decryptJson(rec.key, vaultMeta.iv, vaultMeta.ciphertext, vaultMeta.compressed || false);
       if (!inner?.data) return false;
-      unlockApp(inner, remembered, salt, key);
+      unlockApp(inner, null, salt, rec.key, { token: rec.token });
       return true;
     } catch {
-      localStorage.removeItem(REMEMBER_KEY);
+      localStorage.removeItem(REMEMBER_MARK);
+      try { await rememberStore().del(); } catch { /* nothing kept */ }
       return false;
     }
   }
@@ -1111,7 +1151,7 @@
         return;
       }
 
-      if (readSession() && !readRememberedPassword()) {
+      if (readSession() && !localStorage.getItem(REMEMBER_MARK)) {
         setAuthMessage("loginMessage", "Session ended. Enter your password (same one as before).", false);
       }
     },
