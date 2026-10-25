@@ -1,6 +1,6 @@
 /** The real Sync Holdings parser, run twice on the same sheet: identical ids; and loading drops leftover copies. */
 const assert = require("assert");
-const XLSX = require("xlsx");
+const XLSX = require("../vendor/xlsx-0.20.3.full.min.js");
 global.XLSX = XLSX;
 const app = require("../app.js");
 const HI = require("../holdings-integrity.js");

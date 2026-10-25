@@ -45,4 +45,17 @@ for (const f of BROWSER_JS) {
 }
 assert.ok(!/password\s*[:,]/.test((read("auth.js").match(/localStorage\.setItem\(\s*REMEMBER_MARK[\s\S]{0,120}/) || [""])[0]), "the remembered marker holds no password");
 
+// ── third-party code is served from this site and pinned by hash ──
+assert.deepStrictEqual(csp["script-src"].filter((x) => x.startsWith("https://")), ["https://accounts.google.com"], "the only outside script host is Google sign-in");
+const PINNED = {
+  "vendor/xlsx-0.20.3.full.min.js": "EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT",
+  "vendor/sqljs-1.8.0/sql-wasm.js": "KsfptB549CXfbfsdxZmPo2PlmgCyJ+RNqHTQE1Gj45t3p4DaA1QbZYVyqlni4pOO",
+  "vendor/sqljs-1.8.0/sql-wasm.wasm": "AS2JK6pQgcjrHesLM8C6EQ0u87+/VcHqKXIPDFVCgQgO2A258+LHg7ID8d66NgPW",
+};
+const crypto = require("crypto");
+for (const [file, hash] of Object.entries(PINNED)) {
+  assert.strictEqual(crypto.createHash("sha384").update(fs.readFileSync(path.join(ROOT, file))).digest("base64"), hash, `${file} differs from its pinned hash (see vendor/VERSIONS.md)`);
+  assert.ok(read("vendor/VERSIONS.md").includes(hash), `${file}: the hash is recorded in vendor/VERSIONS.md`);
+}
+assert.ok(/XLSX_URL = "vendor\//.test(read("app.js")) && /SQLJS_BASE = "vendor\//.test(read("spending-import.js")), "the app loads the vendored copies");
 console.log("security-guards: all checks passed");

@@ -6,8 +6,5 @@
     "test": "node tools/run-unit-tests.js",
     "test:e2e": "node tests/e2e/run.js",
     "version-lock": "node tools/update-version-lock.js"
-  },
-  "devDependencies": {
-    "xlsx": "0.18.5"
   }
 }

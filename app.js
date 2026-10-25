@@ -524,7 +524,8 @@ function reconcileGeminiKey() {
 // ── Load heavy files only when they are needed ────────────────────────────────
 // The spreadsheet reader (~930 KB) is only needed for imports and the interview question bank (~1 MB) only for
 // Career, so neither delays the first screen any more.
-const XLSX_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+// Served from this site (vendor/, pinned by hash in vendor/VERSIONS.md), not from a third-party CDN: code that runs next to your unlocked data.
+const XLSX_URL = "vendor/xlsx-0.20.3.full.min.js";
 const INTERVIEW_DB_URL = "interview-db.js?v=1.0.8";
 const scriptLoads = {};
 function loadScriptOnce(src) {

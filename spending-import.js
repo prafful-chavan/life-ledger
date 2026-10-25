@@ -4,7 +4,7 @@
  * sql.js, converts rows to expenses via LifeLedgerSpendingCore and merges them.
  */
 (function () {
-  const SQLJS_BASE = "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/";
+  const SQLJS_BASE = "vendor/sqljs-1.8.0/";   // served from this site, pinned by hash in vendor/VERSIONS.md
   const AUTO_CHECK_KEY = "lifeLedgerSpendingLastCheck";
   const AUTO_EVERY_MS = 30 * 60 * 1000;      // at most one Dropbox check per device every 30 min
   const AUTO_POLL_MS = 10 * 60 * 1000;       // while the app stays open and visible

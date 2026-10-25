@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.132",
-    "sha256": "bb12b1db8540d23f0bda9261c034b9c315cc709c8736b870bc939352e502637f"
+    "version": "1.0.133",
+    "sha256": "3bfdbafcd75815d0bb2518abd0cc5029073f364317d883c349a8cc92544c5d71"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -144,8 +144,8 @@
     "sha256": "229a6d67f6c1b1d52d3dfe0fb409d1cb19f580333fb8099d49190574a0b95408"
   },
   "spending-import.js": {
-    "version": "1.0.13",
-    "sha256": "7b1d01670102b0ec61aadd12d86d29eab3c0cc42f47c642c3e19900d7ed62840"
+    "version": "1.0.14",
+    "sha256": "e8a60bceb17d3b85966a79b6b9b8868623610443dee35f3483c31d482a827777"
   },
   "spending-insights-core.js": {
     "version": "1.0.2",

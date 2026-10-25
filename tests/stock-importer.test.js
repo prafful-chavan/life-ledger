@@ -346,7 +346,7 @@ runTest('calcStockCostBasis: accurately computes realizedGain from sold shares u
 // Test 15: Mutual Fund Tab Name Matching (6. Mutual fund of my / 7. mutual fund of my wife)
 // ----------------------------------------------------------------------
 runTest('parseMasterHoldingsWorkbook: correctly maps "6. Mutual fund of my" and "7. mutual fund of my wife"', () => {
-  const XLSX = require('xlsx');
+  const XLSX = require('../vendor/xlsx-0.20.3.full.min.js');
   global.XLSX = XLSX;
   const app = require('../app.js');
 
@@ -397,7 +397,7 @@ runTest('normalizeOwner & matchHoldingsOwner: protects "Owner (Me / Wife)" heade
 // Test 17: User Real US Stocks Tab (My_US_Stocks) with Stock Symbol, Holding Since, Quantity, Avg. Price ($), Total Value ($)
 // ----------------------------------------------------------------------
 runTest('parseMasterHoldingsWorkbook: correctly parses "My_US_Stocks" tab with exact user fractional holdings and dates', () => {
-  const XLSX = require('xlsx');
+  const XLSX = require('../vendor/xlsx-0.20.3.full.min.js');
   global.XLSX = XLSX;
   const app = require('../app.js');
 
@@ -433,7 +433,7 @@ runTest('parseMasterHoldingsWorkbook: correctly parses "My_US_Stocks" tab with e
 // Test 18: ISIN & Company Name Ticker Resolution for Groww & NSDL CAS exports
 // ----------------------------------------------------------------------
 runTest('resolveNseSymbol & parseMasterHoldingsWorkbook: resolves exact NSE tickers via ISIN & full company names', () => {
-  const XLSX = require('xlsx');
+  const XLSX = require('../vendor/xlsx-0.20.3.full.min.js');
   global.XLSX = XLSX;
   const app = require('../app.js');
 
@@ -473,7 +473,7 @@ runTest('resolveNseSymbol & parseMasterHoldingsWorkbook: resolves exact NSE tick
 // Test 19: Minimal 3-Column Stock Sheet Parsing (Stock Name/ISIN | Quantity | Avg Price)
 // ----------------------------------------------------------------------
 runTest('parseMasterHoldingsWorkbook: parses minimal 3-column stock sheet and auto-generates all metrics', () => {
-  const XLSX = require('xlsx');
+  const XLSX = require('../vendor/xlsx-0.20.3.full.min.js');
   global.XLSX = XLSX;
   const app = require('../app.js');
 
@@ -507,7 +507,7 @@ runTest('parseMasterHoldingsWorkbook: parses minimal 3-column stock sheet and au
 // Test 20: User Master ISIN & Quantity Scheme Verification
 // ----------------------------------------------------------------------
 runTest('parseMasterHoldingsWorkbook: parses user exact ISIN + Qty + AVG master tables accurately', () => {
-  const XLSX = require('xlsx');
+  const XLSX = require('../vendor/xlsx-0.20.3.full.min.js');
   global.XLSX = XLSX;
   const app = require('../app.js');
 

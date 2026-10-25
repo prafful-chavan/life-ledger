@@ -1,5 +1,5 @@
 /** Parsers for the broker statements the household downloads (Zerodha tax P&L, Groww capital gains, Upstox tax report). Pure given a workbook. */
-const X = require("xlsx");
+const X = require("../../vendor/xlsx-0.20.3.full.min.js");
 const n = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const rowsOf = (wb, sheet) => X.utils.sheet_to_json(wb.Sheets[sheet], { header: 1, defval: "" });
 const labelValue = (rows, re) => { const r = rows.find((r) => typeof r[0] === "string" && re.test(r[0].replace(/\s+/g, " ")) && r[1] !== "" && !isNaN(Number(r[1]))); return r ? n(r[1]) : 0; };

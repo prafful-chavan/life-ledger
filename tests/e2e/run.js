@@ -426,7 +426,7 @@ const SCANNER = `(${function scan() {
 
     // 4c. Sync Holdings preview: a sheet that would wipe the stocks and most funds asks first; "No" changes nothing
     console.log("\nSync Holdings preview");
-    await cdp.eval(fs.readFileSync(path.join(ROOT, "node_modules", "xlsx", "dist", "xlsx.full.min.js"), "utf8") + "; 0");   // the page's spreadsheet reader
+    await cdp.eval(fs.readFileSync(path.join(ROOT, "vendor", "xlsx-0.20.3.full.min.js"), "utf8") + "; 0");   // the page's spreadsheet reader
     const sh = JSON.parse(await cdp.eval(`(async()=>{
       const sleep=(ms)=>new Promise((r)=>setTimeout(r,ms));
       const s0=LifeLedgerApp.getState(); const before={mf:s0.mutualFunds.length, st:s0.stocks.length};
@@ -571,6 +571,11 @@ const SCANNER = `(${function scan() {
       check(`dashboards at ${w}px: no tab or table overflows its panel`, fit.bad.length === 0 && fit.page <= 1, JSON.stringify(fit));
     }
     await viewport(1280, 900); await sleep(300);
+    // The SQLite and spreadsheet readers are served from this site and still run under the Content-Security-Policy
+    const vend = JSON.parse(await cdp.eval(`(async()=>{ const out={}; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='vendor/sqljs-1.8.0/sql-wasm.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+      const SQL=await window.initSqlJs({locateFile:(f)=>'vendor/sqljs-1.8.0/'+f}); const db=new SQL.Database(); db.run('create table t(a); insert into t values (41),(1);'); out.sum=db.exec('select sum(a) from t')[0].values[0][0];
+      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='vendor/xlsx-0.20.3.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); out.xlsx=window.XLSX&&window.XLSX.version; return JSON.stringify(out); })()`));
+    check("vendored SQLite reader runs a query and the spreadsheet reader loads, under the policy", vend.sum === 42 && vend.xlsx === "0.20.3", JSON.stringify(vend));
     // AI permission: nothing is sent to an AI service until the household says yes; it can be withdrawn in Settings
     console.log("\nAI permission");
     const ai = JSON.parse(await cdp.eval(`(async()=>{ const out={}; const sent=[]; const of=window.fetch; window.fetch=(u,o)=>{ if(/generativelanguage|openrouter/.test(String(u))) { sent.push(String(u)); return Promise.resolve(new Response(JSON.stringify({candidates:[{content:{parts:[{text:'{"summary":"ok"}'}]}}]}),{status:200})); } return of(u,o); };
