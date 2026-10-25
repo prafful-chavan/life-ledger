@@ -192,6 +192,8 @@ function makeDevice(gw, name) {
   gw.call({ op: "snapshotNow", token: anyToken });
   assert.strictEqual(gw.locks.n, before + 2, "push and snapshotNow still take the lock");
 
+  assert.ok(/^\d{4}-\d{2}-\d{2}-[a-z-]+$/.test(gw.meta().build), "the gateway reports which build is deployed");
+
   // An empty gateway cannot be claimed with a made-up token; only a proper 64-character lower-case hex token is accepted
   {
     const fresh = makeGatewayRuntime();

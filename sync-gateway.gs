@@ -13,6 +13,7 @@
 var SYNC_FOLDER_NAME = "Life Ledger Sync";
 var SYNC_STATE_FILE = "state.json";
 var SYNC_BACKUP_PREFIX = "backup-";
+var SYNC_BUILD = "2026-10-26-token-checks";
 var SYNC_MAX_BACKUPS = 40;
 var SYNC_BACKUP_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -76,7 +77,8 @@ function syncWriteBackup_(folder, state, reason) {
 // (the salt is not secret; it's needed before the password can be used).
 function syncMeta_() {
   var s = syncReadState_(syncFolder_());
-  return { ok: true, gateway: "v1", exists: !!s.vault, rev: s.rev || 0, salt: s.vault ? s.vault.salt : null };
+  // `build` says which version of this file is deployed (so it can be checked from outside after "New version").
+  return { ok: true, gateway: "v1", build: SYNC_BUILD, exists: !!s.vault, rev: s.rev || 0, salt: s.vault ? s.vault.salt : null };
 }
 
 function syncHandle_(req) {
