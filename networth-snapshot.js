@@ -162,8 +162,53 @@
     };
   }
 
+  /**
+   * Fold a rebuild from the backend price ledger into one day's record, class by class, never making a good record worse.
+   * existing = the stored record for that day (or null); entry = the rebuild, with entry.complete[class] true only when every
+   * holding of that class had a price in the ledger; base = the previous day's record (used only when there is no record yet).
+   *
+   * A class is taken from the rebuild only when it is complete AND an improvement: there was no record, or the rebuild settled
+   * the class (locked it at its close) and the record had not. A class the rebuild could not complete keeps the record's value
+   * (with no record: yesterday's value, marked not settled) — a holding the ledger had no price for must never drop out of the sum.
+   * Returns { record, changed }; changed is false when nothing was taken (keep the stored record as it is).
+   */
+  function mergeLedgerEntry(i) {
+    const { existing, entry, base } = i;
+    const classes = i.classes || MARKET_CLASSES;
+    const complete = entry.complete || {};
+    const out = existing ? { ...existing } : { ...entry };
+    delete out.complete;
+    out.changes = { ...(existing ? existing.changes : entry.changes) };
+    out.settled = { ...(existing ? existing.settled : entry.settled) };
+    out.asOf = { ...(existing ? existing.asOf : entry.asOf) };
+    let taken = 0;
+    for (const k of classes) {
+      const rebuilt = Boolean(complete[k]);
+      const improves = !existing || (entry.settled && entry.settled[k] && !(existing.settled && existing.settled[k]));
+      if (rebuilt && improves) {
+        out[k] = num(entry[k]); out.changes[k] = num(entry.changes && entry.changes[k]); out.settled[k] = Boolean(entry.settled && entry.settled[k]); out.asOf[k] = entry.asOf && entry.asOf[k];
+        taken++;
+      } else if (!existing) {
+        out[k] = num(base && base[k]); out.changes[k] = 0; out.settled[k] = false; out.asOf[k] = null;
+      }
+    }
+    if (existing && taken === 0) return { record: existing, changed: false };
+    const sum = (list) => list.reduce((t, k) => t + num(out[k]), 0);
+    const r2 = (n) => Math.round(n * 100) / 100;
+    out.totalAssets = r2(sum(classes) + sum(OTHER_CLASSES));
+    out.liabilities = num(existing ? existing.liabilities : entry.liabilities);
+    out.totalLiabilities = num(existing ? existing.totalLiabilities : entry.totalLiabilities);
+    out.netWorth = r2(out.totalAssets - out.liabilities);
+    const market = sum(classes), dayChange = r2(classes.reduce((t, k) => t + num(out.changes[k]), 0));
+    out.dayChange = dayChange;
+    out.dayChangePct = market - dayChange > 0 ? r2((dayChange / (market - dayChange)) * 100) : 0;
+    out.final = classes.every((k) => out.settled[k]);
+    out.source = "backend-ledger";
+    return { record: out, changed: true };
+  }
+
   return {
-    MARKET_CLASSES, CLASS_LABELS, STOCKS_SETTLE_MIN_IST, GOLD_SETTLE_MIN_IST,
+    MARKET_CLASSES, CLASS_LABELS, mergeLedgerEntry, STOCKS_SETTLE_MIN_IST, GOLD_SETTLE_MIN_IST,
     zonedClock, istClock, istTodayISO, isUsMarketClosedAt, prevBusinessDayISO, isClassSettled, holdingsSignature, assembleSnapshot,
   };
 });

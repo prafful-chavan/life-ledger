@@ -134,4 +134,45 @@ r = S.assembleSnapshot(base({ existing: old(100000), breakdown: bd({ stocks: 0.5
 // the same-move rule also applies to tiny previous values, and a previous zero never matches
 r = S.assembleSnapshot(base({ breakdown: bd({ mutualFunds: 0.5 }), prevRecord: { date: "2026-10-20", mutualFunds: 0.5, changes: { mutualFunds: -3000.46 } } })); assert.strictEqual(r.changes.mutualFunds, 0, "₹0.50 yesterday, ₹0.50 today, same move");
 
+
+// ── folding a ledger rebuild into a day's record (the 24 Oct 2026 incident: a fund the ledger had no price for dropped out of the day, −₹6.79L) ──
+{
+  const base = { mutualFunds: 4277000, stocks: 1523000, usStocks: 204000, gold: 2293000, silver: 25000, crypto: 3500, fd: 2000000, epf: 1313369, ppf: 318966, bonds: 76735, bankSaving: 450000, others: 611000, liabilities: 40000 };
+  const rec = (o) => ({ id: "nwh-1", date: "2026-10-24", mutualFunds: 4234048, stocks: 1496000, usStocks: 203000, gold: 2265000, silver: 25000, crypto: 3500, fd: 2000000, epf: 1313369, ppf: 318966, bonds: 76735, bankSaving: 450000, others: 611000, liabilities: 40000, totalLiabilities: 40000, changes: { mutualFunds: -39000, stocks: 0, usStocks: 0, gold: 500 }, settled: { mutualFunds: false, stocks: false, usStocks: false, gold: false }, asOf: { mutualFunds: "a", stocks: "a", usStocks: "a", gold: "a" }, final: false, source: "official-close", ...o });
+  const ent = (o) => ({ date: "2026-10-24", mutualFunds: 3554885, stocks: 1496500, usStocks: 203500, gold: 2265500, liabilities: 40000, totalLiabilities: 40000, changes: { mutualFunds: -1, stocks: 10, usStocks: 20, gold: 30 }, settled: { mutualFunds: false, stocks: true, usStocks: true, gold: true }, asOf: { mutualFunds: "b", stocks: "b", usStocks: "b", gold: "b" }, complete: { mutualFunds: false, stocks: true, usStocks: true, gold: true }, ...o });
+  const sumNw = (r) => ["mutualFunds", "stocks", "usStocks", "gold", "silver", "crypto", "fd", "epf", "ppf", "bonds", "bankSaving", "others"].reduce((t, k) => t + r[k], 0) - r.liabilities;
+  const M = S.mergeLedgerEntry;
+
+  // the incident: stocks, US and gold improve; the mutual funds the ledger could not fully price keep the good value
+  let m = M({ existing: rec(), entry: ent() });
+  assert.strictEqual(m.changed, true); assert.strictEqual(m.record.mutualFunds, 4234048, "the fund value is not replaced by a rebuild that missed a fund");
+  assert.strictEqual(m.record.stocks, 1496500); assert.strictEqual(m.record.usStocks, 203500); assert.strictEqual(m.record.gold, 2265500);
+  assert.deepStrictEqual(m.record.settled, { mutualFunds: false, stocks: true, usStocks: true, gold: true }); assert.strictEqual(m.record.final, false);
+  assert.strictEqual(m.record.netWorth, sumNw(m.record), "net worth is the sum of its parts"); assert.strictEqual(m.record.totalAssets, m.record.netWorth + 40000);
+  assert.strictEqual(m.record.changes.mutualFunds, -39000, "…and keeps that class's change"); assert.strictEqual(m.record.dayChange, -39000 + 10 + 20 + 30); assert.strictEqual(m.record.id, "nwh-1"); assert.strictEqual(m.record.source, "backend-ledger"); assert.ok(!("complete" in m.record), "the helper flags are not saved");
+  assert.ok(m.record.netWorth > 12900000, "net worth stays near ₹1.29 crore, not ₹1.22 crore");
+  // nothing complete: the stored record is untouched (the very same object)
+  const keep = rec(); m = M({ existing: keep, entry: ent({ complete: { mutualFunds: false, stocks: false, usStocks: false, gold: false } }) }); assert.strictEqual(m.changed, false); assert.strictEqual(m.record, keep);
+  // complete but not an improvement (not settled, or the record already settled that class): not taken
+  m = M({ existing: rec(), entry: ent({ settled: { mutualFunds: false, stocks: false, usStocks: false, gold: false } }) }); assert.strictEqual(m.changed, false, "an unsettled rebuild does not replace an unsettled record");
+  m = M({ existing: rec({ settled: { mutualFunds: true, stocks: true, usStocks: true, gold: true }, final: true }), entry: ent({ settled: { mutualFunds: true, stocks: true, usStocks: true, gold: true }, complete: { mutualFunds: true, stocks: true, usStocks: true, gold: true } }) }); assert.strictEqual(m.changed, false, "a class that is already locked is never overwritten");
+  m = M({ existing: rec({ settled: { mutualFunds: false, stocks: true, usStocks: false, gold: false } }), entry: ent() }); assert.strictEqual(m.record.stocks, 1496000, "locked stocks stay"); assert.strictEqual(m.record.usStocks, 203500, "but the other classes improve");
+  // a complete, settled mutual fund rebuild is taken
+  m = M({ existing: rec(), entry: ent({ mutualFunds: 4240000, settled: { mutualFunds: true, stocks: true, usStocks: true, gold: true }, complete: { mutualFunds: true, stocks: true, usStocks: true, gold: true } }) }); assert.strictEqual(m.record.mutualFunds, 4240000); assert.strictEqual(m.record.final, true);
+  // no record yet (a missed day): complete classes come from the rebuild, an incomplete one carries yesterday's value, unsettled
+  m = M({ existing: null, entry: ent({ silver: 25000, crypto: 3500, fd: 2000000, epf: 1313369, ppf: 318966, bonds: 76735, bankSaving: 450000, others: 611000 }), base });
+  assert.strictEqual(m.changed, true); assert.strictEqual(m.record.mutualFunds, 4277000, "no price for a fund: yesterday's value, not a part of it"); assert.strictEqual(m.record.settled.mutualFunds, false); assert.strictEqual(m.record.changes.mutualFunds, 0); assert.strictEqual(m.record.final, false);
+  assert.strictEqual(m.record.stocks, 1496500); assert.strictEqual(m.record.netWorth, sumNw(m.record));
+  m = M({ existing: null, entry: ent({ mutualFunds: 5, complete: { mutualFunds: false, stocks: false, usStocks: false, gold: false } }), base: undefined }); assert.strictEqual(m.record.mutualFunds, 0, "no record and no yesterday: nothing is invented"); assert.ok(Number.isFinite(m.record.netWorth));
+  // percent of the day's move is of the value the day started with
+  m = M({ existing: rec({ changes: { mutualFunds: 0, stocks: 0, usStocks: 0, gold: 0 } }), entry: ent({ changes: { mutualFunds: 0, stocks: 1000, usStocks: 0, gold: 0 } }) }); assert.ok(Math.abs(m.record.dayChangePct - (1000 / (m.record.mutualFunds + m.record.stocks + m.record.usStocks + m.record.gold - 1000)) * 100) < 0.01);
+  { const z = { mutualFunds: 0, stocks: 0, usStocks: 0, gold: 0 }, flag = (v) => ({ mutualFunds: v, stocks: v, usStocks: v, gold: v });
+    m = M({ existing: rec({ ...z, stocks: 10000, changes: { ...z }, settled: flag(false) }), entry: ent({ ...z, stocks: 11000, changes: { ...z, stocks: 1000 }, settled: { ...flag(false), stocks: true }, complete: { ...flag(false), stocks: true } }) });
+    assert.strictEqual(m.record.dayChange, 1000); assert.strictEqual(m.record.dayChangePct, 10, "1,000 on a 10,000 start is 10%");
+    m = M({ existing: rec({ ...z, stocks: 1000, changes: { ...z }, settled: flag(false) }), entry: ent({ ...z, stocks: 1000, changes: { ...z, stocks: 1000 }, settled: { ...flag(false), stocks: true }, complete: { ...flag(false), stocks: true } }) });
+    assert.strictEqual(m.record.dayChangePct, 0, "a day that started at nothing has no percentage (no division by zero)"); assert.ok(Number.isFinite(m.record.dayChangePct)); }
+  // the other classes and liabilities of the existing record are kept
+  m = M({ existing: rec({ fd: 2400000, liabilities: 55000, totalLiabilities: 55000 }), entry: ent() }); assert.strictEqual(m.record.fd, 2400000); assert.strictEqual(m.record.liabilities, 55000); assert.strictEqual(m.record.netWorth, sumNw(m.record));
+}
+
 console.log("networth-snapshot tests passed");

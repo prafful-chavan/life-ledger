@@ -86,7 +86,10 @@ const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/
   assert.strictEqual(R.goalNeed({ target: 100, saved: 100, dueDate: "2027-01-01" }, "2026-10-21").done, true, "a reached goal");
   assert.strictEqual(R.goalNeed({ target: 100, saved: 10, dueDate: "2026-10-01" }, "2026-10-21").overdue, true, "a missed date asks for the whole rest");
   assert.strictEqual(R.goalNeed({ target: 100, saved: 10 }, "2026-10-21").perMonth, null, "no date, no monthly figure");
-  assert.ok(/₹9,00,000 a month for 20 months/.test(said) && /₹8,334 a month for 6 months/.test(said), "and the email shows those");
+  // The email works from today's date, so the expected lines are worked out for today by the same hand formula (not frozen on one day)
+  const todayIst = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const needHome = R.goalNeed({ target: 2e7, saved: 2e6, dueDate: "2028-05-26" }, todayIst), needEmergency = R.goalNeed({ target: 200000, saved: 150000, dueDate: "2027-03-31" }, todayIst);
+  assert.ok(new RegExp(`${R.inr(needHome.perMonth).replace(/[₹.]/g, "\\$&")} a month for ${needHome.months} months`).test(said) && new RegExp(`${R.inr(needEmergency.perMonth).replace(/[₹.]/g, "\\$&")} a month for ${needEmergency.months} months`).test(said), "and the email shows those");
   assert.ok(/already hold ₹14\.\d+ L|already hold ₹1[34]/.test(said) || /Your bank savings and FDs already hold/.test(said), "an emergency-fund goal far below real cover says so");
 
   // ── Status words ──

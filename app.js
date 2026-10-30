@@ -8653,7 +8653,7 @@ function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
     return ok.length ? { rec: ok[ok.length - 1], settled: true } : { rec: dayRecords[dayRecords.length - 1], settled: false };
   };
 
-  const out = { values: {}, changes: {}, settled: {}, asOf: {} };
+  const out = { values: {}, changes: {}, settled: {}, asOf: {}, complete: {} };
 
   let c = pick('stocks', heldStocks), missing = 0, value = 0, change = 0;
   heldStocks.forEach(g => {
@@ -8662,7 +8662,7 @@ function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
     value += g.qty * q.price;
     if (q.prevClose > 0) change += g.qty * (q.price - q.prevClose);
   });
-  Object.assign(out.values, { stocks: value }); out.changes.stocks = change; out.settled.stocks = c.settled && missing === 0; out.asOf.stocks = c.rec.ts;
+  Object.assign(out.values, { stocks: value }); out.changes.stocks = change; out.settled.stocks = c.settled && missing === 0; out.asOf.stocks = c.rec.ts; out.complete.stocks = missing === 0;
 
   c = pick('usStocks', heldUs); missing = 0; value = 0; change = 0;
   const fx = Number(c.rec.fx?.usdInr) || Number(dayRecords.find(r => r.fx?.usdInr)?.fx?.usdInr) || getUsdInrRate();
@@ -8672,7 +8672,7 @@ function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
     value += g.qty * q.price * fx;
     if (q.prevClose > 0) change += g.qty * (q.price - q.prevClose) * fx;
   });
-  out.values.usStocks = value; out.changes.usStocks = change; out.settled.usStocks = c.settled && missing === 0; out.asOf.usStocks = c.rec.ts;
+  out.values.usStocks = value; out.changes.usStocks = change; out.settled.usStocks = c.settled && missing === 0; out.asOf.usStocks = c.rec.ts; out.complete.usStocks = missing === 0;
 
   c = pick('mutualFunds', heldMf); missing = 0; value = 0; change = 0;
   heldMf.forEach(g => {
@@ -8681,7 +8681,7 @@ function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
     value += g.qty * q.nav;
     if (q.prevNav > 0) change += g.qty * (q.nav - q.prevNav);
   });
-  out.values.mutualFunds = value; out.changes.mutualFunds = change; out.settled.mutualFunds = c.settled && missing === 0; out.asOf.mutualFunds = c.rec.ts;
+  out.values.mutualFunds = value; out.changes.mutualFunds = change; out.settled.mutualFunds = c.settled && missing === 0; out.asOf.mutualFunds = c.rec.ts; out.complete.mutualFunds = missing === 0;   // a fund the ledger had no price for would silently drop out of the sum
 
   c = pick('gold', heldGold); value = 0; change = 0; let goldOk = true;
   const gr = c.rec.gold || dayRecords.map(r => r.gold).filter(Boolean).pop();
@@ -8693,7 +8693,7 @@ function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
     value += w * gr.price24k * mult;
     if (gr.prevClose24k > 0) change += w * (gr.price24k - gr.prevClose24k) * mult;
   });
-  out.values.gold = value; out.changes.gold = change; out.settled.gold = c.settled && goldOk; out.asOf.gold = c.rec.ts;
+  out.values.gold = value; out.changes.gold = change; out.settled.gold = c.settled && goldOk; out.asOf.gold = c.rec.ts; out.complete.gold = goldOk;
 
   // Non-market classes cannot be reconstructed: carry forward the last known values
   const carry = {};
@@ -8723,6 +8723,7 @@ function buildNetWorthEntryFromLedger({ date, records, st, baseEntry }) {
     usStocks: Number(out.values.usStocks.toFixed(2)),
     gold: Number(out.values.gold.toFixed(2)),
     ...carry,
+    complete: out.complete,   // not saved: the backfill reads it and drops it
     source: 'backend-ledger'
   };
 }
@@ -8763,14 +8764,11 @@ async function backfillNetWorthFromLedger(force = false) {
       || { ...captureCurrentNetWorthBreakdown() };
     const entry = buildNetWorthEntryFromLedger({ date, records, st: state, baseEntry });
     if (!entry) return;
-    const countSettled = (e) => NWH_MARKET_CLASSES.filter(k => e.settled?.[k]).length;
-    if (existing) {
-      if (countSettled(entry) <= countSettled(existing)) return;
-      entry.id = existing.id;
-      state.netWorthHistory[idx] = entry;
-    } else {
-      state.netWorthHistory.push(entry);
-    }
+    // Class by class, and only where the rebuild is complete: a fund the ledger had no price for must not drop out of the day's value
+    const merged = NWS.mergeLedgerEntry({ existing, entry, base: baseEntry, classes: NWH_MARKET_CLASSES });
+    if (!merged.changed) return;
+    if (existing) { merged.record.id = existing.id; state.netWorthHistory[idx] = merged.record; }
+    else state.netWorthHistory.push(merged.record);
     changed++;
   });
 

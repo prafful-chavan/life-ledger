@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.136",
-    "sha256": "dd67b85589d0a9cf0b21d9a7ea16c3fbbe34ea7dc58f553be7dcb023808fde26"
+    "version": "1.0.137",
+    "sha256": "89befd1489ee2579fc2e0d816386ace08e33b019bfa5aacecbf4871f9d10053f"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -104,8 +104,8 @@
     "sha256": "845f8d3d8592e74300c62f12c6e45b167746a9bf93cf81099b37a4cb2474ab81"
   },
   "networth-snapshot.js": {
-    "version": "1.0.1",
-    "sha256": "684348affd1d770def62765986fcfb8fd433f61a44038167710d953e2fbe5802"
+    "version": "1.0.2",
+    "sha256": "e29f12705525c6b302936fd7183219d7903c09389abe5dc39d723544f60d6952"
   },
   "networth-weekly.js": {
     "version": "1.0.0",

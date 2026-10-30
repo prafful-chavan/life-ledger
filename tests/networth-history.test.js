@@ -550,6 +550,28 @@ test("backend ledger marks a class unsettled when its close was never captured",
   assert.strictEqual(buildNetWorthEntryFromLedger({ date: "2026-10-13", records, st, baseEntry: {} }), null, "no records for that day");
 });
 
+test("backend ledger says which classes it could price completely (a fund with no price must not silently drop out)", () => {
+  const { buildNetWorthEntryFromLedger } = require("../app.js");
+  const ist = (t) => new Date(`2026-10-12T${t}+05:30`).toISOString();
+  const st = {
+    stocks: [], usstocks: [], gold: [],
+    mutualFunds: [
+      { fundName: "Fund X", owner: "Me", schemeCode: 111, units: 100, invested: 4000, purchaseDate: "2026-01-01", transactionType: "PURCHASE" },
+      { fundName: "Fund Y", owner: "Me", schemeCode: 222, units: 50, invested: 5000, purchaseDate: "2026-01-01", transactionType: "PURCHASE" },
+    ],
+  };
+  const rec = (mf) => [{ date: "2026-10-12", ts: ist("20:00:00"), mf }];
+  let e = buildNetWorthEntryFromLedger({ date: "2026-10-12", records: rec({ "111": { nav: 50, date: "09-10-2026", prevNav: 49 } }), st, baseEntry: {} });
+  assert.strictEqual(e.complete.mutualFunds, false, "Fund Y has no price in the ledger: incomplete");
+  assert.strictEqual(e.mutualFunds, 5000, "the value is only Fund X's: exactly why it must not replace a good record");
+  assert.strictEqual(e.settled.mutualFunds, false);
+  e = buildNetWorthEntryFromLedger({ date: "2026-10-12", records: rec({ "111": { nav: 50, date: "10-10-2026", prevNav: 49 }, "222": { nav: 120, date: "10-10-2026", prevNav: 119 } }), st, baseEntry: {} });
+  assert.strictEqual(e.complete.mutualFunds, true); assert.strictEqual(e.mutualFunds, 100 * 50 + 50 * 120);
+  assert.strictEqual(e.complete.stocks, true, "no stocks held: nothing missing"); assert.strictEqual(e.complete.gold, true);
+  e = buildNetWorthEntryFromLedger({ date: "2026-10-12", records: rec({ "111": { nav: 0, date: "10-10-2026" }, "222": { nav: 120, date: "10-10-2026" } }), st, baseEntry: {} });
+  assert.strictEqual(e.complete.mutualFunds, false, "a price of 0 is no price");
+});
+
 test("parallel price refreshes no longer erase each other's cached prices", () => {
   const { saveStockPriceCache, getStockPriceCache } = require("../app.js");
   const store = {};
