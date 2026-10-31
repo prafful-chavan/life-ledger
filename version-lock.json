@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.137",
-    "sha256": "89befd1489ee2579fc2e0d816386ace08e33b019bfa5aacecbf4871f9d10053f"
+    "version": "1.0.140",
+    "sha256": "3654ccad94630b72629a3e13c7753b7f6f562f874725460387d0126e79f05587"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -80,8 +80,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.36",
-    "sha256": "bd4fbbfe607974de79fd119f77330e68a0ee8a555265a16e2fae5bbda9d980ee"
+    "version": "1.8.39",
+    "sha256": "7997fdf9b9f06f8132b5d9282ef9b4861f4f819482f6ae719161ba08c055217c"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -142,6 +142,10 @@
   "salary-insights-core.js": {
     "version": "1.0.0",
     "sha256": "d7fc8309e9776a1c83317c61df4345a1eec38bbd123d3fdec82697079c3adb7b"
+  },
+  "salary-ledger-core.js": {
+    "version": "1.0.0",
+    "sha256": "7d79cc68737c773b4c75c1e31e35d9960f6c7c2dd7ef3e341928dff5e71075fa"
   },
   "script-gate.js": {
     "version": "1.0.1",

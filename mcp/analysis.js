@@ -72,7 +72,7 @@ function netWorth(state, fxOverride) {
   out.weekly = NetWorthWeekly.weeks(hist, { count: 4 }).map((w) => ({ weekStart: w.weekStart, from: w.from, to: w.to, change: r0(w.change), edits: r0(w.edits), split: w.split, market: w.split ? r0(w.market) : null, newMoney: w.split ? r0(w.newMoney) : null }));
   // What moved since the last recorded day, class by class. Market moves hit funds/stocks/US/gold; manual edits and
   // repayments show up in the other classes (others, FD, bank, EPF, liabilities) — so the reader can tell them apart.
-  const todayISO = isoDay(Date.now());
+  const todayISO = isoDay(Date.now() + 5.5 * 3600000);   // the app dates records in IST; between 00:00 and 05:30 IST the UTC date is still yesterday
   const prev = hist.filter((h) => h.date < todayISO && num(h.netWorth) > 0).pop();
   if (prev) {
     const keys = ["mutualFunds", "stocks", "usStocks", "gold", "silver", "crypto", "fd", "epf", "ppf", "bonds", "bankSaving", "others"];

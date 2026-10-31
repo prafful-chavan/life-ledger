@@ -1080,3 +1080,40 @@ path[class^="pf-c"]:hover { opacity: .82; }
 .dv-tools { min-width: 0; max-width: 100%; }
 .dv-seg { min-width: 0; }
 @media (max-width: 700px) { .dv-card-head > .dv-tools { flex: 1 1 100%; } }
+
+/* Salary ledger: itemised earnings and deductions, per-row check, statutory summary */
+.sl-ok { color: var(--good, #1a7f4b); font-weight: 600; white-space: nowrap; }
+.sl-part { color: var(--warn, #9a6700); font-weight: 600; white-space: nowrap; }
+.sl-heading { margin: 24px 0 4px; font-size: 16px; }
+.sl-detail > td { background: var(--surface-2, rgba(127, 127, 127, 0.07)); padding: 12px 16px; }
+.sl-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; }
+.sl-cols h5 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.sl-cols h5 small { margin-left: 8px; font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 700; }
+.sl-list { list-style: none; margin: 0; padding: 0; }
+.sl-list li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dashed var(--line, rgba(127, 127, 127, 0.25)); font-size: 13px; }
+.sl-list li b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sl-tag { font-style: normal; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--brand-soft, rgba(60, 90, 220, 0.12)); color: var(--brand); }
+.sl-warn { margin: 8px 0 0; font-size: 13px; color: var(--warn, #9a6700); }
+@media (max-width: 640px) { .sl-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* Salary table: compact so its twelve columns fit; one card per row (like phones) up to 1100px wide */
+#finance-income .table-wrap table { min-width: 0; font-size: 12.5px; }
+#finance-income .table-wrap th, #finance-income .table-wrap td { padding: 8px 5px; }
+#finance-income .table-wrap td:nth-child(10), #finance-income .table-wrap td:nth-child(11) { white-space: normal; }
+#finance-income .sl-ok, #finance-income .sl-part { white-space: normal; }
+#finance-income .table-wrap th:nth-child(n+4):nth-child(-n+9), #finance-income .table-wrap td:nth-child(n+4):nth-child(-n+9) { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#finance-income .table-wrap .dv-table th:nth-child(n+4), #finance-income .table-wrap .dv-table td:nth-child(n+4) { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) {
+  #finance-income .table-wrap { overflow-x: visible; }
+  #finance-income .table-wrap table, #finance-income .table-wrap tbody { display: block; width: 100%; min-width: 0; }
+  #finance-income .table-wrap thead { display: none; }
+  #finance-income .table-wrap tbody tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; padding: 12px; border-bottom: 1px solid var(--line); }
+  #finance-income .table-wrap tbody tr:last-child { border-bottom: 0; }
+  #finance-income .table-wrap td { display: block; padding: 0; border: 0; text-align: left !important; white-space: normal !important; min-width: 0; max-width: none; overflow-wrap: anywhere; }
+  #finance-income .table-wrap td[data-label]:not([data-label=""])::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  #finance-income .table-wrap td:first-child { grid-column: 1 / -1; font-weight: 700; }
+  #finance-income .table-wrap td[data-label]:first-child::before { display: none; }
+  #finance-income .table-wrap td[colspan] { grid-column: 1 / -1; }
+  #finance-income .table-wrap td[data-label="Action"] { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) { #finance-income .table-wrap tbody tr { grid-template-columns: 1fr 1fr; } }

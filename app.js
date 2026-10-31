@@ -271,7 +271,12 @@ const fieldsByKind = {
     ["taxTds", "Tax / TDS", "number"],
     ["basicSalary", "Basic salary", "number"],
     ["hra", "HRA", "number"],
+    ["performancePay", "Performance pay / bonus", "number"],
+    ["arrears", "Arrears", "number"],
     ["pf", "PF", "number"],
+    ["professionalTax", "Professional tax", "number"],
+    ["healthInsurance", "Health insurance", "number"],
+    ["otherDeductions", "Other deductions", "number"],
   ],
   expense: [
     ["date", "Date", "date"],
@@ -1384,10 +1389,23 @@ function bindFinanceTabs() {
     }
   });
 
+  document.getElementById("salaryLedgerInput")?.addEventListener("change", async (event) => {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    input.value = "";   // so choosing the same file again still fires
+    try { await importSalaryLedgerFile(file); } catch (err) { toast("The salary ledger could not be imported: " + (err && err.message ? err.message : "unknown error"), "error"); }
+  });
+  document.getElementById("salaryLedgerBtn")?.addEventListener("click", () => document.getElementById("salaryLedgerInput")?.click());
+
   document.getElementById("incomeTable")?.addEventListener("click", async (event) => {
     const editBtn = event.target.closest(".edit-income-btn");
     const deleteBtn = event.target.closest(".delete-income-btn");
-    if (editBtn) {
+    const detailBtn = event.target.closest(".salary-detail-btn");
+    if (detailBtn) {
+      const id = detailBtn.dataset.id;
+      if (openSalaryRows.has(id)) openSalaryRows.delete(id); else openSalaryRows.add(id);
+      renderIncomeTable();
+    } else if (editBtn) {
       const id = editBtn.dataset.id;
       buildQuickAddForm("income", id);
       openModal("quickAddModal");
@@ -2785,19 +2803,10 @@ function buildQuickAddForm(kind, editId = null) {
       entry.netSalary = entry.amount;
       entry.organization = entry.source;
       
-      // Build components and deductions maps for complete consistency with Excel/CSV parsed records
-      entry.components = {};
-      salaryComponentFields.forEach(([key]) => {
-        if (entry[key] !== undefined) {
-          entry.components[key] = entry[key];
-        }
-      });
-      entry.deductions = {};
-      deductionFields.forEach(([key]) => {
-        if (entry[key] !== undefined) {
-          entry.deductions[key] = entry[key];
-        }
-      });
+      // The itemised earnings and deductions, in the same shape the standard ledger import writes (salary-ledger-core.js)
+      entry.components = SLG.earningsOf(entry);
+      entry.deductions = SLG.deductionsOf(entry);
+      entry.grossDeductions = SLG.totals(entry).deductions;
     }
     if (kind === "asset" || kind === "liability" || kind === "goal" || kind === "study") {
       entry.owner = normalizeOwner(entry.owner);
@@ -4456,6 +4465,7 @@ function collectSalaryParts(row, fieldConfig) {
 
 // The rules of the Salary tab (which rows are salary, totals, growth, progression) live in salary-core.js; this file only draws them.
 const SAL = (typeof window !== "undefined" && window.LifeLedgerSalary) || (typeof require === "function" ? require("./salary-core.js") : null);
+const SLG = (typeof window !== "undefined" && window.LifeLedgerSalaryLedger) || (typeof require === "function" ? require("./salary-ledger-core.js") : null);
 const isSalary = SAL.isSalary;
 // A table cell holding plain text. renderRows writes plain strings with textContent, which is already safe, so escaping them first
 // showed names like "Mahindra &amp; Mahindra" on screen; an element is always taken as it is.
@@ -5641,44 +5651,103 @@ function renderFinance() {
   if (activeFinanceTab === "networthhistory") renderNetWorthHistory();
 }
 
+// Rows of the Salary table whose "details" are open (earnings and deductions listed line by line). Kept for the session only.
+const openSalaryRows = new Set();
+
+/** The earnings and deductions of one salary row as two lists: what was earned, what was deducted (statutory lines marked). */
+function salaryDetailHTML(item) {
+  const money = (n) => escapeHTML(formatINR(n));
+  const earn = SLG.EARNINGS.filter(([key]) => toNumber(item[key]) !== 0).map(([key, label]) => `<li><span>${escapeHTML(label)}</span><b>${money(toNumber(item[key]))}</b></li>`).join("");
+  const ded = SLG.DEDUCTIONS.filter(([key]) => toNumber(item[key]) !== 0).map(([key, label, statutory]) => `<li><span>${escapeHTML(label)}${statutory ? ' <em class="sl-tag">statutory</em>' : ""}</span><b>${money(toNumber(item[key]))}</b></li>`).join("");
+  const t = SLG.totals(item);
+  const gap = t.itemised ? "" : `<p class="sl-warn">Earning lines explain ${money(t.earnings)} of the ${money(t.gross)} gross (${money(t.gap)} not itemised).</p>`;
+  const bal = t.balanced ? "" : `<p class="sl-warn">Gross − deductions is ${money(t.gross - t.deductions)}, but net in-hand is ${money(t.net)}: some deductions are missing.</p>`;
+  return `<div class="sl-cols"><div><h5>Earnings <small>${money(t.earnings)}</small></h5><ul class="sl-list">${earn || "<li><span>Not itemised</span></li>"}</ul></div>
+    <div><h5>Deductions <small>${money(t.deductions)}</small></h5><ul class="sl-list">${ded || "<li><span>Not itemised</span></li>"}</ul></div></div>${gap}${bal}${item.note ? `<p class="dv-note">${escapeHTML(item.note)}</p>` : ""}`;
+}
+
+/** PF, professional tax, income tax … per employer and financial year, from the same rows as the table. */
+const rupees0 = (n) => "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(toNumber(n)));
+function renderSalaryStatutory(rows) {
+  const box = document.getElementById("salaryStatutory");
+  if (!box) return;
+  const list = SLG.statutoryByYear(rows);
+  if (!list.length) { box.innerHTML = `<div class="empty-state">No salary rows yet.</div>`; return; }
+  const m = (n) => (n ? escapeHTML(rupees0(n)) : "—");
+  box.innerHTML = `<div class="table-wrap"><table class="dv-table"><thead><tr><th>Person</th><th>Employer</th><th>Year</th><th>Months</th><th>Gross</th><th>PF</th><th>Prof. tax</th><th>Income tax (TDS)</th><th>Labour welfare</th><th>Net in-hand</th></tr></thead><tbody>${
+    list.map((r) => `<tr><td data-label="Person">${escapeHTML(r.person)}</td><td data-label="Employer">${escapeHTML(r.source)}</td><td data-label="Year">${escapeHTML(r.fy)}</td><td data-label="Months">${r.months}</td><td data-label="Gross">${m(r.gross)}</td><td data-label="PF">${m(r.pf)}</td><td data-label="Prof. tax">${m(r.professionalTax)}</td><td data-label="Income tax (TDS)">${m(r.taxTds)}</td><td data-label="Labour welfare">${m(r.labourWelfare)}</td><td data-label="Net in-hand">${m(r.net)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
 function renderIncomeTable() {
   const table = document.getElementById("incomeTable");
   const salaryRows = [...state.income].filter(isSalary);
   const { totalNet, totalTds, months: monthsCount, avgNet } = SAL.summary(salaryRows, toNumber);
+  const grand = SLG.summary(salaryRows);
 
   // Set values in DOM
-  const earnedEl = document.getElementById("salaryTotalEarned");
-  const tdsEl = document.getElementById("salaryTotalTDS");
-  const monthsEl = document.getElementById("salaryMonthsTracked");
-  const avgEl = document.getElementById("salaryAvgInHand");
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set("salaryTotalEarned", formatINR(totalNet));
+  set("salaryTotalTDS", formatINR(totalTds));
+  set("salaryMonthsTracked", String(monthsCount));
+  set("salaryAvgInHand", formatINR(avgNet));
+  set("salaryTotalGross", formatINR(grand.gross));
+  set("salaryTotalDeductions", formatINR(grand.deductions));
+  set("salaryTotalPF", formatINR(grand.pf));
+  set("salaryTotalPT", formatINR(grand.professionalTax));
 
-  if (earnedEl) earnedEl.textContent = formatINR(totalNet);
-  if (tdsEl) tdsEl.textContent = formatINR(totalTds);
-  if (monthsEl) monthsEl.textContent = String(monthsCount);
-  if (avgEl) avgEl.textContent = formatINR(avgNet);
+  const rows = SAL.tableRows(salaryRows, (item) => parseCalendarDate(item.date || item.dueDate)?.getTime() || 0);
+  if (!rows.length) {
+    table.innerHTML = `<tr><td colspan="12">No salary data yet. Upload your salary workbook or add an income entry.</td></tr>`;
+  } else {
+    const cell = (n) => escapeHTML(rupees0(n || 0));
+    table.innerHTML = rows.map((item) => {
+      const t = SLG.totals(item);
+      const ok = t.itemised && t.balanced;
+      const badge = ok
+        ? `<span class="sl-ok" title="Earning lines add up to gross, and gross minus deductions equals net">✓ adds up</span>`
+        : `<span class="sl-part" title="Earning lines explain ${Math.floor(t.coverage * 100)}% of gross${t.balanced ? "" : "; deductions do not explain the net pay"}">⚠ ${Math.floor(t.coverage * 100)}%${t.balanced ? "" : " · net?"}</span>`;
+      const open = openSalaryRows.has(item.id);
+      const id = escapeHTML(String(item.id));
+      return `<tr>
+        <td data-label="Month">${escapeHTML(formatMonth(item.date))}</td><td data-label="Person">${escapeHTML(item.person || "")}</td><td data-label="Organization">${escapeHTML(item.source || item.organization || "")}</td>
+        <td data-label="Gross">${cell(t.gross)}</td><td data-label="Deductions">${cell(t.deductions || item.grossDeductions)}</td><td data-label="Net in-hand">${cell(t.net)}</td>
+        <td data-label="PF">${cell(item.pf)}</td><td data-label="Prof. tax">${cell(item.professionalTax)}</td><td data-label="Tax / TDS">${cell(item.taxTds)}</td>
+        <td data-label="Itemised">${badge}</td>
+        <td data-label="Details"><button class="pf-link salary-detail-btn" type="button" data-id="${id}" aria-expanded="${open}">${open ? "Hide ▾" : "Show ▸"}</button></td>
+        <td data-label="Action"><div class="actions-wrapper">
+          <button class="action-btn edit-btn edit-income-btn" data-id="${id}" title="Edit entry">✏️</button>
+          <button class="action-btn delete-btn delete-income-btn" data-id="${id}" title="Delete entry">🗑️</button></div></td></tr>${open ? `<tr class="sl-detail"><td colspan="12">${salaryDetailHTML(item)}</td></tr>` : ""}`;
+    }).join("");
+  }
+  renderSalaryStatutory(salaryRows);
+}
 
-  renderRows(
-    table,
-    SAL.tableRows(salaryRows, (item) => parseCalendarDate(item.date || item.dueDate)?.getTime() || 0),
-    (item) => [
-      formatMonth(item.date),
-      item.person,
-      item.source || item.organization,
-      formatINR(item.grossEarnings || item.amount),
-      formatINR(item.netSalary || item.amount),
-      formatINR(item.taxTds || 0),
-      formatINR(item.basicSalary || 0),
-      formatINR(item.hra || 0),
-      formatINR(item.pf || 0),
-      componentSummary(item),
-      `<div class="actions-wrapper">
-        <button class="action-btn edit-btn edit-income-btn" data-id="${item.id}" title="Edit entry">✏️</button>
-        <button class="action-btn delete-btn delete-income-btn" data-id="${item.id}" title="Delete entry">🗑️</button>
-      </div>`
-    ],
-    "No salary data yet. Upload your salary workbook or add an income entry.",
-    11
-  );
+/**
+ * Import the standard salary ledger workbook (sheet "Ledger"): rows are matched on person + employer + month, so importing twice
+ * changes nothing the second time. Shows what would be added and changed and asks before touching anything.
+ */
+async function importSalaryLedgerFile(file) {
+  if (!file) return;
+  await ensureXlsx();
+  if (!window.XLSX) { toast("The spreadsheet reader could not load. Check your connection and try again.", "error"); return; }
+  let rows;
+  try {
+    const wb = window.XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+    const sheet = wb.Sheets[wb.SheetNames.find((n) => /^ledger$/i.test(n.trim()))];
+    if (!sheet) { toast('This file has no sheet called "Ledger". Use the standard salary ledger workbook.', "error"); return; }
+    rows = window.XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  } catch (err) { toast("That file could not be read as a spreadsheet.", "error"); return; }
+  const parsed = SLG.fromLedgerRows(rows);
+  if (!parsed.records.length) { toast(parsed.rejected.length ? `No rows imported: ${parsed.rejected.length} did not add up (first: ${parsed.rejected[0].reasons[0]}).` : "No payslip rows found in this file.", "error"); return; }
+  const plan = SLG.planImport(state.income, parsed.records);
+  if (!plan.adds.length && !plan.updates.length) { toast(`Nothing to change: all ${plan.same} matching rows already agree with the ledger.`); return; }
+  const sample = plan.updates.slice(0, 6).map((u) => `${u.key.split("|").slice(1).join(" ")}: ${Object.entries(u.changes).filter(([f]) => ["grossEarnings", "netSalary", "taxTds", "pf", "professionalTax"].includes(f)).map(([f, [a, b]]) => `${f} ${a} → ${b}`).join(", ") || "itemised lines added"}`).join("\n");
+  const msg = `Import salary ledger?\n\n• ${plan.adds.length} month(s) to add\n• ${plan.updates.length} month(s) to update\n• ${plan.same} already agree\n• ${plan.untouched.length} existing row(s) not in the ledger stay as they are\n• ${parsed.skipped.length} ledger row(s) skipped (no payslip), ${parsed.rejected.length} rejected (did not add up)${plan.conflicts.length ? `\n• ${plan.conflicts.length} month(s) skipped: more than one row exists` : ""}\n\nFirst changes:\n${sample}`;
+  if (!confirm(msg)) return;
+  state.income = SLG.applyPlan(state.income, plan, () => `inc-${generateUUID()}`);
+  renderExpensesOnly();
+  toast(`Salary ledger imported: ${plan.adds.length} added, ${plan.updates.length} updated.`);
+  saveData(true, "income");
 }
 
 // The rules of the Expenses tab (grouping, filtering, sorting, paging) live in expenses-core.js; this file only draws them.

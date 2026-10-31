@@ -5,6 +5,12 @@ const S = require("../mcp/server.js");
 const R = require("../mcp/brief-render.js");
 const V = require("../mcp/vault-client.js");
 
+// The made-up household is a snapshot of 21 Oct 2026, so the clock is fixed there: the test must not depend on the day it is run.
+{
+  const RealDate = Date, FIXED = RealDate.parse("2026-10-21T10:00:00+05:30");
+  global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [FIXED])); } static now() { return FIXED; } };
+}
+
 const sal = (person, date, g, net) => ({ id: person + date, person, date, type: "Salary", grossEarnings: g, basicSalary: g * 0.4, hra: g * 0.2, pf: g * 0.12, taxTds: 0, amount: net });
 const exp = (date, amount, category, note) => ({ id: date + category + amount, date, amount, category, note: note || "", paidBy: "Me" });
 const mfRow = (owner, fundName, id, date, units, invested, nav) => ({ id, owner, fundName, transactionType: "PURCHASE", purchaseDate: date, date, units, invested, nav: invested / units, latestNav: nav, navDate: "2026-10-20", schemeCode: "1" });

@@ -601,6 +601,61 @@ const SCANNER = `(${function scan() {
       const fj = JSON.parse(fit); check(`portfolio at ${w}px: fits, no wrapped numbers, ring inside the screen`, fj.bad.length === 0 && fj.page <= 1, fit);
     }
     await viewport(1280, 900); await sleep(300);
+    // Salary ledger: every payslip itemised, the totals above the table, the yearly statutory summary, and the standard-ledger import
+    console.log("\nSalary ledger");
+    await viewport(1280, 900); await sleep(300); await view("finance");
+    const sl = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState();
+      S.income.push({id:'sl-ok',person:'Me',date:'2025-05-01',source:'TestCo',organization:'TestCo',type:'Salary',grossEarnings:100000,netSalary:80000,amount:80000,basicSalary:50000,hra:25000,specialAllowance:25000,pf:6000,professionalTax:200,taxTds:13800,grossDeductions:20000},
+        {id:'sl-part',person:'Me',date:'2025-06-01',source:'TestCo',organization:'TestCo',type:'Salary',grossEarnings:100000,netSalary:80000,amount:80000,basicSalary:50000,hra:25000,pf:6000});
+      document.querySelector('[data-finance-tab="income"]').hidden=false; document.querySelector('[data-finance-tab="income"]').click(); LifeLedgerApp.renderAll(); await w(500);
+      const tab=document.getElementById('finance-income'); const num=(t)=>Number(String(t).replace(/[^0-9.-]/g,'')); const cellsOf=(tr)=>[...tr.children].map(td=>td.textContent.replace(/\\s+/g,' ').trim());
+      const rowOf=(month)=>[...tab.querySelectorAll('#incomeTable tr:not(.sl-detail)')].find(tr=>/TestCo/.test(tr.textContent)&&tr.textContent.includes(month));
+      out.headers=tab.querySelector('table').querySelectorAll('thead th').length; out.cells=rowOf('May 2025')?rowOf('May 2025').children.length:0;
+      const ok=cellsOf(rowOf('May 2025')), part=cellsOf(rowOf('Jun 2025')); out.ok=ok; out.part=part;
+      const keys=['pf','professionalTax','taxTds','labourWelfare','healthInsurance','employerPfDeducted','otherDeductions']; const ek=['basicSalary','hra','lta','specialAllowance','personalAllowance','pda','cityAllowance','conveyanceAllowance','foodAllowance','medicalAllowance','shiftAllowance','phoneAllowance','professionalDevelopment','fuelVehicle','performancePay','miscellaneous','leaveEncashment','arrears','employerPfEarning','otherEarnings'];
+      const n=(x)=>Number(x)||0; const sal=S.income.filter(r=>/salary/i.test(r.type||'salary')||r.grossEarnings||r.netSalary||r.basicSalary);
+      out.expGross=sal.reduce((t,r)=>t+(n(r.grossEarnings)||ek.reduce((a,k)=>a+n(r[k]),0)),0); out.expDed=sal.reduce((t,r)=>t+keys.reduce((a,k)=>a+n(r[k]),0),0); out.expPF=sal.reduce((t,r)=>t+n(r.pf),0); out.expPT=sal.reduce((t,r)=>t+n(r.professionalTax),0);
+      out.gross=num(document.getElementById('salaryTotalGross').textContent); out.ded=num(document.getElementById('salaryTotalDeductions').textContent); out.pf=num(document.getElementById('salaryTotalPF').textContent); out.pt=num(document.getElementById('salaryTotalPT').textContent);
+      const btn=()=>tab.querySelector('.salary-detail-btn[data-id="sl-ok"]'); btn().click(); await w(250);
+      const det=tab.querySelector('tr.sl-detail'); out.detail=det?det.innerText.replace(/\\s+/g,' '):''; out.expanded=btn().getAttribute('aria-expanded'); btn().click(); await w(250); out.closed=!tab.querySelector('tr.sl-detail')&&btn().getAttribute('aria-expanded');
+      const st=[...document.querySelectorAll('#salaryStatutory tbody tr')].map(cellsOf).find(c=>c[1]==='TestCo'); out.stat=st;
+      return JSON.stringify(out); })()`));
+    check("salary: the table has one cell for every heading, and each row shows gross, deductions, PF, professional tax and TDS", sl.headers === sl.cells && sl.ok[3].includes("1,00,000") && sl.ok[4].includes("20,000") && sl.ok[6].includes("6,000") && sl.ok[7].includes("200") && sl.ok[8].includes("13,800"), JSON.stringify(sl));
+    check("salary: a row that adds up says so; a half-itemised row says how much is explained", /adds up/.test(sl.ok[9]) && /75%/.test(sl.part[9]) && /⚠/.test(sl.part[9]), JSON.stringify([sl.ok[9], sl.part[9]]));
+    check("salary: the cards (gross, deductions, PF, professional tax) equal an independent sum of the rows", near(sl.gross, sl.expGross, 1) && near(sl.ded, sl.expDed, 1) && near(sl.pf, sl.expPF, 1) && near(sl.pt, sl.expPT, 1), JSON.stringify({ g: [sl.gross, sl.expGross], d: [sl.ded, sl.expDed], pf: [sl.pf, sl.expPF], pt: [sl.pt, sl.expPT] }));
+    check("salary: opening a row lists its earnings and deductions (statutory lines marked); closing hides them", /Basic ₹50,000/.test(sl.detail) && /PF \(employee\)/.test(sl.detail) && /statutory/.test(sl.detail) && sl.expanded === "true" && sl.closed === "false", JSON.stringify(sl.detail));
+    check("salary: the yearly statutory summary adds the same rows (2 months, PF ₹12,000, professional tax ₹200, TDS ₹13,800)", sl.stat && sl.stat[3] === "2" && /12,000/.test(sl.stat[5]) && /200/.test(sl.stat[6]) && /13,800/.test(sl.stat[7]) && sl.stat[2] === "FY2025-26", JSON.stringify(sl.stat));
+    // the standard-ledger import: updates a half-itemised month, adds a new one, ignores a bad row and a sheet-only row, asks first, and is a no-op the second time
+    const imp = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState();
+      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='vendor/xlsx-0.20.3.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+      const base=(month,o={})=>({Person:'Me',Employer:'TestCo',Month:month,'Basic':50000,'HRA':25000,'Special allowance':25000,'GROSS EARNINGS':100000,'PF (employee)':6000,'Professional tax':200,'Income tax (TDS)':13800,'TOTAL DEDUCTIONS':20000,'NET PAY':80000,Basis:'Payslip',...o});
+      const send=async(rows,answer)=>{ const msgs=[]; window.confirm=(m)=>{ msgs.push(m); return answer; }; const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Ledger');
+        const file=new File([new Uint8Array(XLSX.write(wb,{type:'array',bookType:'xlsx'}))],'ledger.xlsx'); const dt=new DataTransfer(); dt.items.add(file); const inp=document.getElementById('salaryLedgerInput'); inp.files=dt.files; inp.dispatchEvent(new Event('change',{bubbles:true})); await w(1200); return {msgs, toast:document.getElementById('toast').textContent}; };
+      const ledger=[base('2025-06'), base('2025-07'), base('2025-08',{'NET PAY':79000}), base('2025-09',{Basis:'Sheet only (no payslip)'})];
+      let r1=await send(ledger,false); out.cancelMsg=r1.msgs[0]||''; out.afterCancel=S.income.filter(r=>r.source==='TestCo').length;
+      let r2=await send(ledger,true); out.msg=r2.msgs[0]||''; out.toast2=r2.toast;
+      const test=S.income.filter(r=>r.source==='TestCo'); out.count=test.length; out.months=test.map(r=>r.date.slice(0,7)).sort(); const june=test.find(r=>r.date.startsWith('2025-06')); out.juneOk=!!june&&june.id==='sl-part'&&june.specialAllowance===25000&&june.professionalTax===200&&june.taxTds===13800&&june.grossDeductions===20000;
+      out.stillBadAbsent=!test.some(r=>r.date.startsWith('2025-08')||r.date.startsWith('2025-09'));
+      LifeLedgerApp.renderAll(); await w(400); const june2=[...document.querySelectorAll('#incomeTable tr')].find(tr=>/TestCo/.test(tr.textContent)&&tr.textContent.includes('Jun 2025')); out.juneBadge=june2?june2.children[9].textContent:'';
+      let r3=await send(ledger,true); out.again=r3.toast; out.againAsked=r3.msgs.length; out.countAfterAgain=S.income.filter(r=>r.source==='TestCo').length;
+      let r4=await send([{Person:'Me',Employer:'Bad',Month:'2025-01',Basic:1000,'GROSS EARNINGS':5000,'PF (employee)':0,'NET PAY':5000,Basis:'Payslip'}],true); out.badOnly=r4.toast;
+      S.income=S.income.filter(r=>r.source!=='TestCo'); LifeLedgerApp.renderAll(); await w(300);
+      return JSON.stringify(out); })()`));
+    check("salary import: asks first, and cancelling changes nothing", /1 month\(s\) to add/.test(imp.cancelMsg) && /1 month\(s\) to update/.test(imp.cancelMsg) && imp.afterCancel === 2, JSON.stringify([imp.cancelMsg, imp.afterCancel]));
+    check("salary import: the half-itemised month is updated in place (same id), the new month added, a row that does not add up and a sheet-only row are ignored", imp.count === 3 && imp.juneOk && imp.stillBadAbsent && imp.months.join() === "2025-05,2025-06,2025-07", JSON.stringify(imp));
+    check("salary import: the updated row now says it adds up", /adds up/.test(imp.juneBadge), imp.juneBadge);
+    check("salary import: importing the same file again changes nothing and does not ask", /Nothing to change/.test(imp.again) && imp.againAsked === 0 && imp.countAfterAgain === 3, JSON.stringify([imp.again, imp.againAsked, imp.countAfterAgain]));
+    check("salary import: a file whose rows do not add up imports nothing and says why", /did not add up|No rows imported/.test(imp.badOnly), imp.badOnly);
+    for (const w of [390, 768, 1280]) {
+      await viewport(w, 900); await sleep(300);
+      const fit = await cdp.eval(`(async()=>{ const S=LifeLedgerApp.getState(); S.income.push({id:'sl-fit',person:'Me',date:'2025-05-01',source:'TestCo',organization:'TestCo',type:'Salary',grossEarnings:100000,netSalary:80000,amount:80000,basicSalary:50000,hra:25000,specialAllowance:25000,pf:6000,professionalTax:200,taxTds:13800,grossDeductions:20000,note:'A long note that should wrap inside the panel and not push the page sideways on a phone screen at all'});
+        LifeLedgerApp.renderAll(); document.querySelector('[data-finance-tab="income"]').click(); await new Promise(r=>setTimeout(r,500)); document.querySelector('.salary-detail-btn[data-id="sl-fit"]').click(); await new Promise(r=>setTimeout(r,300));
+        const tab=document.getElementById('finance-income'); const bad=[]; tab.querySelectorAll('.table-wrap').forEach(t=>{ if (t.scrollWidth>t.clientWidth+1) bad.push('table '+(t.scrollWidth-t.clientWidth)); });
+        const d=tab.querySelector('tr.sl-detail'); if (d && d.scrollWidth>d.clientWidth+1) bad.push('detail row wider than its box');
+        const page=document.documentElement.scrollWidth-document.documentElement.clientWidth; S.income=S.income.filter(r=>r.id!=='sl-fit'); LifeLedgerApp.renderAll(); return JSON.stringify({w:innerWidth,bad,page}); })()`);
+      const fj = JSON.parse(fit); check(`salary at ${w}px: the table, an opened row and the page do not overflow`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await viewport(1280, 900); await sleep(300);
     // The SQLite and spreadsheet readers are served from this site and still run under the Content-Security-Policy
     const vend = JSON.parse(await cdp.eval(`(async()=>{ const out={}; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='vendor/sqljs-1.8.0/sql-wasm.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
       const SQL=await window.initSqlJs({locateFile:(f)=>'vendor/sqljs-1.8.0/'+f}); const db=new SQL.Database(); db.run('create table t(a); insert into t values (41),(1);'); out.sum=db.exec('select sum(a) from t')[0].values[0][0];

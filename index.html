@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.20" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.36" />
+    <link rel="stylesheet" href="layout.css?v=1.8.39" />
     <script defer src="script-gate.js?v=1.0.1"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -43,6 +43,7 @@
     <script defer src="expenses-core.js?v=1.0.0"></script>
     <script defer src="networth-snapshot.js?v=1.0.2"></script>
     <script defer src="salary-core.js?v=1.0.1"></script>
+    <script defer src="salary-ledger-core.js?v=1.0.0"></script>
     <script defer src="salary-insights-core.js?v=1.0.0"></script>
     <script defer src="spending-insights-core.js?v=1.0.2"></script>
     <script defer src="dashboard-settings.js?v=1.0.1"></script>
@@ -53,7 +54,7 @@
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.137"></script>
+    <script defer src="app.js?v=1.0.140"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -572,9 +573,11 @@
               <div class="panel-header">
                 <div>
                   <h3>Salary ledger</h3>
-                  <p>Monthly payslip components including gross, net in-hand, tax, basic, HRA, PF, and allowances.</p>
+                  <p>One row per payslip, with every earning and every deduction itemised: gross, deductions (PF, professional tax, income tax and more), and net in-hand. Open a row to see its lines.</p>
                 </div>
                 <div class="panel-actions">
+                  <input type="file" id="salaryLedgerInput" accept=".xlsx,.xls" hidden>
+                  <button class="secondary-button" type="button" id="salaryLedgerBtn" title="Match rows on person, employer and month; asks before changing anything">Import standard ledger</button>
                   <button class="secondary-button danger-button" type="button" data-reset-scope="income">Reset salary</button>
                   <button class="secondary-button" type="button" data-open-modal="quickAddModal" data-kind="income">Add income</button>
                 </div>
@@ -586,9 +589,29 @@
                   <div class="hint">Net earnings (all persons)</div>
                 </div>
                 <div class="metric-card">
+                  <div class="label">Total Gross</div>
+                  <div class="value" id="salaryTotalGross">-</div>
+                  <div class="hint">Before any deduction</div>
+                </div>
+                <div class="metric-card">
+                  <div class="label">Total Deductions</div>
+                  <div class="value" id="salaryTotalDeductions">-</div>
+                  <div class="hint">Everything taken from gross</div>
+                </div>
+                <div class="metric-card">
                   <div class="label">Total TDS Paid</div>
                   <div class="value" id="salaryTotalTDS">-</div>
                   <div class="hint">Income tax deducted till date</div>
+                </div>
+                <div class="metric-card">
+                  <div class="label">PF Contributed</div>
+                  <div class="value" id="salaryTotalPF">-</div>
+                  <div class="hint">Employee share</div>
+                </div>
+                <div class="metric-card">
+                  <div class="label">Professional Tax</div>
+                  <div class="value" id="salaryTotalPT">-</div>
+                  <div class="hint">State tax on employment</div>
                 </div>
                 <div class="metric-card">
                   <div class="label">Months Tracked</div>
@@ -609,18 +632,22 @@
                       <th>Person</th>
                       <th>Organization</th>
                       <th>Gross</th>
+                      <th>Deductions</th>
                       <th>Net in-hand</th>
-                      <th>Tax / TDS</th>
-                      <th>Basic</th>
-                      <th>HRA</th>
                       <th>PF</th>
-                      <th>Top components</th>
+                      <th>Prof. tax</th>
+                      <th>Tax / TDS</th>
+                      <th>Itemised</th>
+                      <th>Lines</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="incomeTable"></tbody>
                 </table>
               </div>
+              <h4 class="sl-heading">Statutory summary by year</h4>
+              <p class="dv-note">PF, professional tax and income tax deducted, per employer and financial year (April to March). These add up the same rows as the table above.</p>
+              <div id="salaryStatutory"></div>
             </section>
           </div>
 
