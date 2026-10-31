@@ -27,12 +27,30 @@ assert.strictEqual(P.advanceDue("2026-08-31", "Half-yearly"), "2027-02-28");
 
 // Cover checks
 const state = () => ({
-  income: [{ person: "Me", date: "2026-09-30", netSalary: 199884 }, { person: "Me", date: "2026-08-31", netSalary: 100 }, { person: "Wife", date: "2026-09-30", amount: 56986 }],
+  income: [{ person: "Me", date: "2026-09-30", netSalary: 199884 }, { person: "Me", date: "2026-08-31", netSalary: 199884 }, { person: "Me", date: "2026-07-31", netSalary: 278484 }, { person: "Wife", date: "2026-09-30", amount: 56986 }],
   insurance: [], vehicles: [], goals: [], expenses: [], people: { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } }, banksaving: [{ value: 450000 }], fd: [{ value: 2000000 }],
 });
 let s = state();
-assert.strictEqual(P.monthlyIncome(s, "Me"), 199884, "latest salary wins");
-assert.strictEqual(P.monthlyIncome(s, "Wife"), 56986);
+assert.strictEqual(P.monthlyIncome(s, "Me"), 199884, "the middle of the last three months: the July bonus month does not lift it");
+assert.strictEqual(P.monthlyIncome(s, "Wife"), 56986, "one month of pay: that month");
+// a bonus month that is the LATEST must not become the monthly income either
+{
+  const inc = (rows) => ({ income: rows });
+  const sal = (person, date, net, extra = {}) => ({ person, date, netSalary: net, type: "Salary", ...extra });
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-08-31", 200), sal("Me", "2026-09-30", 200), sal("Me", "2026-10-31", 275)]), "Me"), 200, "bonus month latest: still the steady pay");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-09-30", 200), sal("Me", "2026-10-31", 275)]), "Me"), 200, "two months: the lower");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-09-30", 275)]), "Me"), 275, "one month: that month");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-06-30", 100), sal("Me", "2026-07-31", 200), sal("Me", "2026-08-31", 200), sal("Me", "2026-09-30", 300)]), "Me"), 200, "only the last three months count (100 is too old)");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-08-31", 300), sal("Me", "2026-09-30", 100), sal("Me", "2026-10-31", 200)]), "Me"), 200, "the middle value, whatever order the months come in");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-06-30", 400), sal("Me", "2026-07-31", 100), sal("Me", "2026-08-31", 100), sal("Me", "2026-09-30", 300)]), "Me"), 100, "a fourth, older month does not count");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-01-31", 100)]), "Me"), 100, "January is a month");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-13-01", 999), sal("Me", "2026-00-01", 999)]), "Me"), 0, "there is no month 13 or month 0");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-09-30", 200), sal("Me", "2026-09-30", 50), sal("Me", "2026-08-31", 250), sal("Me", "2026-07-31", 250)]), "Me"), 250, "two payslips in one month are added (job change month)");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "2026-09-30", 200, { type: "Interest" }), sal("Me", "2026-08-31", 100)]), "Me"), 100, "interest is not salary");
+  assert.strictEqual(P.monthlyIncome(inc([{ person: "Me", date: "2026-09-30", amount: 120 }, sal("Me", "2026-08-31", 100), sal("Me", "2026-07-31", 100)]), "Me"), 100, "a row with no type is salary; the amount stands in for net salary");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Me", "garbage", 999), sal("Me", "", 999)]), "Me"), 0, "rows without a usable date are ignored");
+  assert.strictEqual(P.monthlyIncome(inc([sal("Wife", "2026-09-30", 50)]), "Me"), 0, "nobody else's pay"); assert.strictEqual(P.monthlyIncome({}, "Me"), 0);
+}
 assert.strictEqual(P.termCheck(s, "Me").status, "not-set", "nothing entered yet (₹0 placeholders)");
 s.insurance = [{ type: "Term life", person: "Me", cover: 0 }];
 assert.strictEqual(P.termCheck(s, "Me").status, "not-set", "a ₹0 placeholder is not a policy");

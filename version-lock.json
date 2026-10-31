@@ -124,8 +124,8 @@
     "sha256": "ae5f5d14a5cd4b1def0b96355d94bc7395c3fbc31c3edaeba84cc84583660ed4"
   },
   "protection-core.js": {
-    "version": "1.0.2",
-    "sha256": "c9d948fb1520a1129d76458ee5a76da5b46f5a19b731f4d50fad5aa05e1ff671"
+    "version": "1.0.3",
+    "sha256": "85c73c989e8e889689e50f8e4fd407724d5ad7cdd19722bdefe585b3cb2f49c1"
   },
   "protection.js": {
     "version": "1.0.4",
@@ -140,8 +140,8 @@
     "sha256": "0632c1c63dc07efa40b1345b5a4adad4f88aa795663d1c5ca127708e9529fa2f"
   },
   "salary-insights-core.js": {
-    "version": "1.0.0",
-    "sha256": "d7fc8309e9776a1c83317c61df4345a1eec38bbd123d3fdec82697079c3adb7b"
+    "version": "1.0.1",
+    "sha256": "7d3822bf03c3dc70632d315ebcde8e9c66b6c6d3e3d538bb94d7fca284172c00"
   },
   "salary-ledger-core.js": {
     "version": "1.0.0",

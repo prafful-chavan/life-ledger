@@ -57,7 +57,7 @@
       if (!byMonth.has(ym)) byMonth.set(ym, []);
       byMonth.get(ym).push(row);
     }
-    return [...byMonth.keys()].sort().map((ym) => {
+    const built = [...byMonth.keys()].sort().map((ym) => {
       const slips = byMonth.get(ym);
       const net = slips.reduce((t, r) => t + num(r.netSalary || r.amount || 0), 0);
       const grossKnown = slips.every((r) => num(r.grossEarnings || 0) > 0);
@@ -79,6 +79,18 @@
         sources, overlap: sources.length > 1,
       };
     });
+    // A month with payslips from two employers is named after the one the person is with on both sides of it: a former
+    // employer's final or variable pay in a month already spent elsewhere must not cut the current job in two. When no
+    // employer carries on both sides (a real job change) the bigger payslip still names the month.
+    const named = built.map((m) => m.source);
+    built.forEach((m, i) => {
+      if (!m.overlap || i === 0 || i === built.length - 1) return;
+      const before = built[i - 1], after = built[i + 1];
+      if (monthsBetween(before.ym, m.ym) !== 1 || monthsBetween(m.ym, after.ym) !== 1) return;
+      const carries = m.sources.filter((src) => src === named[i - 1] && src === named[i + 1]);
+      if (carries.length === 1) m.source = carries[0];
+    });
+    return built;
   }
 
   /**

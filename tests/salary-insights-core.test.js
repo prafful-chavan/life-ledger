@@ -184,6 +184,25 @@ assert.deepStrictEqual([z.net, z.tds, z.pf], [0, 0, 0], "a payslip with no figur
 z = C.monthsOf([row("2026-09", 100, { grossEarnings: 1 })], num)[0]; assert.strictEqual(z.gross, 1, "a gross of ₹1 is still a gross");
 assert.strictEqual(C.monthsOf([row("2026-09", 50, { source: "First" }), row("2026-09", 50, { source: "Second" })], num)[0].source, "First", "on a tie the first payslip names the month");
 assert.strictEqual(C.monthsOf([row("2026-09", 10, { source: "Small" }), row("2026-09", 50, { source: "Big" })], num)[0].source, "Big");
+// a former employer's payslip in a month already spent at the new job does not cut that job in two
+{
+  const jobs = (rows) => C.jobsOf(C.monthsOf(rows, num)).map((j) => `${j.source}:${j.from}→${j.to}`);
+  const base = [row("2024-01", 100, { source: "Old" }), row("2024-02", 100, { source: "Old" }), row("2024-03", 200, { source: "New" }), row("2024-04", 200, { source: "New" })];
+  assert.deepStrictEqual(jobs([...base, row("2024-05", 200, { source: "New" }), row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" }), row("2024-07", 200, { source: "New" })]), ["Old:2024-01→2024-02", "New:2024-03→2024-07"], "the old employer's big payment in June is the same job as May and July");
+  const jun = C.monthsOf([...base, row("2024-05", 200, { source: "New" }), row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" }), row("2024-07", 200, { source: "New" })], num).find((m) => m.ym === "2024-06");
+  assert.deepStrictEqual([jun.source, jun.overlap, jun.net, jun.sources.length], ["New", true, 800, 2], "still an overlap month with both payslips added; only the name changes");
+  // no cut when the months beside it are not adjacent, or only one side continues, or the employer carrying on is not in the month
+  assert.deepStrictEqual(jobs([row("2024-05", 200, { source: "New" }), row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" }), row("2024-08", 200, { source: "New" })]), ["New:2024-05→2024-05", "Old:2024-06→2024-06", "New:2024-08→2024-08"], "July is missing: the months are not neighbours, so the bigger payslip names June");
+  assert.deepStrictEqual(jobs([row("2024-05", 200, { source: "New" }), row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" })]), ["New:2024-05→2024-05", "Old:2024-06→2024-06"], "the last month has nothing after it");
+  assert.deepStrictEqual(jobs([row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" }), row("2024-07", 200, { source: "New" })]), ["Old:2024-06→2024-06", "New:2024-07→2024-07"], "the first month has nothing before it");
+  assert.deepStrictEqual(jobs([row("2024-05", 200, { source: "A" }), row("2024-06", 200, { source: "B" }), row("2024-06", 600, { source: "C" }), row("2024-07", 200, { source: "A" })]), ["A:2024-05→2024-05", "C:2024-06→2024-06", "A:2024-07→2024-07"], "neither payslip belongs to the job on both sides");
+  // the job on BOTH sides decides: one side alone, or the month two back, does not
+  assert.deepStrictEqual(jobs([row("2024-05", 200, { source: "New" }), row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" }), row("2024-07", 200, { source: "Other" })]), ["New:2024-05→2024-05", "Old:2024-06→2024-06", "Other:2024-07→2024-07"], "New is before June but not after it");
+  assert.deepStrictEqual(jobs([row("2024-05", 200, { source: "Other" }), row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" }), row("2024-07", 200, { source: "New" })]), ["Other:2024-05→2024-05", "Old:2024-06→2024-06", "New:2024-07→2024-07"], "New is after June but not before it");
+  assert.deepStrictEqual(jobs([row("2024-04", 100, { source: "Old" }), row("2024-05", 200, { source: "New" }), row("2024-06", 200, { source: "New" }), row("2024-06", 600, { source: "Old" }), row("2024-07", 200, { source: "New" })]), ["Old:2024-04→2024-04", "New:2024-05→2024-07"], "May and July are New; April (two months back) is irrelevant");
+  // a real job change month keeps the bigger payslip's name
+  assert.deepStrictEqual(jobs([row("2024-02", 100, { source: "Old" }), row("2024-03", 200, { source: "New" }), row("2024-03", 500, { source: "Old" }), row("2024-04", 200, { source: "New" })]), ["Old:2024-02→2024-03", "New:2024-04→2024-04"], "Old carries on only on one side");
+}
 // only three months either side are compared (a far-off month does not change what is usual)
 assert.deepStrictEqual(oneOffYms(series("2025-01", [900, 900, 900, 900, 100, 100, 100, 100, 160, 100, 100, 100, 100])), ["2025-09"], "months beyond three away are ignored");
 assert.deepStrictEqual(oneOffYms(series("2025-01", [100, 100, 100, 160, 100, 100, 900, 900])), ["2025-04"], "…on both sides");

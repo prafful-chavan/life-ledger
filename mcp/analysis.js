@@ -188,15 +188,15 @@ const usStockReport = (state, fxOverride) => equityReport(state.usstocks, { fx: 
 // ── spending and cash flow (salary at month-end pays NEXT month's spending) ───────────────
 function salaryForSpendingMonth(state, ym) {
   const prev = addMonths(ym, -1);
-  const latest = {};
+  const byPerson = {};
   for (const i of (state.income || [])) {
     if (monthOf(i.date) !== prev) continue;
     if (i.type && !/salary/i.test(i.type)) continue;
     const who = i.person || "Me";
-    if (!latest[who] || i.date > latest[who].date) latest[who] = i;
+    byPerson[who] = (byPerson[who] || 0) + (num(i.netSalary) || num(i.amount));   // two payslips in a month (a job change, a final settlement) are both credited
   }
-  const net = Object.values(latest).reduce((s, i) => s + (num(i.netSalary) || num(i.amount)), 0);
-  return { creditedIn: prev, net: r0(net), people: Object.keys(latest) };
+  const net = Object.values(byPerson).reduce((s, v) => s + v, 0);
+  return { creditedIn: prev, net: r0(net), people: Object.keys(byPerson) };
 }
 
 function expenseReport(state, month) {

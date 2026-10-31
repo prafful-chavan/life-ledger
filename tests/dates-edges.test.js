@@ -53,6 +53,11 @@ const s = { income: [
 const jan = A.salaryForSpendingMonth(s, "2027-01");
 assert.deepStrictEqual([jan.creditedIn, jan.net], ["2026-12", 257000], "January's spending is paid by December's salaries (not interest, not January's)");
 assert.strictEqual(A.salaryForSpendingMonth(s, "2026-12").net, 0, "nothing was credited in November");
+{
+  const two = { income: [{ date: "2024-06-01", amount: 169946, person: "Me", type: "Salary" }, { date: "2024-06-01", amount: 553107, person: "Me", type: "Salary" }, { date: "2024-06-30", amount: 55000, person: "Wife", type: "Salary" }] };
+  const r = A.salaryForSpendingMonth(two, "2024-07");
+  assert.deepStrictEqual([r.net, r.people.sort().join()], [169946 + 553107 + 55000, "Me,Wife"], "two payslips of one person in a month (a former employer's payment) are both credited");
+}
 
 // ── The tax year's salary months (the salary sheet dates a month's pay on the 1st, so the date's month is the pay month) ──
 assert.strictEqual(T.household.salaryFy("2026-04-01"), "2026-27", "April's pay, dated 1 April, is in FY 2026-27");

@@ -52,11 +52,22 @@
     return isoOf(y, m, Math.min(p.d, last));
   }
 
-  /** Latest monthly net salary per person (Me / Wife), from the income records. */
+  /**
+   * Steady monthly net salary per person (Me / Wife): the middle one of the last three months with pay (the lower of the last
+   * two; the only one when there is one). Several payslips in one month are added. A single bonus or arrears month therefore
+   * does not become the "monthly income" that term cover is measured against.
+   */
   function monthlyIncome(state, who) {
-    const rows = (state.income || []).filter((i) => (i.person || "Me") === who).sort((a, b) => (a.date < b.date ? 1 : -1));
-    const r = rows[0];
-    return r ? num(r.netSalary) || num(r.amount) : 0;
+    const byMonth = new Map();
+    for (const i of state.income || []) {
+      if ((i.person || "Me") !== who || (i.type && !/salary/i.test(i.type))) continue;
+      const ym = String(i.date || "").slice(0, 7);
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) continue;
+      byMonth.set(ym, (byMonth.get(ym) || 0) + (num(i.netSalary) || num(i.amount)));
+    }
+    const last = [...byMonth.keys()].sort().slice(-3).map((k) => byMonth.get(k)).sort((a, b) => a - b);
+    if (!last.length) return 0;
+    return last.length === 2 ? last[0] : last[Math.floor(last.length / 2)];
   }
 
   /** Average monthly spending over the last 6 complete months before `today`. */
