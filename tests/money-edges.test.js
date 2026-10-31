@@ -4,11 +4,11 @@ const P = require("../protection-core.js"), L = require("../liability-calc.js"),
 
 // ── Protection ──
 {
-  const st = { income: [{ person: "Me", date: "2026-09-30", netSalary: 200000 }, { person: "Me", date: "2026-08-31", netSalary: 1 }, { person: "Wife", date: "2026-09-30", amount: 50000 }],
+  const st = { income: [{ person: "Me", date: "2026-09-30", netSalary: 200000 }, { person: "Me", date: "2026-08-31", netSalary: 200000 }, { person: "Me", date: "2026-07-31", netSalary: 200000 }, { person: "Wife", date: "2026-09-30", amount: 50000 }],
     insurance: [{ type: "Term life", person: "Me", cover: 1e7, premium: 12000, frequency: "Yearly", nextDue: "2026-11-10" }, { type: "Health", person: "Both", cover: 5e5, premium: 1000, frequency: "Monthly", nextDue: "2026-10-25" }],
     vehicles: [{ value: 400000 }], expenses: [] };
   const t = P.termCheck(st, "Me");
-  assert.deepStrictEqual([t.income, t.min, t.max], [2400000, 24000000, 36000000], "the latest salary × 12; guide 10–15×");
+  assert.deepStrictEqual([t.income, t.min, t.max], [2400000, 24000000, 36000000], "the steady monthly salary × 12; guide 10–15×");
   const s = P.summary(st, "2026-10-20");
   assert.strictEqual(s.yearlyPremium, 12000 + 12000, "a monthly premium counts 12 times a year");
   assert.strictEqual(Math.round(s.premiumShareOfIncome * 100) / 100, Math.round((24000 / (200000 * 12 + 50000 * 12)) * 10000) / 100, "premiums as % of both yearly incomes");
