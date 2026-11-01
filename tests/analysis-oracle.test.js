@@ -90,7 +90,9 @@ assert.strictEqual(A.netWorth({}).fxUsdInr, 0, "no rate anywhere: 0, so US share
   assert.deepStrictEqual([food.avg6mo, food.vsAvgPct, r.avg6moSpend], [15000, 0, 15000], "May (4 back) and April (5 back) count; February (7 back) does not");
   const r2 = A.expenseReport({ income: [], expenses: [e("2026-09-01", 18000, "Food"), e("2026-08-01", 12000, "Food")] }, "2026-09");
   assert.strictEqual(r2.categories[0].vsAvgPct, 50, "₹18,000 against a ₹12,000 average is +50%");
-  assert.strictEqual(A.expenseReport({ income: [], expenses: [e("2026-10-05", 1)] }, "2026-10").monthIsComplete, false, "the current month is still running");
+  const thisMonth = new Date().toISOString().slice(0, 7);   // the code reads the real clock, so "the current month" is worked out the same way
+  assert.strictEqual(A.expenseReport({ income: [], expenses: [e(thisMonth + "-05", 1)] }, thisMonth).monthIsComplete, false, "the current month is still running");
+  assert.strictEqual(A.expenseReport({ income: [], expenses: [e("2020-01-05", 1)] }, "2020-01").monthIsComplete, true, "a month long past is complete");
   assert.strictEqual(A.expenseReport({ income: [], expenses: [e("2026-08-05", 7), e("2026-09-05", 9)] }).month, "2026-09", "no month given: the latest with spending");
   const many = { income: [], expenses: Array.from({ length: 14 }, (_, i) => e(`20${25 + Math.floor((i + 8) / 12)}-${String(((i + 8) % 12) + 1).padStart(2, "0")}-01`, 100)) };
   assert.strictEqual(A.expenseReport(many).trend.length, 12, "the trend is the last 12 months");

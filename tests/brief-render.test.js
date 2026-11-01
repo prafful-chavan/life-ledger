@@ -1,6 +1,8 @@
 // The morning email: built from the data, never typed by a model. Made-up household throughout (no real data).
 const assert = require("assert");
 const fs = require("fs"), os = require("os"), path = require("path");
+// The real monthly law-check file must not leak in: once the scheduled task has run, the made-up 21 Oct household would read it
+process.env.LIFE_LEDGER_LAW_WATCH = path.join(os.tmpdir(), "no-such-law-watch-" + process.pid + ".json");
 const S = require("../mcp/server.js");
 const R = require("../mcp/brief-render.js");
 const V = require("../mcp/vault-client.js");
