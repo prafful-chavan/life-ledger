@@ -34,10 +34,11 @@
   }
 
   function priceTime(text) {
-    const t = Date.parse(String(text || "").replace(",", ""));
-    if (Number.isFinite(t)) return t;
+    // dd-mm-yyyy first: the browser's own parser reads 01-11-2026 as 11 January, which made a price from yesterday look ten months old
     const m = String(text || "").match(/^(\d{2})-(\d{2})-(\d{4})$/);   // 16-10-2026
-    return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : NaN;
+    if (m) return Date.UTC(+m[3], +m[2] - 1, +m[1]);
+    const t = Date.parse(String(text || "").replace(",", ""));
+    return Number.isFinite(t) ? t : NaN;
   }
 
   function run(input) {

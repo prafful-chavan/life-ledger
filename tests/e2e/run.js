@@ -413,7 +413,7 @@ const SCANNER = `(${function scan() {
 
     // 4. Data health
     console.log("\nData health");
-    const health = await cdp.eval(`(()=>{document.querySelector('#topbarMore summary').click();document.querySelector('[data-open-modal="dataHealthModal"]').click();return new Promise(r=>setTimeout(()=>r({warn:document.querySelectorAll('.dh-row.warn').length,rows:document.querySelectorAll('.dh-row').length,summary:document.querySelector('.dh-summary')&&document.querySelector('.dh-summary').innerText.replace(/\\n+/g,' | ')}),900))})()`);
+    const health = await cdp.eval(`(()=>{document.querySelector('#topbarMore summary').click();document.querySelector('[data-open-modal="dataHealthModal"]').click();return new Promise(r=>setTimeout(()=>r({warn:document.querySelectorAll('.dh-row.warn').length,rows:document.querySelectorAll('.dh-row').length,which:[...document.querySelectorAll('.dh-row.warn')].map(x=>x.innerText.replace(/\\n+/g,' | ').slice(0,260)),summary:document.querySelector('.dh-summary')&&document.querySelector('.dh-summary').innerText.replace(/\\n+/g,' | ')}),900))})()`);
     check("clean data passes every health check", health.warn === 0, JSON.stringify(health));
     const selfCheck = await cdp.eval(`(()=>{const r=[...document.querySelectorAll('.dh-row')].find(x=>/Tax engine checked/.test(x.innerText)); return r ? r.innerText.replace(/\\n+/g,' | ') : ''})()`);
     check("Data Health shows the tax engine checked against its reference cases in this browser", /\d+ of \d+ reference cases/.test(selfCheck) && !/disagrees/.test(selfCheck), selfCheck.slice(0, 200));

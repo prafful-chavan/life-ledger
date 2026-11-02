@@ -48,8 +48,8 @@
     "sha256": "396d27aa7294aa9e4a1017b51e63f4506e59ef36ddae7681eb60e8d8b3b6d131"
   },
   "data-health.js": {
-    "version": "1.0.8",
-    "sha256": "b76ce1870f21ef6114364d07ab91ca60aff18263852c3b64e6ba506f725cd0c8"
+    "version": "1.0.9",
+    "sha256": "7db8cd67ed5c717025d229fcaae19eca0f8c43583be701fb41dd5cc409192583"
   },
   "drive-sync.js": {
     "version": "1.0.42",

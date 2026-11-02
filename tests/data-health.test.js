@@ -121,4 +121,17 @@ assert.doesNotThrow(() => H.run(null));
   assert.ok(/Still there since the last check · Archana · fund · Bandhan Small Cap: units differ \(app 5081.94, INDmoney 4820.5, about ₹14,588\)/.test(warnRow.items[0]), warnRow.items[0]);
   assert.strictEqual(row({ checkedOn: "2026-09-20", status: "ok", matched: 56, total: 56, gaps: [] }).title, "Holdings check is out of date");
 }
+
+// A price dated 1 November is yesterday on 2 November, not ten months old (dd-mm-yyyy with a day up to 12 was read as mm-dd)
+(function () {
+  const withNav = (d) => { const s = base(); s.stocks = []; s.mutualFunds.forEach((m) => { m.navDate = d; }); return s; };
+  const fresh = H.run({ state: withNav("01-11-2026"), now: "2026-11-02", reported: null, categoryKey: key });
+  assert.strictEqual(get(fresh, "prices-old").status, "ok", "01-11-2026 on 2 Nov is one day old");
+  const slightly = H.run({ state: withNav("03-11-2026"), now: "2026-11-08", reported: null, categoryKey: key });
+  assert.strictEqual(get(slightly, "prices-old").status, "ok", "five days old is still fine");
+  const old = H.run({ state: withNav("01-11-2026"), now: "2026-11-09", reported: null, categoryKey: key });
+  assert.strictEqual(get(old, "prices-old").status, "warn", "eight days old is flagged");
+  const spelled = H.run({ state: withNav("2026-11-01"), now: "2026-11-02", reported: null, categoryKey: key });
+  assert.strictEqual(get(spelled, "prices-old").status, "ok", "other date spellings still parse");
+})();
 console.log("data-health tests passed");
