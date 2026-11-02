@@ -6534,3 +6534,16 @@ body[data-theme="dark"] .metric-card .label {
 .goals-plan-dash { font-size: 12px; margin: 0 0 12px; color: var(--muted); }
 .goals-plan-dash b { color: var(--ink); }
 @media (max-width: 640px) { .goals-plan-table th:nth-child(4), .goals-plan-table td:nth-child(4), .goals-plan-table th:nth-child(2), .goals-plan-table td:nth-child(2) { display: none; } .goals-plan-card { padding: 12px; } }
+
+/* Goals by category */
+.goal-group-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 14px 0 2px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.goal-group-head h3 { margin: 0; font-size: 16px; }
+.goal-group-head span { font-size: 12px; color: var(--muted); }
+.goal-group-head b { font-size: 12px; color: var(--ink); margin-left: auto; }
+.goal-note { margin-top: 4px; font-size: 11px; font-weight: 600; color: var(--muted); line-height: 1.35; }
+.goals-plan-cats { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--input-bg); }
+.goals-plan-cats h4 { margin: 0 0 6px; font-size: 13px; }
+.goals-plan-cats div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13px; }
+.goals-plan-cats div span { color: var(--muted); }
+.goals-plan-cats div b { text-align: right; }
+@media (max-width: 640px) { .goal-group-head b { margin-left: 0; width: 100%; } .goals-plan-cats div { flex-direction: column; gap: 0; } .goals-plan-cats div b { text-align: left; } }

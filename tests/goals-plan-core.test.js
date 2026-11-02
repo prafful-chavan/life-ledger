@@ -118,7 +118,8 @@ const first = G.planSheetImport([home], TODAY);
 assert.strictEqual(first.add.length, G.SHEET_GOALS.length, "every sheet goal is added once");
 assert.deepStrictEqual(first.update, [{ id: "goal-1", name: "Home", from: 20000000, changes: { target: 30000000, sheetKey: "sheet:home" } }]);
 assert.ok(first.add.every((g) => g.dueDate === "2030-12-31" && g.sheetKey && g.id), "all carry the due date, a key and an id");
-assert.ok(first.add.filter((g) => g.kind === "score").every((g) => g.target === 100 && g.saved === 0));
+assert.ok(first.add.filter((g) => g.kind === "measure").every((g) => g.cat && g.unit && g.target > 0 && g.saved === 0), "every measured goal has a category, a unit and a target");
+assert.strictEqual(first.add.filter((g) => g.kind === "measure").length, 12);
 assert.strictEqual(first.add.find((g) => g.sheetKey === "sheet:portfolio-20cr").track, "All my assets");
 assert.strictEqual(first.add.find((g) => g.sheetKey === "sheet:prafful-business").target, 100000, "part-time business: ₹1 lakh a month");
 assert.strictEqual(first.add.find((g) => g.sheetKey === "sheet:farmhouse").target, 20000000, "farmhouse: ₹2 Cr as the household said");
@@ -153,7 +154,7 @@ const byName = (n) => R.items.find((x) => x.name === n);
 assert.strictEqual(byName("Home").remaining, 28000000);
 assert.strictEqual(byName("Home").days, G.daysLeft("2028-05-26", TODAY));
 assert.strictEqual(byName("₹20 Cr portfolio by the end of 2030").remaining, 200000000 - 13300000);
-assert.strictEqual(R.notMoney.length, 14, "eleven personal goals and three income goals are listed, not added in");
+assert.strictEqual(R.notMoney.length, 15, "twelve measured goals and three income goals are listed, not added in");
 assert.strictEqual(R.needsAmount.length, 0, "every money goal in the sheet now has an amount");
 
 // ── blind spots closed after the mutation run ──
@@ -228,5 +229,59 @@ assert.deepStrictEqual(G.planSheetImport([], TODAY, (k) => "id-" + k).add.find((
   assert.strictEqual(odd.earn.yearsAtCurrentSaving, 2.9);
   assert.strictEqual(G.plan([{ id: "z", target: 1, saved: 0, dueDate: "2027-11-02" }], TODAY, { takeHomeMonthly: 300000, spendMonthly: 200000 }).earn.yearsAtCurrentSaving, 0, "a rupee left is under a tenth of a year, not 'no answer'");
   assert.strictEqual(G.plan(g, TODAY, { takeHomeMonthly: 200001, spendMonthly: 200000 }).earn.yearsAtCurrentSaving, 200000, "saving a single rupee a month still gives an answer");      // 35 / 12 = 2.916 -> 2.9
+})();
+
+// ── categories, units, heights and the upgrade of goals saved before units existed ──
+(function () {
+  const sheet = (k) => G.SHEET_GOALS.find((x) => x.key === k);
+  assert.strictEqual(sheet("weight-prafful").heightCm, 170.18, "5 ft 7 in");
+  assert.strictEqual(sheet("weight-archana").heightCm, 152.4, "5 ft 0 in");
+  assert.strictEqual(sheet("weight-archana").current, 51);
+  assert.strictEqual(sheet("weight-archana").start, 51);
+  assert.strictEqual(sheet("weight-archana").target, 42);
+  assert.strictEqual(sheet("weight-prafful").target, 70);
+  // the defaults the household accepted
+  const want = { "time-family": ["people", "hours/week", 3], "love-less-fights": ["people", "hours/week", 7], "ai-ml": ["skills", "hours/week", 5], communication: ["skills", "hours/week", 2], personality: ["skills", "hours/week", 2], freelancing: ["skills", "hours/week", 5], "healthy-food": ["body", "days/week", 6], "hair-face": ["body", "days/week", 5], "health-family": ["body", "check-ups/year", 2], fights: ["people", "count/month", 2] };
+  for (const [k, [cat, unit, target]] of Object.entries(want)) { const x = sheet(k); assert.deepStrictEqual([x.cat, x.unit, x.target], [cat, unit, target], k); }
+  assert.strictEqual(sheet("fights").direction, "atMost");
+  assert.strictEqual(sheet("archana-salary").unit, "₹/year");
+  assert.strictEqual(sheet("archana-business").unit, "₹/month");
+  // Prafful's weight comes from his measurements when given, and is left unset when not
+  const withW = G.planSheetImport([home], TODAY, null, { weightKg: { Me: 83.9 } }).add.find((g) => g.sheetKey === "sheet:weight-prafful");
+  assert.strictEqual(withW.current, 83.9); assert.strictEqual(withW.start, 83.9);
+  const noW = G.planSheetImport([home], TODAY, null, {}).add.find((g) => g.sheetKey === "sheet:weight-prafful");
+  assert.strictEqual(noW.current, undefined, "no measurement means no weight is made up");
+  assert.strictEqual(G.planSheetImport([home], TODAY, null, { weightKg: { Me: 0 } }).add.find((g) => g.sheetKey === "sheet:weight-prafful").current, undefined, "a zero weight is not a weight");
+
+  // goals saved by the first version (kind score, target 100) are upgraded in place, once
+  const legacy = [home,
+    { id: "o1", name: "Focus on healthy food", kind: "score", target: 100, saved: 0, sheetKey: "sheet:healthy-food", dueDate: "2030-12-31" },
+    { id: "o2", name: "Weight 42 kg (Archana)", kind: "score", target: 100, saved: 0, sheetKey: "sheet:weight-archana", dueDate: "2030-12-31" },
+    { id: "o3", name: "Archana: next job switch at ₹20 lakh a year", kind: "income", target: 2000000, saved: 0, sheetKey: "sheet:archana-salary" },
+    { id: "o4", name: "Farmhouse (land and construction)", target: 20000000, saved: 0, sheetKey: "sheet:farmhouse" }];
+  const up = G.planSheetImport(legacy, TODAY, null, { weightKg: { Me: 83.9 } });
+  const upd = (id) => up.update.find((u) => u.id === id);
+  assert.strictEqual(upd("o1").changes.unit, "days/week"); assert.strictEqual(upd("o1").changes.target, 6); assert.strictEqual(upd("o1").changes.kind, "measure");
+  assert.strictEqual(upd("o2").changes.current, 51); assert.strictEqual(upd("o2").changes.heightCm, 152.4);
+  assert.strictEqual(upd("o3").changes.unit, "₹/year");
+  assert.strictEqual(upd("o4"), undefined, "a money goal needs no upgrade");
+  assert.ok(up.update.find((u) => u.id === home.id), "Home is still raised");
+  assert.ok(up.add.some((g) => g.sheetKey === "sheet:fights"), "the new fights goal is added");
+  // applying the upgrade makes a second run a no-op
+  const after = legacy.map((g) => { const u = up.update.find((x) => x.id === g.id); return u ? { ...g, ...u.changes } : g; }).concat(up.add);
+  const again = G.planSheetImport(after, TODAY, null, { weightKg: { Me: 83.9 } });
+  assert.strictEqual(again.add.length, 0); assert.strictEqual(again.update.length, 0);
+  assert.strictEqual(G.kindOf({ kind: "measure" }), "measure"); assert.strictEqual(G.isMoney({ kind: "measure" }), false);
+  assert.strictEqual(G.perDay({ kind: "measure", target: 5, dueDate: "2030-12-31" }, TODAY).counted, false);
+})();
+
+// matched by name when no sheet key is on the goal; progress reset; a one-kilo weight is still a weight
+(function () {
+  const r = G.planSheetImport([home, { id: "z", name: "Zzz", target: 1 }, { id: "n1", name: "Focus on healthy food", kind: "score", target: 100, saved: 40 }], TODAY);
+  const u = r.update.find((x) => x.id === "n1");
+  assert.ok(u, "a goal with the sheet's name but no key is upgraded, and it is the right goal");
+  assert.strictEqual(u.changes.saved, 0); assert.strictEqual(u.changes.unit, "days/week"); assert.strictEqual(u.changes.sheetKey, "sheet:healthy-food");
+  assert.ok(!r.update.some((x) => x.id === "z"));
+  assert.strictEqual(G.planSheetImport([home], TODAY, null, { weightKg: { Me: 1 } }).add.find((g) => g.sheetKey === "sheet:weight-prafful").current, 1);
 })();
 console.log("goals-plan-core tests passed");

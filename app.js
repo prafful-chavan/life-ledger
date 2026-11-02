@@ -10608,6 +10608,8 @@ function liveGoals() {
   const now = Date.now();
   if (goalLiveCache.src === state.goals && goalLiveCache.list && now - goalLiveCache.at < 1500) return goalLiveCache.list;
   const list = (state.goals || []).map((g) => {
+    if (g.track === "Body measurements") { const w = latestWeightKg(g.owner); return w > 0 ? { ...g, current: w, tracked: true } : g; }
+    if (g.track === "Salary (yearly gross)") { const y = annualPayNow(g.owner); return y > 0 ? { ...g, current: y, tracked: true } : g; }
     const v = goalTrackedValue(g);
     return v == null ? g : { ...g, saved: Math.round(v), tracked: true };
   });
@@ -10631,6 +10633,28 @@ function goalNeedPerMonth(goal, today) {
 
 // Goal planning (pure core in goals-plan-core.js): what each goal asks per day, and what the household must earn per day.
 const goalsPlanCore = () => (typeof window !== "undefined" && window.LifeLedgerGoalsPlan) || (typeof require === "function" ? require("./goals-plan-core.js") : null);
+const goalsMeasureCore = () => (typeof window !== "undefined" && window.LifeLedgerGoalsMeasure) || (typeof require === "function" ? require("./goals-measure-core.js") : null);
+/** A goal measured in its own unit (kg, hours a week, income) rather than as a pile of money. */
+const goalIsMeasured = (g) => Boolean(g) && (g.kind === "measure" || g.kind === "income");
+function goalView(goal) { return goalsMeasureCore().view(goal, istTodayISO(), { inr: formatINR }); }
+function goalDone(goal) {
+  if (goalIsMeasured(goal)) return goalView(goal).done;
+  return (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
+}
+/** The latest measured weight for the person (only the owner "Me" has body measurements), or 0. */
+function latestWeightKg(owner) {
+  if (owner === "Wife") return 0;
+  const rows = [...(state.bodyMetrics || [])].filter((b) => toNumber(b.weight) > 0).sort((a, b) => new Date(b.date + "T" + (b.time || "00:00")) - new Date(a.date + "T" + (a.time || "00:00")));
+  return rows.length ? Math.round(toNumber(rows[0].weight) * 10) / 10 : 0;
+}
+/** Latest payslip, gross (or net when gross is missing), times 12: what the person earns in a year at the current pay. */
+function annualPayNow(owner) {
+  const who = owner === "Wife" ? "Wife" : "Me";
+  const rows = (state.income || []).filter((i) => (i.person || "Me") === who && (!i.type || /salary/i.test(i.type)) && /^\d{4}-\d{2}/.test(String(i.date || ""))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  if (!rows.length) return 0;
+  const r = rows[0];
+  return Math.round((toNumber(r.grossEarnings) || toNumber(r.netSalary) || toNumber(r.amount)) * 12);
+}
 const protectionCore = () => (typeof window !== "undefined" && window.LifeLedgerProtection) || (typeof require === "function" ? require("./protection-core.js") : null);
 /** Take-home and spending come from the household's own payslips and expenses; growth is whatever the household set (0 when unset). */
 function goalsPlanOptions() {
@@ -10665,6 +10689,15 @@ function renderGoalsPlan() {
       <h3>What your goals ask each day</h3>
       <p class="goals-plan-sub">Put aside <b>${inrPerDay(p.savePerDay)} a day</b> (${formatINR(p.savePerMonth)} a month) for every goal that has an amount and a date.</p>
       ${earnLine}
+      ${(() => {
+        const n = goalsMeasureCore().needs(liveGoals(), istTodayISO());
+        const bits = [];
+        bits.push(`<div><span>Money</span><b>${inrPerDay(p.savePerDay)} a day</b></div>`);
+        if (n.incomeGapPerMonth > 0) bits.push(`<div><span>Income</span><b>${formatINR(n.incomeGapPerMonth)} a month more</b></div>`);
+        for (const w of n.weights) bits.push(`<div><span>${escapeHTML(w.name.replace(/^Weight [\d.]+ kg /, "Weight "))}</span><b>${w.kgPerMonth} kg a month</b></div>`);
+        if (n.hoursPerWeek > 0) bits.push(`<div><span>Time with people and skills</span><b>${n.hoursPerDay} h a day (${n.hoursPerWeek} h a week)</b></div>`);
+        return `<div class="goals-plan-cats"><h4>What each category asks</h4>${bits.join("")}</div>`;
+      })()}
       ${rows ? `<table class="goals-plan-table"><thead><tr><th>Biggest asks</th><th>By</th><th>Per day</th><th>Per month</th></tr></thead><tbody>${rows}</tbody></table>` : ""}
       ${p.needsAmount.length ? `<p class="goals-plan-note">No amount yet, so not counted: ${names(p.needsAmount)}.</p>` : ""}
       ${p.needsDate.length ? `<p class="goals-plan-note">No due date yet, so not counted: ${names(p.needsDate)}.</p>` : ""}
@@ -10684,10 +10717,14 @@ function renderGoalsPlan() {
 function importSheetGoals() {
   const G = goalsPlanCore();
   if (!G) return;
-  const res = G.planSheetImport(state.goals, istTodayISO(), (k) => `goal-sheet-${k}`);
+  const w = latestWeightKg("Me");
+  const res = G.planSheetImport(state.goals, istTodayISO(), (k) => `goal-sheet-${k}`, { weightKg: w > 0 ? { Me: w } : {} });
   if (!res.add.length && !res.update.length) { toast("Your sheet goals are already in."); return; }
-  const lines = [`Add ${res.add.length} goal${res.add.length === 1 ? "" : "s"} from your salary sheet, all due 31 Dec 2030.`];
-  for (const u of res.update) lines.push(`Raise "${u.name}" from ${formatINR(u.from)} to ${formatINR(u.changes.target)} (the 4BHK flat in Pune).`);
+  const lines = [];
+  if (res.add.length) lines.push(`Add ${res.add.length} goal${res.add.length === 1 ? "" : "s"} from your salary sheet, all due 31 Dec 2030.`);
+  const up = res.update.filter((u) => u.measure);
+  if (up.length) lines.push(`Give ${up.length} goal${up.length === 1 ? "" : "s"} their own unit and category (kg, hours a week, days a week, income) instead of "out of 100". Your weight goals use your heights of 5 ft 7 and 5 ft 0.`);
+  for (const u of res.update.filter((x) => !x.measure)) lines.push(`Raise "${u.name}" from ${formatINR(u.from)} to ${formatINR(u.changes.target)} (the 4BHK flat in Pune).`);
   lines.push("The money amounts are planning estimates; edit any of them on its card.", "Nothing else changes.");
   if (!confirm(lines.join("\n\n"))) return;
   state.goals.push(...res.add);
@@ -10695,7 +10732,7 @@ function importSheetGoals() {
   goalLiveCache.at = 0;
   renderGoalsOnly();
   saveData(true, "goal");
-  toast(`Added ${res.add.length} goals${res.update.length ? " and updated Home" : ""}.`);
+  toast(`Added ${res.add.length} goal${res.add.length === 1 ? "" : "s"}${res.update.length ? ` and updated ${res.update.length}` : ""}.`);
 }
 
 function renderGoals() {
@@ -10722,7 +10759,7 @@ function renderGoals() {
   let totalSaved = 0;
 
   liveGoals().forEach(goal => {
-    const isCompleted = (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
+    const isCompleted = goalDone(goal);
     if (isCompleted) {
       completedCount++;
     } else {
@@ -10778,7 +10815,7 @@ function renderGoals() {
     // Owner
     if (ownerVal !== "All" && goal.owner !== ownerVal) return false;
     // Status
-    const isCompleted = (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
+    const isCompleted = goalDone(goal);
     if (statusVal === "Completed" && !isCompleted) return false;
     if (statusVal === "Active" && isCompleted) return false;
     if (statusVal === "Overdue") {
@@ -10818,15 +10855,38 @@ function renderGoals() {
     return;
   }
 
-  filtered.forEach(goal => {
-    const isCompleted = (goal.saved || 0) >= (goal.target || 1) && (goal.target || 0) > 0;
-    const progress = clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
+  const MC = goalsMeasureCore();
+  const planNow = goalsPlan(), needsNow = MC.needs(liveGoals(), istTodayISO());
+  const groupLine = (g) => {
+    if (g.id === "money") return planNow && planNow.savePerDay > 0 ? `${inrPerDay(planNow.savePerDay)} a day to put aside` : "";
+    if (g.id === "income") return needsNow.incomeGapPerMonth > 0 ? `${formatINR(needsNow.incomeGapPerMonth)} a month still to add` : "";
+    if (g.id === "body") return needsNow.weights.map((w) => `${escapeHTML(w.name.replace(/^Weight [\d.]+ kg /, ""))} ${w.kgPerMonth} kg a month`).join(" · ");
+    const hrs = g.goals.reduce((a, x) => a + (x.unit === "hours/week" && x.direction !== "atMost" ? toNumber(x.target) : 0), 0);
+    return hrs > 0 ? `${Math.round(hrs * 10) / 10} hours a week, about ${Math.round((hrs / 7) * 10) / 10} a day` : "";
+  };
+  const ordered = MC.groupByCategory(filtered).flatMap((g) => [{ __group: g }, ...g.goals]);
+  ordered.forEach(goal => {
+    if (goal.__group) {
+      const g = goal.__group, head = document.createElement("div");
+      head.className = "goal-group-head";
+      head.innerHTML = `<h3>${escapeHTML(g.label)}</h3><span>${g.goals.length} goal${g.goals.length === 1 ? "" : "s"} · ${escapeHTML(g.unit)}</span>${groupLine(g) ? `<b>${groupLine(g)}</b>` : ""}`;
+      container.append(head);
+      return;
+    }
+    const measured = goalIsMeasured(goal), gv = measured ? goalView(goal) : null;
+    const isCompleted = goalDone(goal);
+    const progress = measured ? gv.pct : clamp(((goal.saved || 0) / Math.max(1, goal.target || 1)) * 100, 0, 100);
     const catConfig = getGoalCategoryConfig(goal.category);
     const timeInfo = isCompleted ? { text: "✅ Completed!", class: "completed-tag" } : calculateTimeRemaining(goal.dueDate);
 
     const GPc = goalsPlanCore(), gKind = GPc.kindOf(goal), gMoney = GPc.isMoney(goal);
-    const savedText = gKind === "score" ? `${Math.round(goal.saved || 0)} of 100 done` : gKind === "income" ? `Now ${formatINR(goal.saved || 0)}` : `${formatINR(goal.saved || 0)} saved`;
-    const targetText = gKind === "score" ? "" : `Target: ${formatINR(goal.target || 0)}${gKind === "income" ? ((/year/i.test(goal.name || "")) ? " a year" : " a month") : ""} ${goal.dueDate ? `by ${formatDate(goal.dueDate)}` : ""}`;
+    const savedText = measured ? escapeHTML(gv.headline) : gKind === "score" ? `${Math.round(goal.saved || 0)} of 100 done` : `${formatINR(goal.saved || 0)} saved`;
+    const targetText = measured ? `${escapeHTML(gv.detail)}${goal.dueDate ? ` · by ${formatDate(goal.dueDate)}` : ""}${gv.notes.map((n) => `<div class="goal-note">${escapeHTML(n)}</div>`).join("")}` : gKind === "score" ? "" : `Target: ${formatINR(goal.target || 0)} ${goal.dueDate ? `by ${formatDate(goal.dueDate)}` : ""}`;
+    const logUnit = { "hours/week": "Hours", "days/week": "Days", "count/month": "Count", "count/year": "Count", "check-ups/year": "Check-ups" }[goal.unit];
+    const measureAction = !measured ? "" : goal.tracked ? `<div class="goal-quick-contribute goal-follows"><span>🔗 ${goal.unit === "kg" ? "Follows your latest body measurement" : "Follows your latest payslip (gross × 12)"}</span></div>`
+      : goal.unit === "kg" ? `<div class="goal-quick-contribute"><span>Update weight (kg):</span><form class="measure-form" data-id="${goal.id}" data-mode="weight"><input type="number" class="quick-contribute-input" placeholder="kg" required min="1" step="0.1" inputmode="decimal" /><button type="submit" class="quick-contribute-btn">✓</button></form></div>`
+      : logUnit ? `<div class="goal-quick-contribute"><span>Log ${logUnit.toLowerCase()}:</span><form class="measure-form" data-id="${goal.id}" data-mode="log"><input type="number" class="quick-contribute-input" placeholder="${logUnit}" required min="0.1" step="any" inputmode="decimal" /><button type="submit" class="quick-contribute-btn">+</button></form></div>`
+      : `<div class="goal-quick-contribute goal-follows"><span>Edit the goal to update what you earn now</span></div>`;
     const card = document.createElement("div");
     card.className = `goal-card ${isCompleted ? "completed-card" : ""} ${timeInfo.text.includes("Overdue") ? "overdue" : ""}`;
     card.innerHTML = `
@@ -10867,7 +10927,7 @@ function renderGoals() {
         })()}
       </div>
       
-      ${gKind === "income" ? `<div class="goal-quick-contribute goal-follows"><span>Edit the goal to update what you earn now</span></div>` : goal.tracked ? `<div class="goal-quick-contribute goal-follows"><span>🔗 Follows your ${escapeHTML(String(goal.track).toLowerCase())} automatically</span></div>` : `<div class="goal-quick-contribute">
+      ${measured ? measureAction : goal.tracked ? `<div class="goal-quick-contribute goal-follows"><span>🔗 Follows your ${escapeHTML(String(goal.track).toLowerCase())} automatically</span></div>` : `<div class="goal-quick-contribute">
         <span>Add progress:</span>
         <form class="quick-contribute-form" data-id="${goal.id}">
           <input type="number" class="quick-contribute-input" placeholder="Amount" required min="1" step="any" inputmode="decimal" />
@@ -10875,6 +10935,20 @@ function renderGoals() {
         </form>
       </div>`}
     `;
+
+    // Weight and time goals: a typed weight, or hours / days / counts logged against today
+    const measureForm = card.querySelector(".measure-form");
+    measureForm?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = toNumber(measureForm.querySelector(".quick-contribute-input").value);
+      if (!(v > 0)) return;
+      const real = state.goals.find((g) => g.id === goal.id) || goal;
+      if (measureForm.dataset.mode === "weight") { if (!(toNumber(real.start) > 0)) real.start = v; real.current = v; real.log = [...(real.log || []), { date: istTodayISO(), value: v }]; toast(`Weight saved: ${v} kg.`); }
+      else { real.log = [...(real.log || []), { date: istTodayISO(), value: v }]; toast(`Logged ${v} for "${goal.name}".`); }
+      goalLiveCache.at = 0;
+      renderGoalsOnly();
+      saveData(true, "goal");
+    });
 
     // Bind quick contribute form (not present for goals that follow holdings)
     const quickForm = card.querySelector(".quick-contribute-form");

@@ -3,8 +3,9 @@
  * to fund all of them on their dates, and the import of the goals written in the household's salary sheet ("Our Goals - Needs").
  *
  * A goal may carry a `kind`: "save" (default; a pile of money by a date), "networth" (follows holdings, the big portfolio
- * target), "income" (target is a monthly or yearly income, not a pile) or "score" (no money; progress is typed in 0-100).
- * Only "save" and "networth" goals with an amount and a due date ask for money; the other two are listed, never added in.
+ * target), "income" (target is a monthly or yearly income, not a pile), "measure" (not money: kg, hours a week, days a week,
+ * counts; worked out in goals-measure-core.js) or "score" (older goals with progress typed in 0-100).
+ * Only "save" and "networth" goals with an amount and a due date ask for money; the others are listed, never added in.
  *
  * Numbers that are not in the household's own data are never made up: growth on the portfolio is 0 unless the household
  * sets it, and a goal with no amount is reported as "needs an amount" instead of being counted as zero.
@@ -22,7 +23,7 @@
 
   function kindOf(goal) {
     const k = goal && goal.kind;
-    return k === "income" || k === "score" || k === "networth" ? k : "save";
+    return k === "income" || k === "score" || k === "measure" || k === "networth" ? k : "save";
   }
   const isMoney = (goal) => { const k = kindOf(goal); return k === "save" || k === "networth"; };
 
@@ -99,23 +100,28 @@
   // ── the goals written in the household's salary sheet ("Our Goals - Needs"), added once ──────────────────────────────
   const BY = "2030-12-31";   // the sheet's heading: "Goal complete by 2030"
   const L = 100000, CR = 10000000;
+  const PRAFFUL_CM = 170.18, ARCHANA_CM = 152.4;   // 5 ft 7 in and 5 ft 0 in, as the household gave them
+  const M = (cat, unit, target, extra) => ({ kind: "measure", cat, unit, target, ...(extra || {}) });
   const SHEET_GOALS = [
-    // health, family and personal: no money, progress typed in
-    { key: "health-family", name: "Good health for all my family", category: "Health", owner: "Both", kind: "score" },
-    { key: "weight-prafful", name: "Weight 70 kg (Prafful)", category: "Health", owner: "Me", kind: "score" },
-    { key: "weight-archana", name: "Weight 42 kg (Archana)", category: "Health", owner: "Wife", kind: "score" },
-    { key: "hair-face", name: "Good hair and face for both", category: "Health", owner: "Both", kind: "score" },
-    { key: "healthy-food", name: "Focus on healthy food", category: "Health", owner: "Both", kind: "score" },
-    { key: "love-less-fights", name: "More love, less fights", category: "Family", owner: "Both", kind: "score" },
-    { key: "time-family", name: "More time for mummy, papa and didi", category: "Family", owner: "Both", kind: "score" },
-    { key: "personality", name: "Personality development for both", category: "Personal", owner: "Both", kind: "score" },
-    { key: "communication", name: "Communication skills for both", category: "Personal", owner: "Both", kind: "score" },
-    { key: "ai-ml", name: "AI/ML knowledge and projects for both", category: "Career", owner: "Both", kind: "score" },
-    { key: "freelancing", name: "Freelancing work for both", category: "Career", owner: "Both", kind: "score" },
+    // body and health
+    { key: "health-family", name: "Good health for all my family", category: "Health", owner: "Both", ...M("body", "check-ups/year", 2) },
+    { key: "weight-prafful", name: "Weight 70 kg (Prafful)", category: "Health", owner: "Me", ...M("body", "kg", 70, { direction: "down", heightCm: PRAFFUL_CM, track: "Body measurements" }) },
+    { key: "weight-archana", name: "Weight 42 kg (Archana)", category: "Health", owner: "Wife", ...M("body", "kg", 42, { direction: "down", heightCm: ARCHANA_CM, current: 51, start: 51 }) },
+    { key: "hair-face", name: "Good hair and face for both", category: "Health", owner: "Both", ...M("body", "days/week", 5) },
+    { key: "healthy-food", name: "Focus on healthy food", category: "Health", owner: "Both", ...M("body", "days/week", 6) },
+    // time with people
+    { key: "love-less-fights", name: "More love, less fights", category: "Family", owner: "Both", ...M("people", "hours/week", 7) },
+    { key: "fights", name: "Fewer fights (at most 2 a month)", category: "Family", owner: "Both", ...M("people", "count/month", 2, { direction: "atMost" }) },
+    { key: "time-family", name: "More time for mummy, papa and didi", category: "Family", owner: "Both", ...M("people", "hours/week", 3) },
+    // skills and work
+    { key: "personality", name: "Personality development for both", category: "Personal", owner: "Both", ...M("skills", "hours/week", 2) },
+    { key: "communication", name: "Communication skills for both", category: "Personal", owner: "Both", ...M("skills", "hours/week", 2) },
+    { key: "ai-ml", name: "AI/ML knowledge and projects for both", category: "Career", owner: "Both", ...M("skills", "hours/week", 5) },
+    { key: "freelancing", name: "Freelancing work for both", category: "Career", owner: "Both", ...M("skills", "hours/week", 5) },
     // income targets: the target is a monthly or yearly income, not a pile of money
-    { key: "archana-salary", name: "Archana: next job switch at ₹20 lakh a year", category: "Career", owner: "Wife", kind: "income", target: 20 * L },
-    { key: "archana-business", name: "Archana: business income ₹4 lakh a month", category: "Career", owner: "Wife", kind: "income", target: 4 * L },
-    { key: "prafful-business", name: "Prafful: part-time business ₹1 lakh a month", category: "Career", owner: "Me", kind: "income", target: 1 * L },
+    { key: "archana-salary", name: "Archana: next job switch at ₹20 lakh a year", category: "Career", owner: "Wife", kind: "income", cat: "income", unit: "₹/year", target: 20 * L, track: "Salary (yearly gross)" },
+    { key: "archana-business", name: "Archana: business income ₹4 lakh a month", category: "Career", owner: "Wife", kind: "income", cat: "income", unit: "₹/month", target: 4 * L },
+    { key: "prafful-business", name: "Prafful: part-time business ₹1 lakh a month", category: "Career", owner: "Me", kind: "income", cat: "income", unit: "₹/month", target: 1 * L },
     // money goals; the amounts are the household's planning estimates (editable in the app), not quotes
     { key: "portfolio-20cr", name: "₹20 Cr portfolio by the end of 2030", category: "Finance", owner: "Both", kind: "networth", track: "All my assets", target: 20 * CR },
     { key: "farmhouse", name: "Farmhouse (land and construction)", category: "Finance", owner: "Both", target: 2 * CR },
@@ -135,25 +141,38 @@
   /** The sheet's "1 proper flat 4bhk in Pune" is the app's existing "Home" goal; its target is raised to this. */
   const HOME_TARGET = 3 * CR;
   const isHome = (g) => /^\s*home\s*$/i.test(String(g && g.name || ""));
+  const MEASURED = (s) => s.kind === "measure" || s.kind === "income";
 
   /**
-   * What importing the sheet would do to the goals already there: add what is missing, raise "Home" to the flat's price once.
-   * Safe to run twice: a goal carrying the sheet key, or already having the same name, is left alone.
+   * What importing the sheet would do to the goals already there: add what is missing, raise "Home" to the flat's price once,
+   * and give the sheet's earlier "progress out of 100" goals their category and unit (kg, hours a week, income). Safe to run
+   * twice: a goal that already has its category and unit, or the same name, is left alone.
+   * `ctx.weightKg` may carry the latest measured weight per person ({ Me: 83.9 }) for the goals that follow body measurements.
    */
-  function planSheetImport(existing, today, idMaker) {
+  function planSheetImport(existing, today, idMaker, ctx) {
     const have = existing || [];
-    const keys = new Set(have.map((g) => g && g.sheetKey).filter(Boolean));
+    const bySheetKey = new Map(have.filter((g) => g && g.sheetKey).map((g) => [g.sheetKey, g]));
     const names = new Set(have.map((g) => String(g && g.name || "").trim().toLowerCase()));
     const make = idMaker || ((k) => "sheet-" + k);
+    const weights = (ctx && ctx.weightKg) || {};
     const add = [], update = [], skipped = [];
+    const fields = (s) => {
+      const { key, name, category, owner, ...rest } = s;
+      if (s.track === "Body measurements" && s.heightCm && num(weights[s.owner]) > 0) { rest.current = weights[s.owner]; rest.start = weights[s.owner]; }
+      return rest;
+    };
     for (const s of SHEET_GOALS) {
-      if (keys.has("sheet:" + s.key) || names.has(s.name.toLowerCase())) { skipped.push(s.name); continue; }
-      const { key, ...rest } = s;
-      add.push({ id: make(key), ...rest, saved: 0, dueDate: BY, sheetKey: "sheet:" + key, ...(rest.kind === "score" ? { target: 100 } : {}) });
+      const existingGoal = bySheetKey.get("sheet:" + s.key) || (names.has(s.name.toLowerCase()) ? have.find((g) => String(g.name || "").trim().toLowerCase() === s.name.toLowerCase()) : null);
+      if (existingGoal) {
+        if (MEASURED(s) && !existingGoal.cat) update.push({ id: existingGoal.id, name: existingGoal.name, measure: true, changes: { ...fields(s), saved: 0, sheetKey: "sheet:" + s.key } });
+        else skipped.push(s.name);
+        continue;
+      }
+      add.push({ id: make(s.key), name: s.name, category: s.category, owner: s.owner, ...fields(s), saved: 0, dueDate: BY, sheetKey: "sheet:" + s.key });
     }
     const home = have.find((g) => isHome(g) && !g.sheetKey);
     if (home && num(home.target) < HOME_TARGET) update.push({ id: home.id, name: home.name, from: num(home.target), changes: { target: HOME_TARGET, sheetKey: "sheet:home" } });
-    else if (!home && !have.some((g) => g && g.sheetKey === "sheet:home") && !names.has("home")) {
+    else if (!home && !bySheetKey.has("sheet:home") && !names.has("home")) {
       add.push({ id: make("home"), name: "Home", category: "Finance", owner: "Both", target: HOME_TARGET, saved: 0, dueDate: "2028-05-26", sheetKey: "sheet:home" });
     }
     return { add, update, skipped };
