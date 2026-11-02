@@ -233,6 +233,27 @@ const SCANNER = `(${function scan() {
     const goalsText = await cdp.eval(`document.getElementById('goals').innerText`);
     check("a goal that follows mutual funds shows the live value and says so", /Follows your mutual funds automatically/i.test(goalsText) && goalsText.includes(String(expected.mfNet).replace(/(\d)(?=(\d\d)+\d$)/g, "$1,").replace(/^(\d+),(\d{3})$/, "$1,$2")), goalsText.slice(0, 200));
 
+    // 3a2. Goals plan: what the goals ask per day, the sheet import (asks first, runs once), goals that are not money, every width
+    const gpBefore = JSON.parse(await cdp.eval(`JSON.stringify({n:LifeLedgerApp.getState().goals.length, panel:document.getElementById('goalsPlanPanel').innerText})`));
+    check("goals: the plan panel says what the goals ask per day and per month", /What your goals ask each day/.test(gpBefore.panel) && /a day/.test(gpBefore.panel) && /a month/.test(gpBefore.panel), gpBefore.panel.slice(0, 200));
+    const imp1 = JSON.parse(await cdp.eval(`(async()=>{ const asked=[]; window.confirm=(m)=>{asked.push(m); return true;}; document.getElementById('goalsSheetImportBtn').click(); await new Promise(r=>setTimeout(r,600)); const S=LifeLedgerApp.getState(); const txt=document.getElementById('goals').innerText;
+      return JSON.stringify({asked:asked.length, msg:asked[0]||'', n:S.goals.length, keys:S.goals.filter(g=>g.sheetKey).length, score:S.goals.filter(g=>g.kind==='score').length, income:S.goals.filter(g=>g.kind==='income').length, nw:(S.goals.find(g=>g.kind==='networth')||{}).track, ofHundred:/of 100 done/.test(txt), incomeCard:/a month/.test(txt)&&/Edit the goal to update what you earn now/.test(txt), overall:document.getElementById('goalStatProgress').innerText, monthly:document.getElementById('goalStatMonthly').innerText, panel:document.getElementById('goalsPlanPanel').innerText}); })()`));
+    check("goals: importing the sheet asks first and adds every goal", imp1.asked === 1 && /Add 29 goals/.test(imp1.msg) && imp1.n === gpBefore.n + 29 && imp1.keys === 29 && imp1.score === 11 && imp1.income === 3 && imp1.nw === "All my assets", JSON.stringify(imp1).slice(0, 300));
+    check("goals: personal goals show progress out of 100, income goals say what is earned now", imp1.ofHundred && imp1.incomeCard);
+    check("goals: the overall progression does not add in the portfolio or income goals", !/20,00,00,000/.test(imp1.overall) && imp1.monthly !== "—", imp1.overall + " | " + imp1.monthly);
+    check("goals: the panel lists the personal and income goals as not added in", /11 \d* ?income and personal goals|14 income and personal goals/.test(imp1.panel), imp1.panel.slice(0, 400));
+    const imp2 = JSON.parse(await cdp.eval(`(async()=>{ let asked=0; window.confirm=()=>{asked++; return true;}; const before=LifeLedgerApp.getState().goals.length; document.getElementById('goalsSheetImportBtn').click(); await new Promise(r=>setTimeout(r,400)); return JSON.stringify({asked, same:LifeLedgerApp.getState().goals.length===before}); })()`));
+    check("goals: importing the sheet again changes nothing and does not ask", imp2.asked === 0 && imp2.same, JSON.stringify(imp2));
+    const grow = JSON.parse(await cdp.eval(`(async()=>{ const sel=()=>document.querySelector('#goalsPlanPanel .goals-plan-sub b').innerText; const a=sel(); const i=document.getElementById('goalGrowthInput'); i.value='12'; i.dispatchEvent(new Event('change',{bubbles:true})); await new Promise(r=>setTimeout(r,500)); const b=sel(); const saved=LifeLedgerApp.getState().ruleSettings.goalGrowthPct; return JSON.stringify({a,b,saved}); })()`));
+    check("goals: setting growth on the portfolio goal lowers the daily ask and is saved", grow.saved === 12 && grow.a !== grow.b, JSON.stringify(grow));
+    await cdp.eval(`(()=>{const S=LifeLedgerApp.getState(); S.ruleSettings={}; S.goals=S.goals.filter(g=>!g.sheetKey); LifeLedgerApp.renderAll();})()`);
+    for (const w of [390, 768, 1280]) {
+      await viewport(w, 900); await sleep(300);
+      const fit = await cdp.eval(`(async()=>{ const S=LifeLedgerApp.getState(); document.getElementById('goalsSheetImportBtn').click(); await new Promise(r=>setTimeout(r,500)); const page=document.documentElement.scrollWidth-document.documentElement.clientWidth; const bad=[]; document.querySelectorAll('#goalsPlanPanel, #goalsPlanPanel table, #goalsGrid .goal-card').forEach(e=>{ if (e.scrollWidth>e.clientWidth+1) bad.push((e.id||e.className||e.tagName)+' client '+e.clientWidth+' scroll '+e.scrollWidth+' view '+getComputedStyle(document.getElementById('goals')).display); }); const pr=document.getElementById('goalsPlanPanel').getBoundingClientRect().right; const wide=[...document.querySelectorAll('#goalsPlanPanel *')].filter(x=>x.getBoundingClientRect().right>pr+1).slice(0,4).map(x=>x.tagName+'.'+x.className+' '+Math.round(x.getBoundingClientRect().right-pr)); S.goals=S.goals.filter(g=>!g.sheetKey); S.ruleSettings={}; LifeLedgerApp.renderAll(); return JSON.stringify({w:innerWidth,page,bad,wide}); })()`);
+      const fj = JSON.parse(fit); check(`goals at ${w}px: the plan panel, its table, every card and the page fit`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await viewport(1280, 900); await sleep(300);
+
     // 3b. Protection with data: totals, renewals, adding a policy, marking one paid
     await view("protection");
     await sleep(800);

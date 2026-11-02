@@ -5285,8 +5285,10 @@ function renderDashboardAnalysis() {
       let totalTarget = 0;
       let totalSaved = 0;
       liveGoals().forEach(g => {
-        totalTarget += (g.target || 0);
-        totalSaved += (g.saved || 0);
+        if (goalsPlanCore().kindOf(g) === "save") {
+          totalTarget += (g.target || 0);
+          totalSaved += (g.saved || 0);
+        }
       });
       const overallPct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
 
@@ -5306,9 +5308,17 @@ function renderDashboardAnalysis() {
         <span style="color:var(--brand)">${overallPct}% complete</span>
       `;
       goalContainer.append(statsBanner);
+      const gpDash = goalsPlan();
+      if (gpDash && gpDash.savePerDay > 0) {
+        const line = document.createElement("div");
+        line.className = "goals-plan-dash";
+        line.innerHTML = `Goals ask <b>${inrPerDay(gpDash.savePerDay)}</b> a day${gpDash.earn ? ` · take home about <b>${inrPerDay(gpDash.earn.needPerDay)}</b> a day (now ${inrPerDay(gpDash.earn.havePerDay)})` : ""}`;
+        goalContainer.append(line);
+      }
 
       // List top 3 upcoming, active goals
       const activeGoals = liveGoals()
+        .filter(g => goalsPlanCore().isMoney(g))
         .filter(g => (g.saved || 0) < (g.target || 1) || (g.target || 0) === 0)
         .sort((a, b) => new Date(a.dueDate || "2999-12-31") - new Date(b.dueDate || "2999-12-31"))
         .slice(0, 3);
@@ -10619,6 +10629,75 @@ function goalNeedPerMonth(goal, today) {
   return { remaining, months, perMonth: Math.ceil(remaining / months), done: false };
 }
 
+// Goal planning (pure core in goals-plan-core.js): what each goal asks per day, and what the household must earn per day.
+const goalsPlanCore = () => (typeof window !== "undefined" && window.LifeLedgerGoalsPlan) || (typeof require === "function" ? require("./goals-plan-core.js") : null);
+const protectionCore = () => (typeof window !== "undefined" && window.LifeLedgerProtection) || (typeof require === "function" ? require("./protection-core.js") : null);
+/** Take-home and spending come from the household's own payslips and expenses; growth is whatever the household set (0 when unset). */
+function goalsPlanOptions() {
+  const P = protectionCore(), today = istTodayISO();
+  return {
+    takeHomeMonthly: P ? P.monthlyIncome(state, "Me") + P.monthlyIncome(state, "Wife") : 0,
+    spendMonthly: P ? P.monthlySpending(state, today) : 0,
+    growthPct: toNumber((state.ruleSettings || {}).goalGrowthPct),
+  };
+}
+function goalsPlan() {
+  const G = goalsPlanCore();
+  return G ? G.plan(liveGoals(), istTodayISO(), goalsPlanOptions()) : null;
+}
+const inrPerDay = (n) => formatINR(Math.round(n));
+
+function renderGoalsPlan() {
+  const box = document.getElementById("goalsPlanPanel");
+  if (!box) return;
+  const p = goalsPlan();
+  if (!p) { box.innerHTML = ""; return; }
+  const growth = toNumber((state.ruleSettings || {}).goalGrowthPct);
+  const names = (list) => list.map((x) => escapeHTML(x.name)).join(", ");
+  const rows = p.items.filter((x) => !x.done).slice(0, 6).map((x) => `<tr><td>${escapeHTML(x.name)}</td><td>${x.overdue ? "overdue" : formatDate(x.dueDate)}</td><td><b>${inrPerDay(x.perDay)}</b></td><td>${formatINR(x.perMonth)}</td></tr>`).join("");
+  const e = p.earn;
+  const earnLine = !e
+    ? `<p class="goals-plan-note">Add your salary and expenses to see what you need to earn each day.</p>`
+    : `<div class="goals-plan-headline"><span>To finish these goals on time, take home about</span><b>${inrPerDay(e.needPerDay)} a day</b><span>(${formatINR(e.needPerMonth)} a month: ${formatINR(e.spendPerMonth)} living costs + ${formatINR(p.savePerMonth)} for goals)</span></div>
+       <p class="goals-plan-note">You take home about <b>${inrPerDay(e.havePerDay)}</b> a day now${e.gapPerDay > 0 ? `, so the gap is <b>${inrPerDay(e.gapPerDay)}</b> a day.` : ", which covers it."} At today's income you can set aside about ${formatINR(e.canSavePerMonth)} a month, which is ${e.coveragePct}% of what the goals ask.</p>
+       ${e.yearsAtCurrentSaving != null ? `<p class="goals-plan-note"><b>Reality check:</b> at that saving rate, with no growth, everything above would take about <b>${e.yearsAtCurrentSaving} years</b>. Moving dates or dropping goals changes the daily number most.</p>` : ""}`;
+  box.innerHTML = `<div class="goals-plan-card">
+      <h3>What your goals ask each day</h3>
+      <p class="goals-plan-sub">Put aside <b>${inrPerDay(p.savePerDay)} a day</b> (${formatINR(p.savePerMonth)} a month) for every goal that has an amount and a date.</p>
+      ${earnLine}
+      ${rows ? `<table class="goals-plan-table"><thead><tr><th>Biggest asks</th><th>By</th><th>Per day</th><th>Per month</th></tr></thead><tbody>${rows}</tbody></table>` : ""}
+      ${p.needsAmount.length ? `<p class="goals-plan-note">No amount yet, so not counted: ${names(p.needsAmount)}.</p>` : ""}
+      ${p.needsDate.length ? `<p class="goals-plan-note">No due date yet, so not counted: ${names(p.needsDate)}.</p>` : ""}
+      ${p.notMoney.length ? `<p class="goals-plan-note">${p.notMoney.length} income and personal goals are listed below but not added in.</p>` : ""}
+      <label class="goals-plan-growth"><span>Expected yearly growth on the portfolio goal (%)</span><input type="number" id="goalGrowthInput" min="0" max="30" step="0.5" value="${growth || ""}" placeholder="0" inputmode="decimal" /><small>0 means no growth is assumed. Only the portfolio goal uses it.</small></label>
+      <p class="goals-plan-note">Estimates from your latest steady salary and your last six months of spending. Not advice.</p>
+    </div>`;
+  box.querySelector("#goalGrowthInput")?.addEventListener("change", (ev) => {
+    const v = Math.min(30, Math.max(0, toNumber(ev.target.value)));
+    state.ruleSettings = { ...(state.ruleSettings || {}), goalGrowthPct: v };
+    saveData(true, "goal");
+    renderGoalsOnly();
+  });
+}
+
+/** Adds the goals written in the household's salary sheet once, after asking; raises "Home" to the flat's price. */
+function importSheetGoals() {
+  const G = goalsPlanCore();
+  if (!G) return;
+  const res = G.planSheetImport(state.goals, istTodayISO(), (k) => `goal-sheet-${k}`);
+  if (!res.add.length && !res.update.length) { toast("Your sheet goals are already in."); return; }
+  const lines = [`Add ${res.add.length} goal${res.add.length === 1 ? "" : "s"} from your salary sheet, all due 31 Dec 2030.`];
+  for (const u of res.update) lines.push(`Raise "${u.name}" from ${formatINR(u.from)} to ${formatINR(u.changes.target)} (the 4BHK flat in Pune).`);
+  lines.push("The money amounts are planning estimates; edit any of them on its card.", "Nothing else changes.");
+  if (!confirm(lines.join("\n\n"))) return;
+  state.goals.push(...res.add);
+  for (const u of res.update) { const g = state.goals.find((x) => x.id === u.id); if (g) Object.assign(g, u.changes); }
+  goalLiveCache.at = 0;
+  renderGoalsOnly();
+  saveData(true, "goal");
+  toast(`Added ${res.add.length} goals${res.update.length ? " and updated Home" : ""}.`);
+}
+
 function renderGoals() {
   const container = document.getElementById("goalsGrid");
   if (!container) return;
@@ -10649,8 +10728,10 @@ function renderGoals() {
     } else {
       activeCount++;
     }
-    totalTarget += (goal.target || 0);
-    totalSaved += (goal.saved || 0);
+    if (goalsPlanCore().kindOf(goal) === "save") {   // income, personal and portfolio goals are not piles of money to add up
+      totalTarget += (goal.target || 0);
+      totalSaved += (goal.saved || 0);
+    }
   });
 
   const statActiveEl = document.getElementById("goalStatActive");
@@ -10660,12 +10741,13 @@ function renderGoals() {
 
   const statMonthlyEl = document.getElementById("goalStatMonthly");
   if (statMonthlyEl) {
-    const plans = liveGoals().map((g) => goalNeedPerMonth(g)).filter((p) => !p.done && p.perMonth != null);
-    const monthly = plans.reduce((s, p) => s + p.perMonth, 0);
-    statMonthlyEl.textContent = plans.length ? formatINR(monthly) : "—";
+    const gp = goalsPlan();
+    const open = gp ? gp.items.filter((x) => !x.done) : [];
+    statMonthlyEl.textContent = open.length ? formatINR(gp.savePerMonth) : "—";
     const sub = document.getElementById("goalStatMonthlySub");
-    if (sub) sub.textContent = plans.length ? `to finish ${plans.length} goal${plans.length === 1 ? "" : "s"} on time` : "Set due dates to see this";
+    if (sub) sub.textContent = open.length ? `${inrPerDay(gp.savePerDay)} a day, for ${open.length} goal${open.length === 1 ? "" : "s"} on time` : "Set amounts and due dates to see this";
   }
+  renderGoalsPlan();
   if (statActiveEl) statActiveEl.textContent = activeCount;
   if (statCompletedEl) statCompletedEl.textContent = completedCount;
   if (statProgressEl) statProgressEl.textContent = `${formatINR(totalSaved)} / ${formatINR(totalTarget)}`;
@@ -10742,6 +10824,9 @@ function renderGoals() {
     const catConfig = getGoalCategoryConfig(goal.category);
     const timeInfo = isCompleted ? { text: "✅ Completed!", class: "completed-tag" } : calculateTimeRemaining(goal.dueDate);
 
+    const GPc = goalsPlanCore(), gKind = GPc.kindOf(goal), gMoney = GPc.isMoney(goal);
+    const savedText = gKind === "score" ? `${Math.round(goal.saved || 0)} of 100 done` : gKind === "income" ? `Now ${formatINR(goal.saved || 0)}` : `${formatINR(goal.saved || 0)} saved`;
+    const targetText = gKind === "score" ? "" : `Target: ${formatINR(goal.target || 0)}${gKind === "income" ? ((/year/i.test(goal.name || "")) ? " a year" : " a month") : ""} ${goal.dueDate ? `by ${formatDate(goal.dueDate)}` : ""}`;
     const card = document.createElement("div");
     card.className = `goal-card ${isCompleted ? "completed-card" : ""} ${timeInfo.text.includes("Overdue") ? "overdue" : ""}`;
     card.innerHTML = `
@@ -10760,25 +10845,29 @@ function renderGoals() {
         <div class="goal-time-left ${timeInfo.class}">${timeInfo.text}</div>
         
         <div class="goal-progress-info">
-          <span>${formatINR(goal.saved || 0)} saved</span>
+          <span>${savedText}</span>
           <span class="goal-progress-percent">${Math.round(progress)}%</span>
         </div>
         <div class="goal-progress-bar-track">
           <div class="goal-progress-bar-fill" style="width: ${progress}%"></div>
         </div>
         <div style="font-size:12px; font-weight:700; color:var(--muted); margin-bottom: 10px;">
-          Target: ${formatINR(goal.target || 0)} ${goal.dueDate ? `by ${formatDate(goal.dueDate)}` : ""}
+          ${targetText}${goal.dueDate && gKind === "score" ? `Due ${formatDate(goal.dueDate)}` : ""}
         </div>
         ${(() => {
+          if (!gMoney) return "";
+          if (!(toNumber(goal.target) > 0)) return `<div class="goal-need"><span class="goal-need-warn">No amount yet. Edit the goal to add one.</span></div>`;
           const plan = goalNeedPerMonth(goal);
           if (plan.done) return "";
+          const gday = GPc.perDay(goal, istTodayISO(), goalsPlanOptions());
+          if (gKind === "networth" && gday.counted && !gday.overdue) return `<div class="goal-need"><span><b>${formatINR(gday.remaining)}</b> to go</span><span><b>${inrPerDay(gday.perDay)}</b> a day, ${formatINR(gday.perMonth)} a month</span></div>`;
           const togo = `<span><b>${formatINR(plan.remaining)}</b> to go</span>`;
-          const per = plan.perMonth == null ? "" : plan.overdue ? `<span class="goal-need-warn">Overdue — needs the full amount now</span>` : `<span><b>${formatINR(plan.perMonth)}</b> a month for ${plan.months} month${plan.months === 1 ? "" : "s"} <button type="button" class="explain-btn" data-explain="goal:${escapeHTML(String(goal.id))}" aria-label="How this is worked out">How?</button></span>`;
+          const per = plan.perMonth == null ? "" : plan.overdue ? `<span class="goal-need-warn">Overdue — needs the full amount now</span>` : `<span><b>${inrPerDay(gday.perDay)}</b> a day, <b>${formatINR(plan.perMonth)}</b> a month for ${plan.months} month${plan.months === 1 ? "" : "s"} <button type="button" class="explain-btn" data-explain="goal:${escapeHTML(String(goal.id))}" aria-label="How this is worked out">How?</button></span>`;
           return `<div class="goal-need">${togo}${per}</div>`;
         })()}
       </div>
       
-      ${goal.tracked ? `<div class="goal-quick-contribute goal-follows"><span>🔗 Follows your ${escapeHTML(String(goal.track).toLowerCase())} automatically</span></div>` : `<div class="goal-quick-contribute">
+      ${gKind === "income" ? `<div class="goal-quick-contribute goal-follows"><span>Edit the goal to update what you earn now</span></div>` : goal.tracked ? `<div class="goal-quick-contribute goal-follows"><span>🔗 Follows your ${escapeHTML(String(goal.track).toLowerCase())} automatically</span></div>` : `<div class="goal-quick-contribute">
         <span>Add progress:</span>
         <form class="quick-contribute-form" data-id="${goal.id}">
           <input type="number" class="quick-contribute-input" placeholder="Amount" required min="1" step="any" inputmode="decimal" />
@@ -16055,6 +16144,8 @@ function bindGoals() {
   statusFilter?.addEventListener("change", listener);
   sortSelector?.addEventListener("change", listener);
 
+  document.getElementById("goalsSheetImportBtn")?.addEventListener("click", importSheetGoals);
+
   // Click handler to redirect dashboard link to goals panel
   document.getElementById("dashboardGoalPanel")?.addEventListener("click", () => {
     document.querySelector('.nav-item[data-view="goals"]')?.click();
@@ -16522,6 +16613,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     resolveSchemeCodes,
     liveGoals,
+    goalsPlan,
+    goalsPlanOptions,
     goalTrackedValue,
     __setStateForTest: (next) => { state = next; goalLiveCache.at = 0; },
     parseCSV,

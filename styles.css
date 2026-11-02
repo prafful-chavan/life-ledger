@@ -6515,3 +6515,22 @@ body[data-theme="dark"] .metric-card .label {
     padding: 12px 0 calc(12px + env(safe-area-inset-bottom)) !important;
   }
 }
+
+/* Goals: what the goals ask each day */
+.goals-head-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.goals-plan-card { background: var(--panel, var(--input-bg)); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: 0 0 16px; }
+.goals-plan-card h3 { margin: 0 0 6px; font-size: 16px; }
+.goals-plan-sub, .goals-plan-note { margin: 6px 0; font-size: 13px; color: var(--muted); }
+.goals-plan-headline { display: flex; flex-direction: column; gap: 2px; margin: 10px 0; font-size: 13px; color: var(--muted); }
+.goals-plan-headline b { font-size: 28px; color: var(--ink); line-height: 1.2; }
+.goals-plan-table { width: 100%; min-width: 0; max-width: 100%; table-layout: auto; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+.goals-plan-table td:first-child, .goals-plan-table th:first-child { white-space: normal; overflow-wrap: anywhere; }
+.goals-plan-table td:nth-child(n+2), .goals-plan-table th:nth-child(n+2) { white-space: nowrap; }
+.goals-plan-table th, .goals-plan-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.goals-plan-table th:nth-child(n+3), .goals-plan-table td:nth-child(n+3) { text-align: right; }
+.goals-plan-growth { display: flex; flex-direction: column; gap: 4px; margin: 12px 0 4px; font-size: 13px; max-width: 320px; }
+.goals-plan-growth input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--input-bg); color: var(--ink); }
+.goals-plan-growth small { color: var(--muted); }
+.goals-plan-dash { font-size: 12px; margin: 0 0 12px; color: var(--muted); }
+.goals-plan-dash b { color: var(--ink); }
+@media (max-width: 640px) { .goals-plan-table th:nth-child(4), .goals-plan-table td:nth-child(4), .goals-plan-table th:nth-child(2), .goals-plan-table td:nth-child(2) { display: none; } .goals-plan-card { padding: 12px; } }

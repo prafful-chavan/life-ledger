@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.140",
-    "sha256": "3654ccad94630b72629a3e13c7753b7f6f562f874725460387d0126e79f05587"
+    "version": "1.0.142",
+    "sha256": "7b201b31c615c824cb6e002bc1f951de83f2e07be30d75c02038766e0414e115"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -62,6 +62,10 @@
   "explain.js": {
     "version": "1.0.1",
     "sha256": "9bf8fa16232b6639fc68d2f185b9025142d7835187630c554932b159047a81bb"
+  },
+  "goals-plan-core.js": {
+    "version": "1.0.1",
+    "sha256": "263e8024f354901f1b809ca7fe458d8044f98c04f0df496bb7d47d81972c2f72"
   },
   "hero-series.js": {
     "version": "1.0.0",
@@ -168,8 +172,8 @@
     "sha256": "f408152d108e06d3dd202477e38d78c33fcad0099a6332c1b0b5ece53f530b43"
   },
   "styles.css": {
-    "version": "1.0.20",
-    "sha256": "8c038acf487240d913c22a5019ddfdc20bb9ed20ee4634cfc05dad4860978966"
+    "version": "1.0.23",
+    "sha256": "99fda3e7bd2540a40cebe0e822cb2d604e6cca243810aef7ba22557a1a527fe4"
   },
   "sync-client.js": {
     "version": "1.0.5",

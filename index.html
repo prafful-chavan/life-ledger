@@ -26,7 +26,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
-    <link rel="stylesheet" href="styles.css?v=1.0.20" />
+    <link rel="stylesheet" href="styles.css?v=1.0.23" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
     <link rel="stylesheet" href="layout.css?v=1.8.39" />
     <script defer src="script-gate.js?v=1.0.1"></script>
@@ -44,6 +44,7 @@
     <script defer src="networth-snapshot.js?v=1.0.2"></script>
     <script defer src="salary-core.js?v=1.0.1"></script>
     <script defer src="salary-ledger-core.js?v=1.0.0"></script>
+    <script defer src="goals-plan-core.js?v=1.0.1"></script>
     <script defer src="salary-insights-core.js?v=1.0.1"></script>
     <script defer src="spending-insights-core.js?v=1.0.2"></script>
     <script defer src="dashboard-settings.js?v=1.0.1"></script>
@@ -54,7 +55,7 @@
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.140"></script>
+    <script defer src="app.js?v=1.0.142"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -1612,8 +1613,13 @@
               <h2 id="goalsTitle">Goals Tracker</h2>
               <p>Future goals, money, career, family, health, and personal milestones for both of us.</p>
             </div>
-            <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="goal">Add goal</button>
+            <div class="goals-head-actions">
+              <button class="secondary-button" type="button" id="goalsSheetImportBtn">Add goals from my sheet</button>
+              <button class="primary-button" type="button" data-open-modal="quickAddModal" data-kind="goal">Add goal</button>
+            </div>
           </div>
+
+          <div id="goalsPlanPanel"></div>
 
           <!-- Goal Stats Cards -->
           <div class="goals-stats-grid">
