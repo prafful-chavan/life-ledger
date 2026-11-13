@@ -4606,6 +4606,7 @@ function renderAll() {
   renderPortfolio();
   renderUpkeep();
   renderJobSwitch();
+  renderDayMeter();
   renderFinance();
   renderCareer();
   renderGoals();
@@ -5675,6 +5676,17 @@ const UPV = (typeof window !== "undefined" && window.LifeLedgerUpkeepViews) || (
 const upkeepUi = { saleForm: false, open: new Set() };
 const JSW = (typeof window !== "undefined" && window.LifeLedgerJobSwitch) || (typeof require === "function" ? require("./job-switch-core.js") : null);
 const JSV = (typeof window !== "undefined" && window.LifeLedgerJobSwitchViews) || (typeof require === "function" ? require("./job-switch-views.js") : null);
+const DMT = (typeof window !== "undefined" && window.LifeLedgerDayMeter) || (typeof require === "function" ? require("./day-meter-core.js") : null);
+
+/** The Day meter at the top of the Dashboard: what must be taken home per day, against what is taken home. */
+function renderDayMeter() {
+  const panel = document.getElementById("dayMeterPanel"), box = document.getElementById("dayMeter");
+  if (!panel || !box || !DMT) return;
+  const plan = goalsPlan();
+  const m = plan ? DMT.meter(plan, { growthPct: toNumber((state.ruleSettings || {}).goalGrowthPct) }) : null;
+  panel.hidden = !m;
+  box.innerHTML = m ? DMT.html(m, { fmt: dashFmt, dateText: (iso) => formatDate(iso) }) : "";
+}
 const jobSwitchUi = { errors: [] };
 const jobRecord = () => (state.jobSwitch || [])[0] || null;
 const JOB_PAY = ["gross", "employeePf", "employerNps", "basic", "ptax"];

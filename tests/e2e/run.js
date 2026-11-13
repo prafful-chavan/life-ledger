@@ -703,6 +703,30 @@ const SCANNER = `(${function scan() {
     }
     await cdp.eval(`(()=>{ LifeLedgerApp.getState().salesPending=[]; LifeLedgerApp.getState().sales=[]; LifeLedgerApp.getState().stocks=window.__origStocks; LifeLedgerApp.renderAll(); return 0; })()`);
     await viewport(1280, 900); await sleep(300);
+    // Day meter (top of the Dashboard)
+    console.log("\nDay meter");
+    await viewport(1280, 900); await sleep(300); await view("dashboard"); await sleep(400);
+    const dm = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const p=window.goalsPlan(); const e=p&&p.earn; out.hasPlan=!!e;
+      const panel=document.getElementById('dayMeterPanel'), box=document.getElementById('dayMeter'); out.shown=!panel.hidden; const t=box.innerText.replace(/\\s+/g,' ');
+      const nums=[...box.querySelectorAll('.dm-nums b')].map(b=>Number(b.textContent.replace(/[^0-9]/g,'')));
+      out.need=nums[0]; out.have=nums[1]; out.third=nums[2]; if (e) { out.expNeed=e.needPerDay; out.expHave=e.havePerDay; out.expGap=Math.max(0,e.needPerDay-e.havePerDay); out.expAhead=Math.max(0,e.havePerDay-e.needPerDay); }
+      out.pct=(/(Covered|Close|Short) · (\\d+)%/.exec(t)||[])[2]; out.expPct=e?String(Math.round(e.havePerDay/e.needPerDay*100)):null;
+      out.fill=box.querySelector('.dm-bar > i').style.width; out.nan=/NaN|undefined|Infinity/.test(t); out.atTop=panel.compareDocumentPosition(document.getElementById('heroCard'))&Node.DOCUMENT_POSITION_FOLLOWING?true:false;
+      out.painted=getComputedStyle(box.querySelector('.dm-bar > i')).backgroundColor!=='rgba(0, 0, 0, 0)';
+      // with no payslips there is no figure to show, so the strip goes away
+      const inc=S.income; S.income=[]; LifeLedgerApp.renderAll(); await w(300); out.hiddenNoIncome=document.getElementById('dayMeterPanel').hidden&&document.getElementById('dayMeter').innerHTML==='';
+      S.income=inc; LifeLedgerApp.renderAll(); await w(300); out.backAgain=!document.getElementById('dayMeterPanel').hidden;
+      return JSON.stringify(out); })()`));
+    check("day meter: shown at the top of the Dashboard, and the need and take-home per day are exactly the goal plan's figures", dm.hasPlan && dm.shown && dm.atTop && dm.need === dm.expNeed && dm.have === dm.expHave && dm.pct === dm.expPct, JSON.stringify(dm));
+    check("day meter: the third figure is the gap (or what is to spare), the bar is filled in colour, and there is no NaN", (dm.third === dm.expGap || dm.third === dm.expAhead) && dm.painted && !dm.nan && /%$/.test(dm.fill), JSON.stringify(dm));
+    check("day meter: with no payslips the strip goes away, and comes back when there are", dm.hiddenNoIncome && dm.backAgain, JSON.stringify(dm));
+    for (const w of [360, 390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(300);
+      const fit = await cdp.eval(`(()=>{ const bad=[]; const p=document.getElementById('dayMeterPanel'); if (p.hidden) bad.push('hidden'); else { if (p.scrollWidth-p.clientWidth>1) bad.push('panel overflow '+(p.scrollWidth-p.clientWidth)); p.querySelectorAll('b,span,p').forEach(e=>{ const r=e.getBoundingClientRect(); if (r.width>0&&(r.right>innerWidth+1||r.left<-1)) bad.push('off screen: '+e.textContent.slice(0,20)); }); const smallest=Math.min(...[...p.querySelectorAll('b,span,p')].map(e=>parseFloat(getComputedStyle(e).fontSize))); if (smallest<12) bad.push('font '+smallest); }
+        return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, h:Math.round(p.getBoundingClientRect().height), bad:bad.slice(0,4)}); })()`);
+      const fj = JSON.parse(fit); check(`day meter at ${w}px: fits, text at least 12px, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await viewport(1280, 900); await sleep(300);
     // the page title is never squeezed into a column by the top-bar buttons
     for (const w of [681, 700, 768, 820, 900, 1024]) {
       await viewport(w, 900); await sleep(300);

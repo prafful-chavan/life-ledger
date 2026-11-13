@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.147",
-    "sha256": "3430e29f5c700ae6b6f0f98917847aaf087946689b576b6da68553f9ae56305a"
+    "version": "1.0.149",
+    "sha256": "32782c6894272e7c36bd203d9b6c34cda2901e0163b47e0f9f27ff0c29402fd3"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -54,6 +54,10 @@
   "data-health.js": {
     "version": "1.0.9",
     "sha256": "7db8cd67ed5c717025d229fcaae19eca0f8c43583be701fb41dd5cc409192583"
+  },
+  "day-meter-core.js": {
+    "version": "1.0.0",
+    "sha256": "bb62b60c81ef28e8a20de10f96fa6389cd048712572feff52c37b858ed532a40"
   },
   "drive-sync.js": {
     "version": "1.0.42",
@@ -100,8 +104,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.45",
-    "sha256": "6233b3d413e18fa8b54ac943f150bab386d8d5356c1912097cf929b0d79649c8"
+    "version": "1.8.46",
+    "sha256": "eb0b0e43f333875d06576e7e90934703817cf047d15e074fb299f8f6380f06e7"
   },
   "liability-calc.js": {
     "version": "1.0.0",

@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.24" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.45" />
+    <link rel="stylesheet" href="layout.css?v=1.8.46" />
     <script defer src="script-gate.js?v=1.0.1"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -56,13 +56,14 @@
     <script defer src="sales-core.js?v=1.0.0"></script>
     <script defer src="stale-values-core.js?v=1.0.0"></script>
     <script defer src="upkeep-views.js?v=1.0.0"></script>
+    <script defer src="day-meter-core.js?v=1.0.0"></script>
     <script defer src="job-switch-core.js?v=1.0.1"></script>
     <script defer src="job-switch-views.js?v=1.0.1"></script>
     <script defer src="dashboard-views.js?v=1.0.2"></script>
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.147"></script>
+    <script defer src="app.js?v=1.0.149"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -281,6 +282,11 @@
               <option value="">Loading...</option>
             </select>
           </div>
+
+          <!-- Day meter: what the household must take home per day against what it takes home -->
+          <section class="panel dm-panel" id="dayMeterPanel" aria-label="Per day: need and take-home" hidden>
+            <div id="dayMeter"></div>
+          </section>
 
           <!-- Net worth hero: the one number, today's change, and its trend -->
           <section class="panel hero-card" id="heroCard" aria-label="Family net worth">
