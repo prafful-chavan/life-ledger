@@ -645,6 +645,14 @@ body.cmdk-open, body.more-open { overflow: hidden; }
   .topbar-actions { flex-wrap: nowrap; flex: 0 0 auto; }
 }
 
+/* tablet and narrow laptop: the actions took the whole bar and squeezed the page title into a letter-per-line column */
+@media (min-width: 681px) and (max-width: 900px) {
+  .topbar { flex-wrap: wrap; }
+  .topbar > div:first-child { flex: 1 1 100%; }
+  .topbar-actions { flex-wrap: wrap; flex: 1 1 100%; }
+}
+@media (max-width: 900px) { .up-two { grid-template-columns: 1fr; } }
+
 @media (max-width: 1080px) {
   .nav-group-label { display: none; }
   .cmdk-trigger { min-width: 0; }
@@ -1029,7 +1037,7 @@ body.cmdk-open, body.more-open { overflow: hidden; }
 path[class^="pf-c"], circle[class^="pf-c"] { fill: var(--pf); stroke: var(--panel); stroke-width: 2; }
 circle[class^="pf-c"] { fill: none; stroke: var(--pf); }
 path[class^="pf-c"]:hover { opacity: .82; }
-.pf-sw, .dv-swatch[class*="pf-"], .dc-stack > i[class*="pf-g-"] { background-color: var(--pf); }
+.pf-sw, .dv-swatch[class*="pf-"], .dc-stack > i[class*="pf-g-"], .dc-stack > i[class*="pf-c"] { background-color: var(--pf); }
 .pf-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; flex: 0 0 auto; }
 .pf-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 .pf-grid { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); gap: 20px; align-items: start; }

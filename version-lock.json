@@ -100,8 +100,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.43",
-    "sha256": "8f6a015dbf1a05f6f980c812e6ffcf05429dad50804b0db8cc1a6a018ce07b3d"
+    "version": "1.8.45",
+    "sha256": "6233b3d413e18fa8b54ac943f150bab386d8d5356c1912097cf929b0d79649c8"
   },
   "liability-calc.js": {
     "version": "1.0.0",

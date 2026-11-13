@@ -655,6 +655,8 @@ const SCANNER = `(${function scan() {
       out.gains=m.gains.map(g=>({o:g.owner,left:g.exemptionLeft,used:g.exemptionUsed})); out.limit=m.exemption; out.hasGains=/tax-free limit/i.test(el.innerText);
       return JSON.stringify(out); })()`));
     check("breakdown: the equity total is exactly the Portfolio mix equity row and the buckets add up to it", near(bk.total, bk.mixEquity, 1) && near(bk.bucketSum, bk.total, 1) && bk.total > 0, JSON.stringify(bk));
+    const bseg = JSON.parse(await cdp.eval(`(()=>{ const segs=[...document.querySelectorAll('#portfolioBreakdown .dc-stack > i')]; const painted=segs.filter(e=>{ const c=getComputedStyle(e).backgroundColor; return c && c!=='rgba(0, 0, 0, 0)' && c!=='transparent'; }).length; const sw=[...document.querySelectorAll('#portfolioBreakdown .pf-sw')]; const swPainted=sw.filter(e=>{ const c=getComputedStyle(e).backgroundColor; return c && c!=='rgba(0, 0, 0, 0)'; }).length; return JSON.stringify({segs:segs.length, painted, sw:sw.length, swPainted}); })()`));
+    check("breakdown: every segment of the stacked bar and every legend swatch has a colour", bseg.segs > 0 && bseg.painted === bseg.segs && bseg.sw > 0 && bseg.swPainted === bseg.sw, JSON.stringify(bseg));
     check("breakdown: draws, shares add to 100%, rows open, no NaN, and the tax-free limit is the tax engine's", bk.rendered && Math.abs(bk.shareSum - 100) <= 0.6 && bk.opened && !bk.nan && bk.limit === 125000 && bk.hasGains, JSON.stringify(bk));
 
     const sl2 = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
@@ -700,6 +702,13 @@ const SCANNER = `(${function scan() {
       const fj = JSON.parse(fit); check(`upkeep panels at ${w}px: fit, no control off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
     }
     await cdp.eval(`(()=>{ LifeLedgerApp.getState().salesPending=[]; LifeLedgerApp.getState().sales=[]; LifeLedgerApp.getState().stocks=window.__origStocks; LifeLedgerApp.renderAll(); return 0; })()`);
+    await viewport(1280, 900); await sleep(300);
+    // the page title is never squeezed into a column by the top-bar buttons
+    for (const w of [681, 700, 768, 820, 900, 1024]) {
+      await viewport(w, 900); await sleep(300);
+      const tt = JSON.parse(await cdp.eval(`(()=>{ const h=document.getElementById('todayTitle').getBoundingClientRect(); return JSON.stringify({w:innerWidth, tw:Math.round(h.width), th:Math.round(h.height), page:document.documentElement.scrollWidth-document.documentElement.clientWidth}); })()`));
+      check(`top bar at ${w}px: the page title stays on one line and nothing scrolls sideways`, tt.th < 50 && tt.tw > 150 && tt.page <= 1, JSON.stringify(tt));
+    }
     await viewport(1280, 900); await sleep(300);
     // Job switch (Career tab)
     console.log("\nJob switch");
