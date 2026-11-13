@@ -67,7 +67,7 @@
    */
   function plan(rec, ctx) {
     const r = rec || {}, today = (ctx && ctx.today) || "", computeTax = ctx && ctx.computeTax;
-    const out = { notice: null, service: null, leave: null, current: null, offers: [], checklist: [], cover: [], missing: [] };
+    const out = { notice: null, service: null, leave: null, current: null, offers: [], checklist: [], cover: [], coverPlan: null, missing: [] };
     const last = lastDay(r.resignedOn, r.noticeDays);
     if (!last) out.missing.push("resignation date and notice days");
     else {
@@ -98,8 +98,39 @@
       const joins = out.offers.filter((o) => o.joinOn).map((o) => o.joinOn).sort();
       out.cover.push({ person: c.person, type: c.type, cover: num(c.cover), endsOn: last, gapDaysToEarliestJoin: joins.length ? Math.max(0, daysBetween(last, joins[0]) - 1) : null });
     }
+    out.coverPlan = coverPlan(r, last, { today, groupCover: ctx && ctx.groupCover, ownHealth: ctx && ctx.ownHealth, baseline: ctx && ctx.baseline });
     out.checklist = checklist(r, last, today);
     return out;
+  }
+
+
+  /**
+   * Health cover once the group policy stops. Per offer: the first day with no cover, the day the new employer's cover starts
+   * (joining date + the days the household typed, or never), how many days nobody is covered, and who stays out of the new
+   * cover. Nothing is assumed: an answer left blank is reported as "not entered", not as yes or no.
+   *   offer.healthStarts: "joining" | "after" (+ healthAfterDays) | "none" | "" ; offer.healthCover: ₹ ; offer.healthSpouse / healthParents: "yes" | "no" | "".
+   *   ctx = { today, groupCover: ₹ the group policy gives the family, ownHealth: ₹ of individual health policies held now, baseline: ₹ the household's guide }
+   */
+  function coverPlan(rec, last, ctx) {
+    const c = ctx || {}, group = num(c.groupCover), own = num(c.ownHealth), baseline = num(c.baseline);
+    if (!last || !(group > 0)) return null;
+    const offers = [];
+    for (const o of (rec && Array.isArray(rec.offers) ? rec.offers : [])) {
+      if (!o) continue;
+      const join = iso(o.joinOn), joinOk = validISO(join);
+      let startsOn = null, state = "not entered";
+      if (o.healthStarts === "none") state = "no cover";
+      else if (o.healthStarts === "joining" && joinOk) { startsOn = join; state = "starts"; }
+      else if (o.healthStarts === "after" && joinOk && Number.isInteger(Number(o.healthAfterDays)) && Number(o.healthAfterDays) >= 0 && o.healthAfterDays !== "") { startsOn = addDays(join, Number(o.healthAfterDays)); state = "starts"; }
+      const uncoveredDays = startsOn ? Math.max(0, daysBetween(last, startsOn) - 1) : null;
+      const cover = num(o.healthCover);
+      const who = (v) => (v === "yes" ? "yes" : v === "no" ? "no" : "not entered");
+      offers.push({ id: o.id, name: String(o.name || "Offer"), state, startsOn, uncoveredDays, cover: cover > 0 ? cover : null,
+        spouse: who(o.healthSpouse), parents: who(o.healthParents),
+        vsGroup: cover > 0 ? cover - group : null, vsBaseline: cover > 0 && baseline > 0 ? cover - baseline : null });
+    }
+    const parentsLeftOut = offers.length > 0 && offers.every((o) => o.parents === "no") && own <= 0;
+    return { endsOn: last, firstUncovered: addDays(last, 1), daysToEnd: daysBetween(c.today, last), groupCover: group, ownHealth: own, baseline, offers, parentsLeftOut };
   }
 
   /** What to do, with dates only where the date is fixed by the household's own dates or by law. */
@@ -114,6 +145,8 @@
       { key: "form12b", title: "Give the new employer the pay and tax already deducted this year (Form 12B), so the tax is not taken twice", date: null },
       { key: "form16", title: "Form 16 from both employers for the year of the change", date: exitFy ? `${fyEndYear(exitFy)}-06-15` : null },
       { key: "health", title: "Check the health and life cover after the last day (group cover ends with the job)", date: last },
+      { key: "hr-exit", title: "Ask the employer's HR in writing what happens to the group health policy when you leave (any option to continue or convert it), before the last day", date: last ? addDays(last, -14) : null },
+      { key: "declare", title: "On any new health policy, declare every existing condition of every person covered", date: null },
     ];
     return items.map((i) => ({ ...i, done: Boolean(done[i.key]), daysTo: i.date ? daysBetween(today, i.date) : null }));
   }
@@ -137,5 +170,5 @@
     return errs;
   }
 
-  return { GRATUITY_YEARS, daysBetween, addDays, addYears, fyOf, lastDay, service, takeHome, plan, checklist, toggle, validate, validISO };
+  return { GRATUITY_YEARS, daysBetween, addDays, addYears, fyOf, lastDay, service, takeHome, coverPlan, plan, checklist, toggle, validate, validISO };
 });

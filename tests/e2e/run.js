@@ -739,6 +739,22 @@ const SCANNER = `(${function scan() {
     check("job switch: last day is resignation + notice, no gratuity short of 5 years, leave pay is days × the typed figure", js.saved && js.lastDay && js.noGratuity && js.leave, JSON.stringify(js));
     check("job switch: take-home of the current job and of the offer equals the tax engine's figure, and the gap to the new job is named", js.cur === js.expCur && js.off === js.expOff && js.gap && !js.nan, JSON.stringify(js));
     check("job switch: typed text is escaped, a ticked step is kept, an overlap is flagged, removing an offer works", js.escaped && js.tickSaved && js.overlap && js.removed, JSON.stringify(js));
+    const hc = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const savedIns=S.insurance;
+      S.insurance=[...savedIns.filter(p=>p.type!=='Health'),{id:'ins-grp',type:'Health',person:'Both',employer:'Yes',cover:1200000,premium:0,frequency:'Yearly',nextDue:'',insurer:'X',policyName:'Group floater',note:''}];
+      S.jobSwitch=[{id:'jobswitch-1',resignedOn:'2026-10-05',noticeDays:90,joinedOn:'2024-03-01',current:{},offers:[{id:'o1',name:'UST',joinOn:'2027-01-12',gross:3600000}]}]; LifeLedgerApp.renderAll(); await w(300);
+      const box=document.getElementById('jobSwitchBox'); const set=(n,v)=>{ box.querySelector('[data-field="'+n+'"]').value=v; };
+      out.notYet=/Health cover after the job/.test(box.innerText)&&/start of cover: not entered/.test(box.innerText);
+      set('o0healthStarts','after'); set('o0healthAfterDays','30'); set('o0healthCover','500000'); set('o0healthSpouse','yes'); set('o0healthParents','no');
+      box.querySelector('[data-act="js-save"]').click(); await w(500);
+      const o=S.jobSwitch[0].offers[0]; out.saved=o.healthStarts==='after'&&o.healthAfterDays===30&&o.healthCover===500000&&o.healthSpouse==='yes'&&o.healthParents==='no';
+      const txt=box.innerText; out.gap=/38 days with no cover/.test(txt); out.less=/7,00,000 less than the group policy/.test(txt); out.parents=/no cover after the last day/.test(txt);
+      out.kept=box.querySelector('[data-field="o0healthStarts"]').value==='after'&&box.querySelector('[data-field="o0healthParents"]').value==='no';
+      out.steps=/Ask the employer's HR in writing/.test(txt)&&/declare every existing condition/.test(txt);
+      S.insurance=savedIns; S.jobSwitch=[]; LifeLedgerApp.renderAll(); await w(200); out.hiddenWithoutGroup=!/Health cover after the job/.test(box.innerText);
+      return JSON.stringify(out); })()`));
+    check("job switch cover: with a group health policy the section appears; an unanswered offer says 'not entered' instead of guessing", hc.notYet, JSON.stringify(hc));
+    check("job switch cover: the five health answers are saved and shown again; the gap days, the cover difference and the parents warning are worked out", hc.saved && hc.kept && hc.gap && hc.less && hc.parents && hc.steps, JSON.stringify(hc));
+    check("job switch cover: without a group policy the section is not shown", hc.hiddenWithoutGroup, JSON.stringify(hc));
     for (const w of [390, 768, 1024, 1280, 1600]) {
       await viewport(w, 900); await sleep(400);
       await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.jobSwitch=[{id:'jobswitch-1',resignedOn:'2026-10-05',noticeDays:90,joinedOn:'2024-03-01',leaveDays:20,leavePerDay:3000,current:{gross:3000000,employeePf:100000},offers:[{id:'o1',name:'A Very Long Company Name Private Limited Of India',joinOn:'2027-01-12',gross:3600000,employeePf:100000},{id:'o2',name:'Second',joinOn:'2026-12-20',gross:99999999}],done:{}}]; LifeLedgerApp.renderAll(); document.querySelector('[data-career-tab="jobswitch"]').click(); return 0; })()`); await sleep(300);

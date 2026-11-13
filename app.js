@@ -5685,7 +5685,11 @@ function renderJobSwitch() {
   if (!el || !JSW || !JSV || !window.LifeLedgerTax) return;
   const rec = jobRecord() || { id: "jobswitch-1", offers: [], current: {} };
   const cover = (state.insurance || []).filter((p) => p.employer === "Yes").map((p) => ({ person: DASH_NAMES[p.person] || p.person, type: p.type, cover: toNumber(p.cover) }));
-  const plan = JSW.plan(rec, { today: todayISO(), computeTax: window.LifeLedgerTax.engine.computeTax, coverEndsWithJob: cover });
+  const health = (state.insurance || []).filter((p) => p.type === "Health");
+  const P = typeof protectionCore === "function" ? protectionCore() : null;
+  const plan = JSW.plan(rec, { today: todayISO(), computeTax: window.LifeLedgerTax.engine.computeTax, coverEndsWithJob: cover,
+    groupCover: health.filter((p) => p.employer === "Yes").reduce((t, p) => t + toNumber(p.cover), 0), ownHealth: health.filter((p) => p.employer !== "Yes").reduce((t, p) => t + toNumber(p.cover), 0),
+    baseline: P ? P.guides(state).healthBaseline : 0 });
   el.innerHTML = JSV.jobSwitch(rec, plan, { fmt: dashFmt, today: todayISO(), errors: jobSwitchUi.errors });
 }
 
@@ -5697,7 +5701,7 @@ function readJobForm(box) {
   rec.resignedOn = f("resignedOn"); rec.noticeDays = f("noticeDays") === "" ? "" : Number(f("noticeDays")); rec.joinedOn = f("joinedOn");
   rec.leaveDays = f("leaveDays") === "" ? "" : Number(f("leaveDays")); rec.leavePerDay = f("leavePerDay") === "" ? "" : Number(f("leavePerDay"));
   rec.current = nums("c");
-  rec.offers = (rec.offers || []).map((o, i) => ({ ...o, name: f("o" + i + "name"), joinOn: f("o" + i + "joinOn"), ...nums("o" + i) }));
+  rec.offers = (rec.offers || []).map((o, i) => ({ ...o, name: f("o" + i + "name"), joinOn: f("o" + i + "joinOn"), ...nums("o" + i), healthStarts: f("o" + i + "healthStarts"), healthAfterDays: f("o" + i + "healthAfterDays") === "" ? "" : Number(f("o" + i + "healthAfterDays")), healthCover: f("o" + i + "healthCover") === "" ? "" : Number(f("o" + i + "healthCover")), healthSpouse: f("o" + i + "healthSpouse"), healthParents: f("o" + i + "healthParents") }));
   return rec;
 }
 

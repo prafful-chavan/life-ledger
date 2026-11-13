@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.146",
-    "sha256": "8b36d5c73e6eb36cc3b1031601f46d923346786ea3d06b7304d1d7071c1daa8b"
+    "version": "1.0.147",
+    "sha256": "3430e29f5c700ae6b6f0f98917847aaf087946689b576b6da68553f9ae56305a"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -84,12 +84,12 @@
     "sha256": "cfb5866ecab3eca6b007e71f4f9c36945cea0a511c3b9de1ae1674b109f2cd1c"
   },
   "job-switch-core.js": {
-    "version": "1.0.0",
-    "sha256": "146a504331956b27334809bfe306b8f4f70f249c015c35207aa319058a1289aa"
+    "version": "1.0.1",
+    "sha256": "1e4df2f70d992d7fa3e6d6eacdb5225c36c91715ac6d1b34b591391a4dda8fa0"
   },
   "job-switch-views.js": {
-    "version": "1.0.0",
-    "sha256": "e7909aecbc496e9ed355828e1fa578ed95ac0149bbf2b15dc3c010a6c44c16f4"
+    "version": "1.0.1",
+    "sha256": "685146235034be503f020c1a9348cc61d648217ce92740d91dcb7ce9bab8afa3"
   },
   "knowledge-modules.js": {
     "version": "1.0.0",

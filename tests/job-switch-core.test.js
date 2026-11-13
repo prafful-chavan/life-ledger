@@ -137,4 +137,56 @@ assert.strictEqual(J.service("2024-03-01", "2027-01-03").daysShort, 788);
 assert.strictEqual(J.service("2024-03-01", "2029-03-01").daysShort, 0);
 assert.deepStrictEqual([J.service("2024-10-12", "2025-02-12").months, J.service("2024-10-12", "2025-02-11").months, J.service("2024-12-31", "2025-01-30").months, J.service("2024-12-10", "2025-01-09").months], [4, 3, 0, 0]);
 assert.strictEqual(J.takeHome({ gross: 1 }, "1990-01-01", computeTax).error, "The tax rules for 1989-90 are not available.");
+
+// ── health cover after the job ──
+{
+  const LAST = "2027-01-03", ctx = { today: "2026-11-13", groupCover: 1200000, ownHealth: 0, baseline: 1000000 };
+  const off = (o) => J.coverPlan({ offers: [{ id: "a", name: "A", joinOn: "2027-01-12", ...o }] }, LAST, ctx).offers[0];
+  // cover starts on joining: 4 Jan..11 Jan are uncovered (8 days), the same count as the pay gap
+  assert.strictEqual(off({ healthStarts: "joining" }).uncoveredDays, 8);
+  assert.strictEqual(off({ healthStarts: "joining" }).startsOn, "2027-01-12");
+  // cover starts 30 days after joining: 11 Feb, 38 days uncovered
+  assert.strictEqual(off({ healthStarts: "after", healthAfterDays: 30 }).startsOn, "2027-02-11");
+  assert.strictEqual(off({ healthStarts: "after", healthAfterDays: 30 }).uncoveredDays, 38);
+  assert.strictEqual(off({ healthStarts: "after", healthAfterDays: 0 }).uncoveredDays, 8, "0 days after joining is the same as on joining");
+  // the day after the last day: no gap; joining before the last day: never negative
+  assert.strictEqual(J.coverPlan({ offers: [{ id: "a", joinOn: "2027-01-04", healthStarts: "joining" }] }, LAST, ctx).offers[0].uncoveredDays, 0);
+  assert.strictEqual(J.coverPlan({ offers: [{ id: "a", joinOn: "2026-12-20", healthStarts: "joining" }] }, LAST, ctx).offers[0].uncoveredDays, 0);
+  // not entered / no cover / bad inputs are said, never guessed
+  for (const o of [{}, { healthStarts: "" }, { healthStarts: "after" }, { healthStarts: "after", healthAfterDays: "" }, { healthStarts: "after", healthAfterDays: -1 }, { healthStarts: "after", healthAfterDays: 1.5 }]) { const r = off(o); assert.strictEqual(r.state, "not entered", JSON.stringify(o)); assert.strictEqual(r.uncoveredDays, null); assert.strictEqual(r.startsOn, null); }
+  assert.strictEqual(off({ healthStarts: "none" }).state, "no cover"); assert.strictEqual(off({ healthStarts: "none" }).uncoveredDays, null);
+  assert.strictEqual(J.coverPlan({ offers: [{ id: "a", joinOn: "", healthStarts: "joining" }] }, LAST, ctx).offers[0].state, "not entered", "no joining date, no start date");
+  // amounts against the group policy and the household's guide
+  assert.strictEqual(off({ healthCover: 500000 }).vsGroup, -700000); assert.strictEqual(off({ healthCover: 500000 }).vsBaseline, -500000);
+  assert.strictEqual(off({ healthCover: 1200000 }).vsGroup, 0); assert.strictEqual(off({ healthCover: 1500000 }).vsBaseline, 500000);
+  assert.strictEqual(off({}).cover, null); assert.strictEqual(off({}).vsGroup, null); assert.strictEqual(off({ healthCover: 0 }).cover, null);
+  // who is inside the new cover
+  assert.deepStrictEqual([off({ healthSpouse: "yes", healthParents: "no" }).spouse, off({ healthSpouse: "yes", healthParents: "no" }).parents], ["yes", "no"]);
+  assert.deepStrictEqual([off({}).spouse, off({}).parents, off({ healthParents: "maybe" }).parents], ["not entered", "not entered", "not entered"]);
+  // parents are left out only when every offer says so and no own policy exists
+  const left = (offers, own) => J.coverPlan({ offers }, LAST, { ...ctx, ownHealth: own }).parentsLeftOut;
+  assert.strictEqual(left([{ id: "a", healthParents: "no" }, { id: "b", healthParents: "no" }], 0), true);
+  assert.strictEqual(left([{ id: "a", healthParents: "no" }, { id: "b", healthParents: "yes" }], 0), false);
+  assert.strictEqual(left([{ id: "a", healthParents: "no" }, { id: "b" }], 0), false, "an unanswered offer is not 'left out'");
+  assert.strictEqual(left([{ id: "a", healthParents: "no" }], 500000), false, "an own policy exists");
+  assert.strictEqual(left([], 0), false);
+  assert.strictEqual(off({ healthCover: 0 }).vsBaseline, null);
+  // ₹1 boundaries
+  assert.strictEqual(J.coverPlan({ offers: [] }, LAST, { ...ctx, groupCover: 1 }).groupCover, 1, "a ₹1 group policy is still a policy");
+  { const o1 = J.coverPlan({ offers: [{ id: "a", healthCover: 1 }] }, LAST, ctx).offers[0]; assert.strictEqual(o1.cover, 1); assert.strictEqual(o1.vsGroup, 1 - 1200000); assert.strictEqual(o1.vsBaseline, 1 - 1000000); }
+  assert.strictEqual(J.coverPlan({ offers: [{ id: "a", healthCover: 5 }] }, LAST, { ...ctx, baseline: 0 }).offers[0].vsBaseline, null, "no baseline, no comparison");
+  assert.strictEqual(J.coverPlan({ offers: [{ id: "a", healthCover: 5 }] }, LAST, { ...ctx, baseline: 1 }).offers[0].vsBaseline, 4);
+  assert.strictEqual(left([{ id: "a", healthParents: "no" }], 1), false, "even ₹1 of own cover counts");
+  // the dates and the figures of the policy itself
+  const p = J.coverPlan({ offers: [] }, LAST, ctx);
+  assert.deepStrictEqual([p.endsOn, p.firstUncovered, p.daysToEnd, p.groupCover, p.baseline], [LAST, "2027-01-04", 51, 1200000, 1000000]);
+  assert.strictEqual(J.coverPlan({ offers: [] }, null, ctx), null); assert.strictEqual(J.coverPlan({ offers: [] }, LAST, { ...ctx, groupCover: 0 }), null, "no group policy, nothing to lose");
+  // through the whole plan, and the new checklist steps
+  const full = J.plan({ ...REC, offers: [{ ...REC.offers[0], healthStarts: "joining", healthCover: 500000, healthParents: "no" }] }, { today: "2026-11-13", computeTax, groupCover: 1200000, ownHealth: 0, baseline: 1000000 });
+  assert.strictEqual(full.coverPlan.offers[0].uncoveredDays, 0); assert.strictEqual(full.coverPlan.parentsLeftOut, true);
+  assert.strictEqual(J.plan(REC, { today: "2026-11-13", computeTax }).coverPlan, null, "no group cover given, no cover section");
+  const keys = full.checklist.map((i) => i.key); assert.ok(keys.includes("hr-exit") && keys.includes("declare"));
+  assert.strictEqual(full.checklist.find((i) => i.key === "hr-exit").date, "2026-12-20", "HR asked 14 days before the last day");
+  assert.strictEqual(full.checklist.find((i) => i.key === "declare").date, null);
+}
 console.log("job-switch-core: ok");

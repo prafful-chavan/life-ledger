@@ -16,6 +16,15 @@
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
   const input = (name, label, v, type, extra) => `<label>${h(label)}<input data-field="${h(name)}" type="${type || "number"}" ${type === "date" || type === "text" ? "" : 'inputmode="decimal" min="0" step="any"'} value="${val(v)}" ${extra || ""}></label>`;
+  const select = (name, label, options, v) => `<label>${h(label)}<select data-field="${h(name)}">${options.map(([k, t]) => `<option value="${h(k)}" ${String(v || "") === k ? "selected" : ""}>${h(t)}</option>`).join("")}</select></label>`;
+  const YESNO = [["", "Not sure"], ["yes", "Yes"], ["no", "No"]];
+  const healthFields = (o, i) => [
+    select("o" + i + "healthStarts", "New employer's health cover starts", [["", "Not sure"], ["joining", "On the joining date"], ["after", "Some days after joining"], ["none", "No health cover"]], o.healthStarts),
+    input("o" + i + "healthAfterDays", "…how many days after joining", o.healthAfterDays, "number", 'step="1"'),
+    input("o" + i + "healthCover", "Health cover it gives (₹)", o.healthCover),
+    select("o" + i + "healthSpouse", "Covers Archana", YESNO, o.healthSpouse),
+    select("o" + i + "healthParents", "Covers your parents", YESNO, o.healthParents),
+  ].join("");
   const payFields = (p, prefix) => [
     input(prefix + "gross", "Pay a year before tax (₹): fixed + variable you expect", p && p.gross),
     input(prefix + "employeePf", "Your PF a year (₹)", p && p.employeePf),
@@ -27,7 +36,7 @@
   function form(rec, errors) {
     const r = rec || {};
     const offers = (r.offers || []).map((o, i) => `<div class="up-card" data-offer="${h(o.id)}"><h4>Offer ${i + 1}</h4><div class="up-form">
-        ${input("o" + i + "name", "Company", o.name, "text")}${input("o" + i + "joinOn", "Joining date", o.joinOn, "date")}${payFields(o, "o" + i)}</div>
+        ${input("o" + i + "name", "Company", o.name, "text")}${input("o" + i + "joinOn", "Joining date", o.joinOn, "date")}${payFields(o, "o" + i)}${healthFields(o, i)}</div>
         <div class="up-actions"><button type="button" class="ghost-button up-btn" data-act="js-remove" data-id="${h(o.id)}">Remove this offer</button></div></div>`).join("");
     return `<div class="up-card"><h4>Your move</h4><div class="up-form">
         ${input("resignedOn", "Resigned on", r.resignedOn, "date")}${input("noticeDays", "Notice days", r.noticeDays, "number", 'max="365" step="1"')}
@@ -62,6 +71,19 @@
     return `<h5>Checklist</h5><ul class="up-list up-checks">${li}</ul>`;
   }
 
+
+  function coverCard(c, fmt) {
+    if (!c) return "";
+    const rows = [`<li><span>Group health policy</span><b>${h(fmt.inr(c.groupCover))}</b><small>Ends on ${h(dateText(c.endsOn))} (${c.daysToEnd > 0 ? plural(c.daysToEnd, "day") + " from now" : c.daysToEnd === 0 ? "today" : "already ended"}). From ${h(dateText(c.firstUncovered))} nobody on it is covered by it. Your own individual health policies: ${c.ownHealth > 0 ? h(fmt.inr(c.ownHealth)) : "none recorded"}.</small></li>`];
+    for (const o of c.offers) {
+      const when = o.state === "starts" ? (o.uncoveredDays ? `<span class="up-warn">${plural(o.uncoveredDays, "day")} with no cover</span> (from ${h(dateText(c.firstUncovered))} until it starts on ${h(dateText(o.startsOn))})` : `starts on ${h(dateText(o.startsOn))}: no gap`) : o.state === "no cover" ? `<span class="up-warn">gives no health cover</span>` : "start of cover: not entered";
+      const amt = o.cover === null ? "cover amount: not entered" : `${h(fmt.inr(o.cover))}${o.vsGroup === 0 ? ", same as the group policy" : o.vsGroup > 0 ? `, ${h(fmt.inr(o.vsGroup))} more than the group policy` : `, ${h(fmt.inr(-o.vsGroup))} less than the group policy`}${o.vsBaseline === null ? "" : o.vsBaseline < 0 ? `; ${h(fmt.inr(-o.vsBaseline))} below your ${h(fmt.inr(c.baseline))} guide` : "; meets your " + h(fmt.inr(c.baseline)) + " guide"}`;
+      rows.push(`<li><span>${h(o.name)}: health cover</span><b>${when}</b><small>${amt}. Archana: ${h(o.spouse)}. Parents: ${h(o.parents)}.</small></li>`);
+    }
+    if (c.parentsLeftOut) rows.push(`<li><span class="up-warn">Parents</span><b class="up-warn">no cover after the last day</b><small>Every offer says it does not cover them and no individual policy is recorded. They are covered today only through your group floater.</small></li>`);
+    return `<h5>Health cover after the job</h5><ul class="up-list">${rows.join("")}</ul>`;
+  }
+
   function jobSwitch(rec, plan, o) {
     const fmt = o.fmt, p = plan || {};
     const out = [`<div class="up-two"><div>${form(rec, o.errors)}</div><div>`];
@@ -70,8 +92,9 @@
     if (p.leave) list.push(`<li><span>Leave encashment</span><b>${h(fmt.inr(p.leave.amount))}</b><small>${h(String(p.leave.days))} days × ${h(fmt.inr(p.leave.perDay))}: your figures. The company's policy decides what is really paid.</small></li>`);
     list.push(payCard("Current job", p.current, fmt));
     for (const row of p.offers || []) list.push(offerRow(row, fmt));
-    for (const c of p.cover || []) list.push(`<li><span>${h(c.type)} cover (${h(c.person)})</span><b>${h(fmt.inr(c.cover))}</b><small>Group cover ends with the job, on ${h(dateText(c.endsOn))}.${c.gapDaysToEarliestJoin === null ? "" : c.gapDaysToEarliestJoin ? ` ${plural(c.gapDaysToEarliestJoin, "day")} before the earliest joining date have no cover.` : " The earliest offer starts at once."}</small></li>`);
+    const cp = coverCard(p.coverPlan, fmt);
     out.push(`<h5>What it comes to</h5><ul class="up-list">${list.join("")}</ul>`);
+    if (cp) out.push(cp);
     out.push(checklistCard(p.checklist || [], o.today));
     out.push(`<p class="dv-note">Take-home is on a full-year, new-regime basis from the app's tax engine and the figures typed here; it is a comparison, not a payslip. Information, not advice.</p></div></div>`);
     return out.join("");
