@@ -628,6 +628,79 @@ const SCANNER = `(${function scan() {
       const fj = JSON.parse(fit); check(`portfolio at ${w}px: fits, no wrapped numbers, ring inside the screen`, fj.bad.length === 0 && fj.page <= 1, fit);
     }
     await viewport(1280, 900); await sleep(300);
+    // Values to update, Portfolio breakdown, Shares you sold (Dashboard)
+    console.log("\nValues to update · Portfolio breakdown · Shares you sold");
+    await viewport(1280, 900); await sleep(300); await view("dashboard"); await sleep(500);
+    const up = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+      const panel=document.getElementById('stalePanel'); const found=LifeLedgerStaleValues.find(S,today);
+      out.expectRows=found.rows.length; out.shown=!panel.hidden; out.rows=panel.querySelectorAll('tr[data-id]').length; out.text=panel.innerText.slice(0,300);
+      const row=panel.querySelector('tr[data-coll="crypto"]'); const input=row.querySelector('input'); input.value='12345'; row.querySelector('[data-act="stale-save"]').click(); await w(500);
+      const c=S.crypto.find(x=>x.id==='crypto-1'); out.cryptoValue=c.value; out.cryptoDate=c.date; out.today=today; out.snapCrypto=LifeLedgerApp.getNetWorthSnapshot().crypto;
+      out.rowsAfter=panel.querySelectorAll('tr[data-id]').length;
+      const row2=panel.querySelector('tr[data-coll="silver"]'); const v0=S.silver[0].value; row2.querySelector('[data-act="stale-ok"]').click(); await w(500);
+      out.silverSame=S.silver[0].value===v0; out.silverDate=S.silver[0].date;
+      for (let i=0;i<20;i++) { const r=document.querySelector('#staleValues tr[data-id]'); if (!r) break; r.querySelector('[data-act="stale-ok"]').click(); await w(400); }
+      out.hiddenWhenClean=document.getElementById('stalePanel').hidden; out.cleanRows=LifeLedgerStaleValues.find(LifeLedgerApp.getState(),today).rows.length;
+      return JSON.stringify(out); })()`));
+    check("values to update: every typed-in value older than its limit is listed, and the panel says how much rests on them", up.shown && up.expectRows >= 3 && up.rows === up.expectRows && /net worth rests on/.test(up.text), JSON.stringify(up));
+    check("values to update: saving a new value changes the number and the date, and net worth follows", up.cryptoValue === 12345 && up.cryptoDate === up.today && up.snapCrypto === 12345 && up.rowsAfter === up.expectRows - 1, JSON.stringify(up));
+    check("values to update: 'Still correct' moves only the date; when nothing is old the panel goes away", up.silverSame && up.silverDate === up.today && up.hiddenWhenClean && up.cleanRows === 0, JSON.stringify(up));
+
+    const bk = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const el=document.getElementById('portfolioBreakdown');
+      const num=(t)=>Number(String(t).replace(/[^0-9.]/g,'')); const m=window.breakdownModel(); const mix=window.portfolioModel().alloc.groups.find(g=>g.key==='equity');
+      out.total=m.bd.total; out.mixEquity=mix?mix.value:0; out.bucketSum=Math.round(m.bd.buckets.reduce((a,b)=>a+b.value,0)*100)/100; out.keys=m.bd.buckets.map(b=>b.key);
+      out.rendered=/Equity/.test(el.innerText)&&el.querySelectorAll('tr.pf-main').length===m.bd.buckets.length; out.nan=/NaN|undefined|Infinity/.test(el.innerText);
+      const shares=[...el.querySelectorAll('tr.pf-main td:nth-child(3) span')].map(s=>num(s.textContent)); out.shareSum=Math.round(shares.reduce((a,b)=>a+b,0)*10)/10;
+      el.querySelector('[data-act="bd-open"]').click(); await w(200); out.opened=el.querySelectorAll('tr.pf-sub').length>0;
+      out.gains=m.gains.map(g=>({o:g.owner,left:g.exemptionLeft,used:g.exemptionUsed})); out.limit=m.exemption; out.hasGains=/tax-free limit/i.test(el.innerText);
+      return JSON.stringify(out); })()`));
+    check("breakdown: the equity total is exactly the Portfolio mix equity row and the buckets add up to it", near(bk.total, bk.mixEquity, 1) && near(bk.bucketSum, bk.total, 1) && bk.total > 0, JSON.stringify(bk));
+    check("breakdown: draws, shares add to 100%, rows open, no NaN, and the tax-free limit is the tax engine's", bk.rendered && Math.abs(bk.shareSum - 100) <= 0.6 && bk.opened && !bk.nan && bk.limit === 125000 && bk.hasGains, JSON.stringify(bk));
+
+    const sl2 = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+      window.__origStocks=S.stocks; window.confirm=()=>true; const box=document.getElementById('salesBox'); out.emptyText=/Nothing is waiting/.test(box.innerText);
+      // a sync that no longer has AAA (Me): the sale is noticed, not forgotten
+      const next=S.stocks.filter(r=>r.id!=='stk-1'); const found=LifeLedgerSales.detect(S.stocks,next,today); out.found=found.length; out.foundQty=found[0]&&found[0].qty; out.foundCost=found[0]&&found[0].cost;
+      S.stocks=next; S.salesPending=LifeLedgerSales.mergePending(S.salesPending,found); LifeLedgerApp.renderAll(); await w(300);
+      const card=box.querySelector('.up-card[data-cand]'); out.card=!!card; out.cardText=card?card.innerText.slice(0,200):'';
+      // a missing price is refused, nothing is recorded
+      card.querySelector('[data-field="price"]').value=''; card.querySelector('[data-act="sale-record"]').click(); await w(200);
+      out.errorShown=!box.querySelector('.up-card .up-error').hidden; out.salesAfterBad=(S.sales||[]).length;
+      // a real one: 10 shares at 150, ₹40 charges, the money added to the bank balance
+      const bankBefore=S.banksaving.find(b=>b.owner==='Me').value;
+      const c2=box.querySelector('.up-card[data-cand]'); c2.querySelector('[data-field="price"]').value='150'; c2.querySelector('[data-field="charges"]').value='40'; c2.querySelector('[data-field="credit"]').checked=true; c2.querySelector('[data-act="sale-record"]').click(); await w(600);
+      const sale=(S.sales||[])[0]; out.sale=sale?{qty:sale.qty,proceeds:sale.proceeds,cost:sale.cost,gain:sale.gain,credited:sale.bankCredited}:null;
+      out.pendingAfter=(S.salesPending||[]).length; out.bankDelta=S.banksaving.find(b=>b.owner==='Me').value-bankBefore;
+      out.row=/AAA/.test(box.querySelector('table')?box.querySelector('table').innerText:'')&&/Short-term/.test(box.innerText);
+      // the tax engine counts it this financial year
+      const G=LifeLedgerTax.gains; const lots=G.buildLots(S,95); const fy=G.realisedThisFY(lots.realised,today); out.taxRows=fy.rows.filter(r=>r.name&&/AAA/.test(r.name)).map(r=>({gain:r.gain,term:r.term}));
+      out.noGhostLot=lots.lots.filter(l=>l.symbol==='AAA'&&l.owner==='Me').length;
+      // the same sale cannot be recorded twice, and a manual one for shares already gone is allowed; unknown buy date → term unknown
+      box.querySelector('[data-act="sale-form"]').click(); await w(200); const f=box.querySelector('.up-card[data-cand="manual"]'); out.formShown=!!f;
+      const set=(n,v)=>{ f.querySelector('[data-field="'+n+'"]').value=v; }; set('symbol','WIPRO'); set('name','Wipro Ltd'); set('qty','93'); set('avgCost','262.32'); set('price','198.13'); set('date',today);
+      f.querySelector('[data-act="sale-record"]').click(); await w(600);
+      const wip=(S.sales||[]).find(x=>x.symbol==='WIPRO'); out.wipro=wip?{proceeds:wip.proceeds,cost:wip.cost,gain:wip.gain}:null; out.unknownText=/Term unknown/.test(box.innerText);
+      const fy2=G.realisedThisFY(G.buildLots(S,95).realised,today); out.unknownBucket=Math.round((fy2.owners.Me||{}).unknownTerm||0);
+      // remove
+      box.querySelector('[data-act="sale-del"]').click(); await w(500); out.afterDelete=(S.sales||[]).length;
+      // dismiss a pending item
+      S.salesPending=[{id:'salecand-x',key:'X|Me|',symbol:'X',name:'X Ltd',owner:'Me',demat:'',qty:1,cost:10,lots:[{buyDate:'2020-01-01',buyDateKnown:true,qty:1,cost:10}],lastPrice:0,whole:true,detectedOn:today}]; LifeLedgerApp.renderAll(); await w(300);
+      box.querySelector('[data-act="sale-dismiss"]').click(); await w(400); out.dismissed=(S.salesPending||[]).length===0&&(S.sales||[]).length===1;
+      return JSON.stringify(out); })()`));
+    check("sales: nothing waiting says so; a sync that no longer has a share raises exactly one pending item with its quantity and cost", sl2.emptyText && sl2.found === 1 && sl2.foundQty === 10 && near(sl2.foundCost, 900, 1) && sl2.card, JSON.stringify(sl2));
+    check("sales: a missing price is refused with a message and records nothing", sl2.errorShown && sl2.salesAfterBad === 0, JSON.stringify(sl2));
+    check("sales: recording works out proceeds after charges, gain, adds the money to the bank balance and clears the pending item", sl2.sale && sl2.sale.proceeds === 1460 && sl2.sale.cost === 900 && sl2.sale.gain === 560 && sl2.sale.credited === true && near(sl2.bankDelta, 1460, 0.01) && sl2.pendingAfter === 0 && sl2.row, JSON.stringify(sl2));
+    check("sales: the tax engine counts the sale this financial year and the sold share is not left as an open lot", sl2.taxRows.length === 1 && sl2.taxRows[0].gain === 560 && sl2.taxRows[0].term === "short" && sl2.noGhostLot === 0, JSON.stringify(sl2));
+    check("sales: a sale typed in by hand with no buy date is 'term unknown' and counted in neither short nor long; remove and 'not a sale' work", sl2.formShown && sl2.wipro && sl2.wipro.proceeds === 18426.09 && sl2.wipro.cost === 24395.76 && Math.abs(sl2.unknownBucket + 5970) <= 1 && sl2.unknownText && sl2.afterDelete === 1 && sl2.dismissed, JSON.stringify(sl2));
+    for (const w of [390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(400);
+      await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.crypto[0].date='2020-01-01'; S.salesPending=[{id:'salecand-fit',key:'K|Me|',symbol:'K',name:'A Very Long Company Name Limited Of India',owner:'Me',demat:'Zerodha',qty:12345,cost:99999999,lots:[{buyDate:'2026-11-11',buyDateKnown:false,qty:12345,cost:99999999}],lastPrice:123.45,whole:true,detectedOn:'2026-11-13'}]; LifeLedgerApp.renderAll(); return 0; })()`); await sleep(300);
+      const fit = await cdp.eval(`(()=>{ const bad=[]; for (const id of ['stalePanel','breakdownPanel','salesPanel']) { const p=document.getElementById(id); if (p.hidden) { bad.push(id+' hidden'); continue; } if (p.scrollWidth-p.clientWidth>1) bad.push(id+' '+(p.scrollWidth-p.clientWidth)); p.querySelectorAll('.table-wrap').forEach(t=>{ if (t.scrollWidth>t.clientWidth+1) bad.push(id+' table '+(t.scrollWidth-t.clientWidth)); }); p.querySelectorAll('input,button,select').forEach(e=>{ const r=e.getBoundingClientRect(); if (r.width>0 && (r.right>innerWidth+1 || r.left<-1)) bad.push(id+' control off screen'); }); }
+        return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, bad}); })()`);
+      const fj = JSON.parse(fit); check(`upkeep panels at ${w}px: fit, no control off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await cdp.eval(`(()=>{ LifeLedgerApp.getState().salesPending=[]; LifeLedgerApp.getState().sales=[]; LifeLedgerApp.getState().stocks=window.__origStocks; LifeLedgerApp.renderAll(); return 0; })()`);
+    await viewport(1280, 900); await sleep(300);
     // Salary ledger: every payslip itemised, the totals above the table, the yearly statutory summary, and the standard-ledger import
     console.log("\nSalary ledger");
     await viewport(1280, 900); await sleep(300); await view("finance");

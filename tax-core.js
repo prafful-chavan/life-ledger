@@ -852,6 +852,12 @@
       }
       open.forEach((l) => lots.push(l));
     }
+    // Sales the household recorded (shares that left the book at a Sync Holdings): one realised row per lot, the proceeds shared by quantity.
+    for (const s of state.sales || []) {
+      const q = num(s.qty);
+      if (!(q > 0)) continue;
+      for (const l of s.lots || []) realised.push({ kind: "stock", name: s.name || s.symbol, owner: s.owner || "Me", category: taxCategory(s.name || s.symbol, "stock"), buyDate: l.buyDate, buyDateKnown: l.buyDateKnown !== false && Boolean(l.buyDate), sellDate: s.soldOn, qty: num(l.qty), cost: num(l.cost), proceeds: num(s.proceeds) * (num(l.qty) / q), sale: true });
+    }
     const addStocks = (list, kind, fx) => {
       for (const s of list || []) {
         const qty = num(s.quantity);
@@ -924,12 +930,14 @@
   function realisedThisFY(realised, asOf) {
     const fy = fyOf(asOf), owners = {};
     const rows = realised.filter((r) => fyOf(r.sellDate) === fy).map((r) => {
-      const h = holding({ date: r.buyDate, cat: r.category }, r.sellDate, r.sellDate);
+      const h = holding({ date: r.buyDate, cat: r.category, dateKnown: r.buyDateKnown }, r.sellDate, r.sellDate);
       const gain = r.proceeds - r.cost;
-      const o = (owners[r.owner] ||= { equityST: 0, equityLT: 0, otherST: 0, otherLT: 0 });
+      const o = (owners[r.owner] ||= { equityST: 0, equityLT: 0, otherST: 0, otherLT: 0, unknownTerm: 0 });
       const eq = r.category === "equity" || r.category === "hybrid";
-      if (eq) (h.long ? (o.equityLT += gain) : (o.equityST += gain)); else (h.long ? (o.otherLT += gain) : (o.otherST += gain));
-      return { owner: r.owner, name: r.name, sold: r.sellDate, bought: r.buyDate, proceeds: r0(r.proceeds), cost: r0(r.cost), gain: r0(gain), term: h.long ? "long" : "short", category: r.category };
+      // A lot whose buy date is not known has no term: it is listed, but counted in neither short nor long until the date is given
+      if (h.unknown) o.unknownTerm += gain;
+      else if (eq) (h.long ? (o.equityLT += gain) : (o.equityST += gain)); else (h.long ? (o.otherLT += gain) : (o.otherST += gain));
+      return { owner: r.owner, name: r.name, sold: r.sellDate, bought: r.buyDate, proceeds: r0(r.proceeds), cost: r0(r.cost), gain: r0(gain), term: h.unknown ? "unknown" : h.long ? "long" : "short", category: r.category };
     });
     return { fy, owners, rows };
   }

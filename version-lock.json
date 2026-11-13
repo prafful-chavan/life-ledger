@@ -24,12 +24,16 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.143",
-    "sha256": "942bb6dd7cb816fcfb49160cd40bd91e5de1fca4ca4c63d6e4d0b5bc922e56a3"
+    "version": "1.0.144",
+    "sha256": "4100e8f0ef56134634e8474163f4a5eabd4fc87f1a488f3a5290c241750981b9"
   },
   "auth.js": {
     "version": "1.0.45",
     "sha256": "874a516b903dc66f8406bed99b4670c768685a52ec81d70df767153d46230879"
+  },
+  "breakdown-core.js": {
+    "version": "1.0.0",
+    "sha256": "623b817172e4400e78848ecd67ff32455d5b3bbd1eca33d2ab75645fde8469fc"
   },
   "cmdk-core.js": {
     "version": "1.0.0",
@@ -88,8 +92,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.39",
-    "sha256": "7997fdf9b9f06f8132b5d9282ef9b4861f4f819482f6ae719161ba08c055217c"
+    "version": "1.8.42",
+    "sha256": "15dd17ce35434368c144fae37e9808bd07b3b6407bc6e84d5ae04661eb174907"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -120,8 +124,8 @@
     "sha256": "277383bc4d488b274fad195da17f2caeeb63861f17cf6d788ad772f62d6a98e3"
   },
   "portfolio-core.js": {
-    "version": "1.0.0",
-    "sha256": "63cbb6f7baf20db751926c5a5aa5adfd2a6a8f69749bbaa2fe1eadab4731febf"
+    "version": "1.0.1",
+    "sha256": "e3ba9b6be25c4fc7a75c5f968a202caddea3bbe22d1bca9782d4c9439c9238dc"
   },
   "portfolio-views.js": {
     "version": "1.0.1",
@@ -155,6 +159,10 @@
     "version": "1.0.0",
     "sha256": "7d79cc68737c773b4c75c1e31e35d9960f6c7c2dd7ef3e341928dff5e71075fa"
   },
+  "sales-core.js": {
+    "version": "1.0.0",
+    "sha256": "6ac5e77a3f51dc6d3e88d183e7b48585f2d1cb8bdf19daef103b7a7ecdea2d99"
+  },
   "script-gate.js": {
     "version": "1.0.1",
     "sha256": "53a4e7d1d54b0c630b31fe8817498437dfdda4adf352b1065d7866dcd7151a6d"
@@ -170,6 +178,10 @@
   "spending-insights-core.js": {
     "version": "1.0.2",
     "sha256": "f75badc0aba6a62fc6d758a23dec77ba80e77daa675f4605ef40cf70fa914051"
+  },
+  "stale-values-core.js": {
+    "version": "1.0.0",
+    "sha256": "a349a2e6d273c8bee93581e63e3c8e5446ff330091efc3a4e6a843b705e57bbd"
   },
   "stocks-panel-core.js": {
     "version": "1.0.0",
@@ -192,8 +204,8 @@
     "sha256": "de335d1a694c49ee2ce98519b4a735a500f824cec2790e41035569bc6f2a432a"
   },
   "tax-core.js": {
-    "version": "1.2.15",
-    "sha256": "88d2076527c4ccc59316d8004db449c282d85b1fdda685524a23a807c933311a"
+    "version": "1.2.16",
+    "sha256": "b6d5b1532ad7ff8b89a50f0ea9ae4f32cc43f474a773d5a682c28a4f7530805a"
   },
   "tax-oracle.js": {
     "version": "1.0.0",
@@ -210,6 +222,10 @@
   "ui-polish.js": {
     "version": "1.0.4",
     "sha256": "bd24cc972de203a8294bfc40313e4ae980cdaa69425dddf4848316362951e31d"
+  },
+  "upkeep-views.js": {
+    "version": "1.0.0",
+    "sha256": "b19a3fd383cfaf43520a88286a66e6673b4ce84a648f2af3326bcb4e875c7f32"
   },
   "vault-store.js": {
     "version": "1.0.8",

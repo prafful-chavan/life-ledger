@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.24" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.39" />
+    <link rel="stylesheet" href="layout.css?v=1.8.42" />
     <script defer src="script-gate.js?v=1.0.1"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -50,13 +50,17 @@
     <script defer src="spending-insights-core.js?v=1.0.2"></script>
     <script defer src="dashboard-settings.js?v=1.0.1"></script>
     <script defer src="dashboard-charts.js?v=1.0.4"></script>
-    <script defer src="portfolio-core.js?v=1.0.0"></script>
+    <script defer src="portfolio-core.js?v=1.0.1"></script>
     <script defer src="portfolio-views.js?v=1.0.1"></script>
+    <script defer src="breakdown-core.js?v=1.0.0"></script>
+    <script defer src="sales-core.js?v=1.0.0"></script>
+    <script defer src="stale-values-core.js?v=1.0.0"></script>
+    <script defer src="upkeep-views.js?v=1.0.0"></script>
     <script defer src="dashboard-views.js?v=1.0.2"></script>
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.143"></script>
+    <script defer src="app.js?v=1.0.144"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -78,7 +82,7 @@
     <script defer src="data-health.js?v=1.0.9"></script>
     <script defer src="protection-core.js?v=1.0.3"></script>
     <script defer src="protection.js?v=1.0.4"></script>
-    <script defer src="tax-core.js?v=1.2.15"></script>
+    <script defer src="tax-core.js?v=1.2.16"></script>
     <script defer src="tax-oracle.js?v=1.0.0"></script>
     <script defer src="explain.js?v=1.0.1"></script>
     <script defer src="tax.js?v=1.2.8"></script>
@@ -335,6 +339,16 @@
 
           <div class="metric-grid" id="metricGrid"></div>
 
+          <section class="panel large-panel pf-panel" id="stalePanel" aria-labelledby="staleTitle" hidden>
+            <div class="panel-header">
+              <div>
+                <h3 id="staleTitle">Values to update</h3>
+                <p>Numbers you typed in by hand that have not been touched in a while. Net worth keeps adding them as they are.</p>
+              </div>
+            </div>
+            <div id="staleValues" class="dv"></div>
+          </section>
+
           <section class="panel large-panel pf-panel" id="portfolioPanel" aria-labelledby="portfolioTitle">
             <div class="panel-header">
               <div>
@@ -343,6 +357,26 @@
               </div>
             </div>
             <div id="portfolioMix" class="dv"></div>
+          </section>
+
+          <section class="panel large-panel pf-panel" id="breakdownPanel" aria-labelledby="breakdownTitle">
+            <div class="panel-header">
+              <div>
+                <h3 id="breakdownTitle">Portfolio breakdown</h3>
+                <p>Inside your equity: which kinds of funds and stocks, the biggest holdings and sector, and this year's gains and losses against the tax-free limit. Information from your own records, not advice.</p>
+              </div>
+            </div>
+            <div id="portfolioBreakdown" class="dv"></div>
+          </section>
+
+          <section class="panel large-panel pf-panel" id="salesPanel" aria-labelledby="salesTitle">
+            <div class="panel-header">
+              <div>
+                <h3 id="salesTitle">Shares you sold</h3>
+                <p>When Sync Holdings finds shares gone, say what you sold them for: the gain or loss, and the tax, are then worked out and counted.</p>
+              </div>
+            </div>
+            <div id="salesBox" class="dv"></div>
           </section>
 
           <div class="dashboard-layout">

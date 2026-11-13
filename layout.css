@@ -1117,3 +1117,30 @@ path[class^="pf-c"]:hover { opacity: .82; }
   #finance-income .table-wrap td[data-label="Action"] { grid-column: 1 / -1; }
 }
 @media (max-width: 700px) { #finance-income .table-wrap tbody tr { grid-template-columns: 1fr 1fr; } }
+
+/* Values to update · Shares you sold · Portfolio breakdown */
+.up-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.up-input, .up-form input, .up-form select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); min-width: 0; }
+.up-input { width: 130px; }
+.up-btn { padding: 7px 12px; font-size: 13px; }
+.up-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; background: var(--panel-soft); display: grid; gap: 10px; }
+.up-card h4 { margin: 0; font-size: 15px; }
+.up-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 12px; }
+.up-form label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.up-form input, .up-form select { width: 100%; box-sizing: border-box; }
+.up-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); }
+.up-error { margin: 0; color: var(--negative); font-size: 13px; font-weight: 600; }
+.up-two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 12px 0; }
+.up-two h5 { margin: 0 0 6px; font-size: 13px; }
+.up-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.up-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
+.up-list li small { grid-column: 1 / -1; color: var(--muted); }
+.up-table td small { color: var(--muted); }
+.up-table .dv-delta { white-space: normal; display: inline-block; max-width: 100%; }
+@media (max-width: 700px) {
+  .up-two { grid-template-columns: 1fr; }
+  .up-input { width: 100%; }
+  .up-actions .up-btn { flex: 1 1 auto; }
+  .pf-panel .up-table td.up-actions { display: flex !important; grid-column: 1 / -1; flex-wrap: wrap; }
+  .up-actions .up-input { flex: 1 1 100%; }
+}

@@ -63,7 +63,7 @@
     };
     for (const txns of group(s.mutualFunds, (t) => `${t.fundName || "Unknown"}|${t.owner || "Me"}`).values()) add("mf", txns[0].fundName || "Unknown fund", txns[0].owner, h.mfValue(txns));
     const stockKey = (t) => (!t.symbol && !t.company ? null : `${String(t.symbol || t.company || "Unknown").toUpperCase()}|${t.owner || "Me"}|${t.demat || ""}`);
-    for (const txns of group(s.stocks, stockKey).values()) add("stock", txns[0].company || txns[0].symbol, txns[0].owner, h.stockValue(txns), { symbol: txns[0].symbol });
+    for (const txns of group(s.stocks, stockKey).values()) add("stock", txns[0].company || txns[0].symbol, txns[0].owner, h.stockValue(txns), { symbol: txns[0].symbol, category: txns[0].category });
     for (const txns of group(s.usstocks, stockKey).values()) add("us", txns[0].company || txns[0].symbol, txns[0].owner, h.usStockValue(txns), { symbol: txns[0].symbol });
     for (const g of s.gold || []) add("gold", g.name || "Gold", g.owner, h.goldValue(g));
     const plain = (kind, list) => (list || []).forEach((x) => add(kind, x.name || x.note || KIND_LABEL[kind], x.owner, x.value));

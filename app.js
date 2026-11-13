@@ -38,6 +38,8 @@ const defaultData = {
   ruleSettings: {},
   dashboardSettings: {},
   holdingsCheck: null,
+  sales: [],
+  salesPending: [],
   studies: [],
   workouts: [],
   activities: [],
@@ -571,6 +573,7 @@ function bootstrapApp(initialState) {
     bindFinanceTabs();
     bindDashboards();
     bindPortfolio();
+    bindUpkeep();
     initStockCSVImport();
     bindCareerTabs();
     bindImports();
@@ -1199,6 +1202,9 @@ function normalizeDataCore(data) {
     dashboardSettings: data.dashboardSettings && typeof data.dashboardSettings === "object" && !Array.isArray(data.dashboardSettings) ? data.dashboardSettings : {},
     // Holdings checked against INDmoney by the weekly task on the Mac (it writes only this field)
     holdingsCheck: data.holdingsCheck && typeof data.holdingsCheck === "object" && !Array.isArray(data.holdingsCheck) ? data.holdingsCheck : null,
+    // Shares sold (recorded from a Sync Holdings that found them gone) and the ones still waiting for a price
+    sales: ensureIds(Array.isArray(data.sales) ? data.sales : [], "sale"),
+    salesPending: ensureIds(Array.isArray(data.salesPending) ? data.salesPending : [], "salecand"),
     studies: ensureIds(data.studies || [], "study").map(s => {
       if (s.owner === "Me" || s.owner) return s;
       return { ...s, owner: "Me" };
@@ -3960,10 +3966,15 @@ async function syncHoldingsFromDrive() {
       }
     }
 
+    // Shares that are in the book now but not in the sheet: notice them before they are forgotten (see Sales on the Dashboard)
+    let leftBook = [];
+    try { if (window.LifeLedgerSales) leftBook = window.LifeLedgerSales.detect(state.stocks, holdingsData.stocks, todayISO()); } catch (e) { console.warn("[app.js] sale detection failed:", e); }
+
     // Always fully replace state to keep it in sync with the Drive file
     state.mutualFunds = holdingsData.mutualFunds;
     state.stocks = holdingsData.stocks;
     state.usstocks = holdingsData.usstocks;
+    if (leftBook.length) state.salesPending = window.LifeLedgerSales.mergePending(state.salesPending, leftBook);
 
     toast(`🔄 Loaded ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks — fetching live prices...`);
 
@@ -3986,7 +3997,7 @@ async function syncHoldingsFromDrive() {
     renderAll();
     await saveData(true);
 
-    toast(`✅ Holdings synced! ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks. Live prices updated.${importNote ? " Changes: " + importNote + "." : ""}`);
+    toast(`✅ Holdings synced! ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks. Live prices updated.${importNote ? " Changes: " + importNote + "." : ""}${leftBook.length ? ` ${leftBook.length} holding${leftBook.length === 1 ? "" : "s"} left your book: see “Shares you sold” on the Dashboard.` : ""}`);
   } catch (err) {
     console.error("[app.js] Holdings sync error:", err);
     toast(`❌ Holdings Sync Failed: ${err.message}`);
@@ -4590,6 +4601,7 @@ function renderAll() {
   renderNetWorth();
   renderTodayFocus();
   renderPortfolio();
+  renderUpkeep();
   renderFinance();
   renderCareer();
   renderGoals();
@@ -5647,6 +5659,119 @@ function bindPortfolio() {
     else if (act === "pf-other") { state.dashboardSettings = DSET.setPortfolio(state.dashboardSettings, { includeOther: !dashboardSettings().portfolio.includeOther }); saveData(true); }
     else return;
     renderPortfolio();
+  });
+}
+
+// ── Values to update · Portfolio breakdown · Shares you sold (Dashboard) ───────────────────────────────────────────────────
+// stale-values-core / breakdown-core / sales-core work the numbers out, upkeep-views.js draws them; this wires them to the data.
+const STV = (typeof window !== "undefined" && window.LifeLedgerStaleValues) || (typeof require === "function" ? require("./stale-values-core.js") : null);
+const BKD = (typeof window !== "undefined" && window.LifeLedgerBreakdown) || (typeof require === "function" ? require("./breakdown-core.js") : null);
+const SLS = (typeof window !== "undefined" && window.LifeLedgerSales) || (typeof require === "function" ? require("./sales-core.js") : null);
+const UPV = (typeof window !== "undefined" && window.LifeLedgerUpkeepViews) || (typeof require === "function" ? require("./upkeep-views.js") : null);
+const upkeepUi = { saleForm: false, open: new Set() };
+
+/** "long", "short", "mixed" or "unknown" for a recorded sale, by the tax engine's own holding-period rule. */
+function saleTerm(sale) {
+  const G = window.LifeLedgerTax.gains;
+  const hs = (sale.lots || []).map((l) => G.holding({ date: l.buyDate, cat: G.taxCategory(sale.name || sale.symbol, "stock"), dateKnown: l.buyDateKnown !== false && Boolean(l.buyDate) }, sale.soldOn, sale.soldOn));
+  if (!hs.length || hs.some((x) => x.unknown)) return "unknown";
+  const longs = hs.filter((x) => x.long).length;
+  return longs === hs.length ? "long" : longs === 0 ? "short" : "mixed";
+}
+
+function breakdownModel() {
+  const T = window.LifeLedgerTax, today = todayISO();
+  const positions = PFC.positionsOf(state, portfolioHelpers());
+  const bd = BKD.breakdown(positions, window.LifeLedgerAdvisor.groupOf);
+  const lots = T.gains.buildLots(state, getUsdInrRate());
+  const exemption = T.engine.RULES.equity.exemptionFromFY2425;
+  return { bd, gains: BKD.gainsView(T.gains.unrealised(lots.lots, today).perLot, T.gains.realisedThisFY(lots.realised, today), { exemption }), exemption, open: [...upkeepUi.open] };
+}
+
+function renderUpkeep() {
+  if (!UPV || !STV || !BKD || !SLS || !window.LifeLedgerAdvisor || !window.LifeLedgerTax) return;
+  const o = { fmt: dashFmt, names: DASH_NAMES, today: todayISO() };
+  const found = STV.find(state, o.today);
+  const stalePanel = document.getElementById("stalePanel");
+  if (stalePanel) { stalePanel.hidden = found.rows.length === 0; document.getElementById("staleValues").innerHTML = UPV.stale(found, o); }
+  const salesEl = document.getElementById("salesBox");
+  if (salesEl) {
+    const list = [...(state.sales || [])].sort((a, b) => (a.soldOn < b.soldOn ? 1 : a.soldOn > b.soldOn ? -1 : 0)).map((s) => ({ ...s, term: saleTerm(s) }));
+    salesEl.innerHTML = UPV.sales({ pending: state.salesPending || [], sales: list, showForm: upkeepUi.saleForm }, o);
+  }
+  const bdEl = document.getElementById("portfolioBreakdown");
+  if (bdEl) bdEl.innerHTML = UPV.breakdown(breakdownModel(), o);
+}
+
+function bindUpkeep() {
+  const field = (root, name) => root.querySelector(`[data-field="${name}"]`);
+  const fail = (card, message) => { const e = card.querySelector(".up-error"); if (e) { e.textContent = message; e.hidden = false; } };
+  document.getElementById("staleValues")?.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-act]");
+    const row = btn && btn.closest("tr[data-id]");
+    if (!row) return;
+    const { coll, id } = row.dataset;
+    if (!Array.isArray(state[coll])) return;
+    const change = btn.dataset.act === "stale-save" ? { value: field(row, "value").value } : {};
+    if (btn.dataset.act === "stale-save" && String(change.value).trim() === "") { toast("Type the new value first, or press “Still correct”.", "warn"); return; }
+    const r = STV.refresh(state[coll], id, change, todayISO());
+    if (!r.ok) { toast(r.error, "warn"); return; }
+    state[coll] = r.list;
+    renderAll();
+    await saveData(true, coll);
+    toast(btn.dataset.act === "stale-save" ? "Value updated." : "Marked as still correct.");
+  });
+  document.getElementById("portfolioBreakdown")?.addEventListener("click", (event) => {
+    const btn = event.target.closest('[data-act="bd-open"]');
+    if (!btn) return;
+    if (upkeepUi.open.has(btn.dataset.id)) upkeepUi.open.delete(btn.dataset.id); else upkeepUi.open.add(btn.dataset.id);
+    renderUpkeep();
+  });
+  document.getElementById("salesBox")?.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-act]");
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === "sale-form") { upkeepUi.saleForm = !upkeepUi.saleForm; renderUpkeep(); return; }
+    if (act === "sale-del") {
+      if (!confirm("Remove this sale? The gain or loss stops counting. Money you added to a bank balance stays there.")) return;
+      state.sales = (state.sales || []).filter((s) => s.id !== btn.dataset.id);
+      renderAll(); await saveData(true, "sales"); toast("Sale removed."); return;
+    }
+    const card = btn.closest("[data-cand]");
+    if (!card) return;
+    const candId = card.dataset.cand;
+    if (act === "sale-dismiss") {
+      state.salesPending = (state.salesPending || []).filter((c) => c.id !== candId);
+      renderAll(); await saveData(true, "sales"); toast("Left as it is: not recorded as a sale."); return;
+    }
+    if (act !== "sale-record") return;
+    const today = todayISO(), v = (n) => { const el = field(card, n); return el ? el.value : ""; };
+    let cand;
+    if (candId === "manual") {
+      const m = SLS.manualCandidate({ symbol: v("symbol"), name: v("name"), owner: v("owner"), demat: v("demat"), qty: v("qty"), avgCost: v("avgCost"), buyDate: v("buyDate") }, today);
+      if (!m.ok) { fail(card, m.error); return; }
+      cand = m.cand;
+    } else {
+      cand = (state.salesPending || []).find((c) => c.id === candId);
+      if (!cand) { fail(card, "That item is no longer waiting."); return; }
+    }
+    const built = SLS.buildSale(cand, { price: v("price"), date: v("date"), charges: v("charges"), buyDate: candId === "manual" ? "" : v("buyDate") }, { today });
+    if (!built.ok) { fail(card, built.error); return; }
+    const sale = built.sale;
+    if ((state.sales || []).some((s) => s.id === sale.id)) { fail(card, "This sale is already recorded."); return; }
+    const credit = Boolean(field(card, "credit")?.checked);
+    if (credit) {
+      const c = SLS.creditBank(state.banksaving, sale, today);
+      if (!c.ok) { fail(card, c.error); return; }
+      state.banksaving = c.list;
+      sale.bankCredited = true;
+    }
+    state.sales = [...(state.sales || []), sale];
+    state.salesPending = (state.salesPending || []).filter((c) => c.id !== candId);
+    if (candId === "manual") upkeepUi.saleForm = false;
+    renderAll();
+    await saveData(true, "sales");
+    toast(`Sale recorded: ${sale.gain < 0 ? "loss" : "gain"} of ${formatINR(Math.abs(sale.gain))}${credit ? "; bank balance updated" : ""}.`);
   });
 }
 
