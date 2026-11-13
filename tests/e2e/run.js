@@ -701,6 +701,44 @@ const SCANNER = `(${function scan() {
     }
     await cdp.eval(`(()=>{ LifeLedgerApp.getState().salesPending=[]; LifeLedgerApp.getState().sales=[]; LifeLedgerApp.getState().stocks=window.__origStocks; LifeLedgerApp.renderAll(); return 0; })()`);
     await viewport(1280, 900); await sleep(300);
+    // Job switch (Career tab)
+    console.log("\nJob switch");
+    await viewport(1280, 900); await sleep(300); await view("career"); await sleep(300);
+    const js = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); window.__origJob=S.jobSwitch; S.jobSwitch=[];
+      document.querySelector('[data-career-tab="jobswitch"]').click(); await w(300); const box=document.getElementById('jobSwitchBox'); out.shown=!document.getElementById('career-jobswitch').hidden; out.emptyText=/enter: resignation date/.test(box.innerText);
+      const set=(n,v)=>{ box.querySelector('[data-field="'+n+'"]').value=v; };
+      // a bad notice is refused and nothing is saved
+      set('resignedOn','2026-10-05'); set('noticeDays','400'); box.querySelector('[data-act="js-save"]').click(); await w(300); out.errShown=!box.querySelector('.up-error').hidden; out.savedBad=(S.jobSwitch||[]).length; out.keptTyped=box.querySelector('[data-field="resignedOn"]').value==='2026-10-05'&&box.querySelector('[data-field="noticeDays"]').value==='400';
+      set('noticeDays','90'); set('joinedOn','2024-03-01'); set('leaveDays','20'); set('leavePerDay','3000'); set('cgross','3000000'); set('cemployeePf','100000'); set('cptax','2400');
+      box.querySelector('[data-act="js-add"]').click(); await w(400);
+      const set2=(n,v)=>{ box.querySelector('[data-field="'+n+'"]').value=v; }; set2('o0name','Offer <b>A</b>'); set2('o0joinOn','2027-01-12'); set2('o0gross','3600000'); set2('o0employeePf','100000'); set2('o0ptax','2400');
+      box.querySelector('[data-act="js-save"]').click(); await w(500);
+      const rec=(S.jobSwitch||[])[0]; out.saved=!!rec&&rec.noticeDays===90&&rec.offers.length===1&&rec.offers[0].name==='Offer <b>A</b>';
+      const T=LifeLedgerTax.engine.computeTax; const tax=(g)=>T({fy:'2026-27',regime:'new',grossSalary:g,employerNps:0,basic:0,professionalTax:2400}).totalTax;
+      out.expCur=Math.round((3000000-100000-tax(3000000)-2400)/12); out.expOff=Math.round((3600000-100000-tax(3600000)-2400)/12);
+      const txt=box.innerText; const nums=(re)=>{ const m=re.exec(txt); return m?Number(m[1].replace(/[^0-9]/g,'')):null; };
+      out.cur=nums(/Current job\\s*\\n?\\s*₹([\\d,]+) a month/); out.off=nums(/Offer <b>A<\\/b>\\s*\\n?\\s*₹([\\d,]+) a month/);
+      out.lastDay=/3 Jan 2027/.test(txt); out.gap=/8 days between the last day and joining/.test(txt); out.noGratuity=/None is due on leaving on this date/.test(txt); out.leave=/₹60,000/.test(txt);
+      out.escaped=!box.querySelector('b b')&&txt.includes('Offer <b>A</b>'); out.nan=/NaN|undefined|Infinity/.test(txt);
+      // a tick is kept
+      const tick=box.querySelector('[data-act="js-tick"][data-key="docs"]'); tick.click(); await w(500); out.tickSaved=(S.jobSwitch[0].done||{}).docs===true&&box.querySelector('[data-act="js-tick"][data-key="docs"]').checked;
+      // an overlap is named; remove clears the offer
+      box.querySelector('[data-field="o0joinOn"]').value='2026-12-20'; box.querySelector('[data-act="js-save"]').click(); await w(400); out.overlap=/Joins 15 days before the notice ends/.test(box.innerText);
+      box.querySelector('[data-act="js-remove"]').click(); await w(400); out.removed=S.jobSwitch[0].offers.length===0; out.tail=txt.slice(txt.indexOf('What it comes')).slice(0,350);
+      return JSON.stringify(out); })()`));
+    check("job switch: a bad notice is refused with a message, nothing is saved and what was typed is kept", js.shown && js.emptyText && js.errShown && js.savedBad === 0 && js.keptTyped, JSON.stringify(js));
+    check("job switch: last day is resignation + notice, no gratuity short of 5 years, leave pay is days × the typed figure", js.saved && js.lastDay && js.noGratuity && js.leave, JSON.stringify(js));
+    check("job switch: take-home of the current job and of the offer equals the tax engine's figure, and the gap to the new job is named", js.cur === js.expCur && js.off === js.expOff && js.gap && !js.nan, JSON.stringify(js));
+    check("job switch: typed text is escaped, a ticked step is kept, an overlap is flagged, removing an offer works", js.escaped && js.tickSaved && js.overlap && js.removed, JSON.stringify(js));
+    for (const w of [390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(400);
+      await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.jobSwitch=[{id:'jobswitch-1',resignedOn:'2026-10-05',noticeDays:90,joinedOn:'2024-03-01',leaveDays:20,leavePerDay:3000,current:{gross:3000000,employeePf:100000},offers:[{id:'o1',name:'A Very Long Company Name Private Limited Of India',joinOn:'2027-01-12',gross:3600000,employeePf:100000},{id:'o2',name:'Second',joinOn:'2026-12-20',gross:99999999}],done:{}}]; LifeLedgerApp.renderAll(); document.querySelector('[data-career-tab="jobswitch"]').click(); return 0; })()`); await sleep(300);
+      const fit = await cdp.eval(`(()=>{ const bad=[]; const p=document.getElementById('jobSwitchPanel'); if (p.scrollWidth-p.clientWidth>1) bad.push('panel '+(p.scrollWidth-p.clientWidth)); p.querySelectorAll('input,button,li').forEach(e=>{ const r=e.getBoundingClientRect(); if (r.width>0&&(r.right>innerWidth+1||r.left<-1)) bad.push((e.dataset.field||e.dataset.act||e.tagName)+' off screen'); });
+        return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, bad:bad.slice(0,5)}); })()`);
+      const fj = JSON.parse(fit); check(`job switch at ${w}px: fits, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await cdp.eval(`(()=>{ LifeLedgerApp.getState().jobSwitch=window.__origJob||[]; LifeLedgerApp.renderAll(); return 0; })()`);
+    await viewport(1280, 900); await sleep(300);
     // Salary ledger: every payslip itemised, the totals above the table, the yearly statutory summary, and the standard-ledger import
     console.log("\nSalary ledger");
     await viewport(1280, 900); await sleep(300); await view("finance");

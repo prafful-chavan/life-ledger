@@ -40,6 +40,7 @@ const defaultData = {
   holdingsCheck: null,
   sales: [],
   salesPending: [],
+  jobSwitch: [],
   studies: [],
   workouts: [],
   activities: [],
@@ -574,6 +575,7 @@ function bootstrapApp(initialState) {
     bindDashboards();
     bindPortfolio();
     bindUpkeep();
+    bindJobSwitch();
     initStockCSVImport();
     bindCareerTabs();
     bindImports();
@@ -1205,6 +1207,7 @@ function normalizeDataCore(data) {
     // Shares sold (recorded from a Sync Holdings that found them gone) and the ones still waiting for a price
     sales: ensureIds(Array.isArray(data.sales) ? data.sales : [], "sale"),
     salesPending: ensureIds(Array.isArray(data.salesPending) ? data.salesPending : [], "salecand"),
+    jobSwitch: ensureIds(Array.isArray(data.jobSwitch) ? data.jobSwitch : [], "jobswitch"),
     studies: ensureIds(data.studies || [], "study").map(s => {
       if (s.owner === "Me" || s.owner) return s;
       return { ...s, owner: "Me" };
@@ -4602,6 +4605,7 @@ function renderAll() {
   renderTodayFocus();
   renderPortfolio();
   renderUpkeep();
+  renderJobSwitch();
   renderFinance();
   renderCareer();
   renderGoals();
@@ -5669,6 +5673,56 @@ const BKD = (typeof window !== "undefined" && window.LifeLedgerBreakdown) || (ty
 const SLS = (typeof window !== "undefined" && window.LifeLedgerSales) || (typeof require === "function" ? require("./sales-core.js") : null);
 const UPV = (typeof window !== "undefined" && window.LifeLedgerUpkeepViews) || (typeof require === "function" ? require("./upkeep-views.js") : null);
 const upkeepUi = { saleForm: false, open: new Set() };
+const JSW = (typeof window !== "undefined" && window.LifeLedgerJobSwitch) || (typeof require === "function" ? require("./job-switch-core.js") : null);
+const JSV = (typeof window !== "undefined" && window.LifeLedgerJobSwitchViews) || (typeof require === "function" ? require("./job-switch-views.js") : null);
+const jobSwitchUi = { errors: [] };
+const jobRecord = () => (state.jobSwitch || [])[0] || null;
+const JOB_PAY = ["gross", "employeePf", "employerNps", "basic", "ptax"];
+
+/** The Job switch tab: the plan for the saved record, and the form that edits it. */
+function renderJobSwitch() {
+  const el = document.getElementById("jobSwitchBox");
+  if (!el || !JSW || !JSV || !window.LifeLedgerTax) return;
+  const rec = jobRecord() || { id: "jobswitch-1", offers: [], current: {} };
+  const cover = (state.insurance || []).filter((p) => p.employer === "Yes").map((p) => ({ person: DASH_NAMES[p.person] || p.person, type: p.type, cover: toNumber(p.cover) }));
+  const plan = JSW.plan(rec, { today: todayISO(), computeTax: window.LifeLedgerTax.engine.computeTax, coverEndsWithJob: cover });
+  el.innerHTML = JSV.jobSwitch(rec, plan, { fmt: dashFmt, today: todayISO(), errors: jobSwitchUi.errors });
+}
+
+/** What is typed in the form, as a record (offers keep their ids). */
+function readJobForm(box) {
+  const rec = { ...(jobRecord() || { id: "jobswitch-1" }) };
+  const f = (n) => { const e = box.querySelector(`[data-field="${n}"]`); return e ? e.value.trim() : ""; };
+  const nums = (prefix) => Object.fromEntries(JOB_PAY.map((k) => [k, f(prefix + k) === "" ? "" : Number(f(prefix + k))]));
+  rec.resignedOn = f("resignedOn"); rec.noticeDays = f("noticeDays") === "" ? "" : Number(f("noticeDays")); rec.joinedOn = f("joinedOn");
+  rec.leaveDays = f("leaveDays") === "" ? "" : Number(f("leaveDays")); rec.leavePerDay = f("leavePerDay") === "" ? "" : Number(f("leavePerDay"));
+  rec.current = nums("c");
+  rec.offers = (rec.offers || []).map((o, i) => ({ ...o, name: f("o" + i + "name"), joinOn: f("o" + i + "joinOn"), ...nums("o" + i) }));
+  return rec;
+}
+
+function bindJobSwitch() {
+  const box = document.getElementById("jobSwitchBox");
+  if (!box || !JSW) return;
+  const commit = async (rec, tag) => { state.jobSwitch = [rec]; renderAll(); await saveData(true, tag || "jobSwitch"); };
+  box.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-act]");
+    if (!btn || btn.dataset.act === "js-tick") return;
+    const rec = readJobForm(box);
+    if (btn.dataset.act === "js-add") { rec.offers = [...(rec.offers || []), { id: "offer-" + Date.now().toString(36) + Math.random().toString(16).slice(2, 6), name: "", joinOn: "" }]; jobSwitchUi.errors = []; await commit(rec); return; }
+    if (btn.dataset.act === "js-remove") { rec.offers = (rec.offers || []).filter((o) => o.id !== btn.dataset.id); jobSwitchUi.errors = []; await commit(rec); return; }
+    if (btn.dataset.act === "js-save") {
+      jobSwitchUi.errors = JSW.validate(rec);
+      if (jobSwitchUi.errors.length) { const e = box.querySelector(".up-error"); if (e) { e.textContent = jobSwitchUi.errors.join(" "); e.hidden = false; } return; } // keep what was typed: no redraw
+      await commit(rec); toast("Job switch saved.");
+    }
+  });
+  box.addEventListener("change", async (event) => {
+    const t = event.target.closest('[data-act="js-tick"]');
+    if (!t) return;
+    await commit(JSW.toggle({ ...(jobRecord() || { id: "jobswitch-1", offers: [], current: {} }), ...{} }, t.dataset.key), "jobSwitch");
+  });
+}
 
 /** "long", "short", "mixed" or "unknown" for a recorded sale, by the tax engine's own holding-period rule. */
 function saleTerm(sale) {

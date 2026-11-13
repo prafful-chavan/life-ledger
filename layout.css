@@ -1136,6 +1136,9 @@ path[class^="pf-c"]:hover { opacity: .82; }
 .up-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
 .up-list li small { grid-column: 1 / -1; color: var(--muted); }
 .up-table td small { color: var(--muted); }
+.up-warn { color: var(--negative); font-weight: 600; }
+.up-checks .up-check { align-items: flex-start; }
+.up-checks small { color: var(--muted); }
 .up-table .dv-delta { white-space: normal; display: inline-block; max-width: 100%; }
 @media (max-width: 700px) {
   .up-two { grid-template-columns: 1fr; }

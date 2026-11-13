@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.144",
-    "sha256": "4100e8f0ef56134634e8474163f4a5eabd4fc87f1a488f3a5290c241750981b9"
+    "version": "1.0.146",
+    "sha256": "8b36d5c73e6eb36cc3b1031601f46d923346786ea3d06b7304d1d7071c1daa8b"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -83,6 +83,14 @@
     "version": "1.0.1",
     "sha256": "cfb5866ecab3eca6b007e71f4f9c36945cea0a511c3b9de1ae1674b109f2cd1c"
   },
+  "job-switch-core.js": {
+    "version": "1.0.0",
+    "sha256": "146a504331956b27334809bfe306b8f4f70f249c015c35207aa319058a1289aa"
+  },
+  "job-switch-views.js": {
+    "version": "1.0.0",
+    "sha256": "e7909aecbc496e9ed355828e1fa578ed95ac0149bbf2b15dc3c010a6c44c16f4"
+  },
   "knowledge-modules.js": {
     "version": "1.0.0",
     "sha256": "5a74d029c14018699257e23258aa477e6f92ce536e8204e62b4c90057766e03b"
@@ -92,8 +100,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.42",
-    "sha256": "15dd17ce35434368c144fae37e9808bd07b3b6407bc6e84d5ae04661eb174907"
+    "version": "1.8.43",
+    "sha256": "8f6a015dbf1a05f6f980c812e6ffcf05429dad50804b0db8cc1a6a018ce07b3d"
   },
   "liability-calc.js": {
     "version": "1.0.0",
