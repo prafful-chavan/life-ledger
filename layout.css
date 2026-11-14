@@ -1197,3 +1197,24 @@ details[open] > .bt-summary::before { transform: rotate(90deg); }
   .bt-table td, .bt-table th { white-space: normal; word-break: break-word; }
 }
 .bt .table-wrap table.bt-table { min-width: 0; }
+
+/* Outgo calendar (Finance → Outgo calendar) */
+.oc { display: grid; gap: 12px; min-width: 0; }
+.oc > * { min-width: 0; }
+.oc-head { margin: 0; font-size: 15px; line-height: 1.45; }
+.oc-months { display: grid; gap: 6px; }
+.oc-month { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); padding: 0 12px; }
+.oc-month > summary { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; cursor: pointer; list-style: none; }
+.oc-month > summary::-webkit-details-marker { display: none; }
+.oc-label { font-weight: 700; font-size: 14px; }
+.oc-bar { height: 10px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; display: block; }
+.oc-bar > i { display: block; height: 100%; background: var(--brand); border-radius: 99px; }
+.oc-total { font-size: 15px; font-variant-numeric: tabular-nums; text-align: right; }
+.oc-items li { grid-template-columns: 78px minmax(0, 1fr) auto; align-items: baseline; }
+.oc-items li small { grid-column: 1 / -1; }
+.oc-amt { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.oc-cum { margin: 4px 0 10px; }
+.oc .table-wrap { max-width: 100%; overflow-x: auto; }
+.oc .table-wrap table.oc-table { min-width: 0; }
+.oc-table td, .oc-table th, .oc-items li { overflow-wrap: anywhere; }
+@media (max-width: 480px) { .oc-month > summary { grid-template-columns: 70px minmax(0, 1fr) auto; gap: 8px; } .oc-items li { grid-template-columns: 64px minmax(0, 1fr) auto; } }

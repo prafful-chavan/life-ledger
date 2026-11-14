@@ -783,6 +783,47 @@ const SCANNER = `(${function scan() {
     }
     await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.stocks=window.__origStocksBT; S.brokerTrades=window.__origTradesBT||[]; S.brokerChoices=[]; LifeLedgerApp.renderAll(); return 0; })()`);
     await viewport(1280, 900); await sleep(300);
+    // Outgo calendar (Finance → Outgo calendar)
+    console.log("\nOutgo calendar");
+    await viewport(1280, 900); await sleep(300); await view("finance"); await sleep(300);
+    const oc = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); window.__origOut=S.outgoings; window.confirm=()=>true; S.outgoings=[];
+      const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+      const tab=document.querySelector('[data-finance-tab="outgo"]'); tab.hidden=false; tab.click(); LifeLedgerApp.renderAll(); await w(500); const box=document.getElementById('outgoBox');
+      out.shown=!document.getElementById('finance-outgo').hidden&&document.getElementById('finance-outgo').classList.contains('active');
+      const calc=()=>LifeLedgerOutgo.build(outgoItems(today),today); const inrNum=(t)=>Number(String(t).replace(/[^0-9]/g,''));
+      const c0=calc(); out.months=box.querySelectorAll('details.oc-month').length; out.expMonths=c0.months.length;
+      const head0=box.querySelector('.oc-head'); out.head0=head0?inrNum(head0.querySelector('strong').textContent):0; out.exp0=Math.round(c0.total);
+      out.firstOpen=box.querySelector('details.oc-month').open;
+      // the employer's group cover is not a household outgoing
+      out.noEmployerRow=!(S.insurance||[]).filter(p=>p.employer==='Yes').some(p=>box.innerText.includes(p.policyName||'~~none~~'));
+      // add rent through the form
+      const first=new Date(today+'T00:00:00Z'); const next=new Date(Date.UTC(first.getUTCFullYear(),first.getUTCMonth()+1,1)).toISOString().slice(0,10);
+      const set=(n,v)=>{ box.querySelector('.oc-add [data-field="'+n+'"]').value=v; };
+      // a refused add: nothing kept, the message shown, what was typed stays
+      set('name','Rent Nagpur flat'); set('amount',''); set('nextDate',next); box.querySelector('[data-act="oc-add"]').click(); await w(300);
+      out.errShown=!box.querySelector('.oc-add .up-error').hidden; out.noneAfterBad=(S.outgoings||[]).length===0; out.keptTyped=box.querySelector('.oc-add [data-field="name"]').value==='Rent Nagpur flat'&&box.querySelector('.oc-add [data-field="nextDate"]').value===next;
+      set('amount','18000'); set('frequency','Monthly'); set('kind','Rent'); set('owner','Me'); box.querySelector('[data-act="oc-add"]').click(); await w(800);
+      const rec=(S.outgoings||[])[0]; out.saved=!!rec&&rec.name==='Rent Nagpur flat'&&rec.amount===18000&&rec.frequency==='Monthly'&&rec.nextDate===next&&rec.kind==='Rent'&&rec.owner==='Me'&&/^out-/.test(rec.id);
+      const c1=calc(); out.exp1=Math.round(c1.total); out.head1=inrNum(box.querySelector('.oc-head strong').textContent);
+      out.rentRows=[...box.querySelectorAll('.oc-items li')].filter(li=>/Rent Nagpur flat/.test(li.textContent)).length; out.expRentRows=c1.months.reduce((t,m)=>t+m.items.filter(i=>i.name==='Rent Nagpur flat').length,0);
+      out.diff=Math.round(c1.total-c0.total); out.expDiff=18000*out.expRentRows;
+      out.inList=!!box.querySelector('.oc-table tr[data-id="'+rec.id+'"]'); out.nan=/NaN|undefined|Infinity/.test(box.innerText);
+      // remove: back to the first total
+      box.querySelector('[data-act="oc-del"]').click(); await w(700); out.removed=(S.outgoings||[]).length===0&&inrNum(box.querySelector('.oc-head')?box.querySelector('.oc-head strong').textContent:'0')===out.exp0;
+      return JSON.stringify(out); })()`));
+    check("outgo calendar: the tab opens with 12 months and the headline total is exactly what the logic works out from the recorded premiums and EMIs", oc.shown && oc.months === 12 && oc.expMonths === 12 && oc.head0 === oc.exp0 && oc.firstOpen && oc.noEmployerRow, JSON.stringify(oc));
+    check("outgo calendar: an add with no amount is refused with a message, nothing is kept and what was typed stays", oc.errShown && oc.noneAfterBad && oc.keptTyped, JSON.stringify(oc));
+    check("outgo calendar: a recurring outgoing is saved and appears in every month it falls due; the total rises by exactly amount × occurrences", oc.saved && oc.inList && oc.rentRows === oc.expRentRows && oc.expRentRows >= 11 && oc.diff === oc.expDiff && oc.head1 === oc.exp1 && !oc.nan, JSON.stringify(oc));
+    check("outgo calendar: removing it takes it out and the total goes back", oc.removed, JSON.stringify(oc));
+    for (const w of [360, 390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(300);
+      const fit = await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.outgoings=[{id:'out-fit',name:'A Very Long Unbroken Name For A Recurring Payment ThatKeepsGoingAndGoing',amount:99999999,frequency:'Monthly',nextDate:'2026-12-01',endDate:'2030-01-01',kind:'Subscription',owner:'Wife'}]; LifeLedgerApp.renderAll(); document.querySelectorAll('#outgoBox details.oc-month').forEach(d=>d.open=true);
+        const bad=[]; const p=document.getElementById('outgoPanel'); if (p.scrollWidth-p.clientWidth>1) bad.push('panel '+(p.scrollWidth-p.clientWidth)); p.querySelectorAll('summary,b,button,input,select,th,td,li').forEach(e=>{ const r=e.getBoundingClientRect(); if (r.width>0&&(r.right>innerWidth+1||r.left<-1)) bad.push((e.dataset.act||e.tagName)+' off screen'); }); const small=Math.min(...[...p.querySelectorAll('b,span,p,summary,li')].map(e=>parseFloat(getComputedStyle(e).fontSize))); if (small<12) bad.push('font '+small);
+        return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, bad:bad.slice(0,4)}); })()`);
+      const fj = JSON.parse(fit); check(`outgo calendar at ${w}px: fits, text at least 12px, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await cdp.eval(`(()=>{ LifeLedgerApp.getState().outgoings=window.__origOut||[]; LifeLedgerApp.renderAll(); return 0; })()`);
+    await viewport(1280, 900); await sleep(300);
     // the page title is never squeezed into a column by the top-bar buttons
     for (const w of [681, 700, 768, 820, 900, 1024]) {
       await viewport(w, 900); await sleep(300);

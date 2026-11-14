@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="styles.css?v=1.0.24" />
     <link rel="stylesheet" href="theme.css?v=1.1.7" />
-    <link rel="stylesheet" href="layout.css?v=1.8.50" />
+    <link rel="stylesheet" href="layout.css?v=1.8.51" />
     <script defer src="script-gate.js?v=1.0.1"></script>
     <script defer src="config.example.js"></script>
     <script defer src="config.js"></script>
@@ -57,6 +57,8 @@
     <script defer src="stale-values-core.js?v=1.0.0"></script>
     <script defer src="upkeep-views.js?v=1.0.0"></script>
     <script defer src="day-meter-core.js?v=1.0.0"></script>
+    <script defer src="outgo-calendar-core.js?v=1.0.0"></script>
+    <script defer src="outgo-calendar-views.js?v=1.0.0"></script>
     <script defer src="broker-trades-core.js?v=1.0.0"></script>
     <script defer src="broker-trades-views.js?v=1.0.0"></script>
     <script defer src="job-switch-core.js?v=1.0.1"></script>
@@ -65,7 +67,7 @@
     <script defer src="networth-weekly.js?v=1.0.0"></script>
     <script defer src="mf-panel-core.js?v=1.0.0"></script>
     <script defer src="stocks-panel-core.js?v=1.0.0"></script>
-    <script defer src="app.js?v=1.0.150"></script>
+    <script defer src="app.js?v=1.0.151"></script>
     <script defer src="cmdk-core.js?v=1.0.0"></script>
     <script defer src="nav.js?v=1.1.6"></script>
     <script defer src="holdings-integrity.js?v=1.0.1"></script>
@@ -487,6 +489,7 @@
             <button class="tab-button" type="button" data-finance-tab="networthhistory">📈 Net Worth History</button>
             <button class="tab-button" type="button" data-finance-tab="income">Salary</button>
             <button class="tab-button" type="button" data-finance-tab="expenses">Expenses</button>
+            <button class="tab-button" type="button" data-finance-tab="outgo">Outgo calendar</button>
             <button class="tab-button" type="button" data-finance-tab="mutualfunds">Mutual funds</button>
             <button class="tab-button" type="button" data-finance-tab="stocks">Stocks</button>
             <button class="tab-button" type="button" data-finance-tab="fd">FD</button>
@@ -761,6 +764,13 @@
                   </div>
                 </section>
               </div>
+            </section>
+          </div>
+
+          <div class="finance-tab" id="finance-outgo">
+            <section class="panel large-panel pf-panel" id="outgoPanel" aria-labelledby="outgoTitle">
+              <div class="panel-header"><div><h3 id="outgoTitle">Outgo calendar · next 12 months</h3><p>Every payment already recorded, month by month, so a heavy month is seen before it arrives.</p></div></div>
+              <div id="outgoBox"></div>
             </section>
           </div>
 

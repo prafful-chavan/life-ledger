@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.150",
-    "sha256": "f516a61540c19c0ebe62d4c489bbbdd80b22b48f295433eceafbb74fcb17eaab"
+    "version": "1.0.151",
+    "sha256": "523e76b61a8b4ab8ad6b56dc120eafa9c3a9260d2d87d0e1faa2f2f50a3035a0"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -112,8 +112,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.50",
-    "sha256": "e78bd66861f15c6daad27c69dc9d1eeb28c7be7f5063a9e69aa2d023e95c4357"
+    "version": "1.8.51",
+    "sha256": "780a5b01d91ed71b48e8bcf069fd3465dd515011577d0d852b6dcfac60d7a895"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -142,6 +142,14 @@
   "networth-weekly.js": {
     "version": "1.0.0",
     "sha256": "277383bc4d488b274fad195da17f2caeeb63861f17cf6d788ad772f62d6a98e3"
+  },
+  "outgo-calendar-core.js": {
+    "version": "1.0.0",
+    "sha256": "876c563176709e953e823c1785db69330d55f6927ce57b49d7f15c6ffbff685e"
+  },
+  "outgo-calendar-views.js": {
+    "version": "1.0.0",
+    "sha256": "2763c7fdd8ec7f772bb267c205c5d9a55060f6ad33c630852f94b6f10c3cc31b"
   },
   "portfolio-core.js": {
     "version": "1.0.1",

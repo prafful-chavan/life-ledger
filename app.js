@@ -42,6 +42,7 @@ const defaultData = {
   salesPending: [],
   jobSwitch: [],
   brokerTrades: [],
+  outgoings: [],
   brokerChoices: [],
   studies: [],
   workouts: [],
@@ -579,6 +580,7 @@ function bootstrapApp(initialState) {
     bindUpkeep();
     bindJobSwitch();
     bindBroker();
+    bindOutgo();
     initStockCSVImport();
     bindCareerTabs();
     bindImports();
@@ -1214,6 +1216,8 @@ function normalizeDataCore(data) {
     // Trades read from broker files (real buy dates) and the partly-explained shares the household agreed to date
     brokerTrades: ensureIds(Array.isArray(data.brokerTrades) ? data.brokerTrades : [], "trade"),
     brokerChoices: ensureIds(Array.isArray(data.brokerChoices) ? data.brokerChoices : [], "choice"),
+    // Recurring payments the household added itself (rent, PPF, fees…): they appear in the Outgo calendar
+    outgoings: ensureIds(Array.isArray(data.outgoings) ? data.outgoings : [], "out"),
     studies: ensureIds(data.studies || [], "study").map(s => {
       if (s.owner === "Me" || s.owner) return s;
       return { ...s, owner: "Me" };
@@ -4616,6 +4620,7 @@ function renderAll() {
   renderJobSwitch();
   renderDayMeter();
   renderBroker();
+  renderOutgo();
   renderFinance();
   renderCareer();
   renderGoals();
@@ -5782,6 +5787,53 @@ function bindBroker() {
     const key = c.dataset.key, list = state.brokerChoices || [];
     state.brokerChoices = c.checked ? (list.some((x) => x.id === key) ? list : [...list, { id: key }]) : list.filter((x) => x.id !== key);
     renderAll(); await saveData(true, "brokerChoices");
+  });
+}
+
+
+const OGC = (typeof window !== "undefined" && window.LifeLedgerOutgo) || (typeof require === "function" ? require("./outgo-calendar-core.js") : null);
+const OGV = (typeof window !== "undefined" && window.LifeLedgerOutgoViews) || (typeof require === "function" ? require("./outgo-calendar-views.js") : null);
+const outgoUi = { errors: [] };
+
+/** Everything recorded that will be paid: premiums (not the employer's group cover), loan EMIs and the household's own recurring outgoings. */
+function outgoItems(today) {
+  return [
+    ...OGC.fromInsurance((state.insurance || []).filter((p) => p.employer !== "Yes")),
+    ...OGC.fromLiabilities(state.liabilities || [], today),
+    ...OGC.fromOutgoings(state.outgoings || []),
+  ];
+}
+
+function renderOutgo() {
+  const box = document.getElementById("outgoBox");
+  if (!box || !OGC || !OGV) return;
+  const today = todayISO();
+  const cal = OGC.build(outgoItems(today), today);
+  box.innerHTML = OGV.panel(cal, state.outgoings || [], { fmt: dashFmt, names: DASH_NAMES, dateText: (iso) => formatDate(iso), errors: outgoUi.errors });
+}
+
+function bindOutgo() {
+  const box = document.getElementById("outgoBox");
+  if (!box || !OGC) return;
+  box.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-act]");
+    if (!btn) return;
+    if (btn.dataset.act === "oc-del") {
+      if (!confirm("Remove this recurring outgoing? It leaves the calendar.")) return;
+      state.outgoings = (state.outgoings || []).filter((x) => x.id !== btn.dataset.id);
+      outgoUi.errors = [];
+      renderAll(); await saveData(true, "outgoings"); toast("Outgoing removed.");
+      return;
+    }
+    if (btn.dataset.act === "oc-add") {
+      const f = (n) => { const e = box.querySelector(`.oc-add [data-field="${n}"]`); return e ? e.value.trim() : ""; };
+      const rec = { name: f("name"), amount: f("amount") === "" ? "" : Number(f("amount")), frequency: f("frequency"), nextDate: f("nextDate"), endDate: f("endDate"), kind: f("kind"), owner: f("owner") };
+      const errs = OGC.validateOutgoing(rec);
+      if (errs.length) { const e = box.querySelector(".oc-add .up-error"); if (e) { e.textContent = errs.join(" "); e.hidden = false; } return; }   // keep what was typed: no redraw
+      outgoUi.errors = [];
+      state.outgoings = [...(state.outgoings || []), { id: "out-" + Date.now().toString(36) + Math.random().toString(16).slice(2, 6), ...rec }];
+      renderAll(); await saveData(true, "outgoings"); toast("Outgoing added to the calendar.");
+    }
   });
 }
 
