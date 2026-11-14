@@ -56,7 +56,7 @@
       const date = iso(r.purchaseDate || r.date);
       p.qty += qty;
       if (num(r.currentPrice) > 0) p.lastPrice = num(r.currentPrice);
-      p.lots.push({ date, dateKnown: !(stamp && date === stamp) && validISO(date), qty, cost: num(r.invested) || num(r.avgPrice) * qty, _i: i });
+      p.lots.push({ date, dateKnown: !(stamp && date === stamp) && validISO(date) && r.buyDateKnown !== false, qty, cost: num(r.invested) || num(r.avgPrice) * qty, _i: i });
     });
     for (const p of map.values()) p.lots.sort((a, b) => (a.dateKnown === b.dateKnown ? (a.date < b.date ? -1 : a.date > b.date ? 1 : a._i - b._i) : a.dateKnown ? -1 : 1));
     return map;

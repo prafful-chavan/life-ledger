@@ -41,6 +41,8 @@ const defaultData = {
   sales: [],
   salesPending: [],
   jobSwitch: [],
+  brokerTrades: [],
+  brokerChoices: [],
   studies: [],
   workouts: [],
   activities: [],
@@ -576,6 +578,7 @@ function bootstrapApp(initialState) {
     bindPortfolio();
     bindUpkeep();
     bindJobSwitch();
+    bindBroker();
     initStockCSVImport();
     bindCareerTabs();
     bindImports();
@@ -1208,6 +1211,9 @@ function normalizeDataCore(data) {
     sales: ensureIds(Array.isArray(data.sales) ? data.sales : [], "sale"),
     salesPending: ensureIds(Array.isArray(data.salesPending) ? data.salesPending : [], "salecand"),
     jobSwitch: ensureIds(Array.isArray(data.jobSwitch) ? data.jobSwitch : [], "jobswitch"),
+    // Trades read from broker files (real buy dates) and the partly-explained shares the household agreed to date
+    brokerTrades: ensureIds(Array.isArray(data.brokerTrades) ? data.brokerTrades : [], "trade"),
+    brokerChoices: ensureIds(Array.isArray(data.brokerChoices) ? data.brokerChoices : [], "choice"),
     studies: ensureIds(data.studies || [], "study").map(s => {
       if (s.owner === "Me" || s.owner) return s;
       return { ...s, owner: "Me" };
@@ -3977,6 +3983,8 @@ async function syncHoldingsFromDrive() {
     state.mutualFunds = holdingsData.mutualFunds;
     state.stocks = holdingsData.stocks;
     state.usstocks = holdingsData.usstocks;
+    // the sheet has only its import date for every row: give back the real buy dates the kept broker trades explain
+    try { reapplyBrokerDates(); } catch (e) { console.warn("[app.js] re-applying broker buy dates failed:", e); }
     if (leftBook.length) state.salesPending = window.LifeLedgerSales.mergePending(state.salesPending, leftBook);
 
     toast(`🔄 Loaded ${mfCount} MF | ${stockCount} Stocks | ${usStockCount} US Stocks — fetching live prices...`);
@@ -4607,6 +4615,7 @@ function renderAll() {
   renderUpkeep();
   renderJobSwitch();
   renderDayMeter();
+  renderBroker();
   renderFinance();
   renderCareer();
   renderGoals();
@@ -5687,6 +5696,95 @@ function renderDayMeter() {
   panel.hidden = !m;
   box.innerHTML = m ? DMT.html(m, { fmt: dashFmt, dateText: (iso) => formatDate(iso) }) : "";
 }
+
+const BTC = (typeof window !== "undefined" && window.LifeLedgerBrokerTrades) || (typeof require === "function" ? require("./broker-trades-core.js") : null);
+const BTV = (typeof window !== "undefined" && window.LifeLedgerBrokerTradesViews) || (typeof require === "function" ? require("./broker-trades-views.js") : null);
+const brokerUi = { files: [] };
+
+/** What the kept trades say about the holdings, for the Broker trades panel. */
+function brokerModel() {
+  const trades = state.brokerTrades || [];
+  const recon = BTC.reconcile(trades, state.stocks || []);
+  const dates = trades.map((t) => t.date).sort();
+  const byOwner = {};
+  trades.forEach((t) => { byOwner[t.owner] = (byOwner[t.owner] || 0) + 1; });
+  return { tradeCount: trades.length, range: dates.length ? { from: dates[0], to: dates[dates.length - 1] } : null, byOwner, recon, choices: new Set((state.brokerChoices || []).map((c) => c.id)), files: brokerUi.files };
+}
+
+function renderBroker() {
+  const box = document.getElementById("brokerBox");
+  if (!box || !BTC || !BTV) return;
+  box.innerHTML = BTV.panel(brokerModel(), { fmt: dashFmt, names: DASH_NAMES, dateText: (iso) => formatDate(iso), today: todayISO() });
+  const note = document.getElementById("brokerSummaryNote");
+  if (note) { const n = (state.brokerTrades || []).length; note.textContent = n ? ` ${n} trade${n === 1 ? "" : "s"} kept` : " Real buy dates from your broker's trade history"; }
+}
+
+/** Gives every holding the trades explain exactly (and the partly explained ones the household chose) its real buy dates. Used by Apply and after every Sync Holdings. */
+function reapplyBrokerDates() {
+  const trades = state.brokerTrades || [];
+  if (!trades.length || !BTC) return null;
+  const recon = BTC.reconcile(trades, state.stocks || []);
+  const keys = recon.items.filter((i) => i.status === "exact").map((i) => i.key).concat((state.brokerChoices || []).map((c) => c.id));
+  const r = BTC.apply(state.stocks || [], recon, keys, todayISO());
+  if (r.applied.length) state.stocks = r.stocks;
+  return r;
+}
+
+function bindBroker() {
+  const box = document.getElementById("brokerBox");
+  if (!box || !BTC) return;
+  const fail = (m) => { const e = box.querySelector(".bt-add .up-error"); if (e) { e.textContent = m; e.hidden = false; } };
+  box.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-act]");
+    if (!btn || btn.dataset.act === "bt-choice") return;
+    if (btn.dataset.act === "bt-read") {
+      const input = box.querySelector('[data-field="files"]'), owner = box.querySelector('[data-field="owner"]').value;
+      const files = input && input.files ? [...input.files] : [];
+      if (!files.length) { fail("Choose one or more CSV files first."); return; }
+      const results = [];
+      let kept = state.brokerTrades || [];
+      for (const f of files) {
+        if (f.size > 5 * 1024 * 1024) { results.push({ name: f.name, format: null, added: 0, duplicates: 0, skipped: 0, errors: ["The file is larger than 5 MB."] }); continue; }
+        const text = await f.text();
+        const r = BTC.parseFile(text, { owner, source: f.name });
+        const merged = BTC.mergeTrades(kept, r.trades);
+        kept = merged.trades;
+        results.push({ name: f.name, format: r.format, added: merged.added, duplicates: merged.duplicates, skipped: r.skipped, errors: r.errors });
+      }
+      brokerUi.files = results;
+      state.brokerTrades = kept;
+      renderAll();
+      await saveData(true, "brokerTrades");
+      const added = results.reduce((t, x) => t + x.added, 0);
+      toast(added ? `Read ${files.length} file${files.length === 1 ? "" : "s"}: ${added} new trade${added === 1 ? "" : "s"} kept.` : "Nothing new in those files.", added ? undefined : "warn");
+      return;
+    }
+    if (btn.dataset.act === "bt-apply") {
+      const model = brokerModel(), recon = model.recon;
+      const keys = recon.items.filter((i) => !i.alreadyDated && (i.status === "exact" || (i.status === "short" && model.choices.has(i.key)))).map((i) => i.key);
+      if (!keys.length) return;
+      if (!confirm(`Give ${keys.length} holding${keys.length === 1 ? "" : "s"} their real buy dates? Each is split into one row per buy date. The shares and the money invested stay exactly as they are.`)) return;
+      const r = reapplyBrokerDates();
+      renderAll();
+      await saveData(true, "stocks");
+      toast(r && r.applied.length ? `Buy dates applied to ${r.applied.length} holding${r.applied.length === 1 ? "" : "s"}.` : "Nothing could be applied.", r && r.applied.length ? undefined : "warn");
+      return;
+    }
+    if (btn.dataset.act === "bt-clear") {
+      if (!confirm("Remove the kept trades? Buy dates already applied to your holdings stay; only the stored trade history is removed.")) return;
+      state.brokerTrades = []; state.brokerChoices = []; brokerUi.files = [];
+      renderAll(); await saveData(true, "brokerTrades"); toast("Kept trades removed.");
+    }
+  });
+  box.addEventListener("change", async (event) => {
+    const c = event.target.closest('[data-act="bt-choice"]');
+    if (!c) return;
+    const key = c.dataset.key, list = state.brokerChoices || [];
+    state.brokerChoices = c.checked ? (list.some((x) => x.id === key) ? list : [...list, { id: key }]) : list.filter((x) => x.id !== key);
+    renderAll(); await saveData(true, "brokerChoices");
+  });
+}
+
 const jobSwitchUi = { errors: [] };
 const jobRecord = () => (state.jobSwitch || [])[0] || null;
 const JOB_PAY = ["gross", "employeePf", "employerNps", "basic", "ptax"];

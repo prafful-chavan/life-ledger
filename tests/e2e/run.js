@@ -727,6 +727,62 @@ const SCANNER = `(${function scan() {
       const fj = JSON.parse(fit); check(`day meter at ${w}px: fits, text at least 12px, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
     }
     await viewport(1280, 900); await sleep(300);
+    // Broker trades & buy dates (Finance → Stocks)
+    console.log("\nBroker trades");
+    await viewport(1280, 900); await sleep(300); await view("finance"); await sleep(300);
+    const bt = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const NL=String.fromCharCode(10);
+      window.__origStocksBT=S.stocks; window.__origTradesBT=S.brokerTrades; window.confirm=()=>true;
+      const stamp='2026-11-11'; const row=(sym,qty,avg)=>({id:'bt-'+sym,owner:'Me',demat:'Zerodha',symbol:sym,company:sym,quantity:qty,avgPrice:avg,invested:Math.round(qty*avg*100)/100,purchaseDate:stamp,date:stamp,category:'Stock',currentPrice:avg,buyDateKnown:false});
+      S.stocks=[row('AAA',10,108),row('BBB',15,100),row('CCC',5,50)]; S.brokerTrades=[]; S.brokerChoices=[];
+      const tab=document.querySelector('[data-finance-tab="stocks"]'); tab.hidden=false; tab.click(); LifeLedgerApp.renderAll(); await w(500);
+      const det=document.getElementById('brokerPanel'); det.open=true; const box=document.getElementById('brokerBox');
+      out.emptyText=/No trade files added yet/.test(box.innerText);
+      const head='symbol,isin,trade_date,exchange,segment,series,trade_type,auction,quantity,price,trade_id,order_id,order_execution_time';
+      const z=(sym,d,side,q,p,id,seg)=>[sym,'INE0',d,'NSE',seg||'EQ','EQ',side,'false',q,p,id,'o'+id,d+'T10:00:00'].join(',');
+      const csv=[head,z('AAA','2025-01-10','buy',6,100,'t1'),z('AAA','2025-03-10','buy',4,120,'t2'),z('BBB','2025-02-01','buy',6,100,'t3'),z('NIFTY','2025-02-01','buy',1,1,'t4','FO')].join(NL);
+      const bad='Instrument,Qty.,Avg. cost'+NL+'AAA,10,108';
+      const pick=(files)=>{ const dt=new DataTransfer(); files.forEach(f=>dt.items.add(f)); box.querySelector('[data-field="files"]').files=dt.files; };
+      // no file chosen: a message, nothing kept
+      box.querySelector('[data-act="bt-read"]').click(); await w(300); out.noFileMsg=!box.querySelector('.bt-add .up-error').hidden&&(S.brokerTrades||[]).length===0;
+      pick([new File([csv],'tradebook.csv',{type:'text/csv'}),new File([bad],'holdings.csv',{type:'text/csv'})]); box.querySelector('[data-act="bt-read"]').click(); await w(900);
+      out.kept=(S.brokerTrades||[]).length; out.files=box.querySelector('.bt-files')?box.querySelector('.bt-files').innerText.replace(/\\s+/g,' '):'';
+      const t=box.innerText.replace(/\\s+/g,' '); out.aaaExact=/AAA[^]*?Exact/.test(t); out.bbbPartly=/BBB[^]*?Partly/.test(t); out.noTrades=/CCC[^]*?No trades/.test(t);
+      out.applyText=(box.querySelector('[data-act="bt-apply"]')||{}).innerText; out.persisted=(S.brokerTrades||[]).every(x=>x.id&&x.owner==='Me');
+      // the same file again adds nothing
+      pick([new File([csv],'tradebook.csv',{type:'text/csv'})]); box.querySelector('[data-act="bt-read"]').click(); await w(700); out.keptAfterRepeat=(S.brokerTrades||[]).length; out.repeatText=box.querySelector('.bt-files').innerText.replace(/\\s+/g,' ');
+      // tick the partly explained one
+      box.querySelector('[data-act="bt-choice"][data-key="Me|Zerodha|BBB"]').click(); await w(500); out.choiceSaved=(S.brokerChoices||[]).some(c=>c.id==='Me|Zerodha|BBB'); out.applyText2=(box.querySelector('[data-act="bt-apply"]')||{}).innerText;
+      const before={q:S.stocks.reduce((a,r)=>a+r.quantity,0), inv:Math.round(S.stocks.reduce((a,r)=>a+r.invested,0)*100)/100};
+      box.querySelector('[data-act="bt-apply"]').click(); await w(800);
+      const aaa=S.stocks.filter(r=>r.symbol==='AAA'), bbb=S.stocks.filter(r=>r.symbol==='BBB'), ccc=S.stocks.filter(r=>r.symbol==='CCC');
+      out.aaa=aaa.map(r=>[r.purchaseDate,r.quantity,r.buyDateKnown]); out.bbb=bbb.map(r=>[r.purchaseDate,r.quantity,r.buyDateKnown]); out.cccKept=ccc.length===1&&ccc[0].id==='bt-CCC';
+      const after={q:S.stocks.reduce((a,r)=>a+r.quantity,0), inv:Math.round(S.stocks.reduce((a,r)=>a+r.invested,0)*100)/100}; out.before=before; out.after=after;
+      // the tax engine reads the dates: AAA known, the unexplained BBB shares and CCC unknown
+      const lots=LifeLedgerTax.gains.buildLots(S,95).lots; const known=(sym)=>lots.filter(l=>l.symbol===sym).map(l=>l.dateKnown===false?'unknown':'known'); out.taxAAA=known('AAA'); out.taxBBB=known('BBB'); out.taxCCC=known('CCC');
+      out.nowDated=/Dated/.test(box.innerText)&&!(box.querySelector('[data-act="bt-apply"]')&&!box.querySelector('[data-act="bt-apply"]').disabled&&/AAA/.test(box.querySelector('[data-act="bt-apply"]').innerText));
+      // a Sync Holdings brings back the sheet's rows: every row stamped with the import date again; the kept trades give the dates back
+      S.stocks=[row('AAA',10,108),row('BBB',15,100),row('CCC',5,50)]; const r=window.reapplyBrokerDates(); LifeLedgerApp.renderAll(); await w(300);
+      out.resynced=S.stocks.filter(x=>x.symbol==='AAA').length===2&&S.stocks.filter(x=>x.symbol==='BBB').length===2&&r.applied.length===2;
+      // remove the kept trades: the stored history goes, the dates already applied stay
+      const datedRows=S.stocks.length; box.querySelector('[data-act="bt-clear"]').click(); await w(500); out.cleared=(S.brokerTrades||[]).length===0&&(S.brokerChoices||[]).length===0&&S.stocks.length===datedRows; out.emptyAgain=/No trade files added yet/.test(box.innerText);
+      out.nan=/NaN|undefined|Infinity/.test(box.innerText);
+      return JSON.stringify(out); })()`));
+    check("broker trades: nothing is kept without a file, and a file that is not a tradebook is named as such", bt.emptyText && bt.noFileMsg && /holdings\.csv not read/.test(bt.files) && /tradebook\.csv Zerodha tradebook/.test(bt.files), JSON.stringify(bt));
+    check("broker trades: the trades are kept, each holding is classed (exact, partly, no trades) and the same file again adds nothing", bt.kept === 3 && bt.persisted && bt.aaaExact && bt.bbbPartly && bt.noTrades && bt.keptAfterRepeat === 3 && /0 new trade/.test(bt.repeatText) && /3 already kept/.test(bt.repeatText), JSON.stringify(bt));
+    check("broker trades: applying splits the holding by buy date; shares and money invested do not change; the unexplained shares stay unknown", /1 holding/.test(bt.applyText) && /2 holdings/.test(bt.applyText2) && bt.choiceSaved && JSON.stringify(bt.aaa) === '[["2025-01-10",6,true],["2025-03-10",4,true]]' && JSON.stringify(bt.bbb) === '[["2026-11-11",9,false],["2025-02-01",6,true]]' && bt.cccKept && bt.before.q === bt.after.q && Math.abs(bt.before.inv - bt.after.inv) < 0.02, JSON.stringify(bt));
+    check("broker trades: the tax engine reads the dates (known for the dated shares, unknown for the rest), and they come back after a Sync Holdings", JSON.stringify(bt.taxAAA) === '["known","known"]' && bt.taxBBB.includes("unknown") && bt.taxBBB.includes("known") && bt.taxCCC[0] === "unknown" && bt.resynced, JSON.stringify(bt));
+    check("broker trades: removing the kept trades keeps the dates already applied; no NaN", bt.cleared && bt.emptyAgain && !bt.nan, JSON.stringify(bt));
+    for (const w of [390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(300);
+      const fit = await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); const stamp='2026-11-11'; const row=(sym,qty,avg)=>({id:'bt-'+sym,owner:'Me',demat:'A Very Long Broker Name',symbol:sym,company:sym,quantity:qty,avgPrice:avg,invested:qty*avg,purchaseDate:stamp,date:stamp,category:'Stock',buyDateKnown:false}); S.stocks=[row('VERYLONGSHARENAMELTD',123456,99999.99),row('B',15,100)];
+        const NL=String.fromCharCode(10); const t=(i,sym,q,p)=>[sym,'I','2025-01-0'+i,'NSE','EQ','EQ','buy','false',q,p,'id'+i,'o','2025-01-0'+i+'T10:00:00'].join(','); S.brokerTrades=[]; const head='symbol,isin,trade_date,exchange,segment,series,trade_type,auction,quantity,price,trade_id,order_id,order_execution_time';
+        const r=LifeLedgerBrokerTrades.parseFile([head,t(1,'VERYLONGSHARENAMELTD',100000,99999.99),t(2,'B',6,100)].join(NL),{owner:'Me',source:'a-very-long-file-name-for-the-tradebook-export.csv'}); S.brokerTrades=r.trades; LifeLedgerApp.renderAll(); document.getElementById('brokerPanel').open=true;
+        const bad=[]; const p=document.getElementById('brokerPanel'); if (p.scrollWidth-p.clientWidth>1) bad.push('panel '+(p.scrollWidth-p.clientWidth)); p.querySelectorAll('button,input,select,th,td,li').forEach(e=>{ const r=e.getBoundingClientRect(); if (r.width>0&&(r.right>innerWidth+1||r.left<-1)) bad.push((e.dataset.act||e.tagName)+' off screen'); });
+        const tw=p.querySelector('table'), wr=p.querySelector('.table-wrap'); return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, bad:bad.slice(0,4), dims:{panel:Math.round(p.getBoundingClientRect().width), panelLeft:Math.round(p.getBoundingClientRect().left), table:tw?Math.round(tw.getBoundingClientRect().width):0, wrap:wr?Math.round(wr.getBoundingClientRect().width):0, wrapScroll:wr?wr.scrollWidth:0, layout:tw?getComputedStyle(tw).tableLayout:'', mq:matchMedia('(min-width: 701px)').matches}}); })()`);
+      const fj = JSON.parse(fit); check(`broker trades at ${w}px: fits, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.stocks=window.__origStocksBT; S.brokerTrades=window.__origTradesBT||[]; S.brokerChoices=[]; LifeLedgerApp.renderAll(); return 0; })()`);
+    await viewport(1280, 900); await sleep(300);
     // the page title is never squeezed into a column by the top-bar buttons
     for (const w of [681, 700, 768, 820, 900, 1024]) {
       await viewport(w, 900); await sleep(300);

@@ -862,7 +862,7 @@
       for (const s of list || []) {
         const qty = num(s.quantity);
         if (!(qty > 0)) continue;
-        lots.push({ kind, name: s.company || s.symbol, symbol: s.symbol, owner: s.owner || "Me", cat: taxCategory(s.company || s.symbol, kind, s.category), date: isoOf(s.purchaseDate || s.date), qty, cost: num(s.invested) * fx, price: num(s.currentPrice) * fx });
+        lots.push({ kind, name: s.company || s.symbol, symbol: s.symbol, owner: s.owner || "Me", cat: taxCategory(s.company || s.symbol, kind, s.category), date: isoOf(s.purchaseDate || s.date), qty, cost: num(s.invested) * fx, price: num(s.currentPrice) * fx, ...(s.buyDateKnown === false ? { dateKnown: false } : {}) });
       }
     };
     addStocks(state.stocks, "stock", 1);

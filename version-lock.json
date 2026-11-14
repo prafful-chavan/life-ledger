@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.149",
-    "sha256": "32782c6894272e7c36bd203d9b6c34cda2901e0163b47e0f9f27ff0c29402fd3"
+    "version": "1.0.150",
+    "sha256": "f516a61540c19c0ebe62d4c489bbbdd80b22b48f295433eceafbb74fcb17eaab"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -34,6 +34,14 @@
   "breakdown-core.js": {
     "version": "1.0.0",
     "sha256": "623b817172e4400e78848ecd67ff32455d5b3bbd1eca33d2ab75645fde8469fc"
+  },
+  "broker-trades-core.js": {
+    "version": "1.0.0",
+    "sha256": "3759a4697e4e875e0861be6623b819fbbd8057b666d248d96bdaa650d24900c5"
+  },
+  "broker-trades-views.js": {
+    "version": "1.0.0",
+    "sha256": "3e10fde386104bfdd240b74cad005d8c09fb5c59648c36c41ee1574736ba4d1e"
   },
   "cmdk-core.js": {
     "version": "1.0.0",
@@ -104,8 +112,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.46",
-    "sha256": "eb0b0e43f333875d06576e7e90934703817cf047d15e074fb299f8f6380f06e7"
+    "version": "1.8.50",
+    "sha256": "e78bd66861f15c6daad27c69dc9d1eeb28c7be7f5063a9e69aa2d023e95c4357"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -172,8 +180,8 @@
     "sha256": "7d79cc68737c773b4c75c1e31e35d9960f6c7c2dd7ef3e341928dff5e71075fa"
   },
   "sales-core.js": {
-    "version": "1.0.0",
-    "sha256": "6ac5e77a3f51dc6d3e88d183e7b48585f2d1cb8bdf19daef103b7a7ecdea2d99"
+    "version": "1.0.1",
+    "sha256": "1f57add0842fe3e08e24641bb5f671092301eeb27cdcac71143bbb5eabc94cd1"
   },
   "script-gate.js": {
     "version": "1.0.1",
@@ -216,8 +224,8 @@
     "sha256": "de335d1a694c49ee2ce98519b4a735a500f824cec2790e41035569bc6f2a432a"
   },
   "tax-core.js": {
-    "version": "1.2.16",
-    "sha256": "b6d5b1532ad7ff8b89a50f0ea9ae4f32cc43f474a773d5a682c28a4f7530805a"
+    "version": "1.2.17",
+    "sha256": "05d230d28eb553d4607318c732615c24c2c74907b4e9e8230c7b6f630044ae4d"
   },
   "tax-oracle.js": {
     "version": "1.0.0",
