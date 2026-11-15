@@ -109,6 +109,14 @@ const countEntries = (data) => ENTRY_KEYS.reduce((t, k) => t + (Array.isArray(da
 async function updateField({ gatewayUrl, password, field, value, fetchImpl = fetch, now = Date.now(), attempts = 3 }) {
   if (!WRITABLE.has(field)) throw new Error(`Writing "${field}" is not allowed from here`);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("The value must be an object");
+  return updateWith({ gatewayUrl, password, fetchImpl, now, attempts, make: (before) => ({ ...before, [field]: value }) });
+}
+
+/**
+ * Same safe write, but the caller builds the new data from the freshly read data (make(before) -> after, or null for no
+ * change) and a guard refuses anything but the checked change. Used by the balance sync (values and dates only).
+ */
+async function updateWith({ gatewayUrl, password, make, guard, fetchImpl = fetch, now = Date.now(), attempts = 3 }) {
   const Engine = require("../sync-engine.js");
   const token = await authToken(password);
   // Apps Script now and then answers with a page that is not the reply; ask again (a repeated push is refused as a
@@ -131,7 +139,9 @@ async function updateField({ gatewayUrl, password, field, value, fetchImpl = fet
     if (!j.ok || !j.vault) throw new Error(j.error || "Could not read the vault");
     const inner = await decryptVault(j.vault, password);
     const before = inner.data || {};
-    const after = { ...before, [field]: value };
+    const after = make(before);
+    if (!after) return { rev: j.rev, attempts: i + 1, unchanged: true };
+    if (guard && !guard(before, after)) throw new Error("Refusing to push: the change is more than was allowed");
     const meta = Engine.stamp(before, after, inner.sync || Engine.emptyMeta(), now);
     const nextInner = { ...inner, data: after, sync: meta };
     const sealed = await encryptVault(nextInner, password, { compress: !!j.vault.compressed, salt: Buffer.from(j.vault.salt, "base64") });
@@ -144,4 +154,4 @@ async function updateField({ gatewayUrl, password, field, value, fetchImpl = fet
   throw new Error(`Another device kept saving; gave up after ${attempts} tries`);
 }
 
-module.exports = { authToken, decryptVault, encryptVault, fetchState, updateField, countEntries };
+module.exports = { authToken, decryptVault, encryptVault, fetchState, updateField, updateWith, countEntries };
