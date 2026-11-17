@@ -783,6 +783,15 @@ const SCANNER = `(${function scan() {
     }
     await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.stocks=window.__origStocksBT; S.brokerTrades=window.__origTradesBT||[]; S.brokerChoices=[]; LifeLedgerApp.renderAll(); return 0; })()`);
     await viewport(1280, 900); await sleep(300);
+    // Nightly balance sync summary (written outside the app): the app must keep it through normalising and saving
+    console.log("\nBalance sync summary");
+    const bsk = JSON.parse(await cdp.eval(`(()=>{ const A=LifeLedgerApp; const keep=JSON.parse(JSON.stringify(A.getState())); const d=A.defaultData(); const had=Object.prototype.hasOwnProperty.call(d,'balanceSync');
+      const bad=JSON.parse(JSON.stringify(keep)); bad.balanceSync=[1,2];
+      A.applyRemoteData(bad); const arr=A.getState().balanceSync;
+      const good=JSON.parse(JSON.stringify(keep)); good.balanceSync={checkedOn:'2026-11-16',status:'ok',updated:[{owner:'Me',field:'silver',from:1,to:2}],same:3,held:[],problems:[]};
+      A.applyRemoteData(good); const kept=A.getState().balanceSync; A.applyRemoteData(keep);
+      return JSON.stringify({had, defaultNull:d.balanceSync===null, arr, kept}); })()`));
+    check("balance sync: the app starts with no summary, drops a malformed one and keeps a real one (so a save never erases it)", bsk.had && bsk.defaultNull && bsk.arr === null && bsk.kept && bsk.kept.checkedOn === "2026-11-16" && bsk.kept.updated.length === 1, JSON.stringify(bsk));
     // Outgo calendar (Finance → Outgo calendar)
     console.log("\nOutgo calendar");
     await viewport(1280, 900); await sleep(300); await view("finance"); await sleep(300);

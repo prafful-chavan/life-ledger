@@ -105,13 +105,68 @@ bad = JSON.parse(JSON.stringify(ok)); bad.goals = [];
 assert.ok(!B.onlyValuesChanged(data(), bad), "new field refused");
 assert.throws(() => B.apply(data(), [{ field: "ppf", id: "p1", to: 1, date: T }]), /Not allowed/);
 
+// The run's own report
+let rp = B.report(B.plan(data(), ref(), { today: T }), T);
+assert.strictEqual(rp.checkedOn, T); assert.strictEqual(rp.status, "ok"); assert.strictEqual(rp.same, 2); assert.strictEqual(rp.updated.length, 4);
+assert.deepStrictEqual(rp.updated.find((u) => u.field === "crypto"), { owner: "Wife", field: "crypto", label: "Crypto", from: 3500, to: 5007 });
+d = data(); d.banksaving[0].value = 1000000;
+rp = B.report(B.plan(d, ref(), { today: T }), T);
+assert.strictEqual(rp.status, "held"); assert.strictEqual(rp.held[0].label, "Bank savings"); assert.ok(/confirm/.test(rp.held[0].text));
+rp = B.report(B.plan(data(), null, { today: T }), T);
+assert.strictEqual(rp.status, "failed"); assert.ok(rp.problems.length && !rp.updated.length);
+// The guard lets the report in, and only a plain object
+let withReport = { ...ok, balanceSync: rp };
+assert.ok(B.onlyValuesChanged(data(), withReport), "balanceSync may change");
+assert.ok(!B.onlyValuesChanged(data(), { ...ok, balanceSync: [1] }), "an array is refused");
+assert.ok(!B.onlyValuesChanged(data(), { ...ok, balanceSync: "x" }), "a string is refused");
+assert.ok(!B.onlyValuesChanged(data(), { ...withReport, otherField: { a: 1 } }), "other new fields still refused");
+
 // Summary text
 assert.ok(/4 updated, 2 already right, 0 left alone/.test(B.summary(B.plan(data(), ref(), { today: T }))), B.summary(B.plan(data(), ref(), { today: T })));
 assert.ok(/^not saved/.test(B.summary(B.plan(data(), null, { today: T }))));
 
-// Writer: updateWith refuses a change the guard dislikes and does nothing when there is nothing to change
+// Writer: the whole nightly write against a fake gateway
+const E = require("../sync-engine.js");
 (async () => {
-  assert.strictEqual(typeof V.updateWith, "function");
-  await assert.rejects(V.updateWith({ gatewayUrl: "http://x", password: "p", make: () => null, fetchImpl: async () => { throw new Error("offline"); } }), /did not answer|offline/);
+  const pw = "test-password", salt = Buffer.alloc(16, 9);
+  const start = { ...data(), income: [{ id: "i1", amount: 1 }], goals: [{ id: "g9" }] };
+  let server = { rev: 10, vault: { ...(await V.encryptVault({ data: start, sync: E.emptyMeta(), totpSecret: null }, pw, { salt })), entryCount: V.countEntries(start) } };
+  const fetchImpl = async (url, init) => {
+    const req = JSON.parse(init.body), reply = (o) => ({ ok: true, status: 200, headers: new Map(), text: async () => JSON.stringify(o) });
+    if (req.op === "pull") return reply({ ok: true, rev: server.rev, vault: server.vault });
+    if (req.baseRev !== server.rev) return reply({ ok: true, conflict: true, rev: server.rev });
+    server = { rev: server.rev + 1, vault: req.vault }; return reply({ ok: true, rev: server.rev });
+  };
+  const run = (reference) => { let last; return V.updateWith({ gatewayUrl: "https://example.test/gw", password: pw, fetchImpl, now: 1790000000000, guard: B.onlyValuesChanged,
+    make: (before) => { last = B.plan(before, reference, { today: T }); return { ...(last.status === "ok" && last.changes.length ? B.apply(before, last.changes) : before), balanceSync: B.report(last, T) }; } }); };
+  const res = await run(ref());
+  assert.strictEqual(res.rev, 11);
+  let inner = await V.decryptVault(server.vault, pw);
+  assert.deepStrictEqual([inner.data.banksaving[0].value, inner.data.banksaving[1].value, inner.data.crypto[0].value, inner.data.bonds[0].value], [164913, 38788, 5007, 72833]);
+  assert.strictEqual(inner.data.banksaving[0].note, "x", "notes untouched");
+  assert.deepStrictEqual([inner.data.income, inner.data.goals, inner.data.ppf], [start.income, start.goals, start.ppf], "nothing else changed");
+  assert.strictEqual(inner.data.balanceSync.status, "ok"); assert.strictEqual(inner.data.balanceSync.updated.length, 4);
+  assert.strictEqual(server.vault.entryCount, V.countEntries(start), "the entry count the gateway checks is unchanged");
+  assert.strictEqual(server.vault.salt, salt.toString("base64"), "salt kept");
+  assert.ok(inner.sync.k.balanceSync, "the summary is stamped");
+  // An app device that still has the old copy picks everything up on its next sync
+  const merged = E.merge({ data: start, meta: E.emptyMeta() }, { data: inner.data, meta: inner.sync });
+  assert.strictEqual(merged.data.balanceSync.checkedOn, T);
+  assert.strictEqual(merged.data.banksaving.find((r) => r.id === "b1").value, 164913);
+  // A second run the same day changes nothing but still saves its summary
+  const res2 = await run(ref()); assert.strictEqual(res2.rev, 12);
+  inner = await V.decryptVault(server.vault, pw);
+  assert.strictEqual(inner.data.balanceSync.updated.length, 0); assert.strictEqual(inner.data.balanceSync.same, 6);
+  // A stale copy records a failed run and changes no value
+  const before = JSON.stringify(inner.data.banksaving);
+  await run({ ...ref(), fetchedAt: "2026-11-14" });
+  inner = await V.decryptVault(server.vault, pw);
+  assert.strictEqual(inner.data.balanceSync.status, "failed"); assert.strictEqual(JSON.stringify(inner.data.banksaving), before);
+  // The writer refuses a change the guard dislikes (a deleted record) and pushes nothing
+  const rev = server.rev;
+  await assert.rejects(V.updateWith({ gatewayUrl: "x", password: pw, fetchImpl, guard: B.onlyValuesChanged, make: (b) => ({ ...b, banksaving: b.banksaving.slice(1) }) }), /more than was allowed/);
+  assert.strictEqual(server.rev, rev, "nothing was pushed");
+  await assert.rejects(V.updateWith({ gatewayUrl: "x", password: pw, fetchImpl, guard: B.onlyValuesChanged, make: (b) => ({ ...b, goals: [] }) }), /more than was allowed/);
+  await assert.rejects(V.updateField({ gatewayUrl: "x", password: pw, field: "banksaving", value: {}, fetchImpl }), /not allowed/);
   console.log("mcp-balance-sync tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

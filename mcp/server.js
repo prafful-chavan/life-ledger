@@ -142,7 +142,7 @@ async function buildPack(s, a, ctx) {
   const today = todayISO(), limit = a.rowsPerTable || 14, nw = A.netWorth(s, ctx.usdInr);
   return {
     brief: brief(s, a), funds: await tableFor(s, "funds", ctx, today, limit), stocks: await tableFor(s, "stocks", ctx, today, limit), usStocks: await tableFor(s, "us", ctx, today, 8),
-    tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today), taxPlan: taxPlan(s, today), holdingsCheck: s.holdingsCheck || null,
+    tax: taxReport(s, ctx, today), fitness: Fit.fitnessReport(s, today), milestones: Fit.milestones(nw.netWorth, nw.history), calendar: Cal.calendar(s, today), sipThisMonth: Cal.sipProgress(s, today), lawWatch: LawWatch.lawWatch(today), taxPlan: taxPlan(s, today), holdingsCheck: s.holdingsCheck || null, balanceSync: s.balanceSync || null,
     // How far the numbers can be trusted: the tax engine against its official reference cases, and where the data came from
     selfCheck: { taxCases: (() => { const r = TaxOracle.run(TaxCore.engine); return { total: r.total, passed: r.passed }; })() },
     dataSource: s.__source || { fromCache: false },
@@ -183,7 +183,7 @@ const TOOLS = [
   { name: "protection", description: "Insurance, vehicles, cover checks and ages (no birth dates, nominees or policy numbers).", inputSchema: { type: "object", properties: {} }, run: async (s) => protectionView(s, todayISO()) },
   { name: "goals", description: "Goals with progress; goals that follow holdings use live values.", inputSchema: { type: "object", properties: {} }, run: async (s) => goalsView(s) },
   { name: "health_watch", description: "Checks that the things that fail quietly are still working: cloud copy, price sources, holdings without a price, gaps in the net-worth history, repeated rows, the weekly INDmoney check, the monthly tax-law check, the tax engine. Returns { send, subject, html, text, problems }. Send the email only when send is true (a problem, or a Sunday). Read-only.", inputSchema: { type: "object", properties: { force: { type: "boolean" } } }, run: async (s, a) => {
-      const today = todayISO(), r = HealthWatch.check({ state: s, today, fresh: A.freshness(s), integrity: A.integrity(s), lawWatch: LawWatch.lawWatch(today), holdingsCheck: s.holdingsCheck || null, taxCases: (() => { const o = TaxOracle.run(TaxCore.engine); return { total: o.total, passed: o.passed }; })(), source: s.__source || {} });
+      const today = todayISO(), r = HealthWatch.check({ state: s, today, fresh: A.freshness(s), integrity: A.integrity(s), lawWatch: LawWatch.lawWatch(today), holdingsCheck: s.holdingsCheck || null, balanceSync: s.balanceSync || null, taxCases: (() => { const o = TaxOracle.run(TaxCore.engine); return { total: o.total, passed: o.passed }; })(), source: s.__source || {} });
       return HealthWatch.render(r, { today, force: a && a.force === true });
     } },
   { name: "data_freshness", description: "How many hours old each price source is.", inputSchema: { type: "object", properties: {} }, run: async (s) => A.freshness(s) },

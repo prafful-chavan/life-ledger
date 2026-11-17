@@ -56,6 +56,7 @@ function onlyValuesChanged(before, after) {
   const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
   for (const k of keys) {
     if (JSON.stringify(before[k]) === JSON.stringify(after[k])) continue;
+    if (k === "balanceSync") { if (!after[k] || typeof after[k] !== "object" || Array.isArray(after[k])) return false; continue; }
     if (!FIELDS.includes(k)) return false;
     const a = before[k] || [], b = after[k] || [];
     if (a.length !== b.length) return false;
@@ -68,6 +69,24 @@ function onlyValuesChanged(before, after) {
   return true;
 }
 
+const LABEL = { banksaving: "Bank savings", crypto: "Crypto", bonds: "Gold bond (SGB)", silver: "Silver" };
+
+/**
+ * What the morning email, the health watch and the app show about a run: saved with the values in the same push as the
+ * vault field `balanceSync`. status: ok (nothing held back), held (something needs the household to confirm), failed.
+ */
+function report(p, today) {
+  const failed = p.status !== "ok";
+  return {
+    checkedOn: today, source: "INDmoney",
+    status: failed ? "failed" : p.skipped.length ? "held" : "ok",
+    updated: p.changes.map((c) => ({ owner: c.owner, field: c.field, label: LABEL[c.field], from: c.from, to: c.to })),
+    same: p.same.length,
+    held: p.skipped.map((x) => ({ owner: x.owner, field: x.field, label: LABEL[x.field], reason: x.reason, text: x.text })),
+    problems: p.problems.slice(0, 3),
+  };
+}
+
 function summary(p) {
   const bits = [];
   if (p.status === "bad-reference") return `not saved: ${p.problems.join("; ")}`;
@@ -75,4 +94,4 @@ function summary(p) {
   return bits.join(", ");
 }
 
-module.exports = { MAP, FIELDS, MAX_FALL, plan, apply, onlyValuesChanged, summary };
+module.exports = { MAP, FIELDS, MAX_FALL, LABEL, plan, apply, onlyValuesChanged, report, summary };

@@ -35,17 +35,17 @@
    * a real result always beats an empty one (a freshly restored browser or an old cached copy of the app has no such
    * field and would otherwise erase it), and between two results the later check wins.
    */
-  const EXTERNAL = {
-    holdingsCheck: (a, b, ta, tb) => {
-      const real = (v) => v && typeof v === "object" && !Array.isArray(v);
-      if (!real(a) && !real(b)) return { value: a === undefined ? b : a, ts: Math.max(ta, tb) };
-      if (!real(a)) return { value: b, ts: tb };
-      if (!real(b)) return { value: a, ts: ta };
-      const da = String(a.checkedOn || ""), db = String(b.checkedOn || "");
-      if (da !== db) return da > db ? { value: a, ts: ta } : { value: b, ts: tb };
-      return ta >= tb ? { value: a, ts: ta } : { value: b, ts: tb };
-    },
+  const latestCheck = (a, b, ta, tb) => {
+    const real = (v) => v && typeof v === "object" && !Array.isArray(v);
+    if (!real(a) && !real(b)) return { value: a === undefined ? b : a, ts: Math.max(ta, tb) };
+    if (!real(a)) return { value: b, ts: tb };
+    if (!real(b)) return { value: a, ts: ta };
+    const da = String(a.checkedOn || ""), db = String(b.checkedOn || "");
+    if (da !== db) return da > db ? { value: a, ts: ta } : { value: b, ts: tb };
+    return ta >= tb ? { value: a, ts: ta } : { value: b, ts: tb };
   };
+  // holdingsCheck: the weekly INDmoney comparison; balanceSync: the nightly copy of bank, crypto, SGB and silver balances
+  const EXTERNAL = { holdingsCheck: latestCheck, balanceSync: latestCheck };
   /** [stable part, volatile part] of a record. */
   function split(coll, item) {
     const vf = VOLATILE[coll];

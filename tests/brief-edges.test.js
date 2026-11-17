@@ -43,7 +43,7 @@ assert.deepStrictEqual(titles(adv(21)), ["Advance tax for Prafful"], "advance ta
 assert.ok(/Pay ₹15,000 in total by/.test(R.todayActions(adv(10), T)[0].why));
 
 // ── Notices: each limit ──
-const ok = { brief: { dataFreshness: { mutualFundsHoursOld: 0, stocksHoursOld: 0, usStocksHoursOld: 0 }, integrity: { alerts: [] } }, lawWatch: { stale: false, changes: [] }, holdingsCheck: { checkedOn: T, status: "ok", gaps: [] } };
+const ok = { brief: { dataFreshness: { mutualFundsHoursOld: 0, stocksHoursOld: 0, usStocksHoursOld: 0 }, integrity: { alerts: [] } }, lawWatch: { stale: false, changes: [] }, holdingsCheck: { checkedOn: T, status: "ok", gaps: [] }, balanceSync: { checkedOn: T, status: "ok", updated: [], held: [] } };
 const fresh = (h) => ({ ...ok, brief: { ...ok.brief, dataFreshness: { mutualFundsHoursOld: h, stocksHoursOld: 0, usStocksHoursOld: 0 } } });
 assert.strictEqual(R.notices(fresh(30), T).length, 0, "30 hours is fine"); assert.strictEqual(R.notices(fresh(31), T).length, 1, "31 is not");
 assert.strictEqual(R.notices({ ...ok, brief: { ...ok.brief, integrity: { alerts: [{ level: "watch", text: "A watch note" }, { level: "info", text: "Just info" }] } } }, T).map((n) => n.text).join("|"), "A watch note", "only 'watch' alerts get a line");

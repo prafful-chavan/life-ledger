@@ -38,6 +38,7 @@ const defaultData = {
   ruleSettings: {},
   dashboardSettings: {},
   holdingsCheck: null,
+  balanceSync: null,
   sales: [],
   salesPending: [],
   jobSwitch: [],
@@ -1209,6 +1210,8 @@ function normalizeDataCore(data) {
     dashboardSettings: data.dashboardSettings && typeof data.dashboardSettings === "object" && !Array.isArray(data.dashboardSettings) ? data.dashboardSettings : {},
     // Holdings checked against INDmoney by the weekly task on the Mac (it writes only this field)
     holdingsCheck: data.holdingsCheck && typeof data.holdingsCheck === "object" && !Array.isArray(data.holdingsCheck) ? data.holdingsCheck : null,
+    // The nightly balance sync's own summary (bank savings, crypto, SGB, silver copied from INDmoney); written outside the app
+    balanceSync: data.balanceSync && typeof data.balanceSync === "object" && !Array.isArray(data.balanceSync) ? data.balanceSync : null,
     // Shares sold (recorded from a Sync Holdings that found them gone) and the ones still waiting for a price
     sales: ensureIds(Array.isArray(data.sales) ? data.sales : [], "sale"),
     salesPending: ensureIds(Array.isArray(data.salesPending) ? data.salesPending : [], "salecand"),

@@ -26,9 +26,10 @@ const DIR = process.env.LL_DIR || path.join(os.homedir(), ".life-ledger-mcp");
   let last;
   const r = await V.updateWith({
     gatewayUrl: cfg.gatewayUrl, password, guard: B.onlyValuesChanged,
-    make: (before) => { last = B.plan(before, ref, { today }); return last.status === "ok" && last.changes.length ? B.apply(before, last.changes) : null; },
+    // always saved, even with no change: the run's own summary (balanceSync) is how the morning email knows it ran
+    make: (before) => { last = B.plan(before, ref, { today }); return { ...(last.status === "ok" && last.changes.length ? B.apply(before, last.changes) : before), balanceSync: B.report(last, today) }; },
   });
   show(last);
-  if (last.status !== "ok") { process.exitCode = 1; return; }
-  console.log(r.unchanged ? "Nothing to save." : `Saved to the vault (rev ${r.rev}).`);
+  if (last.status !== "ok") process.exitCode = 1;
+  console.log(`Saved to the vault (rev ${r.rev}).`);
 })().catch((e) => { console.error(e.message); process.exit(1); });

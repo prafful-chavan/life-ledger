@@ -20,7 +20,7 @@ const hrs = (n) => (n >= 48 ? `${Math.round(n / 24)} days` : Math.round(n) === 1
 function priceLimitHours(today) { const d = dayOfWeek(today); return d === 0 || d === 6 || d === 1 ? 84 : 40; }
 
 function check(input) {
-  const { state = {}, today, nowMs = Date.now(), fresh = {}, integrity = { alerts: [] }, lawWatch = {}, holdingsCheck = null, taxCases = null, source = {} } = input;
+  const { state = {}, today, nowMs = Date.now(), fresh = {}, integrity = { alerts: [] }, lawWatch = {}, holdingsCheck = null, balanceSync = null, taxCases = null, source = {} } = input;
   const items = [];
   const add = (id, level, title, detail, action) => items.push({ id, level, title, detail, action: action || "" });
 
@@ -73,6 +73,14 @@ function check(input) {
     else if (age > 10) add("holdings-check", "warn", "The weekly INDmoney check is overdue", `It last ran on ${dateLong(holdingsCheck.checkedOn)}.`, "Run the scheduled task “life-ledger-holdings-check” from the Scheduled tab.");
     else add("holdings-check", "ok", "Holdings match INDmoney", `Last checked ${dateLong(holdingsCheck.checkedOn)}.`);
   } else add("holdings-check", "warn", "The INDmoney check has no result yet", "It runs every Sunday morning.", "Run the scheduled task “life-ledger-holdings-check”.");
+  // 6b. The nightly balance sync (bank savings, crypto, SGB, silver from INDmoney, run in the cloud at 8 pm)
+  if (balanceSync && balanceSync.checkedOn) {
+    const age = daysBetween(balanceSync.checkedOn, today), held = (balanceSync.held || []).slice(0, 3).map((h) => h.text).join(" ");
+    if (balanceSync.status === "failed") add("balance-sync", "warn", "The nightly balance sync could not run", `${(balanceSync.problems || []).join("; ") || "INDmoney figures did not pass the checks."} Last attempt ${dateLong(balanceSync.checkedOn)}.`, "Open the routine “Life Ledger nightly balance sync” and read its last run.");
+    else if (age > 2) add("balance-sync", "warn", "The nightly balance sync is overdue", `It last ran on ${dateLong(balanceSync.checkedOn)}.`, "Open the routine “Life Ledger nightly balance sync” and read its last run.");
+    else if (balanceSync.status === "held") add("balance-sync", "warn", "The balance sync held some values back", held || "A value fell sharply or INDmoney showed nothing.", "Check the balance in the bank or broker app, then update it in the app.");
+    else add("balance-sync", "ok", "Balances synced from INDmoney", `Last synced ${dateLong(balanceSync.checkedOn)}.`);
+  } else add("balance-sync", "warn", "The nightly balance sync has no result yet", "It runs every evening at 8 pm in the cloud.", "Open the routine “Life Ledger nightly balance sync” and run it once.");
   if (lawWatch.stale) add("law", "warn", "The monthly tax-law check is overdue", lawWatch.checkedOn ? `It last ran on ${dateLong(lawWatch.checkedOn)}.` : "It has not run yet.", "Run the scheduled task for the law watch.");
   else add("law", "ok", "Tax-law check is up to date", lawWatch.checkedOn ? `Last checked ${dateLong(lawWatch.checkedOn)}.` : "The first check is not due yet.");
 

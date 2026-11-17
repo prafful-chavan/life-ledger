@@ -102,3 +102,15 @@ console.log("sync-engine tests passed");
   assert.deepStrictEqual(E2.merge(f({ a: 1 }, 1), f({ a: 2 }, 2)).data.taxProfile, { a: 2 }, "ordinary fields still go by the later edit");
 }
 console.log("external field merge tests passed");
+
+// balanceSync (the nightly balance sync's summary) merges the same way: a real result beats an empty copy, the later day wins
+{
+  const E3 = require("../sync-engine.js");
+  const res = (d) => ({ checkedOn: d, status: "ok", updated: [], same: 6, held: [] });
+  const dev = (value, ts) => ({ data: { balanceSync: value, income: [] }, meta: { ...E3.emptyMeta(), k: ts ? { balanceSync: ts } : {} } });
+  const cloud = dev(res("2026-11-16"), 1000), stale = dev(null, 9999);
+  for (const [a, b] of [[stale, cloud], [cloud, stale]]) assert.strictEqual(E3.merge(a, b).data.balanceSync.checkedOn, "2026-11-16", "an empty copy stamped later does not erase it");
+  const n = dev(res("2026-11-17"), 500), o = dev(res("2026-11-16"), 9000);
+  for (const [a, b] of [[n, o], [o, n]]) assert.strictEqual(E3.merge(a, b).data.balanceSync.checkedOn, "2026-11-17", "the later day wins even with an older stamp");
+  console.log("balanceSync merge tests passed");
+}

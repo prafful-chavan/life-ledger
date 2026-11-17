@@ -32,6 +32,7 @@ const stateOf = () => ({
   activities: [{ date: "2026-10-18", type: "cycling", durationMin: 60, distanceKm: 20 }, { date: "2026-10-12", type: "steps", steps: 9000 }], workouts: [], bodyMetrics: [{ date: "2026-10-19", weight: 80, bodyFat: 22 }],
   habits: [{ name: "SECRET HABIT NAME", streak: 4, bestStreak: 9 }], fitnessGoals: { dailySteps: 10000, weeklyCyclingKm: 50 },
   holdingsCheck: { checkedOn: "2026-10-19", source: "INDmoney", status: "ok", total: 5, matched: 5, ignored: 0, gaps: [] },
+  balanceSync: { checkedOn: "2026-10-20", source: "INDmoney", status: "ok", updated: [{ owner: "Me", field: "banksaving", label: "Bank savings", from: 50000, to: 164913 }], same: 3, held: [], problems: [] },
 });
 const ctxFactory = () => ({ history: async () => ({ series: {}, failedKeys: [] }), taxProfile: {} });
 const call = async (name, args, state) => JSON.parse((await S.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args || {} } }, async () => state || stateOf(), ctxFactory)).result.content[0].text);
@@ -120,13 +121,33 @@ const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/
   assert.ok(ren.length === 1 && /Renew: Car policy/.test(ren[0].title), "a renewal within 14 days");
 
   // ── Notices appear only when something is off ──
-  const fine = { brief: { dataFreshness: { mutualFundsHoursOld: 1, stocksHoursOld: 1, usStocksHoursOld: 1 }, integrity: { alerts: [] } }, lawWatch: { stale: false, changes: [] }, holdingsCheck: { checkedOn: "2026-10-19", status: "ok", gaps: [] } };
+  const fine = { brief: { dataFreshness: { mutualFundsHoursOld: 1, stocksHoursOld: 1, usStocksHoursOld: 1 }, integrity: { alerts: [] } }, lawWatch: { stale: false, changes: [] }, holdingsCheck: { checkedOn: "2026-10-19", status: "ok", gaps: [] }, balanceSync: { checkedOn: "2026-10-20", status: "ok", updated: [], held: [] } };
   assert.deepStrictEqual(R.notices(fine, "2026-10-21"), [], "nothing to say when all is fine");
   assert.ok(R.notices({ ...fine, brief: { ...fine.brief, dataFreshness: { mutualFundsHoursOld: 40 } } }, "2026-10-21")[0].text.includes("40 hours old"), "old prices");
   assert.ok(/saved copy from 20 Oct 2026/.test(R.notices({ ...fine, dataSource: { fromCache: true, cachedAt: "2026-10-20T04:30:00Z" } }, "2026-10-21")[0].text), "the saved-copy fallback is announced");
   assert.ok(/INDmoney: Alpha \(Prafful\)/.test(R.notices({ ...fine, holdingsCheck: { checkedOn: "2026-10-19", status: "gaps", gaps: [{ name: "Alpha", who: "Me", confirmed: true }, { name: "Gone", who: "Wife", confirmed: false }] } }, "2026-10-21")[0].text), "only gaps seen twice are reported");
   assert.deepStrictEqual(R.notices({ ...fine, holdingsCheck: { checkedOn: "2026-10-19", status: "watch", gaps: [{ name: "Alpha", who: "Me", confirmed: false }] } }, "2026-10-21"), [], "a first-time gap (INDmoney may be behind) is not shown");
   assert.ok(/no result yet/.test(R.notices({ ...fine, holdingsCheck: null }, "2026-10-21")[0].text) && /last ran on 5 Oct 2026/.test(R.notices({ ...fine, holdingsCheck: { checkedOn: "2026-10-05", status: "ok", gaps: [] } }, "2026-10-21")[0].text), "no check yet / an old check");
+  // ── Nightly balance sync: notices, the "updated overnight" lines and the footer ──
+  const bsRun = (o) => ({ checkedOn: "2026-10-20", status: "ok", updated: [], held: [], problems: [], ...o });
+  assert.deepStrictEqual(R.notices({ ...fine, balanceSync: bsRun({}) }, "2026-10-21"), [], "a clean run says nothing");
+  assert.deepStrictEqual(R.notices({ ...fine, balanceSync: bsRun({ checkedOn: "2026-10-19" }) }, "2026-10-21"), [], "two days old is still fine");
+  assert.ok(/last ran on 18 Oct 2026/.test(R.notices({ ...fine, balanceSync: bsRun({ checkedOn: "2026-10-18" }) }, "2026-10-21")[0].text), "three days old is overdue");
+  assert.ok(/could not run on 20 Oct 2026/.test(R.notices({ ...fine, balanceSync: bsRun({ status: "failed" }) }, "2026-10-21")[0].text));
+  assert.ok(/held back one value: Bank savings \(Archana\)/.test(R.notices({ ...fine, balanceSync: bsRun({ status: "held", held: [{ owner: "Wife", field: "banksaving", label: "Bank savings", text: "x" }] }) }, "2026-10-21")[0].text));
+  assert.ok(/held back 2 values/.test(R.notices({ ...fine, balanceSync: bsRun({ status: "held", held: [{ owner: "Wife", field: "crypto" }, { owner: "Me", field: "silver" }] }) }, "2026-10-21")[0].text));
+  assert.ok(/no result yet/.test(R.notices({ ...fine, balanceSync: null }, "2026-10-21")[0].text));
+  const ch = [{ owner: "Me", field: "banksaving", label: "Bank savings", from: 50000, to: 164913 }, { owner: "Wife", field: "silver", label: "Silver", from: 15949, to: 15949 }];
+  assert.deepStrictEqual(R.syncChanges({ balanceSync: bsRun({ updated: ch }) }, "2026-10-21").map((c) => c.text), ["Bank savings (Prafful)"], "only real changes are listed");
+  assert.deepStrictEqual(R.syncChanges({ balanceSync: bsRun({ checkedOn: "2026-10-18", updated: ch }) }, "2026-10-21"), [], "an old run's changes are not repeated");
+  assert.deepStrictEqual(R.syncChanges({}, "2026-10-21"), []);
+  { const mail = R.renderBrief({ ...base, balanceSync: bsRun({ updated: ch }) }, { now: "2026-10-21" });
+    assert.ok(/Updated from INDmoney overnight/i.test(mail.html) && /Bank savings \(Prafful\): ₹50,000 → <b>₹1,64,913<\/b>/.test(mail.html), "the email lists what changed");
+    assert.ok(/UPDATED FROM INDMONEY OVERNIGHT\n- Bank savings \(Prafful\): ₹50,000 to ₹1,64,913 \(\+₹1,14,913\)/.test(mail.text), mail.text.slice(0, 600));
+    assert.ok(/synced with INDmoney on 20 Oct/.test(mail.text), "the footer says when it last synced");
+    const quiet = R.renderBrief({ ...base, balanceSync: bsRun({}) }, { now: "2026-10-21" });
+    assert.ok(!/Updated from INDmoney overnight/i.test(quiet.html), "no section when nothing changed");
+    assert.ok(!/synced with INDmoney/.test(R.renderBrief({ ...base, balanceSync: bsRun({ status: "failed" }) }, { now: "2026-10-21" }).text), "a failed run is not claimed in the footer"); }
   assert.ok(/first monthly law check is due/.test(JSON.stringify(pack.lawWatch)) && !R.notices({ ...fine, lawWatch: pack.lawWatch }, "2026-10-21").length, "the law check is not nagged about before its first run is due");
   assert.ok(/Tax law update: Slabs change, new slab for ₹15L/.test(R.notices({ ...fine, lawWatch: { stale: false, changes: [{ headline: "Slabs change", effect: "new slab for ₹15L" }] } }, "2026-10-21")[0].text) && /Tax → Rules/.test(R.notices({ ...fine, lawWatch: { changes: [{ headline: "h", effect: "" }] } }, "2026-10-21")[0].text), "a law change points to the Rules tab");
 

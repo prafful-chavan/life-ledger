@@ -109,7 +109,21 @@ function notices(pack, today) {
   if (hc && hc.status === "gaps") out.push({ tone: "warn", text: `Your holdings differ from INDmoney: ${hc.gaps.filter((g) => g.confirmed).slice(0, 2).map((g) => `${g.name} (${who(g.who)})`).join(", ")}. Please check these in the broker's own app.` });
   else if (!hc || !hc.checkedOn) out.push({ tone: "mute", text: "The weekly check of your holdings against INDmoney has no result yet." });
   else if (daysBetween(hc.checkedOn, today) > 10) out.push({ tone: "mute", text: `The weekly holdings check last ran on ${dateLong(hc.checkedOn)}.` });
+  const bs = pack.balanceSync;
+  if (bs && bs.checkedOn) {
+    const age = daysBetween(bs.checkedOn, today);
+    if (bs.status === "failed") out.push({ tone: "warn", text: `The nightly balance sync could not run on ${dateLong(bs.checkedOn)}, so bank, crypto, SGB and silver values may be behind.` });
+    else if (age > 2) out.push({ tone: "warn", text: `The nightly balance sync last ran on ${dateLong(bs.checkedOn)}, so bank, crypto, SGB and silver values may be behind.` });
+    else if (bs.status === "held") out.push({ tone: "warn", text: `The balance sync held back ${bs.held.length === 1 ? "one value" : bs.held.length + " values"}: ${bs.held.slice(0, 2).map((h) => `${h.label || h.field} (${who(h.owner)})`).join(", ")}. Please check ${bs.held.length === 1 ? "it" : "them"} in the bank or broker app.` });
+  } else out.push({ tone: "mute", text: "The nightly balance sync has no result yet." });
   return out;
+}
+
+/** What the nightly sync changed, for the morning email: [] when it changed nothing or is too old to mention. */
+function syncChanges(pack, today) {
+  const bs = pack.balanceSync;
+  if (!bs || !bs.checkedOn || daysBetween(bs.checkedOn, today) > 2) return [];
+  return (bs.updated || []).filter((u) => num(u.from) !== num(u.to)).map((u) => ({ text: `${u.label || u.field} (${who(u.owner)})`, from: u.from, to: u.to }));
 }
 
 // ── holdings ──
@@ -162,6 +176,11 @@ function render(pack, opts = {}) {
   // 2. notices
   const nts = notices(pack, today);
   if (nts.length) add(nts.map((n) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;margin:0 0 8px"><tr><td style="background-color:${TONE[n.tone][1]};color:${TONE[n.tone][0]};border-radius:10px;padding:9px 12px;font-size:13px;line-height:19px">${esc(n.text)}</td></tr></table>`).join(""), `NOTES\n${nts.map((n) => "- " + n.text).join("\n")}`);
+
+  // 2b. what the nightly balance sync changed
+  const sch = syncChanges(pack, today);
+  if (sch.length) add(h2("Updated from INDmoney overnight") + card(sch.slice(0, 6).map((u) => `<div style="margin:0 0 4px">${esc(u.text)}: ${inr(u.from)} → <b>${inr(u.to)}</b> <span style="color:${C.muted}">(${signedInr(num(u.to) - num(u.from))})</span></div>`).join("") + small("Bank savings, crypto, SGB and silver are copied in every evening. Everything else you enter yourself.")),
+    `UPDATED FROM INDMONEY OVERNIGHT\n${sch.slice(0, 6).map((u) => `- ${u.text}: ${inr(u.from)} to ${inr(u.to)} (${signedInr(num(u.to) - num(u.from))})`).join("\n")}`);
 
   // 3. four tiles
   const exp = b.expenses || {}, sal = exp.salaryThatPaysIt || {}, left = num(exp.leftFromSalary), rate = exp.savingsRatePct;
@@ -254,8 +273,8 @@ function render(pack, opts = {}) {
   if (need.length) add(h2("What I need from you") + card(need.slice(0, 3).map((n) => `<div style="margin:0 0 6px">• ${esc(n)}</div>`).join("")), `WHAT I NEED FROM YOU\n${need.slice(0, 3).map((n) => "- " + n).join("\n")}`);
 
   // footer: how the numbers are checked
-  const sc = pack.selfCheck, hc = pack.holdingsCheck;
-  const trust = [sc && sc.taxCases ? `Tax rules checked against ${sc.taxCases.total} official reference cases (${sc.taxCases.passed} agree)` : "", hc && hc.checkedOn ? `Holdings matched with INDmoney: ${hc.matched} of ${hc.total} on ${dateShort(hc.checkedOn)}` : ""].filter(Boolean);
+  const sc = pack.selfCheck, hc = pack.holdingsCheck, bsy = pack.balanceSync;
+  const trust = [sc && sc.taxCases ? `Tax rules checked against ${sc.taxCases.total} official reference cases (${sc.taxCases.passed} agree)` : "", hc && hc.checkedOn ? `Holdings matched with INDmoney: ${hc.matched} of ${hc.total} on ${dateShort(hc.checkedOn)}` : "", bsy && bsy.checkedOn && bsy.status !== "failed" ? `Bank, crypto, SGB and silver synced with INDmoney on ${dateShort(bsy.checkedOn)}` : ""].filter(Boolean);
   add(`<div style="font-size:11px;line-height:17px;color:${C.muted};margin:18px 2px 0">${trust.length ? `<div style="margin-bottom:6px">✓ ${esc(trust.join(" · "))}</div>` : ""}Planning estimates only. A CA should confirm before anything is filed or sold. This is not licensed investment or tax advice.</div>`, `${trust.length ? trust.join(". ") + ".\n" : ""}Planning estimates only. A CA should confirm before anything is filed or sold. Not licensed investment or tax advice.`);
 
   return { subject, html: sealed(wrap(H.join(""), today)), text: `LIFE LEDGER — ${dayName(today)} ${dateLong(today)}\n\n${T.join("\n\n")}`, kind: "brief" };
@@ -265,4 +284,4 @@ function wrap(inner, today, label) {
   return `<!doctype html><html><body style="margin:0;padding:0;background-color:${C.page}"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${C.page}"><tr><td align="center" style="padding:14px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;font-family:${FONT};color:${C.ink}"><tr><td style="background-color:${C.head};color:#fff;border-radius:12px 12px 0 0;padding:12px 18px"><span style="font-size:15px;font-weight:800;letter-spacing:.02em">Life Ledger</span><span style="float:right;font-size:12px;color:#c4cbd6;line-height:22px">${esc(label || `${dayName(today)} ${dateShort(today)}`)}</span></td></tr><tr><td style="padding:12px 0 0">${inner}</td></tr></table></td></tr></table></body></html>`;
 }
 
-module.exports = { renderBrief: render, intact, kit: { card, chip, h2, small, wrap, sealed, esc, dayName, dateLong, daysBetween }, goalNeed, todayActions, notices, status, inr, compact };
+module.exports = { renderBrief: render, intact, kit: { card, chip, h2, small, wrap, sealed, esc, dayName, dateLong, daysBetween }, goalNeed, todayActions, notices, syncChanges, status, inr, compact };

@@ -14,7 +14,7 @@ const good = (over = {}) => ({
     netWorthHistory: [1, 2, 3, 4, 5, 6, 7].map((n) => ({ date: day(n, over.today || WED) })),
   },
   fresh: { mutualFundsHoursOld: 5, stocksHoursOld: 5, usStocksHoursOld: 5, goldHoursOld: 5 },
-  integrity: { alerts: [] }, lawWatch: { stale: false, checkedOn: "2026-10-01" }, holdingsCheck: { checkedOn: WED, status: "ok", gaps: [] },
+  integrity: { alerts: [] }, lawWatch: { stale: false, checkedOn: "2026-10-01" }, holdingsCheck: { checkedOn: WED, status: "ok", gaps: [] }, balanceSync: { checkedOn: over.today || WED, status: "ok", updated: [], held: [] },
   taxCases: { total: 29, passed: 29 }, source: { fromCache: false, updatedAt: "2026-10-21T08:00:00Z" },
   ...over,
 });
@@ -70,6 +70,16 @@ r = HW.check(hc({ status: "gaps", gaps: [{ name: "Fund A", who: "Wife", confirme
 assert.strictEqual(ids(r), "holdings-check"); assert.ok(/Fund A \(Archana\)/.test(r.problems[0].detail) && !/Seen once/.test(r.problems[0].detail));
 assert.strictEqual(HW.check(hc({ checkedOn: day(10) })).problems.length, 0); assert.strictEqual(ids(HW.check(hc({ checkedOn: day(11) }))), "holdings-check");
 assert.strictEqual(ids(HW.check(good({ holdingsCheck: null }))), "holdings-check");
+
+// nightly balance sync: failed, overdue (2 days ok, 3 not), held, never run
+const bsy = (o) => good({ balanceSync: { checkedOn: WED, status: "ok", updated: [], held: [], problems: [], ...o } });
+assert.strictEqual(HW.check(bsy({})).problems.length, 0);
+r = HW.check(bsy({ status: "failed", problems: ["The INDmoney copy is from an earlier day"] }));
+assert.strictEqual(ids(r), "balance-sync"); assert.ok(/could not run/.test(r.problems[0].title) && /earlier day/.test(r.problems[0].detail));
+assert.strictEqual(HW.check(bsy({ checkedOn: day(2) })).problems.length, 0); assert.ok(/overdue/.test(HW.check(bsy({ checkedOn: day(3) })).problems[0].title));
+r = HW.check(bsy({ status: "held", held: [{ owner: "Wife", field: "banksaving", text: "Archana banksaving: a fall of more than 40%" }] }));
+assert.ok(/held some values back/.test(r.problems[0].title) && /Archana banksaving/.test(r.problems[0].detail));
+r = HW.check(good({ balanceSync: null })); assert.strictEqual(ids(r), "balance-sync"); assert.ok(/no result yet/.test(r.problems[0].title));
 
 // law watch and tax engine
 assert.strictEqual(ids(HW.check(good({ lawWatch: { stale: true, checkedOn: "2026-08-01" } }))), "law");
