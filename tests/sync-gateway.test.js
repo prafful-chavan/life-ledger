@@ -35,7 +35,7 @@ function makeGatewayRuntime() {
     createFile: (name, content) => mkFile(name, content),
   };
   const locks = { n: 0 };
-  const mail = { sent: [], quota: 99, fail: null };
+  const mail = { sent: [], quota: 99, fail: null, props: {} };
   const ctx = {
     console, JSON, Date, Math, String, Number, Array, Object,
     MimeType: { PLAIN_TEXT: "text/plain" },
@@ -51,6 +51,7 @@ function makeGatewayRuntime() {
       formatDate: (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, ""),
     },
     Logger: { log() {} },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in mail.props ? mail.props[k] : null) }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => "owner@example.com" }) },
     MailApp: { sendEmail: (...a) => { if (mail.fail) throw new Error(mail.fail); mail.sent.push(a); }, getRemainingDailyQuota: () => mail.quota },
     ContentService: { MimeType: { JSON: "json" }, createTextOutput: (t) => ({ t, setMimeType() { return this; } }) },
@@ -249,9 +250,19 @@ function makeDevice(gw, name) {
     // Mail permission not granted yet: the reason comes back, no crash
     gw2.mail.fail = "You do not have permission to call MailApp.sendEmail";
     assert.ok(/permission/.test(ask({ token: T1 }).error));
+    // The recipient is the owner's chosen address (script property MAIL_TO); a bad value is refused, a blank one falls back to the owner
+    gw2.mail.fail = null; gw2.mail.props.MAIL_TO = "  me@example.org ";
+    const nA = gw2.mail.sent.length; assert.strictEqual(ask({ token: T1, to: "attacker@example.com" }).ok, true);
+    assert.strictEqual(gw2.mail.sent[nA][0], "me@example.org", "the chosen address is used, trimmed, and the request's address is still ignored");
+    for (const bad of ["a@b", "a@b.com,c@d.com", "a@b.com;c@d.com", "<a@b.com>", "a b@c.com", "x@y.com\nBcc: z@y.com"]) {
+      gw2.mail.props.MAIL_TO = bad; const r = ask({ token: T1 }); assert.ok(!r.ok && /MAIL_TO/.test(r.error), JSON.stringify(bad));
+    }
+    assert.strictEqual(gw2.mail.sent.length, nA + 1, "a bad MAIL_TO sends nothing");
+    gw2.mail.props.MAIL_TO = "   "; const nB = gw2.mail.sent.length; ask({ token: T1 }); assert.strictEqual(gw2.mail.sent[nB][0], "owner@example.com", "blank falls back to the owner");
+    delete gw2.mail.props.MAIL_TO; ask({ token: T1 }); assert.strictEqual(gw2.mail.sent[nB + 1][0], "owner@example.com");
     // The one-time permission helper exists
     gw2.mail.fail = null; assert.strictEqual(gw2.run("authorizeMail()"), 99);
-    assert.ok(/mail-op/.test(gw2.meta().build), "the deployed version can be told apart from outside");
+    assert.ok(/mail-to/.test(gw2.meta().build), "the deployed version can be told apart from outside");
     console.log("gateway mail op tests passed");
   }
 

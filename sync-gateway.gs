@@ -13,7 +13,7 @@
 var SYNC_FOLDER_NAME = "Life Ledger Sync";
 var SYNC_STATE_FILE = "state.json";
 var SYNC_BACKUP_PREFIX = "backup-";
-var SYNC_BUILD = "2026-11-17-mail-op";
+var SYNC_BUILD = "2026-11-17-mail-to";
 var SYNC_MAX_BACKUPS = 40;
 var SYNC_BACKUP_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -105,7 +105,7 @@ function syncHandle_(req) {
 
     if (op === "fitnessPull") return fitnessPull_(folder, req.since);
 
-    // The morning brief, sent by the cloud run: goes ONLY to the script owner's own address (never to an address in the request)
+    // The morning brief, sent by the cloud run: goes ONLY to the owner's chosen address (script property MAIL_TO, else the owner's own); never to an address in the request
     if (op === "mail") {
       if (!state.tokenHash) return { ok: false, error: "unauthorized" };
       return syncMail_(req);
@@ -177,14 +177,17 @@ function doPost(e) {
   return createJsonResponse(syncHandle_(body));
 }
 
-// Sends one email to the script owner's own address. The recipient is never read from the request.
+// Sends one email from the script owner's account. The recipient is never read from the request: it is the script property
+// MAIL_TO (set by the owner in Project Settings → Script properties), or the owner's own address when that is not set.
 function syncMail_(req) {
   var subject = String(req.subject || "").replace(/[\r\n]+/g, " ").slice(0, 200);
   var text = String(req.text || "");
   var html = req.html ? String(req.html) : "";
   if (!subject || !text) return { ok: false, error: "missing subject or text" };
   if (text.length > 150000 || html.length > 400000) return { ok: false, error: "too large" };
-  var to = Session.getEffectiveUser().getEmail();
+  var to = String(PropertiesService.getScriptProperties().getProperty("MAIL_TO") || "").replace(/^\s+|\s+$/g, "");
+  if (to && !/^[^\s@<>,;:"]+@[^\s@<>,;:"]+\.[^\s@<>,;:"]+$/.test(to)) return { ok: false, error: "MAIL_TO is not a single valid address" };
+  if (!to) to = Session.getEffectiveUser().getEmail();
   if (!to) return { ok: false, error: "no owner address" };
   var opts = { name: "Life Ledger" };
   if (html) opts.htmlBody = html;
