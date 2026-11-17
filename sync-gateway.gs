@@ -13,7 +13,7 @@
 var SYNC_FOLDER_NAME = "Life Ledger Sync";
 var SYNC_STATE_FILE = "state.json";
 var SYNC_BACKUP_PREFIX = "backup-";
-var SYNC_BUILD = "2026-10-26-token-checks";
+var SYNC_BUILD = "2026-11-17-mail-op";
 var SYNC_MAX_BACKUPS = 40;
 var SYNC_BACKUP_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -105,6 +105,12 @@ function syncHandle_(req) {
 
     if (op === "fitnessPull") return fitnessPull_(folder, req.since);
 
+    // The morning brief, sent by the cloud run: goes ONLY to the script owner's own address (never to an address in the request)
+    if (op === "mail") {
+      if (!state.tokenHash) return { ok: false, error: "unauthorized" };
+      return syncMail_(req);
+    }
+
     if (op === "pull") {
       if (!state.vault) return { ok: true, rev: 0, empty: true };
       if (req.sinceRev && Number(req.sinceRev) === state.rev) return { ok: true, rev: state.rev, unchanged: true };
@@ -169,6 +175,28 @@ function doPost(e) {
     return createJsonResponse({ ok: false, error: "bad json" });
   }
   return createJsonResponse(syncHandle_(body));
+}
+
+// Sends one email to the script owner's own address. The recipient is never read from the request.
+function syncMail_(req) {
+  var subject = String(req.subject || "").replace(/[\r\n]+/g, " ").slice(0, 200);
+  var text = String(req.text || "");
+  var html = req.html ? String(req.html) : "";
+  if (!subject || !text) return { ok: false, error: "missing subject or text" };
+  if (text.length > 150000 || html.length > 400000) return { ok: false, error: "too large" };
+  var to = Session.getEffectiveUser().getEmail();
+  if (!to) return { ok: false, error: "no owner address" };
+  var opts = { name: "Life Ledger" };
+  if (html) opts.htmlBody = html;
+  MailApp.sendEmail(to, subject, text, opts);
+  return { ok: true, sent: true, remaining: MailApp.getRemainingDailyQuota() };
+}
+
+// Run this once from the editor to allow the gateway to send the morning email (it asks for permission to send mail as you).
+function authorizeMail() {
+  var left = MailApp.getRemainingDailyQuota();
+  Logger.log("Mail allowed. Emails left today: " + left);
+  return left;
 }
 
 // Run this once from the editor to grant Drive access and create the sync folder.

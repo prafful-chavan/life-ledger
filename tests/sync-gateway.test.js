@@ -35,6 +35,7 @@ function makeGatewayRuntime() {
     createFile: (name, content) => mkFile(name, content),
   };
   const locks = { n: 0 };
+  const mail = { sent: [], quota: 99, fail: null };
   const ctx = {
     console, JSON, Date, Math, String, Number, Array, Object,
     MimeType: { PLAIN_TEXT: "text/plain" },
@@ -49,13 +50,16 @@ function makeGatewayRuntime() {
       computeDigest: (_a, s) => [...require("crypto").createHash("sha256").update(s).digest()].map((b) => (b > 127 ? b - 256 : b)),
       formatDate: (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, ""),
     },
+    Logger: { log() {} },
+    Session: { getEffectiveUser: () => ({ getEmail: () => "owner@example.com" }) },
+    MailApp: { sendEmail: (...a) => { if (mail.fail) throw new Error(mail.fail); mail.sent.push(a); }, getRemainingDailyQuota: () => mail.quota },
     ContentService: { MimeType: { JSON: "json" }, createTextOutput: (t) => ({ t, setMimeType() { return this; } }) },
   };
   vm.createContext(ctx);
   vm.runInContext("function createJsonResponse(d){return ContentService.createTextOutput(JSON.stringify(d)).setMimeType(ContentService.MimeType.JSON);}", ctx);
   vm.runInContext(read("sync-gateway.gs"), ctx);
   return {
-    files, locks,
+    files, locks, mail,
     call: (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).t),
     meta: () => JSON.parse(vm.runInContext("JSON.stringify(syncMeta_())", ctx)),
     run: (code) => vm.runInContext(code, ctx),
@@ -214,4 +218,41 @@ function makeDevice(gw, name) {
   }
 
   console.log("sync-gateway tests passed");
+
+  // ── The morning email: the "mail" op ──
+  {
+    const gw2 = makeGatewayRuntime();
+    const T1 = "a".repeat(64), T2 = "b".repeat(64), html = "<html><body>₹1,38,73,848</body></html>";
+    const ask = (o) => gw2.call({ op: "mail", subject: "Life Ledger — Tue 17 Nov", text: "plain ₹1", html, ...o });
+    // An empty gateway has no token to check: refused, nothing sent (nobody can claim it by mailing)
+    assert.strictEqual(ask({ token: T1 }).error, "unauthorized"); assert.strictEqual(gw2.mail.sent.length, 0);
+    gw2.call({ op: "push", token: T1, baseRev: 0, vault: { ciphertext: "x", salt: "s", iv: "i", entryCount: 1 } });
+    // Right token: sent once, to the owner only, with the HTML as the HTML body and a sender name
+    const ok = ask({ token: T1, to: "attacker@example.com", cc: "x@y.com", bcc: "z@y.com", recipient: "q@y.com" });
+    assert.deepStrictEqual([ok.ok, ok.sent, ok.remaining], [true, true, 99]);
+    assert.strictEqual(gw2.mail.sent.length, 1); const [to, subject, text, opts] = gw2.mail.sent[0];
+    assert.strictEqual(to, "owner@example.com", "a recipient in the request is ignored"); assert.strictEqual(subject, "Life Ledger — Tue 17 Nov"); assert.strictEqual(text, "plain ₹1");
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(opts)), { name: "Life Ledger", htmlBody: html }); assert.ok(!("cc" in opts) && !("bcc" in opts));
+    // Wrong token, malformed token, missing token: refused
+    for (const t of [T2, "short", "", undefined, "G".repeat(64)]) { const r = ask({ token: t }); assert.strictEqual(r.ok, false, String(t)); }
+    assert.strictEqual(gw2.mail.sent.length, 1, "nothing more was sent");
+    // Text only (no HTML); newlines in the subject cannot become headers; long subjects are cut
+    ask({ token: T1, html: "", subject: "Hi\r\nBcc: evil@x.com", text: "t" });
+    assert.deepStrictEqual(gw2.mail.sent[1].slice(1, 3), ["Hi Bcc: evil@x.com", "t"]); assert.deepStrictEqual(JSON.parse(JSON.stringify(gw2.mail.sent[1][3])), { name: "Life Ledger" });
+    ask({ token: T1, subject: "s".repeat(500), text: "t" }); assert.strictEqual(gw2.mail.sent[2][1].length, 200);
+    // Missing subject or text, and over-size bodies, are refused before anything is sent
+    const n0 = gw2.mail.sent.length;
+    assert.ok(/missing/.test(ask({ token: T1, subject: "" }).error)); assert.ok(/missing/.test(ask({ token: T1, text: "" }).error));
+    assert.strictEqual(ask({ token: T1, text: "x".repeat(150001) }).error, "too large"); assert.strictEqual(ask({ token: T1, html: "x".repeat(400001) }).error, "too large");
+    assert.strictEqual(ask({ token: T1, text: "x".repeat(150000), html: "x".repeat(400000) }).ok, true, "the limits themselves are allowed");
+    assert.strictEqual(gw2.mail.sent.length, n0 + 1);
+    // Mail permission not granted yet: the reason comes back, no crash
+    gw2.mail.fail = "You do not have permission to call MailApp.sendEmail";
+    assert.ok(/permission/.test(ask({ token: T1 }).error));
+    // The one-time permission helper exists
+    gw2.mail.fail = null; assert.strictEqual(gw2.run("authorizeMail()"), 99);
+    assert.ok(/mail-op/.test(gw2.meta().build), "the deployed version can be told apart from outside");
+    console.log("gateway mail op tests passed");
+  }
+
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -154,4 +154,4 @@ async function updateWith({ gatewayUrl, password, make, guard, fetchImpl = fetch
   throw new Error(`Another device kept saving; gave up after ${attempts} tries`);
 }
 
-module.exports = { authToken, decryptVault, encryptVault, fetchState, updateField, updateWith, countEntries };
+module.exports = { authToken, decryptVault, encryptVault, fetchState, updateField, updateWith, countEntries, postFollow };
