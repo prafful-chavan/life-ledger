@@ -16,7 +16,13 @@ const daysBetween = (a, b) => Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7
 /** Returns { checkedOn, ageDays, stale, changes } — never throws; a missing/invalid file means "never checked". */
 function lawWatch(today, file = FILE, staleAfterDays = 45, firstRunDue = FIRST_RUN_DUE) {
   let raw;
-  try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch {
+  try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch { raw = null; }
+  return fromRecord(raw, today, staleAfterDays, firstRunDue);
+}
+
+/** The same answer from a record already in hand (the result the monthly cloud run saves in the vault, or a file's contents). */
+function fromRecord(raw, today, staleAfterDays = 45, firstRunDue = FIRST_RUN_DUE) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     // Before the first scheduled run is due there is nothing to be late about
     if (today < firstRunDue) return { checkedOn: null, ageDays: null, stale: false, changes: [], note: `The first monthly law check is due on ${firstRunDue}.` };
     return { checkedOn: null, ageDays: null, stale: true, changes: [], note: "The monthly law check has not run yet." };
@@ -27,4 +33,11 @@ function lawWatch(today, file = FILE, staleAfterDays = 45, firstRunDue = FIRST_R
   return { checkedOn, ageDays, stale: ageDays == null || ageDays > staleAfterDays, changes };
 }
 
-module.exports = { lawWatch, FILE };
+/** What the monthly run may save: a checked date and at most 10 trimmed changes (the same cleaning the reader applies). */
+function cleanRecord(raw) {
+  if (!raw || typeof raw !== "object" || !/^\d{4}-\d{2}-\d{2}$/.test(raw.checkedOn || "")) throw new Error("The law-watch result needs a checkedOn date (YYYY-MM-DD)");
+  const changes = (Array.isArray(raw.changes) ? raw.changes : []).slice(0, 8).map((c) => ({ ruleId: clean(c && c.ruleId, 40), headline: clean(c && c.headline, 160), effect: clean(c && c.effect, 240), source: /^https?:\/\//.test(String(c && c.source)) ? clean(c.source, 300) : "" })).filter((c) => c.headline);
+  return { checkedOn: raw.checkedOn, changes };
+}
+
+module.exports = { lawWatch, fromRecord, cleanRecord, FILE };

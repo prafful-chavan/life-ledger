@@ -4,22 +4,26 @@
  *   node mcp/holdings-check-run.js [--dry-run]
  * Reads ~/.life-ledger-mcp/indmoney-holdings.json (written just before by the scheduled task from INDmoney's lists),
  * writes ~/.life-ledger-mcp/holdings-check.json, and (unless --dry-run) saves the summary into the vault field
- * `holdingsCheck`, which the app's Data Health shows. The vault password comes from the macOS keychain.
+ * `holdingsCheck`, which the app's Data Health shows. The vault password comes from the routine's secrets, or the macOS keychain on the Mac.
  */
 const fs = require("fs"), os = require("os"), path = require("path");
-const V = require("./vault-client.js"), kc = require("./keychain.js"), { compare } = require("./holdings-check.js");
+const V = require("./vault-client.js"), Common = require("./cloud-common.js"), { compare } = require("./holdings-check.js");
 
-const DIR = path.join(os.homedir(), ".life-ledger-mcp");
+// On the Mac: ~/.life-ledger-mcp and the keychain. In the cloud routine: LL_DIR, LL_GATEWAY_URL and LL_VAULT_PASSWORD.
+const LOGIN = Common.login(process.env), DIR = LOGIN.dir;
 const REF = path.join(DIR, "indmoney-holdings.json"), OUT = path.join(DIR, "holdings-check.json");
 // Holdings the household chose not to track (tiny default buys in broker apps that are not used)
 const IGNORE = [{ who: "Wife", name: "CPSE ETF", why: "2 units at 5paisa, an unused broker app" }];
 
 (async () => {
-  const cfg = JSON.parse(fs.readFileSync(path.join(DIR, "config.json"), "utf8"));
+  const cfg = { gatewayUrl: LOGIN.gatewayUrl };
+  if (!cfg.gatewayUrl || !LOGIN.password) throw new Error("The vault login is missing (LL_GATEWAY_URL / LL_VAULT_PASSWORD)");
   const ref = JSON.parse(fs.readFileSync(REF, "utf8"));
   let prev = null; try { prev = JSON.parse(fs.readFileSync(OUT, "utf8")); } catch { /* first run */ }
-  const password = kc.read();
+  const password = LOGIN.password;
   const { data } = await V.fetchState({ gatewayUrl: cfg.gatewayUrl, password });
+  // A cloud run starts with no files: last week's result comes from the vault copy of it (so a gap seen twice is still "confirmed")
+  if (!prev && data.holdingsCheck && typeof data.holdingsCheck === "object" && !Array.isArray(data.holdingsCheck)) prev = data.holdingsCheck;
   const fx = Number(data.fx && data.fx.usdInr) || 0;
   const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
   const result = compare(data, ref, { today, usdInr: fx, prev, ignore: IGNORE });

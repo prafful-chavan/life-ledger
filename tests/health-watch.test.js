@@ -14,7 +14,7 @@ const good = (over = {}) => ({
     netWorthHistory: [1, 2, 3, 4, 5, 6, 7].map((n) => ({ date: day(n, over.today || WED) })),
   },
   fresh: { mutualFundsHoursOld: 5, stocksHoursOld: 5, usStocksHoursOld: 5, goldHoursOld: 5 },
-  integrity: { alerts: [] }, lawWatch: { stale: false, checkedOn: "2026-10-01" }, holdingsCheck: { checkedOn: WED, status: "ok", gaps: [] }, balanceSync: { checkedOn: over.today || WED, status: "ok", updated: [], held: [] },
+  integrity: { alerts: [] }, lawWatch: { stale: false, checkedOn: "2026-10-01" }, holdingsCheck: { checkedOn: WED, status: "ok", gaps: [] }, balanceSync: { checkedOn: over.today || WED, status: "ok", updated: [], held: [] }, briefRun: { checkedOn: over.today || WED, status: "sent" },
   taxCases: { total: 29, passed: 29 }, source: { fromCache: false, updatedAt: "2026-10-21T08:00:00Z" },
   ...over,
 });
@@ -80,6 +80,15 @@ assert.strictEqual(HW.check(bsy({ checkedOn: day(2) })).problems.length, 0); ass
 r = HW.check(bsy({ status: "held", held: [{ owner: "Wife", field: "banksaving", text: "Archana banksaving: a fall of more than 40%" }] }));
 assert.ok(/held some values back/.test(r.problems[0].title) && /Archana banksaving/.test(r.problems[0].detail));
 r = HW.check(good({ balanceSync: null })); assert.strictEqual(ids(r), "balance-sync"); assert.ok(/no result yet/.test(r.problems[0].title));
+
+// the morning brief's receipt: sent today ok; an older receipt warns; none warns only from 19 Nov
+const br = (o) => good({ briefRun: { checkedOn: WED, status: "sent", ...o } });
+assert.strictEqual(HW.check(br({})).problems.length, 0);
+r = HW.check(br({ checkedOn: day(1) })); assert.strictEqual(ids(r), "brief"); assert.ok(/did not go out today/.test(r.problems[0].title) && /20 Oct 2026/.test(r.problems[0].detail), r.problems[0].detail);
+assert.strictEqual(HW.check(good({ briefRun: null, today: "2026-11-19" })).problems.some((p) => p.id === "brief"), true, "no receipt from the 19th warns");
+assert.strictEqual(HW.check(good({ briefRun: null, today: "2026-11-18" })).problems.some((p) => p.id === "brief"), false, "the first day is grace");
+assert.strictEqual(HW.check(good({ briefRun: null })).problems.some((p) => p.id === "brief"), false, "before the first cloud run is due");
+assert.strictEqual(HW.FIRST_BRIEF_DUE, "2026-11-19");
 
 // law watch and tax engine
 assert.strictEqual(ids(HW.check(good({ lawWatch: { stale: true, checkedOn: "2026-08-01" } }))), "law");

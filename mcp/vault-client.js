@@ -1,6 +1,6 @@
 /**
  * Life Ledger MCP — fetches and decrypts the household vault. Reads only, except updateField(), which may write the one
- * whitelisted summary field (holdingsCheck) and nothing else.
+ * whitelisted summary fields (holdingsCheck, lawWatch, briefRun) and nothing else.
  * Same scheme as the app: a PBKDF2 token authorises the pull; the vault is AES-GCM (PBKDF2 250k) with optional gzip.
  * The password is supplied by the caller and is never written to disk or logged here.
  */
@@ -102,7 +102,8 @@ async function fetchState({ gatewayUrl, password, fetchImpl = fetch, attempts = 
  * salt, and push guarded by the revision that was read (compare-and-swap). A conflict means another device saved in
  * between: read again and retry. Only `allowed` fields can be written, so this can never touch the household's records.
  */
-const WRITABLE = new Set(["holdingsCheck"]);
+// holdingsCheck: the weekly INDmoney comparison; lawWatch: the monthly tax-law check; briefRun: the morning brief's own receipt
+const WRITABLE = new Set(["holdingsCheck", "lawWatch", "briefRun"]);
 const ENTRY_KEYS = ["income", "expenses", "assets", "liabilities", "mutualFunds", "stocks", "fd", "epf", "bonds", "ppf", "gold", "silver", "crypto", "usstocks", "banksaving", "others", "goals", "tasks", "studies", "workouts", "habits"];
 const countEntries = (data) => ENTRY_KEYS.reduce((t, k) => t + (Array.isArray(data && data[k]) ? data[k].length : 0), 0);
 

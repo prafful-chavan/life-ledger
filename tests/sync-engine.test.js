@@ -112,5 +112,12 @@ console.log("external field merge tests passed");
   for (const [a, b] of [[stale, cloud], [cloud, stale]]) assert.strictEqual(E3.merge(a, b).data.balanceSync.checkedOn, "2026-11-16", "an empty copy stamped later does not erase it");
   const n = dev(res("2026-11-17"), 500), o = dev(res("2026-11-16"), 9000);
   for (const [a, b] of [[n, o], [o, n]]) assert.strictEqual(E3.merge(a, b).data.balanceSync.checkedOn, "2026-11-17", "the later day wins even with an older stamp");
+  // the monthly law check and the brief's receipt follow the same rule
+  for (const f of ["lawWatch", "briefRun"]) {
+    const dv = (value, ts) => ({ data: { [f]: value, income: [] }, meta: { ...E3.emptyMeta(), k: ts ? { [f]: ts } : {} } });
+    const a = dv({ checkedOn: "2026-11-17" }, 10), b = dv({ checkedOn: "2026-11-01" }, 9000), e = dv(null, 99999);
+    for (const [x, y] of [[a, b], [b, a]]) assert.strictEqual(E3.merge(x, y).data[f].checkedOn, "2026-11-17", f + ": the later day wins");
+    for (const [x, y] of [[a, e], [e, a]]) assert.strictEqual(E3.merge(x, y).data[f].checkedOn, "2026-11-17", f + ": an empty copy does not erase it");
+  }
   console.log("balanceSync merge tests passed");
 }

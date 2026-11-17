@@ -17,10 +17,12 @@ const isoOf = (ms) => new Date(ms).toISOString().slice(0, 10);
 const hrs = (n) => (n >= 48 ? `${Math.round(n / 24)} days` : Math.round(n) === 1 ? "1 hour" : `${Math.round(n)} hours`);
 
 /** Prices are expected to be fresh on a working day; over a weekend or on Monday morning they can be ~3 days old. */
+const FIRST_BRIEF_DUE = "2026-11-19";   // the cloud brief's first scheduled run is 18 Nov at 10 am; one day of grace
+
 function priceLimitHours(today) { const d = dayOfWeek(today); return d === 0 || d === 6 || d === 1 ? 84 : 40; }
 
 function check(input) {
-  const { state = {}, today, nowMs = Date.now(), fresh = {}, integrity = { alerts: [] }, lawWatch = {}, holdingsCheck = null, balanceSync = null, taxCases = null, source = {} } = input;
+  const { state = {}, today, nowMs = Date.now(), fresh = {}, integrity = { alerts: [] }, lawWatch = {}, holdingsCheck = null, balanceSync = null, briefRun = null, taxCases = null, source = {} } = input;
   const items = [];
   const add = (id, level, title, detail, action) => items.push({ id, level, title, detail, action: action || "" });
 
@@ -81,6 +83,11 @@ function check(input) {
     else if (balanceSync.status === "held") add("balance-sync", "warn", "The balance sync held some values back", held || "A value fell sharply or INDmoney showed nothing.", "Check the balance in the bank or broker app, then update it in the app.");
     else add("balance-sync", "ok", "Balances synced from INDmoney", `Last synced ${dateLong(balanceSync.checkedOn)}.`);
   } else add("balance-sync", "warn", "The nightly balance sync has no result yet", "It runs every evening at 8 pm in the cloud.", "Open the routine “Life Ledger nightly balance sync” and run it once.");
+  // 6c. The morning brief's own receipt (the cloud run at 10 am records it after the email is accepted); checked in the evening
+  if (briefRun && briefRun.checkedOn) {
+    if (briefRun.checkedOn < today) add("brief", "warn", "The morning brief did not go out today", `The last one was sent on ${dateLong(briefRun.checkedOn)}.`, "Open the routine “Life Ledger daily brief” and read its last run.");
+    else add("brief", "ok", "Morning brief sent today", `Sent ${dateLong(briefRun.checkedOn)}.`);
+  } else if (today >= FIRST_BRIEF_DUE) add("brief", "warn", "No record of the morning brief yet", "The cloud run saves a receipt after each email.", "Open the routine “Life Ledger daily brief” and read its last run.");
   if (lawWatch.stale) add("law", "warn", "The monthly tax-law check is overdue", lawWatch.checkedOn ? `It last ran on ${dateLong(lawWatch.checkedOn)}.` : "It has not run yet.", "Run the scheduled task for the law watch.");
   else add("law", "ok", "Tax-law check is up to date", lawWatch.checkedOn ? `Last checked ${dateLong(lawWatch.checkedOn)}.` : "The first check is not due yet.");
 
@@ -118,4 +125,4 @@ function render(result, opts = {}) {
   return { subject, html, text, send, kind: status === "ok" ? "healthy" : "attention", problems: problems.length, serious: fails };
 }
 
-module.exports = { check, render, priceLimitHours };
+module.exports = { check, render, priceLimitHours, FIRST_BRIEF_DUE };

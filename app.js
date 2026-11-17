@@ -39,6 +39,8 @@ const defaultData = {
   dashboardSettings: {},
   holdingsCheck: null,
   balanceSync: null,
+  lawWatch: null,
+  briefRun: null,
   sales: [],
   salesPending: [],
   jobSwitch: [],
@@ -1212,6 +1214,9 @@ function normalizeDataCore(data) {
     holdingsCheck: data.holdingsCheck && typeof data.holdingsCheck === "object" && !Array.isArray(data.holdingsCheck) ? data.holdingsCheck : null,
     // The nightly balance sync's own summary (bank savings, crypto, SGB, silver copied from INDmoney); written outside the app
     balanceSync: data.balanceSync && typeof data.balanceSync === "object" && !Array.isArray(data.balanceSync) ? data.balanceSync : null,
+    // The monthly tax-law check and the morning brief's receipt (also written by cloud runs, never by the app)
+    lawWatch: data.lawWatch && typeof data.lawWatch === "object" && !Array.isArray(data.lawWatch) ? data.lawWatch : null,
+    briefRun: data.briefRun && typeof data.briefRun === "object" && !Array.isArray(data.briefRun) ? data.briefRun : null,
     // Shares sold (recorded from a Sync Holdings that found them gone) and the ones still waiting for a price
     sales: ensureIds(Array.isArray(data.sales) ? data.sales : [], "sale"),
     salesPending: ensureIds(Array.isArray(data.salesPending) ? data.salesPending : [], "salecand"),

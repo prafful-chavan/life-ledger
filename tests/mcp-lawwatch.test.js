@@ -42,3 +42,22 @@ assert.ok(Cal.calendar({ people: {}, insurance: [] }, "2027-02-01").some((i) => 
 
 fs.rmSync(dir, { recursive: true });
 console.log("law watch tests passed");
+
+// ── The record in hand (saved in the vault by the monthly cloud run) ──
+{
+  const { fromRecord, cleanRecord } = require("../mcp/lawwatch.js");
+  const rec = { checkedOn: "2026-11-01", changes: [{ ruleId: "r1", headline: " Slab  change ", effect: "e", source: "https://x.gov.in/a" }, { ruleId: "r2", headline: "No link", effect: "", source: "javascript:alert(1)" }] };
+  const w = fromRecord(rec, "2026-11-10"); assert.strictEqual(w.ageDays, 9); assert.strictEqual(w.stale, false); assert.strictEqual(w.changes[0].headline, "Slab change"); assert.strictEqual(w.changes[1].source, "");
+  assert.strictEqual(fromRecord(rec, "2026-12-17").stale, true, "46 days is stale"); assert.strictEqual(fromRecord(rec, "2026-12-16").stale, false, "45 days is not");
+  for (const nothing of [null, undefined, [], "x", 5]) { const n = fromRecord(nothing, "2026-12-01"); assert.strictEqual(n.stale, true); assert.strictEqual(n.checkedOn, null); assert.ok(/has not run yet/.test(n.note)); }
+  assert.strictEqual(fromRecord(null, "2026-10-20").stale, false, "before the first run is due");
+  assert.strictEqual(fromRecord({ checkedOn: "bad", changes: [] }, "2026-11-10").stale, true, "a record without a real date is stale");
+  // cleanRecord: what a run may save
+  const c = cleanRecord({ checkedOn: "2026-12-01", changes: [{ ruleId: "a".repeat(100), headline: "H".repeat(300), effect: "E", source: "https://ok.example/x" }, { headline: "" }, { ruleId: "z", headline: "Bad link", source: "ftp://x" }], extra: "dropped" });
+  assert.deepStrictEqual(Object.keys(c).sort(), ["changes", "checkedOn"]); assert.strictEqual(c.changes.length, 2, "empty headlines dropped");
+  assert.strictEqual(c.changes[0].ruleId.length, 40); assert.strictEqual(c.changes[0].headline.length, 160); assert.strictEqual(c.changes[1].source, "");
+  assert.strictEqual(cleanRecord({ checkedOn: "2026-12-01", changes: Array.from({ length: 12 }, (_, i) => ({ headline: "h" + i })) }).changes.length, 8, "at most 8 changes");
+  assert.deepStrictEqual(cleanRecord({ checkedOn: "2026-12-01" }).changes, []);
+  for (const bad of [null, {}, { checkedOn: "yesterday" }, { checkedOn: "2026-13-1" }, []]) assert.throws(() => cleanRecord(bad), /checkedOn/);
+  console.log("law watch record tests passed");
+}

@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.152",
-    "sha256": "4585b37200b39b84bec304718328d25a0f8629dbe033c45e92f8c77cc6acef6d"
+    "version": "1.0.153",
+    "sha256": "47912483e9698223e7acc64b2fe874a6ed6aada2aae84b79867631014b169923"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -224,8 +224,8 @@
     "sha256": "305b46a82d6d6950210efbbc9ecf5ded1b8ee0b4314356d16fb2c06b5f649278"
   },
   "sync-engine.js": {
-    "version": "1.1.2",
-    "sha256": "d768d8a4a4df5700800a58a93a1fa74e4ab8597ae7cf1877766aa2cda56645c6"
+    "version": "1.1.3",
+    "sha256": "07174aa5f805529655ad37f1c70cfd3b7dd811a617d7de93331e189d6451afc0"
   },
   "sync-ui.js": {
     "version": "1.0.3",

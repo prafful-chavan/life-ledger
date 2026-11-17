@@ -61,5 +61,15 @@ const decode = (mail) => [mail.text, mail.html];
   // failureMail escapes markup and keeps it short
   const fm = failureMail(T, "<script>x</script>" + "y".repeat(500)); assert.ok(!/<script>/.test(fm.html) && fm.text.length < 700);
 
+  // The receipt the health watch reads: saved after a sent brief only; a failure to save it never fails the run
+  const receipts = []; const rc = async (v) => { receipts.push(v); };
+  t = mk({ receipt: rc }); assert.strictEqual(await t.go(), EXIT.ok);
+  assert.deepStrictEqual(receipts, [{ checkedOn: T, status: "sent", kind: "brief", subject: goodBrief.subject, htmlChars: goodBrief.html.length }]);
+  receipts.length = 0;
+  t = mk({ receipt: rc, argv: ["--build"] }); await t.go(); assert.strictEqual(receipts.length, 0, "no receipt for a build only");
+  t = mk({ receipt: rc, deliver: async () => { throw new Error("gateway refused"); } }); assert.strictEqual(await t.go(), EXIT.mail); assert.strictEqual(receipts.length, 0, "no receipt when the mail failed");
+  t = mk({ receipt: rc, buildBrief: async () => { throw new Error("boom"); } }); assert.strictEqual(await t.go(), EXIT.build); assert.strictEqual(receipts.length, 0, "no receipt when the brief could not be built");
+  t = mk({ receipt: async () => { throw new Error("vault busy"); } }); assert.strictEqual(await t.go(), EXIT.ok); assert.ok(/receipt could not be saved: vault busy/.test(t.out.err[0]), "a receipt problem is reported but the run still succeeds");
+  t = mk({ receipt: rc, buildBrief: async () => ({ ...goodBrief, kind: "alert" }) }); receipts.length = 0; await t.go(); assert.strictEqual(receipts[0].kind, "alert", "an alert is recorded as an alert");
   console.log("mcp-brief-run tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });

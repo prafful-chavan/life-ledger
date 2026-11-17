@@ -10,11 +10,11 @@
  * If the mail cannot be sent the exit code is 3 (the routine then falls back to its Gmail connector).
  */
 const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
-const Mailer = require("./mailer.js");
+const Common = require("./cloud-common.js");
 const BriefRender = require("./brief-render.js");
 
 const EXIT = { ok: 0, usage: 1, build: 2, mail: 3 };
-const todayISO = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+const todayISO = Common.todayISO;
 
 function failureMail(today, what) {
   const clean = String(what || "unknown").replace(/\s+/g, " ").slice(0, 300);
@@ -28,7 +28,7 @@ function readNotes(file, fs_ = fs) {
   try { const n = JSON.parse(fs_.readFileSync(file, "utf8")); return n && typeof n === "object" && !Array.isArray(n) ? n : undefined; } catch { return undefined; }
 }
 
-async function run({ argv, log = console.log, err = console.error, buildBrief, deliver, today = todayISO(), fs_ = fs }) {
+async function run({ argv, log = console.log, err = console.error, buildBrief, deliver, receipt, today = todayISO(), fs_ = fs }) {
   const send = argv.includes("--send"), build = argv.includes("--build");
   if (send === build) { err("Use exactly one of --build or --send [--notes FILE]"); return EXIT.usage; }
   let brief;
@@ -43,51 +43,22 @@ async function run({ argv, log = console.log, err = console.error, buildBrief, d
     return EXIT.build;
   }
   if (build) { log(brief.text); return EXIT.ok; }
-  try { const r = await deliver(brief); log(`Sent: ${brief.subject} (${Math.round((brief.html || "").length / 1000)}K of HTML) — ${r.accepted}`); return EXIT.ok; }
+  try { const r = await deliver(brief); log(`Sent: ${brief.subject} (${Math.round((brief.html || "").length / 1000)}K of HTML) — ${r.accepted}`); }
   catch (e) { err("Could not send the brief: " + e.message); return EXIT.mail; }
-}
-
-/** The vault login: the routine's secrets, or the Mac's config file and keychain. */
-function login(env) {
-  const dir = env.LL_DIR || path.join(os.homedir(), ".life-ledger-mcp");
-  let gatewayUrl = env.LL_GATEWAY_URL; if (!gatewayUrl) { try { gatewayUrl = JSON.parse(fs.readFileSync(path.join(dir, "config.json"), "utf8")).gatewayUrl; } catch { /* reported when used */ } }
-  let password = env.LL_VAULT_PASSWORD; if (!password) { try { password = require("./keychain.js").read(); } catch { /* reported when used */ } }
-  return { dir, gatewayUrl, password };
-}
-
-/** The real sender: the gateway mails it to the household's own address. */
-function realDeliver(env) {
-  return (mail) => { const { gatewayUrl, password } = login(env); return Mailer.sendMail({ gatewayUrl, password, subject: mail.subject, text: mail.text, html: mail.html }); };
+  // The receipt the evening health watch looks for. An alert (data problem) is also a sent email, but not a brief.
+  if (receipt) { try { await receipt({ checkedOn: today, status: "sent", kind: brief.kind || "brief", subject: String(brief.subject).slice(0, 120), htmlChars: (brief.html || "").length }); } catch (e) { err("The brief was sent, but its receipt could not be saved: " + e.message); } }
+  return EXIT.ok;
 }
 
 /** The real builder: the vault through the gateway, then the same renderer the MCP tool uses. */
 function realBuilder(env) {
-  const dir = env.LL_DIR || path.join(os.homedir(), ".life-ledger-mcp");
-  fs.mkdirSync(dir, { recursive: true });
-  // A law-watch result lives on the Mac only; without it the cloud email says nothing about the law check rather than "has not run"
-  const lawFile = path.join(dir, "law-watch.json");
-  if (!process.env.LIFE_LEDGER_LAW_WATCH) process.env.LIFE_LEDGER_LAW_WATCH = lawFile;
-  if (env.LL_DIR && !fs.existsSync(lawFile)) fs.writeFileSync(lawFile, JSON.stringify({ checkedOn: todayISO(), changes: [] }));
-  const Server = require("./server.js"), { fetchState } = require("./vault-client.js"), Market = require("./market.js");
-  const { gatewayUrl, password } = login(env);
-  return async (notes) => {
-    if (!gatewayUrl || !password) throw new Error("The vault login is missing (LL_GATEWAY_URL / LL_VAULT_PASSWORD)");
-    const loader = async () => {
-      const got = await fetchState({ gatewayUrl, password, attempts: 6, waitMs: 2000, cacheFile: path.join(dir, "last-vault.json") });
-      Object.defineProperty(got.data, "__source", { value: { fromCache: !!got.fromCache, cachedAt: got.cachedAt || null, reason: got.reason || null, updatedAt: got.updatedAt || null, rev: got.rev || null }, enumerable: false });
-      return got.data;
-    };
-    const ctx = () => ({ taxProfile: {}, history: async (keys) => { const r = await Market.fetchHistory(gatewayUrl, keys); return { series: r.series, failedKeys: r.failedKeys }; } });
-    const res = await Server.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "render_brief", arguments: notes ? { notes } : {} } }, loader, ctx);
-    const out = res.result;
-    if (!out || out.isError) throw new Error((out && out.content && out.content[0] && out.content[0].text) || "render_brief failed");
-    return JSON.parse(out.content[0].text);
-  };
+  const call = Common.toolCaller(env);
+  return (notes) => call("render_brief", notes ? { notes } : {});
 }
 
 if (require.main === module) {
   const hard = setTimeout(() => { console.error("Gave up: the brief took more than 8 minutes"); process.exit(EXIT.build); }, 8 * 60 * 1000);
-  run({ argv: process.argv.slice(2), buildBrief: realBuilder(process.env), deliver: realDeliver(process.env) })
+  run({ argv: process.argv.slice(2), buildBrief: realBuilder(process.env), deliver: Common.deliverer(process.env), receipt: Common.fieldWriter(process.env, "briefRun") })
     .then((code) => { clearTimeout(hard); process.exit(code); })
     .catch((e) => { console.error(e.message); process.exit(EXIT.build); });
 }

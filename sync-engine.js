@@ -44,8 +44,9 @@
     if (da !== db) return da > db ? { value: a, ts: ta } : { value: b, ts: tb };
     return ta >= tb ? { value: a, ts: ta } : { value: b, ts: tb };
   };
-  // holdingsCheck: the weekly INDmoney comparison; balanceSync: the nightly copy of bank, crypto, SGB and silver balances
-  const EXTERNAL = { holdingsCheck: latestCheck, balanceSync: latestCheck };
+  // holdingsCheck: the weekly INDmoney comparison; balanceSync: the nightly copy of bank, crypto, SGB and silver balances;
+  // lawWatch: the monthly tax-law check; briefRun: the morning brief's receipt (all written by cloud runs, newest day wins)
+  const EXTERNAL = { holdingsCheck: latestCheck, balanceSync: latestCheck, lawWatch: latestCheck, briefRun: latestCheck };
   /** [stable part, volatile part] of a record. */
   function split(coll, item) {
     const vf = VOLATILE[coll];

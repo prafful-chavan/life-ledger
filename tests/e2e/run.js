@@ -786,12 +786,12 @@ const SCANNER = `(${function scan() {
     // Nightly balance sync summary (written outside the app): the app must keep it through normalising and saving
     console.log("\nBalance sync summary");
     const bsk = JSON.parse(await cdp.eval(`(()=>{ const A=LifeLedgerApp; const keep=JSON.parse(JSON.stringify(A.getState())); const d=A.defaultData(); const had=Object.prototype.hasOwnProperty.call(d,'balanceSync');
-      const bad=JSON.parse(JSON.stringify(keep)); bad.balanceSync=[1,2];
-      A.applyRemoteData(bad); const arr=A.getState().balanceSync;
-      const good=JSON.parse(JSON.stringify(keep)); good.balanceSync={checkedOn:'2026-11-16',status:'ok',updated:[{owner:'Me',field:'silver',from:1,to:2}],same:3,held:[],problems:[]};
-      A.applyRemoteData(good); const kept=A.getState().balanceSync; A.applyRemoteData(keep);
-      return JSON.stringify({had, defaultNull:d.balanceSync===null, arr, kept}); })()`));
-    check("balance sync: the app starts with no summary, drops a malformed one and keeps a real one (so a save never erases it)", bsk.had && bsk.defaultNull && bsk.arr === null && bsk.kept && bsk.kept.checkedOn === "2026-11-16" && bsk.kept.updated.length === 1, JSON.stringify(bsk));
+      const bad=JSON.parse(JSON.stringify(keep)); bad.balanceSync=[1,2]; bad.lawWatch='x'; bad.briefRun=[1];
+      A.applyRemoteData(bad); const arr=A.getState().balanceSync; const arr2=[A.getState().lawWatch,A.getState().briefRun];
+      const good=JSON.parse(JSON.stringify(keep)); good.balanceSync={checkedOn:'2026-11-16',status:'ok',updated:[{owner:'Me',field:'silver',from:1,to:2}],same:3,held:[],problems:[]}; good.lawWatch={checkedOn:'2026-11-01',changes:[]}; good.briefRun={checkedOn:'2026-11-17',status:'sent'};
+      A.applyRemoteData(good); const kept=A.getState().balanceSync; const kept2=[A.getState().lawWatch,A.getState().briefRun]; A.applyRemoteData(keep);
+      return JSON.stringify({had, defaultNull:d.balanceSync===null&&d.lawWatch===null&&d.briefRun===null, arr, arr2, kept, kept2}); })()`));
+    check("cloud-run summaries (balance sync, law check, brief receipt): the app starts with none, drops a malformed one and keeps a real one (so a save never erases it)", bsk.had && bsk.defaultNull && bsk.arr === null && bsk.arr2[0] === null && bsk.arr2[1] === null && bsk.kept && bsk.kept.checkedOn === "2026-11-16" && bsk.kept.updated.length === 1 && bsk.kept2[0].checkedOn === "2026-11-01" && bsk.kept2[1].checkedOn === "2026-11-17", JSON.stringify(bsk));
     // Outgo calendar (Finance → Outgo calendar)
     console.log("\nOutgo calendar");
     await viewport(1280, 900); await sleep(300); await view("finance"); await sleep(300);
