@@ -137,6 +137,7 @@
    */
   const ACTIONS = [
     { symbol: "VBL", kind: "split", date: "2024-09-12", ratio: 2.5, note: "Varun Beverages split its Rs 5 shares into Rs 2 shares (record and ex-date 12 Sep 2024; ISIN INE200M01021 became INE200M01039): 1 share became 2.5", source: "https://msei.in/SX-Content/Circulars/2024/September/Circular-15949.pdf" },
+    { symbol: "MAZDOCK", kind: "split", date: "2024-12-27", ratio: 2, note: "Mazagon Dock split each Rs 10 share into two Rs 5 shares (record and ex-date 27 Dec 2024): 1 share became 2", source: "https://business-standard.com/amp/markets/news/mazagon-dock-shares-trade-ex-date-for-stock-split-today-check-details-124122700355_1.html" },
     { symbol: "WIPRO", kind: "bonus", date: "2024-12-03", ratio: 1, note: "Wipro 1:1 bonus (record date 3 Dec 2024): 1 free share for each share held, at no cost. Credited by 15 Dec 2024, so every lot is long-term either way", source: "https://www.businesstoday.in/markets/company-stock/story/wipro-shares-rise-as-board-announces-record-date-for-bonus-issue-454643-2024-11-22" },
   ];
 
@@ -173,15 +174,16 @@
 
   /**
    * The shares a sale used, from the trades (first in, first out), ready for the sales module's buildSale.
-   * `sel` = { owner, demat, symbol, date, name }: every sell of that share on that day is one sale.
+   * `sel` = { owner, demat, symbol, date, name, time? }: every sell of that share on that day is one sale. With `time` (the sell's execution time, or a
+   * date-time in `date`) only that sell is the sale, so a share bought and sold again the same day can be told apart: the later round trip is left out.
    * Refuses (ok:false) when the files do not show where every sold share came from, rather than inventing a cost.
    * → { ok:true, cand, price, date, sellTrades } | { ok:false, error }
    */
   function saleCandidate(trades, sel, actions) {
-    const s = sel || {}, key = posKey(s.owner, s.demat, s.symbol), date = iso(s.date);
+    const s = sel || {}, key = posKey(s.owner, s.demat, s.symbol), date = iso(s.date), at = s.time || (String(s.date || "").length > 10 ? String(s.date) : "");
     if (!validISO(date)) return { ok: false, error: "Which day was the sale?" };
     const mine = (trades || []).filter((t) => t && posKey(t.owner, t.demat, t.symbol) === key);
-    const sells = mine.filter((t) => t.side === "sell" && t.date === date);
+    const sells = mine.filter((t) => t.side === "sell" && t.date === date && (!at || t.time === at));
     if (!sells.length) return { ok: false, error: "The files show no sale of that share on that day." };
     const first = sells.map((t) => t.time).sort()[0];
     const before = mine.filter((t) => t.time < first);

@@ -273,7 +273,7 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   p = pos([trade("buy", "2024-11-01", 10, 100)], [{ symbol: "AAA", kind: "bonus", date: "2024-12-03", ratio: 2 }]); assert.deepStrictEqual([p.bought, p.qty, p.lots[1].qty], [30, 30, 20], "2 free shares per share held: 10 -> +20, and the buy counter grows with it");
   assert.strictEqual(pos([trade("buy", "2024-11-01", 0.00001, 100)], BONUS).lots.length, 1, "a bonus that rounds to nothing adds no lot");
   // the table that ships: only the two checked actions, each with a source
-  assert.deepStrictEqual(B.ACTIONS.map((a) => [a.symbol, a.kind, a.date, a.ratio]), [["VBL", "split", "2024-09-12", 2.5], ["WIPRO", "bonus", "2024-12-03", 1]]); assert.ok(B.ACTIONS.every((a) => /^https:\/\//.test(a.source) && a.note));
+  assert.deepStrictEqual(B.ACTIONS.map((a) => [a.symbol, a.kind, a.date, a.ratio]), [["VBL", "split", "2024-09-12", 2.5], ["MAZDOCK", "split", "2024-12-27", 2], ["WIPRO", "bonus", "2024-12-03", 1]]); assert.ok(B.ACTIONS.every((a) => /^https:\/\//.test(a.source) && a.note));
   // the default is the shipped table: a VBL holding bought before the split reconciles exactly
   const v = T([trade("buy", "2023-11-23", 8, 1000, { symbol: "VBL" }), trade("buy", "2024-10-03", 36, 500, { symbol: "VBL", n: "v" })]);
   const rec = B.reconcile(v, unknowns([row("VBL", 56, (8000 + 18000) / 56)])).items[0]; assert.deepStrictEqual([rec.status, rec.explainedQty, rec.missingQty], ["exact", 56, 0]);
@@ -299,6 +299,14 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   // a partial sale uses the oldest shares first and the cost of only the part sold
   const part = T([trade("buy", "2024-01-01", 10, 100), trade("buy", "2024-02-01", 10, 200), trade("sell", "2025-01-01", 15, 300)]); const pr = B.saleCandidate(part, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-01-01" }, []);
   assert.deepStrictEqual(pr.cand.lots.map((l) => [l.qty, l.cost]), [[10, 1000], [5, 1000]]); assert.strictEqual(pr.cand.cost, 2000);
+  // a share bought and sold again the same day: name the sell by its time and only that one is the sale
+  const rt = T([trade("buy", "2024-01-01", 20, 100), trade("sell", "2025-04-29", 20, 150, { time: "2025-04-29T11:50:40" }), trade("buy", "2025-04-29", 20, 160, { time: "2025-04-29T12:43:08" }), trade("sell", "2025-04-29", 20, 155, { time: "2025-04-29T12:45:56" })]);
+  const first = B.saleCandidate(rt, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-04-29T11:50:40" }, []); assert.deepStrictEqual([first.ok, first.cand.qty, first.cand.cost, first.price, first.date], [true, 20, 2000, 150, "2025-04-29"]); assert.strictEqual(first.cand.lots[0].buyDate, "2024-01-01");
+  assert.ok(/^salecand-[0-9a-f]{16}$/.test(first.cand.id), first.cand.id);
+  const viaTime = B.saleCandidate(rt, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-04-29", time: "2025-04-29T11:50:40" }, []); assert.strictEqual(viaTime.cand.id, first.cand.id);
+  assert.strictEqual(B.saleCandidate(rt, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-04-29", time: "2025-04-29T09:00:00" }, []).ok, false, "no sell at that time");
+  assert.strictEqual(B.saleCandidate(rt, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-04-29" }, []).ok, false, "the whole day taken together asks for shares the files only show being bought later: refused, never guessed");
+  const second = B.saleCandidate(rt, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-04-29T12:45:56" }, []); assert.deepStrictEqual([second.ok, second.cand.cost, second.cand.lots[0].buyDate], [true, 3200, "2025-04-29"], "the later sell uses the same-day buy");
   // two sells at different prices: the price is the weighted average
   const two = T([trade("buy", "2024-01-01", 10, 100), trade("sell", "2025-01-01", 4, 200, { time: "2025-01-01T10:00:00" }), trade("sell", "2025-01-01", 6, 300, { time: "2025-01-01T11:00:00" })]); assert.strictEqual(B.saleCandidate(two, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-01-01" }, []).price, 260);
 }

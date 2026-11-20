@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Loads Zerodha tradebook / Groww order-history CSV files into the vault (see broker-load.js).
- *   node mcp/broker-load-run.js --owner Me --demat Zerodha FILE... [--sale SYMBOL:YYYY-MM-DD[:charges[:Company name]]] [--write]
+ *   node mcp/broker-load-run.js --owner Me --demat Zerodha FILE... [--sale SYMBOL:YYYY-MM-DD[THH:MM:SS][:charges[:Company name]]] [--write]
  * Without --write it only shows what would happen. The vault password comes from the macOS keychain (or the cloud secrets).
  */
 const fs = require("fs");
@@ -12,7 +12,7 @@ const BTC = require("../broker-trades-core.js"), L = require("./broker-load.js")
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--owner") owner = argv[++i]; else if (a === "--demat") demat = argv[++i]; else if (a === "--write") write = true;
-    else if (a === "--sale") { const [symbol, date, charges, ...name] = String(argv[++i] || "").split(":"); sales.push({ owner, demat, symbol, date, charges: Number(charges || 0), name: name.join(":") || symbol }); }
+    else if (a === "--sale") { const parts = String(argv[++i] || "").split(":"), symbol = parts.shift(); let date = parts.shift(); if (/^\d{4}-\d{2}-\d{2}T\d{2}$/.test(date)) date += ":" + parts.shift() + ":" + parts.shift(); const [charges, ...name] = parts; sales.push({ owner, demat, symbol, date, charges: Number(charges || 0), name: name.join(":") || symbol }); }
     else files.push(a);
   }
   if (!files.length) { console.error("Give at least one tradebook CSV file."); process.exit(1); }
