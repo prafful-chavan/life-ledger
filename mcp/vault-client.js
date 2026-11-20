@@ -117,7 +117,7 @@ async function updateField({ gatewayUrl, password, field, value, fetchImpl = fet
  * Same safe write, but the caller builds the new data from the freshly read data (make(before) -> after, or null for no
  * change) and a guard refuses anything but the checked change. Used by the balance sync (values and dates only).
  */
-async function updateWith({ gatewayUrl, password, make, guard, fetchImpl = fetch, now = Date.now(), attempts = 3 }) {
+async function updateWith({ gatewayUrl, password, make, guard, expectCount, fetchImpl = fetch, now = Date.now(), attempts = 3 }) {
   const Engine = require("../sync-engine.js");
   const token = await authToken(password);
   // Apps Script now and then answers with a page that is not the reply; ask again (a repeated push is refused as a
@@ -147,7 +147,9 @@ async function updateWith({ gatewayUrl, password, make, guard, fetchImpl = fetch
     const nextInner = { ...inner, data: after, sync: meta };
     const sealed = await encryptVault(nextInner, password, { compress: !!j.vault.compressed, salt: Buffer.from(j.vault.salt, "base64") });
     const vault = { ...sealed, updatedAt: new Date(now).toISOString(), entryCount: countEntries(after) };
-    if (countEntries(after) !== countEntries(before)) throw new Error("Refusing to push: the record count changed");
+    // By default the number of records must not change. A caller that legitimately adds records (a dated lot split into several rows) names exactly how many to expect.
+    const wanted = typeof expectCount === "function" ? expectCount(before, after) : countEntries(before);
+    if (countEntries(after) !== wanted) throw new Error("Refusing to push: the record count changed");
     const pr = await call({ op: "push", token, baseRev: j.rev || 0, vault });
     if (pr.ok && !pr.conflict) return { rev: pr.rev, attempts: i + 1 };
     if (!pr.ok) throw new Error(pr.error || "Push failed");

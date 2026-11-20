@@ -243,4 +243,63 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   const r = apply(unknowns([row("AAA", 2, 100, { invested: 200 })]), one, ["Me|Zerodha|AAA"]); assert.deepStrictEqual(r.stocks.map((x) => [x.quantity, x.invested, x.buyDateKnown]), [[1, 100, false], [1, 100, true]], "a remainder of exactly 1 share and ₹100");
   const tiny = apply(unknowns([row("AAA", 2, 50.5, { invested: 101 })]), one, ["Me|Zerodha|AAA"]); assert.strictEqual(tiny.applied.length, 1, "a remainder costing exactly ₹1 is still a remainder"); assert.strictEqual(tiny.stocks[0].invested, 1);
 }
+
+// ── Splits and bonus issues ──
+{
+  const SPLIT = [{ symbol: "AAA", kind: "split", date: "2024-09-12", ratio: 2.5 }], BONUS = [{ symbol: "AAA", kind: "bonus", date: "2024-12-03", ratio: 1 }];
+  const pos = (tr, acts) => B.replay(tr, acts).get("Me|Zerodha|AAA");
+  // a split: shares before the ex-date multiply, the money paid does not; a trade ON the ex-date is already in new shares
+  let p = pos([trade("buy", "2024-09-11", 8, 100), trade("buy", "2024-09-12", 4, 40), trade("buy", "2024-09-13", 4, 40, { n: "x" })], SPLIT);
+  assert.deepStrictEqual([p.qty, p.cost], [28, 800 + 160 + 160], "the day before is multiplied, the ex-date and after are not"); assert.strictEqual(p.lots[0].qty, 20); assert.strictEqual(p.lots[0].price, 40);
+  assert.deepStrictEqual([p.bought, p.sold], [28, 0]);
+  assert.strictEqual(pos([trade("buy", "2024-09-12", 4, 40)], SPLIT).qty, 4, "a trade on the ex-date is not multiplied");
+  assert.strictEqual(pos([trade("buy", "2024-09-11", 4, 100)], SPLIT).qty, 10, "the day before is");
+  assert.strictEqual(pos([trade("buy", "2024-01-01", 4, 100), trade("sell", "2024-09-11", 2, 100, { n: "s" })], SPLIT).qty, 5, "2 left x 2.5");
+  assert.strictEqual(pos([trade("buy", "2024-01-01", 4, 100)], [{ ...SPLIT[0], symbol: "OTHER" }]).qty, 4, "another share's split does not touch it");
+  assert.strictEqual(pos([trade("buy", "2024-01-01", 4, 100)], []).qty, 4, "no actions: unchanged");
+  assert.strictEqual(pos([trade("buy", "2024-01-01", 4, 100)], [{ ...SPLIT[0], ratio: 0 }]).qty, 4, "a zero or missing ratio is ignored"); assert.strictEqual(pos([trade("buy", "2024-01-01", 4, 100)], [{ ...SPLIT[0], date: "2024-13-40" }]).qty, 4, "a bad date is ignored");
+  // a split after the last trade still applies
+  assert.strictEqual(pos([trade("buy", "2024-01-01", 4, 100)], SPLIT).qty, 10);
+  // a bonus: free shares at no cost for the shares held on the ex-date, dated that day; the total paid is unchanged
+  p = pos([trade("buy", "2024-11-18", 43, 500), trade("buy", "2025-01-09", 7, 300, { n: "b" })], BONUS);
+  assert.deepStrictEqual([p.qty, p.cost], [93, 43 * 500 + 7 * 300]); assert.deepStrictEqual(p.lots.map((l) => [l.date, l.qty, l.price]), [["2024-11-18", 43, 500], ["2024-12-03", 43, 0], ["2025-01-09", 7, 300]], "the bonus lot sits in date order, at no cost");
+  assert.strictEqual(pos([trade("buy", "2024-12-03", 10, 100)], BONUS).qty, 10, "bought on the ex-date: no bonus (the share is already ex-bonus)"); assert.strictEqual(pos([trade("buy", "2024-12-02", 10, 100)], BONUS).qty, 20, "the day before earns it");
+  assert.strictEqual(pos([trade("buy", "2024-11-01", 10, 100), trade("sell", "2024-11-20", 10, 120, { n: "s" })], BONUS).qty, 0, "nothing held on the day: no bonus");
+  // the real case: 43 bought, 1:1 bonus, 7 more, all 93 sold => nothing oversold (without the bonus 43 shares looked sold out of thin air)
+  const w = [trade("buy", "2024-11-18", 43, 500), trade("buy", "2025-01-09", 7, 300, { n: "b" }), trade("sell", "2026-11-11", 93, 198, { n: "s" })];
+  assert.strictEqual(pos(w, BONUS).oversold, 0); assert.strictEqual(pos(w, BONUS).qty, 0); assert.strictEqual(pos(w, []).oversold, 43, "without the bonus it looks oversold by exactly the bonus");
+  // the counters follow the action too (so "oversold" and "bought" stay in the same shares as the lots)
+  p = pos([trade("buy", "2024-01-01", 4, 100), trade("sell", "2024-02-01", 2, 100, { n: "s" }), trade("sell", "2024-03-01", 4, 100, { n: "t" })], SPLIT); assert.deepStrictEqual([p.bought, p.sold, p.oversold, p.qty], [10, 15, 5, 0], "pre-split: bought 4, sold 6, oversold 2 -> all x2.5");
+  p = pos([trade("buy", "2024-11-01", 10, 100)], [{ symbol: "AAA", kind: "bonus", date: "2024-12-03", ratio: 2 }]); assert.deepStrictEqual([p.bought, p.qty, p.lots[1].qty], [30, 30, 20], "2 free shares per share held: 10 -> +20, and the buy counter grows with it");
+  assert.strictEqual(pos([trade("buy", "2024-11-01", 0.00001, 100)], BONUS).lots.length, 1, "a bonus that rounds to nothing adds no lot");
+  // the table that ships: only the two checked actions, each with a source
+  assert.deepStrictEqual(B.ACTIONS.map((a) => [a.symbol, a.kind, a.date, a.ratio]), [["VBL", "split", "2024-09-12", 2.5], ["WIPRO", "bonus", "2024-12-03", 1]]); assert.ok(B.ACTIONS.every((a) => /^https:\/\//.test(a.source) && a.note));
+  // the default is the shipped table: a VBL holding bought before the split reconciles exactly
+  const v = T([trade("buy", "2023-11-23", 8, 1000, { symbol: "VBL" }), trade("buy", "2024-10-03", 36, 500, { symbol: "VBL", n: "v" })]);
+  const rec = B.reconcile(v, unknowns([row("VBL", 56, (8000 + 18000) / 56)])).items[0]; assert.deepStrictEqual([rec.status, rec.explainedQty, rec.missingQty], ["exact", 56, 0]);
+  assert.strictEqual(B.reconcile(v, unknowns([row("VBL", 56, (8000 + 18000) / 56)]), []).items[0].status, "short", "and without the split table it is short by the 12 extra shares");
+}
+
+// ── A sale worked out from the trades ──
+{
+  const acts = [{ symbol: "AAA", kind: "bonus", date: "2024-12-03", ratio: 1 }];
+  const tr = T([trade("buy", "2024-11-18", 43, 500), trade("buy", "2025-01-09", 7, 300), trade("sell", "2026-11-11", 2, 198, { time: "2026-11-11T11:08:22" }), trade("sell", "2026-11-11", 91, 198, { time: "2026-11-11T11:08:22" }), trade("buy", "2026-11-11", 5, 10, { time: "2026-11-11T14:00:00" })]);
+  const r = B.saleCandidate(tr, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2026-11-11", name: "Aaa Ltd" }, acts);
+  assert.strictEqual(r.ok, true); assert.deepStrictEqual([r.cand.qty, r.cand.cost, r.price, r.sellTrades], [93, 43 * 500 + 7 * 300, 198, 2]); assert.deepStrictEqual(r.cand.lots.map((l) => [l.buyDate, l.qty, l.cost, l.buyDateKnown]), [["2024-11-18", 43, 21500, true], ["2024-12-03", 43, 0, true], ["2025-01-09", 7, 2100, true]]);
+  assert.strictEqual(r.cand.name, "Aaa Ltd"); assert.strictEqual(r.cand.key, "AAA|Me|Zerodha"); assert.strictEqual(r.cand.whole, true);
+  // the same day's later buy is not part of the sale
+  assert.strictEqual(r.cand.lots.reduce((t, l) => t + l.qty, 0), 93);
+  // one share more sold than the files show bought: refused, naming the gap, nothing invented
+  const short = T([trade("buy", "2024-11-18", 43, 500), trade("sell", "2026-11-11", 44, 198)]);
+  const bad = B.saleCandidate(short, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2026-11-11" }, []); assert.strictEqual(bad.ok, false); assert.ok(/only 43 of the 44/.test(bad.error) && /1 are missing/.test(bad.error), bad.error);
+  assert.strictEqual(B.saleCandidate(short, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2026-11-12" }, []).ok, false, "no sale that day");
+  assert.strictEqual(B.saleCandidate(short, { owner: "Wife", demat: "Zerodha", symbol: "AAA", date: "2026-11-11" }, []).ok, false, "another owner's sale is not this one");
+  assert.strictEqual(B.saleCandidate(short, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "bad" }, []).ok, false); assert.strictEqual(B.saleCandidate(null, null, []).ok, false);
+  const exact = T([trade("buy", "2024-11-18", 44, 500), trade("sell", "2026-11-11", 44, 198)]); assert.strictEqual(B.saleCandidate(exact, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2026-11-11" }, []).ok, true, "exactly the shares bought is fine");
+  // a partial sale uses the oldest shares first and the cost of only the part sold
+  const part = T([trade("buy", "2024-01-01", 10, 100), trade("buy", "2024-02-01", 10, 200), trade("sell", "2025-01-01", 15, 300)]); const pr = B.saleCandidate(part, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-01-01" }, []);
+  assert.deepStrictEqual(pr.cand.lots.map((l) => [l.qty, l.cost]), [[10, 1000], [5, 1000]]); assert.strictEqual(pr.cand.cost, 2000);
+  // two sells at different prices: the price is the weighted average
+  const two = T([trade("buy", "2024-01-01", 10, 100), trade("sell", "2025-01-01", 4, 200, { time: "2025-01-01T10:00:00" }), trade("sell", "2025-01-01", 6, 300, { time: "2025-01-01T11:00:00" })]); assert.strictEqual(B.saleCandidate(two, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-01-01" }, []).price, 260);
+}
 console.log("broker-trades-core: ok");

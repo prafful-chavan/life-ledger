@@ -127,11 +127,35 @@
 
   const posKey = (owner, demat, symbol) => `${owner || "Me"}|${demat || ""}|${symOf(symbol)}`;
 
-  /** Replays the trades, first in first out, one position per owner + broker + share. → Map(key → { owner, demat, symbol, lots[{date, qty, price}], qty, cost, oversold, bought, sold, first, last }) */
-  function replay(trades) {
+  /**
+   * Share splits and bonus issues that change how many shares a trade became. A tradebook shows the shares as bought, but the holding
+   * today has been through the split or bonus, so without these the files "explain" too few shares (a split) or sell more than they
+   * bought (a bonus). Only actions checked against the exchange or the company's own notice are listed; nothing else is assumed.
+   *   split: every share held becomes `ratio` shares; the money paid does not change, so each share's price is divided by `ratio`.
+   *   bonus: `ratio` free shares for each share held, at no cost, counted from `date`.
+   * `date` is the ex-date: trades on or after it are already in the new shares.
+   */
+  const ACTIONS = [
+    { symbol: "VBL", kind: "split", date: "2024-09-12", ratio: 2.5, note: "Varun Beverages split its Rs 5 shares into Rs 2 shares (record and ex-date 12 Sep 2024; ISIN INE200M01021 became INE200M01039): 1 share became 2.5", source: "https://msei.in/SX-Content/Circulars/2024/September/Circular-15949.pdf" },
+    { symbol: "WIPRO", kind: "bonus", date: "2024-12-03", ratio: 1, note: "Wipro 1:1 bonus (record date 3 Dec 2024): 1 free share for each share held, at no cost. Credited by 15 Dec 2024, so every lot is long-term either way", source: "https://www.businesstoday.in/markets/company-stock/story/wipro-shares-rise-as-board-announces-record-date-for-bonus-issue-454643-2024-11-22" },
+  ];
+
+  /** Replays the trades, first in first out, one position per owner + broker + share. Splits and bonus issues are applied on their date. → Map(key → { owner, demat, symbol, lots[{date, qty, price}], qty, cost, oversold, bought, sold, first, last }) */
+  function replay(trades, actions) {
+    const acts = (Array.isArray(actions) ? actions : ACTIONS).filter((a) => a && validISO(a.date) && num(a.ratio) > 0).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const sorted = (trades || []).slice().sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.side === b.side ? 0 : a.side === "buy" ? -1 : 1));
     const map = new Map();
+    let next = 0;
+    const applyAction = (a) => {
+      const f = num(a.ratio), sym = symOf(a.symbol);
+      for (const p of map.values()) {
+        if (p.symbol !== sym) continue;
+        if (a.kind === "split") { p.lots.forEach((l) => { l.qty = r4(l.qty * f); l.price = l.price / f; }); p.bought = r4(p.bought * f); p.sold = r4(p.sold * f); p.oversold = r4(p.oversold * f); }
+        else if (a.kind === "bonus") { const held = r4(p.lots.reduce((t, l) => t + l.qty, 0)), extra = r4(held * f); if (extra > EPS) { p.lots.push({ date: a.date, qty: extra, price: 0, bonus: true }); p.bought = r4(p.bought + extra); } }
+      }
+    };
     for (const t of sorted) {
+      while (next < acts.length && acts[next].date <= t.date) applyAction(acts[next++]);
       const k = posKey(t.owner, t.demat, t.symbol);
       const p = map.get(k) || map.set(k, { key: k, owner: t.owner || "Me", demat: t.demat || "", symbol: symOf(t.symbol), lots: [], oversold: 0, bought: 0, sold: 0, first: t.date, last: t.date }).get(k);
       if (t.date < p.first) p.first = t.date; if (t.date > p.last) p.last = t.date;
@@ -142,8 +166,34 @@
         if (need > EPS) p.oversold = r4(p.oversold + need);   // sold shares the files never show being bought: the buys are in an earlier file
       }
     }
+    while (next < acts.length) applyAction(acts[next++]);
     for (const p of map.values()) { p.qty = r4(p.lots.reduce((t, l) => t + l.qty, 0)); p.cost = r2(p.lots.reduce((t, l) => t + l.qty * l.price, 0)); }
     return map;
+  }
+
+  /**
+   * The shares a sale used, from the trades (first in, first out), ready for the sales module's buildSale.
+   * `sel` = { owner, demat, symbol, date, name }: every sell of that share on that day is one sale.
+   * Refuses (ok:false) when the files do not show where every sold share came from, rather than inventing a cost.
+   * → { ok:true, cand, price, date, sellTrades } | { ok:false, error }
+   */
+  function saleCandidate(trades, sel, actions) {
+    const s = sel || {}, key = posKey(s.owner, s.demat, s.symbol), date = iso(s.date);
+    if (!validISO(date)) return { ok: false, error: "Which day was the sale?" };
+    const mine = (trades || []).filter((t) => t && posKey(t.owner, t.demat, t.symbol) === key);
+    const sells = mine.filter((t) => t.side === "sell" && t.date === date);
+    if (!sells.length) return { ok: false, error: "The files show no sale of that share on that day." };
+    const first = sells.map((t) => t.time).sort()[0];
+    const before = mine.filter((t) => t.time < first);
+    const p = replay(before, actions).get(key);
+    const lots = p ? p.lots.map((l) => ({ ...l })) : [];
+    const qty = r4(sells.reduce((t, x) => t + num(x.qty), 0)), gross = sells.reduce((t, x) => t + num(x.qty) * num(x.price), 0);
+    let need = qty; const used = [];
+    for (const l of lots) { if (need <= EPS) break; const take = Math.min(need, l.qty); used.push({ buyDate: l.date, buyDateKnown: true, qty: r4(take), cost: r2(take * l.price) }); need = r4(need - take); }
+    if (need > EPS) return { ok: false, error: `The files show only ${r4(qty - need)} of the ${qty} shares sold being bought: ${need} are missing, so the cost cannot be worked out.` };
+    const cost = r2(used.reduce((t, l) => t + l.cost, 0));
+    const cand = { id: "salecand-" + hash16(`${key}|${date}|${qty}`), key: `${symOf(s.symbol)}|${s.owner || "Me"}|${s.demat || ""}`, symbol: symOf(s.symbol), name: s.name || symOf(s.symbol), owner: s.owner || "Me", demat: s.demat || "", qty, cost, lots: used, lastPrice: 0, whole: true, detectedOn: date };
+    return { ok: true, cand, price: r4(gross / qty), date, sellTrades: sells.length };
   }
 
   /** A date shared by most rows (5 or more rows, more than half) is the day a sheet was imported, not a buy date. */
@@ -179,8 +229,8 @@
    * item = { key, owner, demat, symbol, status, heldQty, explainedQty, missingQty, heldAvg, tradeAvg, lots[{date, qty, price}], oversold, first, last, alreadyDated, note }
    * soldSince = positions the trades still show as held but the holdings no longer have (sold after the files end, or a split).
    */
-  function reconcile(trades, stocks) {
-    const rep = replay(trades), held = heldPositions(stocks), items = [], soldSince = [];
+  function reconcile(trades, stocks, actions) {
+    const rep = replay(trades, actions), held = heldPositions(stocks), items = [], soldSince = [];
     for (const h of held.values()) {
       const p = rep.get(h.key);
       const base = { key: h.key, owner: h.owner, demat: h.demat, symbol: h.symbol, heldQty: h.qty, heldCost: h.cost, heldAvg: r2(h.avg), alreadyDated: !h.allUnknown };
@@ -258,5 +308,5 @@
     return { stocks: out, applied, skipped };
   }
 
-  return { EPS, COST_TOLERANCE_PCT, parseCSV, detectFormat, parseZerodha, parseGroww, parseFile, mergeTrades, replay, heldPositions, stampedDate, reconcile, rowsFor, apply, posKey, validISO };
+  return { EPS, ACTIONS, saleCandidate, COST_TOLERANCE_PCT, parseCSV, detectFormat, parseZerodha, parseGroww, parseFile, mergeTrades, replay, heldPositions, stampedDate, reconcile, rowsFor, apply, posKey, validISO };
 });
