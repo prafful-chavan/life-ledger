@@ -16,7 +16,7 @@
  * Nothing is applied here: this builds the plan and the new rows; the page shows them and asks first. The total invested in a position is
  * never changed: the dated lots are scaled to the cost already on the books.
  *
- * Supported files: Zerodha Console tradebook (CSV) and Groww order history (CSV). Anything else is named as unsupported, not guessed at.
+ * Supported files: Zerodha Console tradebook (CSV), Groww order history (CSV) and Upstox trade history (CSV, or the .xlsx it is sent as, read by mcp/xlsx-read.js). Anything else is named as unsupported, not guessed at.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -56,13 +56,14 @@
 
   const symOf = (v) => String(v || "").toUpperCase().replace(/\s*-EQ$/i, "").trim();
 
-  /** Which kind of file this is, from its header row: "zerodha-tradebook" | "groww-history" | null. */
+  /** Which kind of file this is, from its header row: "zerodha-tradebook" | "groww-history" | "upstox-tradebook" | null. */
   function detectFormat(text) {
     const rows = parseCSV(text);
     const head = (rows[0] || []).map((h) => h.trim().toLowerCase());
     const has = (...n) => n.every((x) => head.includes(x));
     if (has("symbol", "isin", "trade_date", "trade_type", "quantity", "price", "trade_id")) return "zerodha-tradebook";
     if (has("symbol", "type", "quantity", "value", "execution date and time")) return "groww-history";
+    if (has("date", "company", "scrip code", "trade num", "trade time", "side", "quantity", "price")) return "upstox-tradebook";
     return null;
   }
 
@@ -108,11 +109,46 @@
     return out;
   }
 
+
+  /**
+   * Upstox names a share by company (not by symbol) and a code, so each pair is listed here against the symbol the holdings use.
+   * A pair that is not listed stops the file (named in the error) instead of being guessed. Checked against the holdings' own average cost.
+   */
+  const UPSTOX_SYMBOLS = {
+    "BANK BEES|590106": "BANKBEES", "NIFTY BEES|590103": "NIFTYBEES", "KOTAKGOLDETF|590097": "GOLD1", "NIP IND ETF MIDCAP 150|MID150BEES": "MID150BEES",
+    "N100|533385": "MON100", "RELCAPAMC NETFIT|206811": "ITBEES", "HDFC MUTUAL FUND|543775": "HDFCSML250", "HDFC MUTUAL FUND|543776": "HDFCMID150",
+  };
+  const excelDay = (v) => { const x = Number(v); if (!Number.isFinite(x) || x < 20000 || x > 80000) return null; return new Date(Math.round((Math.floor(x) - 25569) * 86400000)).toISOString().slice(0, 10); };
+
+  /** Upstox trade history (equity only; the date is an ISO date or an Excel day number). */
+  function parseUpstox(text, ctx) {
+    const rows = parseCSV(text), head = (rows[0] || []).map((h) => h.trim().toLowerCase());
+    const out = { trades: [], skipped: 0, errors: [] };
+    const idx = Object.fromEntries(["date", "company", "exchange", "segment", "scrip code", "instrument type", "trade num", "trade time", "side", "quantity", "price"].map((n) => [n, col(head, n)]));
+    for (const n of ["date", "company", "scrip code", "trade num", "trade time", "side", "quantity", "price"]) if (idx[n] < 0) { out.errors.push(`The file has no "${n}" column.`); return out; }
+    const seen = new Map();
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i], get = (n) => (idx[n] >= 0 ? String(r[idx[n]] || "").trim() : "");
+      if (!get("company") && !get("side")) continue;
+      const seg = get("segment").toUpperCase(), inst = get("instrument type").toLowerCase();
+      if ((seg && seg !== "EQ") || (inst && inst !== "equity")) { out.skipped++; continue; }
+      const side = get("side").toLowerCase(), qty = num(get("quantity")), price = num(get("price"));
+      const raw = get("date"), date = validISO(raw.slice(0, 10)) ? raw.slice(0, 10) : excelDay(raw);
+      const tm = /^(\d{1,2}):(\d{2}):(\d{2})$/.exec(get("trade time"));
+      if (!date || !validISO(date) || !tm || (side !== "buy" && side !== "sell") || !(qty > 0) || !(price > 0)) { out.errors.push(`Line ${i + 1}: not a usable trade.`); continue; }
+      const sym = UPSTOX_SYMBOLS[`${get("company").toUpperCase()}|${get("scrip code")}`];
+      if (!sym) { out.errors.push(`Line ${i + 1}: "${get("company")}" (code ${get("scrip code")}) is not a share this app knows how to name.`); continue; }
+      const time = `${date}T${tm[1].padStart(2, "0")}:${tm[2]}:${tm[3]}`, base = `u:${get("exchange") || "NSE"}:${get("trade num")}`, n = (seen.get(base) || 0) + 1; seen.set(base, n);
+      out.trades.push({ id: n === 1 ? base : base + "|" + n, broker: "Upstox", demat: (ctx && ctx.demat) || "Upstox", owner: (ctx && ctx.owner) || "Me", symbol: sym, isin: "", date, time, side, qty: r4(qty), price: r4(price), source: (ctx && ctx.source) || "" });
+    }
+    return out;
+  }
+
   /** Reads one file of either kind. ctx = { owner, demat, source }. → { format, trades, skipped, errors } */
   function parseFile(text, ctx) {
     const format = detectFormat(text);
-    if (!format) return { format: null, trades: [], skipped: 0, errors: ["This file is not a Zerodha tradebook or a Groww order history."] };
-    return { format, ...(format === "zerodha-tradebook" ? parseZerodha(text, ctx) : parseGroww(text, ctx)) };
+    if (!format) return { format: null, trades: [], skipped: 0, errors: ["This file is not a Zerodha tradebook, a Groww order history or an Upstox trade history."] };
+    return { format, ...(format === "zerodha-tradebook" ? parseZerodha(text, ctx) : format === "groww-history" ? parseGroww(text, ctx) : parseUpstox(text, ctx)) };
   }
 
   /** Trades already kept + new ones; the same trade (same id) is kept once. → { trades (oldest first), added, duplicates } */
@@ -209,6 +245,18 @@
   }
   const isUnknownDate = (r, stamp) => r.buyDateKnown === false || (stamp !== null && iso(r.purchaseDate || r.date) === stamp) || !validISO(iso(r.purchaseDate || r.date));
 
+  /**
+   * Rows still carrying the import day (`stamp`) get marked buyDateKnown:false. Once some holdings have real dates the import day is no longer
+   * "most rows", so without the mark the tax engine would take it for a real buy date (bought today). Rows already marked, rows with no shares
+   * and rows on any other day are left as they are. → { stocks, flagged, ids }
+   */
+  function markStamped(stocks, stamp) {
+    const ids = [];
+    if (!stamp) return { stocks: stocks || [], flagged: 0, ids };
+    const out = (stocks || []).map((r) => { if (r.buyDateKnown === undefined && num(r.quantity) > 0 && iso(r.purchaseDate || r.date) === stamp) { ids.push(r.id); return { ...r, buyDateKnown: false }; } return r; });
+    return { stocks: out, flagged: ids.length, ids };
+  }
+
   /** The holdings as positions: one per owner + broker + share, with the rows that make it up. */
   function heldPositions(stocks) {
     const stamp = stampedDate(stocks), map = new Map();
@@ -288,7 +336,7 @@
   /**
    * Applies the plan to the stock rows. `choose` = the keys the household agreed to (default: every exact one; "short" ones only when named).
    * Never touches a position that already has real dates, nor one whose cost cannot carry the change.
-   * → { stocks, applied[{key, symbol, owner, lots, unknownQty}], skipped[{key, why}] }
+   * → { stocks, applied[{key, symbol, owner, lots, unknownQty}], skipped[{key, why}], flagged (rows still on the import day, now marked unknown) }
    */
   function apply(stocks, recon, choose, today) {
     const held = heldPositions(stocks), want = choose ? new Set(choose) : null;
@@ -301,14 +349,17 @@
       r.replaceIds.forEach((id) => replace.set(id, r));
       applied.push({ key: it.key, symbol: it.symbol, owner: it.owner, lots: r.rows.filter((x) => x.buyDateKnown !== false).length, unknownQty: r.rows.filter((x) => x.buyDateKnown === false).reduce((t, x) => t + x.quantity, 0) });
     }
+    const marked = markStamped(stocks, stampedDate(stocks));
+    const flagSet = new Set(marked.ids.filter((id) => !replace.has(id)));   // rows replaced by dated lots need no mark
+    const flagged = flagSet.size;
     const out = [], placed = new Set();
     for (const r of stocks || []) {
       const rep = replace.get(r.id);
-      if (!rep) { out.push(r); continue; }
+      if (!rep) { out.push(flagSet.has(r.id) ? { ...r, buyDateKnown: false } : r); continue; }
       if (!placed.has(rep)) { placed.add(rep); out.push(...rep.rows); }
     }
-    return { stocks: out, applied, skipped };
+    return { stocks: out, applied, skipped, flagged };
   }
 
-  return { EPS, ACTIONS, saleCandidate, COST_TOLERANCE_PCT, parseCSV, detectFormat, parseZerodha, parseGroww, parseFile, mergeTrades, replay, heldPositions, stampedDate, reconcile, rowsFor, apply, posKey, validISO };
+  return { EPS, ACTIONS, saleCandidate, COST_TOLERANCE_PCT, parseCSV, detectFormat, parseZerodha, parseGroww, parseUpstox, UPSTOX_SYMBOLS, markStamped, stampedDate, parseFile, mergeTrades, replay, heldPositions, reconcile, rowsFor, apply, posKey, validISO };
 });

@@ -11,7 +11,7 @@ const trades = [tr("1", "buy", "2025-01-10", 6, 100, "AAA"), tr("2", "buy", "202
 let r = L.build(data(), trades, { today: T });
 assert.strictEqual(r.ok, true); assert.deepStrictEqual([r.report.trades, r.report.added, r.report.duplicates], [4, 4, 0]);
 assert.deepStrictEqual(r.after.stocks.filter((x) => x.symbol === "AAA").map((x) => [x.purchaseDate, x.quantity, x.invested]), [["2025-01-10", 6, 600], ["2025-03-10", 4, 480]], "dated lots whose cost adds to the 1080 on the books");
-assert.deepStrictEqual(r.after.stocks.filter((x) => x.symbol !== "AAA").map((x) => x.id), ["b1", "c1", "d1", "e1", "f1"], "the others are untouched"); assert.strictEqual(JSON.stringify(r.after.stocks.find((x) => x.id === "b1")), JSON.stringify(data().stocks[1]));
+assert.deepStrictEqual(r.after.stocks.filter((x) => x.symbol !== "AAA").map((x) => x.id), ["b1", "c1", "d1", "e1", "f1"], "the others are untouched"); assert.strictEqual(JSON.stringify(r.after.stocks.find((x) => x.id === "b1")), JSON.stringify({ ...data().stocks[1], buyDateKnown: false }), "untouched except that, still on the import day, it is now marked as having no known buy date");
 assert.strictEqual(r.after.sales.length, 0, "no sale unless asked"); assert.strictEqual(L.guard(data(), r.after), true);
 assert.strictEqual(L.expectCount(V)(data(), r.after), V.countEntries(r.after));
 // loading the same files again changes nothing (trades already kept, holding already dated)
@@ -40,6 +40,22 @@ const frac = data(); frac.stocks.push(row("z2", "OLD", 0.5, 10)); assert.match(L
 const twice = L.build(data(), trades, { today: T, sales: [sel, sel] }); assert.strictEqual(twice.after.sales.length, 1); assert.strictEqual(twice.report.sales[1].skipped, "already recorded");
 // a sale of 2 different days / shares in one load: both recorded
 const two = L.build(data(), [...trades, tr("7", "buy", "2025-02-01", 2, 10, "NEW2"), tr("8", "sell", "2026-11-12", 2, 12, "NEW2")], { today: T, sales: [sel, { ...sel, symbol: "NEW2", name: "N", date: "2026-11-12" }] }); assert.deepStrictEqual(two.after.sales.map((x) => x.symbol), ["OLD", "NEW2"]);
+
+// Holdings still on the import day: marked unknown first, then the trades can date them; the guard allows exactly that mark and nothing else
+{
+  const day = "2026-11-18", base = data(); base.stocks = base.stocks.map((x) => ({ ...x, purchaseDate: day, date: day })); base.stocks.push(row("done", "DONE", 2, 20, { purchaseDate: "2025-05-05", date: "2025-05-05" }), row("flagged", "FLAG", 2, 20, { buyDateKnown: false }));
+  const out = L.build(base, trades, { today: T, stamp: day }); assert.strictEqual(out.ok, true);
+  assert.strictEqual(out.report.markedUnknown, 6, "AAA, BBB, CCC, DDD, EEE, FFF share the day; FLAG was marked already, DONE has its own date"); 
+  assert.deepStrictEqual(out.after.stocks.filter((x) => x.symbol === "AAA").map((x) => [x.purchaseDate, x.quantity]), [["2025-01-10", 6], ["2025-03-10", 4]], "a holding that was only on the import day is dated by the trades");
+  assert.deepStrictEqual(out.after.stocks.filter((x) => ["BBB", "CCC", "DDD", "EEE", "FFF"].includes(x.symbol)).map((x) => x.buyDateKnown), [false, false, false, false, false]);
+  assert.strictEqual(out.after.stocks.find((x) => x.symbol === "DONE").buyDateKnown, undefined); assert.strictEqual(L.guard(base, out.after), true, "the guard allows the mark");
+  assert.strictEqual(L.build(base, trades, { today: T }).report.markedUnknown, 0, "without a stamp nothing is marked");
+  // the guard refuses any other change to an untouched row, even alongside a mark
+  assert.strictEqual(L.guard(base, { ...out.after, stocks: out.after.stocks.map((x) => (x.id === "c1" ? { ...x, quantity: 9 } : x)) }), false);
+  assert.strictEqual(L.guard(base, { ...out.after, stocks: out.after.stocks.map((x) => (x.id === "c1" ? { ...x, buyDateKnown: true } : x)) }), false, "marking a date as known is not allowed");
+  assert.strictEqual(L.guard(base, { ...out.after, stocks: out.after.stocks.map((x) => (x.id === "done" ? { ...x, buyDateKnown: false } : x)) }), true, "a plain row may only gain the unknown mark");
+  assert.strictEqual(L.guard(base, { ...out.after, stocks: out.after.stocks.map((x) => (x.id === "flagged" ? { ...x, buyDateKnown: undefined } : x)) }), false, "a mark may not be taken away");
+}
 
 // The guard
 const ok = L.build(data(), trades, { today: T }).after;

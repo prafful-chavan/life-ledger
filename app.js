@@ -5739,7 +5739,7 @@ function reapplyBrokerDates() {
   const recon = BTC.reconcile(trades, state.stocks || []);
   const keys = recon.items.filter((i) => i.status === "exact").map((i) => i.key).concat((state.brokerChoices || []).map((c) => c.id));
   const r = BTC.apply(state.stocks || [], recon, keys, todayISO());
-  if (r.applied.length) state.stocks = r.stocks;
+  if (r.applied.length || r.flagged) state.stocks = r.stocks;
   return r;
 }
 

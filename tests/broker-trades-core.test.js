@@ -310,4 +310,55 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   // two sells at different prices: the price is the weighted average
   const two = T([trade("buy", "2024-01-01", 10, 100), trade("sell", "2025-01-01", 4, 200, { time: "2025-01-01T10:00:00" }), trade("sell", "2025-01-01", 6, 300, { time: "2025-01-01T11:00:00" })]); assert.strictEqual(B.saleCandidate(two, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-01-01" }, []).price, 260);
 }
+
+// ── Rows still on the import day are marked unknown once others get real dates ──
+{
+  const stamp = "2026-11-20", mk = (sym, q, inv, extra = {}) => ({ id: "r-" + sym, symbol: sym, company: sym, quantity: q, avgPrice: inv / q, invested: inv, purchaseDate: stamp, date: stamp, owner: "Me", demat: "Zerodha", ...extra });
+  const rows = [mk("AAA", 10, 1080), mk("B1", 1, 10), mk("B2", 1, 10), mk("B3", 1, 10), mk("B4", 1, 10), mk("ZERO", 0, 0)];
+  const trades = T([trade("buy", "2025-01-10", 6, 100), trade("buy", "2025-03-10", 4, 120)]);
+  const r = B.apply(rows, B.reconcile(trades, rows), null, "2026-11-20");
+  assert.strictEqual(r.applied.length, 1); assert.strictEqual(r.flagged, 4, "the four other rows on the import day are marked");
+  assert.deepStrictEqual(r.stocks.filter((x) => /^B/.test(x.symbol)).map((x) => x.buyDateKnown), [false, false, false, false]);
+  assert.strictEqual(r.stocks.find((x) => x.symbol === "ZERO").buyDateKnown, undefined, "a row with no shares is left alone");
+  assert.strictEqual(r.stocks.filter((x) => x.symbol === "AAA").every((x) => x.buyDateKnown === true || x.buyDateKnown === undefined), true);
+  // already marked (either way) stays as it is, and a second run marks nothing more
+  const done = B.apply(r.stocks, B.reconcile(trades, r.stocks), null, "2026-11-20"); assert.strictEqual(done.flagged, 0);
+  const pre = rows.map((x) => (x.symbol === "B1" ? { ...x, buyDateKnown: true } : x)); assert.strictEqual(B.apply(pre, B.reconcile(trades, pre), null, "x").stocks.find((x) => x.symbol === "B1").buyDateKnown, true, "a date someone confirmed is kept");
+  // a row on another day is a real date, never marked
+  const mixed = rows.map((x) => (x.symbol === "B2" ? { ...x, purchaseDate: "2025-06-01", date: "2025-06-01" } : x)); const mr = B.apply(mixed, B.reconcile(trades, mixed), null, "x"); assert.strictEqual(mr.flagged, 3); assert.strictEqual(mr.stocks.find((x) => x.symbol === "B2").buyDateKnown, undefined);
+  // markStamped on its own
+  { const day = "2026-11-20", st = [mk("S1", 1, 10), mk("S2", 2, 20, { buyDateKnown: false }), mk("S3", 3, 30, { buyDateKnown: true }), mk("S4", 0, 0), mk("S5", 4, 40, { purchaseDate: "2025-01-01", date: "2025-01-01" }), mk("S6", 5, 50, { purchaseDate: day, date: "" })];
+    const m = B.markStamped(st, day); assert.deepStrictEqual([m.flagged, m.ids], [2, ["r-S1", "r-S6"]]); assert.deepStrictEqual(m.stocks.map((x) => x.buyDateKnown), [false, false, true, undefined, undefined, false]);
+    assert.strictEqual(st[0].buyDateKnown, undefined, "the input is not changed"); assert.strictEqual(m.stocks[2], st[2], "untouched rows are the same objects");
+    for (const none of [null, "", undefined]) { const n = B.markStamped(st, none); assert.deepStrictEqual([n.flagged, n.ids.length, n.stocks], [0, 0, st]); }
+    assert.deepStrictEqual(B.markStamped(null, day), { stocks: [], flagged: 0, ids: [] }); assert.strictEqual(B.markStamped(st, "2026-11-21").flagged, 0, "another day marks nothing"); }
+  // too few rows to call a stamp: nothing is marked
+  const few = rows.slice(0, 3); assert.strictEqual(B.apply(few, B.reconcile(trades, few), null, "x").flagged, 0);
+  // the result keeps every share and every rupee
+  assert.strictEqual(r.stocks.reduce((t, x) => t + x.quantity, 0), 14); assert.strictEqual(Math.round(r.stocks.reduce((t, x) => t + x.invested, 0) * 100) / 100, 1120);
+}
+
+// ── Upstox trade history ──
+{
+  const UH = "Date,Company,Amount,Exchange,Segment,Scrip Code,Instrument Type,Strike Price,Expiry,Trade Num,Trade Time,Side,Quantity,Price";
+  const u = (date, co, code, side, qty, price, extra = {}) => [date, co, qty * price, extra.exchange || "NSE", extra.segment || "EQ", code, extra.inst || "Equity", "0.0", "", extra.num || "100", extra.time || "10:41:48", side, qty, price].join(",");
+  assert.strictEqual(B.detectFormat(UH + "\n"), "upstox-tradebook");
+  let r = B.parseUpstox([UH, u("46000.0", "NIFTY BEES", "590103", "Buy", "16.0", "292.21", { num: "1" }), u("2025-01-06", "BANK BEES", "590106", "Sell", "1", "612.42", { num: "2", time: "9:05:07" }), u("46000", "N100", "533385", "Buy", "8", "235.68", { num: "3" })].join("\n"), { owner: "Me", source: "t.xlsx" });
+  assert.deepStrictEqual(r.errors, []); assert.deepStrictEqual(r.trades.map((t) => [t.symbol, t.date, t.time, t.side, t.qty, t.price, t.demat, t.broker]), [["NIFTYBEES", "2025-12-09", "2025-12-09T10:41:48", "buy", 16, 292.21, "Upstox", "Upstox"], ["BANKBEES", "2025-01-06", "2025-01-06T09:05:07", "sell", 1, 612.42, "Upstox", "Upstox"], ["MON100", "2025-12-09", "2025-12-09T10:41:48", "buy", 8, 235.68, "Upstox", "Upstox"]]);
+  assert.deepStrictEqual(r.trades.map((t) => t.id), ["u:NSE:1", "u:NSE:2", "u:NSE:3"]);
+  // the file itself says which share: both HDFC codes, the others by their codes
+  const names = [["KOTAKGOLDETF", "590097", "GOLD1"], ["NIP IND ETF MIDCAP 150", "MID150BEES", "MID150BEES"], ["RELCAPAMC NETFIT", "206811", "ITBEES"], ["HDFC Mutual Fund", "543775", "HDFCSML250"], ["HDFC Mutual Fund", "543776", "HDFCMID150"]];
+  names.forEach(([co, code, sym], i) => assert.strictEqual(B.parseUpstox([UH, u("2025-01-06", co, code, "Buy", "1", "10", { num: String(i) })].join("\n")).trades[0].symbol, sym));
+  // refused, named: an unknown company; the same company with another code; a bad side; no quantity; a bad date; a bad time
+  const bad = B.parseUpstox([UH, u("2025-01-06", "MYSTERY CO", "1", "Buy", "1", "10"), u("2025-01-06", "NIFTY BEES", "999", "Buy", "1", "10"), u("2025-01-06", "NIFTY BEES", "590103", "Hold", "1", "10"), u("2025-01-06", "NIFTY BEES", "590103", "Buy", "0", "10"), u("2025-13-40", "NIFTY BEES", "590103", "Buy", "1", "10"), u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { time: "bad" })].join("\n"));
+  assert.strictEqual(bad.trades.length, 0); assert.strictEqual(bad.errors.length, 6); assert.ok(/MYSTERY CO/.test(bad.errors[0]) && /code 1/.test(bad.errors[0]) && /code 999/.test(bad.errors[1]));
+  // other segments and instruments are skipped and counted; footers and blank lines are ignored; a missing column stops the file
+  r = B.parseUpstox([UH, u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { segment: "FO" }), u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { inst: "Futures" }), "", '"From 19-Jul-2025, our Broking operations were transitioned"', u("2025-01-06", "NIFTY BEES", "590103", "Buy", "2", "10", { num: "9" })].join("\n"));
+  assert.deepStrictEqual([r.trades.length, r.skipped, r.errors.length], [1, 2, 0]);
+  assert.ok(/no "price" column/.test(B.parseUpstox("Date,Company,Scrip Code,Trade Num,Trade Time,Side,Quantity\n1,2,3,4,5,6,7").errors[0]));
+  // the same trade number twice in one file is two fills; in two overlapping files it is one
+  const dup = [UH, u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { num: "7" }), u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { num: "7" })].join("\n"); const d1 = B.parseUpstox(dup).trades; assert.deepStrictEqual(d1.map((t) => t.id), ["u:NSE:7", "u:NSE:7|2"]); assert.strictEqual(B.mergeTrades(d1, B.parseUpstox(dup).trades).trades.length, 2);
+  assert.strictEqual(B.parseFile(UH + "\n" + u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10")).format, "upstox-tradebook");
+  assert.ok(/Upstox/.test(B.parseFile("a,b\n1,2").errors[0]));
+}
 console.log("broker-trades-core: ok");

@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.153",
-    "sha256": "47912483e9698223e7acc64b2fe874a6ed6aada2aae84b79867631014b169923"
+    "version": "1.0.154",
+    "sha256": "8b777e1a8f48ae2c50c003ed835efc52798d54b8d1210afa6d73e902dd554ff2"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -36,8 +36,8 @@
     "sha256": "623b817172e4400e78848ecd67ff32455d5b3bbd1eca33d2ab75645fde8469fc"
   },
   "broker-trades-core.js": {
-    "version": "1.0.2",
-    "sha256": "2045a4f0e9be3c4dfc6f12f406d538fa55136ddc779bf9b738d383888a66d8e1"
+    "version": "1.0.3",
+    "sha256": "86a6675cdd6bd25aa9f2a713dc8d373d97bae41d1f42b7b3500d8d7d81977db8"
   },
   "broker-trades-views.js": {
     "version": "1.0.0",

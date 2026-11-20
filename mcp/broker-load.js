@@ -17,8 +17,10 @@ const posOf = (r) => `${r.owner || "Me"}|${r.demat || ""}|${symOf(r)}`;
 function build(before, trades, opts) {
   const o = opts || {}, today = o.today || "";
   const merged = BTC.mergeTrades(before.brokerTrades || [], trades || []);
-  const recon = BTC.reconcile(merged.trades, before.stocks || []);
-  const applied = BTC.apply(before.stocks || [], recon, null, today);   // every exact one, nothing else
+  // rows still on the import day (o.stamp) are marked "date unknown" first, so the trades can date them and the tax engine does not read the import day as a buy date
+  const pre = o.stamp ? BTC.markStamped(before.stocks || [], o.stamp) : { stocks: before.stocks || [], flagged: 0 };
+  const recon = BTC.reconcile(merged.trades, pre.stocks);
+  const applied = BTC.apply(pre.stocks, recon, null, today);   // every exact one, nothing else
   const stillHeld = new Set(applied.stocks.filter((r) => Number(r.quantity) > 0).map(posOf));
   const newSales = [], salesReport = [];
   for (const sel of o.sales || []) {
@@ -32,7 +34,7 @@ function build(before, trades, opts) {
   }
   const after = { ...before, brokerTrades: merged.trades, stocks: applied.stocks, sales: [...(before.sales || []), ...newSales] };
   const status = {}; recon.items.forEach((i) => { status[i.status] = (status[i.status] || 0) + 1; });
-  return { ok: true, after, report: { trades: merged.trades.length, added: merged.added, duplicates: merged.duplicates, status, applied: applied.applied, skipped: applied.skipped, sales: salesReport, oversold: [...BTC.replay(merged.trades).values()].filter((p) => p.oversold > 0).map((p) => ({ symbol: p.symbol, oversold: p.oversold })) } };
+  return { ok: true, after, report: { markedUnknown: pre.flagged, trades: merged.trades.length, added: merged.added, duplicates: merged.duplicates, status, applied: applied.applied, skipped: applied.skipped, sales: salesReport, oversold: [...BTC.replay(merged.trades).values()].filter((p) => p.oversold > 0).map((p) => ({ symbol: p.symbol, oversold: p.oversold })) } };
 }
 
 /** The change may touch only brokerTrades, stocks and sales; shares and money per holding stay; trades and sales only grow. */
@@ -52,7 +54,9 @@ function guard(before, after) {
   // a holding the trades did not replace is left exactly as it was
   const replaced = new Set([...brows.keys()].filter((id) => !arows.has(id)));
   const touched = new Set([...replaced].map((id) => posOf(brows.get(id))));
-  for (const [id, r] of brows) if (!touched.has(posOf(r)) && JSON.stringify(arows.get(id)) !== JSON.stringify(r)) return false;
+  // (the one allowed difference: a row that had no mark may now be marked "date unknown")
+  const strip = (r) => { const { buyDateKnown, ...rest } = r || {}; return JSON.stringify(rest); };
+  for (const [id, r] of brows) { const a = arows.get(id); if (!touched.has(posOf(r)) && JSON.stringify(a) !== JSON.stringify(r) && !(r.buyDateKnown === undefined && a && a.buyDateKnown === false && strip(a) === strip(r))) return false; }
   return true;
 }
 
