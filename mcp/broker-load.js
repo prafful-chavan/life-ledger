@@ -21,12 +21,15 @@ function build(before, trades, opts) {
   const pre = o.stamp ? BTC.markStamped(before.stocks || [], o.stamp) : { stocks: before.stocks || [], flagged: 0 };
   const recon = BTC.reconcile(merged.trades, pre.stocks);
   const applied = BTC.apply(pre.stocks, recon, null, today);   // every exact one, nothing else
-  const stillHeld = new Set(applied.stocks.filter((r) => Number(r.quantity) > 0).map(posOf));
+  // what the trades leave of each position, against what the holdings say: a sale is only recorded when the holdings no longer include the shares it sold
+  const left = BTC.replay(merged.trades), heldNow = new Map();
+  for (const r of applied.stocks) if (Number(r.quantity) > 0) heldNow.set(posOf(r), (heldNow.get(posOf(r)) || 0) + Number(r.quantity));
   const newSales = [], salesReport = [];
   for (const sel of o.sales || []) {
     const sc = BTC.saleCandidate(merged.trades, sel);
     if (!sc.ok) return { ok: false, error: `${sel.symbol} sale on ${sel.date}: ${sc.error}` };
-    if (stillHeld.has(`${sel.owner || "Me"}|${sel.demat || ""}|${symOf(sel)}`)) return { ok: false, error: `${sel.symbol}: some shares are still in your holdings, so this would count them twice` };
+    const k = `${sel.owner || "Me"}|${sel.demat || ""}|${symOf(sel)}`, kept = left.get(k) ? left.get(k).qty : 0;
+    if ((heldNow.get(k) || 0) > kept + 1e-6) return { ok: false, error: `${sel.symbol}: your holdings still include shares this sale used (you hold ${heldNow.get(k)}, the trades leave ${kept}), so it would count them twice` };
     const b = SLS.buildSale(sc.cand, { price: sc.price, date: sc.date, charges: sel.charges || 0 }, { today });
     if (!b.ok) return { ok: false, error: `${sel.symbol} sale: ${b.error}` };
     if ((before.sales || []).some((x) => x.id === b.sale.id) || newSales.some((x) => x.id === b.sale.id)) { salesReport.push({ symbol: sel.symbol, date: sel.date, skipped: "already recorded" }); continue; }

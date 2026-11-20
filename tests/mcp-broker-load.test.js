@@ -25,7 +25,12 @@ assert.deepStrictEqual(L.build(r.after, trades, { today: T, sales: [sel] }).repo
 r = L.build(data(), trades, { today: T, sales: [{ ...sel, charges: 15.93 }] }); assert.deepStrictEqual([r.after.sales[0].charges, r.after.sales[0].proceeds, r.after.sales[0].gain], [15.93, 984.07, 484.07]);
 // refused: still held (would count twice), shares the files cannot account for, no such sale, a bad day
 assert.match(L.build(data(), trades, { today: T, sales: [{ ...sel, symbol: "AAA", date: "2026-11-11" }] }).error, /AAA/);
-const held = data(); held.stocks.push(row("o1", "OLD", 5, 100)); assert.match(L.build(held, trades, { today: T, sales: [sel] }).error, /still in your holdings/);
+const held = data(); held.stocks.push(row("o1", "OLD", 5, 100)); assert.match(L.build(held, trades, { today: T, sales: [sel] }).error, /still include shares this sale used \(you hold 5, the trades leave 0\)/);
+// a partial sale is fine when the holdings are what the trades leave
+const part = [tr("p1", "buy", "2024-01-01", 10, 100, "PART"), tr("p2", "sell", "2025-01-01", 4, 150, "PART")], hp = data(); hp.stocks.push(row("pp", "PART", 6, 600));
+assert.strictEqual(L.build(hp, part, { today: T, sales: [{ owner: "Me", demat: "Zerodha", symbol: "PART", name: "Part", date: "2025-01-01" }] }).ok, true, "6 held, 6 left after the sale: fine");
+const hp7 = data(); hp7.stocks.push(row("pp", "PART", 7, 700)); assert.match(L.build(hp7, part, { today: T, sales: [{ owner: "Me", demat: "Zerodha", symbol: "PART", date: "2025-01-01" }] }).error, /you hold 7, the trades leave 6/);
+const hp5 = data(); hp5.stocks.push(row("pp", "PART", 5, 500)); assert.strictEqual(L.build(hp5, part, { today: T, sales: [{ owner: "Me", demat: "Zerodha", symbol: "PART", name: "Part", date: "2025-01-01" }] }).ok, true, "holding fewer than the trades leave is not a double count");
 assert.match(L.build(data(), [...trades, tr("5", "sell", "2026-11-12", 1, 1, "OLD")], { today: T, sales: [{ ...sel, date: "2026-11-12" }] }).error, /missing/);
 assert.strictEqual(L.build(data(), trades, { today: T, sales: [{ ...sel, date: "2026-11-10" }] }).ok, false); assert.strictEqual(L.build(data(), trades, { today: "2026-11-01", sales: [sel] }).ok, false, "a sale after today is refused");
 assert.strictEqual(L.build(data(), trades, { today: T, sales: [{ ...sel, charges: 5000 }] }).ok, false, "charges above the sale value are refused");
@@ -35,7 +40,7 @@ r = L.build(data(), [...trades, tr("6", "sell", "2025-06-01", 3, 5, "GHOST")], {
 assert.deepStrictEqual(r.report.status, { exact: 1, none: 5 }); assert.deepStrictEqual(r.report.oversold, [{ symbol: "GHOST", oversold: 3 }]); assert.deepStrictEqual(r.report.applied.map((x) => [x.symbol, x.lots]), [["AAA", 2]]);
 // a leftover zero-quantity row or a fraction of a share
 const zero = data(); zero.stocks.push(row("z1", "OLD", 0, 0)); assert.strictEqual(L.build(zero, trades, { today: T, sales: [sel] }).ok, true, "a zero-share row does not count as held");
-const frac = data(); frac.stocks.push(row("z2", "OLD", 0.5, 10)); assert.match(L.build(frac, trades, { today: T, sales: [sel] }).error, /still in your holdings/, "half a share is still held");
+const frac = data(); frac.stocks.push(row("z2", "OLD", 0.5, 10)); assert.match(L.build(frac, trades, { today: T, sales: [sel] }).error, /you hold 0.5, the trades leave 0/, "half a share is still held");
 // the same sale named twice in one load is recorded once
 const twice = L.build(data(), trades, { today: T, sales: [sel, sel] }); assert.strictEqual(twice.after.sales.length, 1); assert.strictEqual(twice.report.sales[1].skipped, "already recorded");
 // a sale of 2 different days / shares in one load: both recorded

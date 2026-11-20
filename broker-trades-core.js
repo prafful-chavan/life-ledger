@@ -54,7 +54,9 @@
     return rows;
   }
 
-  const symOf = (v) => String(v || "").toUpperCase().replace(/\s*-EQ$/i, "").trim();
+  /** A company that changed its trading symbol: the old one is read as the new one, so its trades and its holding are one position. */
+  const RENAMES = { AMIORG: "ACUTAAS" };   // Ami Organics became Acutaas Chemicals in 2025 (same company; the split below is dated by its record date)
+  const symOf = (v) => { const x = String(v || "").toUpperCase().replace(/\s*-EQ$/i, "").trim(); return RENAMES[x] || x; };
 
   /** Which kind of file this is, from its header row: "zerodha-tradebook" | "groww-history" | "upstox-tradebook" | null. */
   function detectFormat(text) {
@@ -90,7 +92,7 @@
   function parseGroww(text, ctx) {
     const rows = parseCSV(text), head = (rows[0] || []).map((h) => h.trim().toLowerCase());
     const out = { trades: [], skipped: 0, errors: [] };
-    const idx = Object.fromEntries(["symbol", "isin", "type", "quantity", "value", "exchange", "execution date and time"].map((n) => [n, col(head, n)]));
+    const idx = Object.fromEntries(["stock name", "symbol", "isin", "type", "quantity", "value", "exchange", "execution date and time"].map((n) => [n, col(head, n)]));
     for (const n of ["symbol", "type", "quantity", "value", "execution date and time"]) if (idx[n] < 0) { out.errors.push(`The file has no "${n}" column.`); return out; }
     const seen = new Map();
     for (let i = 1; i < rows.length; i++) {
@@ -102,9 +104,9 @@
       const date = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
       if (!validISO(date) || +m[4] < 1 || +m[4] > 12) { out.errors.push(`Line ${i + 1}: not a real date.`); continue; }
       const time = `${date}T${String(h).padStart(2, "0")}:${m[5]}:00`, sym = symOf(get("symbol"));
-      // this file has no trade number: the same fill twice in one file is two fills (counted 1, 2…); the same fill in two overlapping files is one
-      const base = `g:${sym}|${time}|${side}|${r4(qty)}|${r4(value)}`, n = (seen.get(base) || 0) + 1; seen.set(base, n);
-      out.trades.push({ id: base + "|" + n, broker: "Groww", demat: (ctx && ctx.demat) || "Groww", owner: (ctx && ctx.owner) || "Wife", symbol: sym, isin: get("isin"), date, time, side, qty: r4(qty), price: r4(value / qty), source: (ctx && ctx.source) || "" });
+      // this file has no trade number: the same fill twice in one file is two fills (counted 1, 2…); the same fill in two overlapping files is one. The id keeps the symbol as the file wrote it, so a later rename never makes a kept trade look new
+      const base = `g:${String(get("symbol")).toUpperCase().trim()}|${time}|${side}|${r4(qty)}|${r4(value)}`, n = (seen.get(base) || 0) + 1; seen.set(base, n);
+      out.trades.push({ id: base + "|" + n, broker: "Groww", demat: (ctx && ctx.demat) || "Groww", owner: (ctx && ctx.owner) || "Wife", symbol: sym, name: get("stock name"), isin: get("isin"), date, time, side, qty: r4(qty), price: r4(value / qty), source: (ctx && ctx.source) || "" });
     }
     return out;
   }
@@ -169,17 +171,21 @@
    * bought (a bonus). Only actions checked against the exchange or the company's own notice are listed; nothing else is assumed.
    *   split: every share held becomes `ratio` shares; the money paid does not change, so each share's price is divided by `ratio`.
    *   bonus: `ratio` free shares for each share held, at no cost, counted from `date`.
+   *   demerger: `child` shares for every `per` shares held (whole child shares only); `costShare` of the parent's cost moves to the child, which keeps the parent's buy dates.
    * `date` is the ex-date: trades on or after it are already in the new shares.
    */
   const ACTIONS = [
     { symbol: "VBL", kind: "split", date: "2024-09-12", ratio: 2.5, note: "Varun Beverages split its Rs 5 shares into Rs 2 shares (record and ex-date 12 Sep 2024; ISIN INE200M01021 became INE200M01039): 1 share became 2.5", source: "https://msei.in/SX-Content/Circulars/2024/September/Circular-15949.pdf" },
     { symbol: "MAZDOCK", kind: "split", date: "2024-12-27", ratio: 2, note: "Mazagon Dock split each Rs 10 share into two Rs 5 shares (record and ex-date 27 Dec 2024): 1 share became 2", source: "https://business-standard.com/amp/markets/news/mazagon-dock-shares-trade-ex-date-for-stock-split-today-check-details-124122700355_1.html" },
+    { symbol: "ACUTAAS", kind: "split", date: "2025-04-25", ratio: 2, note: "Acutaas Chemicals (formerly Ami Organics) split each Rs 10 share into two Rs 5 shares (record and ex-date 25 Apr 2025; ISIN INE00FF01017 became INE00FF01025): 1 share became 2", source: "https://trendlyne.com/equity/Split/ACUTAAS/644637/acutaas-chemicals-ltd-split" },
+    { symbol: "ECLERX", kind: "bonus", date: "2026-03-13", ratio: 1, note: "eClerx 1:1 bonus (record and ex-date 13 Mar 2026; allotted 16 Mar 2026): 1 free share for each share held, at no cost", source: "https://www.businesstoday.in/markets/stocks/story/eclerx-services-bonus-shares-explained-why-the-stock-price-may-fall-sharply-today-520389-2026-03-13" },
+    { symbol: "STAR", kind: "demerger", child: "ONESOURCE", per: 2, costShare: 0.1065, date: "2024-12-06", note: "Strides Pharma Science demerged its OneSource business: 1 OneSource share for every 2 Strides shares (record date 6 Dec 2024, allotted 10 Dec 2024); 10.65% of the cost of the Strides shares moves to OneSource, 89.35% stays. The OneSource shares keep the Strides buy dates", source: "https://www.angelone.in/news/share-market/strides-pharma-provides-guidance-on-cost-of-acquisition-post-demerger" },
     { symbol: "WIPRO", kind: "bonus", date: "2024-12-03", ratio: 1, note: "Wipro 1:1 bonus (record date 3 Dec 2024): 1 free share for each share held, at no cost. Credited by 15 Dec 2024, so every lot is long-term either way", source: "https://www.businesstoday.in/markets/company-stock/story/wipro-shares-rise-as-board-announces-record-date-for-bonus-issue-454643-2024-11-22" },
   ];
 
   /** Replays the trades, first in first out, one position per owner + broker + share. Splits and bonus issues are applied on their date. → Map(key → { owner, demat, symbol, lots[{date, qty, price}], qty, cost, oversold, bought, sold, first, last }) */
   function replay(trades, actions) {
-    const acts = (Array.isArray(actions) ? actions : ACTIONS).filter((a) => a && validISO(a.date) && num(a.ratio) > 0).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const acts = (Array.isArray(actions) ? actions : ACTIONS).filter((a) => a && validISO(a.date) && (a.kind === "demerger" || num(a.ratio) > 0)).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const sorted = (trades || []).slice().sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.side === b.side ? 0 : a.side === "buy" ? -1 : 1));
     const map = new Map();
     let next = 0;
@@ -188,6 +194,16 @@
       for (const p of map.values()) {
         if (p.symbol !== sym) continue;
         if (a.kind === "split") { p.lots.forEach((l) => { l.qty = r4(l.qty * f); l.price = l.price / f; }); p.bought = r4(p.bought * f); p.sold = r4(p.sold * f); p.oversold = r4(p.oversold * f); }
+        else if (a.kind === "demerger") {
+          const per = num(a.per), cs = num(a.costShare), child = symOf(a.child), held = r4(p.lots.reduce((t, l) => t + l.qty, 0)), childQty = per > 0 ? Math.floor(held / per + 1e-9) : 0;
+          if (!(childQty > 0) || !(cs > 0) || !(cs < 1) || !child) continue;
+          // the child shares come from the oldest parent shares (childQty x per of them) and carry cs of those shares' cost and their dates
+          let need = childQty * per; const lots = [];
+          for (const l of p.lots) { if (need <= EPS) break; const take = Math.min(need, l.qty); lots.push({ date: l.date, qty: r4(take / per), price: l.price * per * cs }); need = r4(need - take); }
+          p.lots.forEach((l) => { l.price = l.price * (1 - cs); });
+          const ck = posKey(p.owner, p.demat, child), c = map.get(ck) || map.set(ck, { key: ck, owner: p.owner, demat: p.demat, symbol: child, lots: [], oversold: 0, bought: 0, sold: 0, first: a.date, last: a.date }).get(ck);
+          c.lots.push(...lots); c.lots.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0)); c.bought = r4(c.bought + childQty);
+        }
         else if (a.kind === "bonus") { const held = r4(p.lots.reduce((t, l) => t + l.qty, 0)), extra = r4(held * f); if (extra > EPS) { p.lots.push({ date: a.date, qty: extra, price: 0, bonus: true }); p.bought = r4(p.bought + extra); } }
       }
     };
@@ -222,8 +238,11 @@
     const sells = mine.filter((t) => t.side === "sell" && t.date === date && (!at || t.time === at));
     if (!sells.length) return { ok: false, error: "The files show no sale of that share on that day." };
     const first = sells.map((t) => t.time).sort()[0];
-    const before = mine.filter((t) => t.time < first);
-    const p = replay(before, actions).get(key);
+    // the whole account is replayed, not only this share: a demerger hands a share its lots from another company's trades
+    const before = (trades || []).filter((t) => t && (t.owner || "Me") === (s.owner || "Me") && (t.demat || "") === (s.demat || "") && t.time < first);
+    // only what had already happened by the sale day: a split or demerger later on must not change the shares or the cost of an earlier sale
+    const upTo = (Array.isArray(actions) ? actions : ACTIONS).filter((a) => a && a.date <= date);
+    const p = replay(before, upTo).get(key);
     const lots = p ? p.lots.map((l) => ({ ...l })) : [];
     const qty = r4(sells.reduce((t, x) => t + num(x.qty), 0)), gross = sells.reduce((t, x) => t + num(x.qty) * num(x.price), 0);
     let need = qty; const used = [];

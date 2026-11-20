@@ -36,8 +36,8 @@
     "sha256": "623b817172e4400e78848ecd67ff32455d5b3bbd1eca33d2ab75645fde8469fc"
   },
   "broker-trades-core.js": {
-    "version": "1.0.3",
-    "sha256": "86a6675cdd6bd25aa9f2a713dc8d373d97bae41d1f42b7b3500d8d7d81977db8"
+    "version": "1.0.5",
+    "sha256": "2bff7243616981d789f691cab078ff0b184ffa1bca06b2fde859d020ae627437"
   },
   "broker-trades-views.js": {
     "version": "1.0.0",

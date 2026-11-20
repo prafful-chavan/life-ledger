@@ -273,7 +273,7 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   p = pos([trade("buy", "2024-11-01", 10, 100)], [{ symbol: "AAA", kind: "bonus", date: "2024-12-03", ratio: 2 }]); assert.deepStrictEqual([p.bought, p.qty, p.lots[1].qty], [30, 30, 20], "2 free shares per share held: 10 -> +20, and the buy counter grows with it");
   assert.strictEqual(pos([trade("buy", "2024-11-01", 0.00001, 100)], BONUS).lots.length, 1, "a bonus that rounds to nothing adds no lot");
   // the table that ships: only the two checked actions, each with a source
-  assert.deepStrictEqual(B.ACTIONS.map((a) => [a.symbol, a.kind, a.date, a.ratio]), [["VBL", "split", "2024-09-12", 2.5], ["MAZDOCK", "split", "2024-12-27", 2], ["WIPRO", "bonus", "2024-12-03", 1]]); assert.ok(B.ACTIONS.every((a) => /^https:\/\//.test(a.source) && a.note));
+  assert.deepStrictEqual(B.ACTIONS.map((a) => [a.symbol, a.kind, a.date, a.ratio, a.per, a.costShare, a.child]), [["VBL", "split", "2024-09-12", 2.5, undefined, undefined, undefined], ["MAZDOCK", "split", "2024-12-27", 2, undefined, undefined, undefined], ["ACUTAAS", "split", "2025-04-25", 2, undefined, undefined, undefined], ["ECLERX", "bonus", "2026-03-13", 1, undefined, undefined, undefined], ["STAR", "demerger", "2024-12-06", undefined, 2, 0.1065, "ONESOURCE"], ["WIPRO", "bonus", "2024-12-03", 1, undefined, undefined, undefined]]); assert.ok(B.ACTIONS.every((a) => /^https:\/\//.test(a.source) && a.note));
   // the default is the shipped table: a VBL holding bought before the split reconciles exactly
   const v = T([trade("buy", "2023-11-23", 8, 1000, { symbol: "VBL" }), trade("buy", "2024-10-03", 36, 500, { symbol: "VBL", n: "v" })]);
   const rec = B.reconcile(v, unknowns([row("VBL", 56, (8000 + 18000) / 56)])).items[0]; assert.deepStrictEqual([rec.status, rec.explainedQty, rec.missingQty], ["exact", 56, 0]);
@@ -360,5 +360,56 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   const dup = [UH, u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { num: "7" }), u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { num: "7" })].join("\n"); const d1 = B.parseUpstox(dup).trades; assert.deepStrictEqual(d1.map((t) => t.id), ["u:NSE:7", "u:NSE:7|2"]); assert.strictEqual(B.mergeTrades(d1, B.parseUpstox(dup).trades).trades.length, 2);
   assert.strictEqual(B.parseFile(UH + "\n" + u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10")).format, "upstox-tradebook");
   assert.ok(/Upstox/.test(B.parseFile("a,b\n1,2").errors[0]));
+}
+
+// ── Demergers, renamed companies, and sales that need another company's trades ──
+{
+  const DEM = [{ symbol: "PAR", kind: "demerger", child: "KID", per: 2, costShare: 0.1, date: "2024-12-06" }];
+  const rp = (tr, acts = DEM) => B.replay(tr, acts), pos = (m, sym) => m.get("Me|Zerodha|" + sym);
+  // 3 parent shares: 1 child share (whole shares only), from the oldest 2 parent shares: 10% of their cost, and their dates
+  let m = rp([trade("buy", "2024-09-23", 1, 1000, { symbol: "PAR" }), trade("buy", "2024-10-03", 2, 2000, { symbol: "PAR", n: "b" })]);
+  let kid = pos(m, "KID"), par = pos(m, "PAR");
+  assert.deepStrictEqual(kid.lots.map((l) => [l.date, l.qty, Math.round(l.price * 100) / 100]), [["2024-09-23", 0.5, 200], ["2024-10-03", 0.5, 400]], "child lots keep the parent's dates; each child share carries 10% of the cost of the 2 parent shares it came from");
+  assert.deepStrictEqual([kid.qty, kid.cost, kid.bought], [1, 300, 1], "10% of (1000 + 2000) = 300... of the 2 shares used: 10% of 1000 + 10% of 2000 = 300");
+  assert.deepStrictEqual([par.qty, Math.round(par.cost * 100) / 100], [3, 0.9 * 5000], "the parent keeps 90% of its cost on every share");
+  assert.strictEqual(kid.lots.reduce((t, l) => t + l.qty, 0), 1); assert.deepStrictEqual([kid.oversold, kid.sold, kid.first, kid.last], [0, 0, "2024-12-06", "2024-12-06"]);
+  m = rp([trade("buy", "2024-09-23", 3, 100, { symbol: "PAR" })], [{ ...DEM[0], per: 1 }]); assert.deepStrictEqual([pos(m, "KID").qty, pos(m, "KID").cost, pos(m, "PAR").cost], [3, 30, 270], "one child for each parent share");
+  // trades on or after the date are in the new shares: nothing moves for them
+  m = rp([trade("buy", "2024-12-06", 4, 500, { symbol: "PAR" })]); assert.strictEqual(pos(m, "KID"), undefined, "bought on the date: no child shares"); assert.strictEqual(pos(m, "PAR").cost, 2000);
+  m = rp([trade("buy", "2024-12-05", 4, 500, { symbol: "PAR" })]); assert.deepStrictEqual([pos(m, "KID").qty, pos(m, "PAR").cost], [2, 1800], "the day before counts");
+  // one parent share is not enough for a child share
+  m = rp([trade("buy", "2024-09-23", 1, 1000, { symbol: "PAR" })]); assert.strictEqual(pos(m, "KID"), undefined); assert.strictEqual(pos(m, "PAR").cost, 1000, "nothing moves when no whole child share results");
+  // a child bought later joins the shares it was given; other owners are separate
+  m = rp([trade("buy", "2024-09-23", 2, 1000, { symbol: "PAR" }), trade("buy", "2025-01-01", 1, 50, { symbol: "KID", n: "k" }), trade("buy", "2024-09-23", 2, 1000, { symbol: "PAR", owner: "Wife", n: "w" })]);
+  assert.deepStrictEqual([pos(m, "KID").qty, m.get("Wife|Zerodha|KID").qty, m.get("Wife|Zerodha|KID").cost], [2, 1, 200]);
+  // a sell before the date reduces what is held at the date
+  m = rp([trade("buy", "2024-09-23", 4, 1000, { symbol: "PAR" }), trade("sell", "2024-11-01", 2, 1100, { symbol: "PAR", n: "s" })]); assert.deepStrictEqual([pos(m, "KID").qty, pos(m, "PAR").qty], [1, 2]);
+  // bad entries are ignored rather than guessed at
+  for (const bad of [{ per: 0 }, { costShare: 0 }, { costShare: 1 }, { child: "" }]) assert.strictEqual(pos(rp([trade("buy", "2024-09-23", 2, 1000, { symbol: "PAR" })], [{ ...DEM[0], ...bad }]), "KID"), undefined, JSON.stringify(bad));
+  // the shipped table: Strides -> OneSource, as Archana's own sales need it
+  const star = T([trade("buy", "2024-09-23", 2, 1324.98, { symbol: "STAR", owner: "Wife", demat: "Groww" }), trade("buy", "2024-10-03", 2, 1432.85, { symbol: "STAR", owner: "Wife", demat: "Groww", n: "b" }), trade("sell", "2024-11-04", 1, 1515.75, { symbol: "STAR", owner: "Wife", demat: "Groww", n: "s" }), trade("buy", "2025-01-01", 14, 727.86, { symbol: "STAR", owner: "Wife", demat: "Groww", n: "c" }), trade("sell", "2025-02-03", 1, 1456, { symbol: "ONESOURCE", owner: "Wife", demat: "Groww", n: "o" })]);
+  const one = B.saleCandidate(star, { owner: "Wife", demat: "Groww", symbol: "ONESOURCE", date: "2025-02-03" }); assert.strictEqual(one.ok, true); assert.deepStrictEqual([one.cand.qty, one.cand.cost, one.cand.lots.map((l) => l.buyDate)], [1, 293.71, ["2024-09-23", "2024-10-03"]]);
+  assert.strictEqual(B.saleCandidate(star, { owner: "Wife", demat: "Groww", symbol: "ONESOURCE", date: "2025-02-03" }, []).ok, false, "without the demerger the OneSource share has no source");
+  assert.strictEqual(B.saleCandidate(star, { owner: "Me", demat: "Groww", symbol: "ONESOURCE", date: "2025-02-03" }).ok, false, "another owner's account is not replayed");
+  // a renamed company's kept trades are not loaded a second time: the id keeps the symbol as the file wrote it
+  { const gh = "Stock name,Symbol,ISIN,Type,Quantity,Value,Exchange,Execution date and time"; const row = "AMI ORGANICS,AMIORG,INE00FF01017,BUY,5,11310.6,NSE,25-02-2025 10:00 AM"; const f = B.parseGroww(gh + "\n" + row, { owner: "Wife" }); assert.strictEqual(f.trades[0].symbol, "ACUTAAS"); assert.ok(/^g:AMIORG\|/.test(f.trades[0].id), f.trades[0].id); assert.strictEqual(f.trades[0].name, "AMI ORGANICS");
+    const old = { ...f.trades[0], symbol: "AMIORG" }; assert.deepStrictEqual([B.mergeTrades([old], f.trades).added, B.mergeTrades([old], f.trades).duplicates], [0, 1]); }
+  // a sale made BEFORE a later split, bonus or demerger is costed with the shares and prices of its own day
+  { const SP = [{ symbol: "AAA", kind: "split", date: "2025-04-25", ratio: 2 }], pre = T([trade("buy", "2025-02-25", 5, 2000), trade("sell", "2025-03-03", 1, 2100, { n: "s" }), trade("sell", "2025-06-01", 2, 1100, { n: "t" })]);
+    const early = B.saleCandidate(pre, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-03-03" }, SP); assert.deepStrictEqual([early.ok, early.cand.qty, early.cand.cost, early.cand.lots[0].qty], [true, 1, 2000, 1], "sold before the split: 1 share costing 2000, not half a share");
+    const late = B.saleCandidate(pre, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-06-01" }, SP); assert.deepStrictEqual([late.ok, late.cand.qty, late.cand.cost], [true, 2, 2000], "sold after the split: 2 post-split shares of the 4 left x2 = 8, cost 1000 each");
+    assert.strictEqual(B.saleCandidate(pre, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-04-25" }, [{ ...SP[0], date: "2025-04-25" }]).ok, false, "no sale that day");
+    const day = T([trade("buy", "2025-02-25", 5, 2000), trade("sell", "2025-04-25", 2, 1000, { n: "s" })]); const onDay = B.saleCandidate(day, { owner: "Me", demat: "Zerodha", symbol: "AAA", date: "2025-04-25" }, SP); assert.deepStrictEqual([onDay.ok, onDay.cand.cost], [true, 2000], "a sale on the split day is in the new shares: 5 shares cost 10000 became 10 at 1000 each, so 2 cost 2000");
+    // the same for a demerger: Strides' cost is only reduced for sales after the record date
+    const st = [{ symbol: "PAR", kind: "demerger", child: "KID", per: 2, costShare: 0.1, date: "2024-12-06" }], dm = T([trade("buy", "2024-09-23", 4, 1000, { symbol: "PAR" }), trade("sell", "2024-11-04", 1, 1100, { symbol: "PAR", n: "s" }), trade("sell", "2025-02-01", 1, 700, { symbol: "PAR", n: "t" })]);
+    assert.strictEqual(B.saleCandidate(dm, { owner: "Me", demat: "Zerodha", symbol: "PAR", date: "2024-11-04" }, st).cand.cost, 1000, "sold before the demerger: full cost"); assert.strictEqual(B.saleCandidate(dm, { owner: "Me", demat: "Zerodha", symbol: "PAR", date: "2025-02-01" }, st).cand.cost, 900, "sold after: 90% of the cost"); }
+  // a renamed company: Ami Organics is read as Acutaas, and its 2025 split makes the 4 shares held 8
+  const ami = T([trade("buy", "2025-02-25", 5, 2262.12, { symbol: "AMIORG", owner: "Wife", demat: "Groww" }), trade("sell", "2025-03-03", 1, 2113.4, { symbol: "AMIORG", owner: "Wife", demat: "Groww", n: "s" }), trade("sell", "2025-04-08", 2, 2184.65, { symbol: "AMIORG", owner: "Wife", demat: "Groww", n: "t" }), trade("buy", "2025-04-16", 2, 2326.8, { symbol: "AMIORG", owner: "Wife", demat: "Groww", n: "b" }), trade("sell", "2025-05-05", 3, 1133, { symbol: "ACUTAAS", owner: "Wife", demat: "Groww", n: "u" }), trade("sell", "2025-07-02", 6, 1112, { symbol: "ACUTAAS", owner: "Wife", demat: "Groww", n: "v" })]);
+  const a1 = B.saleCandidate(ami, { owner: "Wife", demat: "Groww", symbol: "ACUTAAS", date: "2025-05-05" }); assert.deepStrictEqual([a1.ok, a1.cand.qty, a1.cand.lots.map((l) => [l.buyDate, l.qty, Math.round(l.cost / l.qty * 100) / 100])], [true, 3, [["2025-02-25", 3, 1131.06]]]);
+  const a2 = B.saleCandidate(ami, { owner: "Wife", demat: "Groww", symbol: "ACUTAAS", date: "2025-07-02" }); assert.strictEqual(a2.ok, false, "6 sold but only 5 left of the 8: refused"); assert.ok(/only 5 of the 6/.test(a2.error), a2.error);
+  assert.strictEqual(B.heldPositions([{ id: "x", symbol: "AMIORG", quantity: 2, invested: 10, owner: "Me", demat: "Zerodha" }]).has("Me|Zerodha|ACUTAAS"), true, "a holding under the old symbol is the same position");
+  // a bonus on the day it matters: 2 shares held on the ex-date become 4, sold together
+  const ec = T([trade("buy", "2025-01-01", 4, 3410, { symbol: "ECLERX" }), trade("sell", "2025-01-21", 1, 3220, { symbol: "ECLERX", n: "a" }), trade("sell", "2025-02-03", 1, 3166, { symbol: "ECLERX", n: "b" }), trade("buy", "2026-01-02", 1, 4734.7, { symbol: "ECLERX", n: "c" }), trade("sell", "2026-03-09", 1, 2985.5, { symbol: "ECLERX", n: "d" }), trade("sell", "2026-03-20", 4, 1485.4, { symbol: "ECLERX", n: "e" })]);
+  const e1 = B.saleCandidate(ec, { owner: "Me", demat: "Zerodha", symbol: "ECLERX", date: "2026-03-20" }); assert.deepStrictEqual([e1.ok, e1.cand.cost, e1.cand.lots.map((l) => [l.buyDate, l.qty])], [true, 3410 + 4734.7, [["2025-01-01", 1], ["2026-01-02", 1], ["2026-03-13", 2]]]);
 }
 console.log("broker-trades-core: ok");

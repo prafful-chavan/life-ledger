@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Loads Zerodha tradebook / Groww order-history / Upstox trade-history files (CSV or .xlsx) into the vault (see broker-load.js).
- *   node mcp/broker-load-run.js --owner Me --demat Zerodha FILE... [--sale SYMBOL:YYYY-MM-DD[THH:MM:SS][:charges[:Company name]]] [--stamp YYYY-MM-DD] [--write]
+ *   node mcp/broker-load-run.js --owner Me --demat Zerodha FILE... [--sale SYMBOL:YYYY-MM-DD[THH:MM:SS][:charges[:Company name]]] [--stamp YYYY-MM-DD] [--all-sales] [--write]
+ * --all-sales: every day a share was sold in the files becomes a recorded sale (charges 0); the load stops if any cannot be accounted for.
  * --stamp: the day a holdings sync stamped on every row; holdings still on it are marked "buy date unknown" first.
  * Without --write it only shows what would happen. The vault password comes from the macOS keychain (or the cloud secrets).
  */
@@ -9,10 +10,10 @@ const fs = require("fs");
 const BTC = require("../broker-trades-core.js"), { tradeFileText } = require("./broker-files.js"), L = require("./broker-load.js"), V = require("./vault-client.js"), Common = require("./cloud-common.js");
 
 (async () => {
-  const argv = process.argv.slice(2), files = [], sales = []; let owner = "Me", demat = "Zerodha", write = false, stamp = "";
+  const argv = process.argv.slice(2), files = [], sales = []; let owner = "Me", demat = "Zerodha", write = false, stamp = "", allSales = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--owner") owner = argv[++i]; else if (a === "--demat") demat = argv[++i]; else if (a === "--write") write = true; else if (a === "--stamp") stamp = argv[++i];
+    if (a === "--owner") owner = argv[++i]; else if (a === "--demat") demat = argv[++i]; else if (a === "--write") write = true; else if (a === "--stamp") stamp = argv[++i]; else if (a === "--all-sales") allSales = true;
     else if (a === "--sale") { const parts = String(argv[++i] || "").split(":"), symbol = parts.shift(); let date = parts.shift(); if (/^\d{4}-\d{2}-\d{2}T\d{2}$/.test(date)) date += ":" + parts.shift() + ":" + parts.shift(); const [charges, ...name] = parts; sales.push({ owner, demat, symbol, date, charges: Number(charges || 0), name: name.join(":") || symbol }); }
     else files.push(a);
   }
@@ -24,6 +25,7 @@ const BTC = require("../broker-trades-core.js"), { tradeFileText } = require("./
     if (!r.format || r.errors.length) { console.error("Stopped: a file could not be read."); process.exit(2); }
     trades.push(...r.trades);
   }
+  if (allSales) { const seen = new Set(sales.map((x) => `${x.symbol}|${x.date}`)); for (const t of trades.filter((x) => x.side === "sell").sort((a, b) => (a.time < b.time ? -1 : 1))) { const k = `${t.symbol}|${t.date}`; if (seen.has(k)) continue; seen.add(k); sales.push({ owner, demat, symbol: t.symbol, date: t.date, charges: 0, name: t.name || t.symbol }); } }
   const login = Common.login(process.env);
   const { data } = await V.fetchState({ gatewayUrl: login.gatewayUrl, password: login.password });
   const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
