@@ -349,6 +349,13 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   // the file itself says which share: both HDFC codes, the others by their codes
   const names = [["KOTAKGOLDETF", "590097", "GOLD1"], ["NIP IND ETF MIDCAP 150", "MID150BEES", "MID150BEES"], ["RELCAPAMC NETFIT", "206811", "ITBEES"], ["HDFC Mutual Fund", "543775", "HDFCSML250"], ["HDFC Mutual Fund", "543776", "HDFCMID150"]];
   names.forEach(([co, code, sym], i) => assert.strictEqual(B.parseUpstox([UH, u("2025-01-06", co, code, "Buy", "1", "10", { num: String(i) })].join("\n")).trades[0].symbol, sym));
+  // older Upstox rows carry the time as hours and minutes only; the newer company name of the Nifty IT ETF and the CPSE ETF are known
+  { const UH2 = "Date,Company,Amount,Exchange,Segment,Scrip Code,Instrument Type,Strike Price,Expiry,Trade Num,Trade Time,Side,Quantity,Price";
+    const row2 = (co, code, time, num) => ["2024-11-06", co, "132.14", "NSE", "EQ", code, "Equity", "0.0", "", num, time, "Buy", "2.0", "66.07"].join(",");
+    const r2 = B.parseUpstox([UH2, row2("KOTAKGOLDETF", "590097", "14:29", "1"), row2("KOTAKGOLDETF", "590097", "9:05", "2"), row2("KOTAKGOLDETF", "590097", "14:29:36", "3"), row2("KOTAKGOLDETF", "590097", "25:99", "4")].join("\n"));
+    assert.deepStrictEqual([r2.trades.map((t) => t.time), r2.errors.length], [["2024-11-06T14:29:00", "2024-11-06T09:05:00", "2024-11-06T14:29:36"], 1], "14:29 and 9:05 are read; a time that is not one is refused");
+    assert.strictEqual(B.parseUpstox([UH2, row2("NIPPON INDIA ETF NIFTY IT", "590141", "14:04:34", "5"), row2("RELCAPAMC NETFIT", "206811", "14:04:34", "6"), row2("CPSE ETF GROWTH", "538057", "11:45:01", "7")].join("\n")).trades.map((t) => t.symbol).join(), "ITBEES,ITBEES,CPSEETF");
+    assert.strictEqual(B.parseUpstox([UH2, row2("NIPPON INDIA ETF NIFTY IT", "999999", "14:04:34", "8")].join("\n")).errors.length, 1, "the same name with an unknown code is still refused"); }
   // refused, named: an unknown company; the same company with another code; a bad side; no quantity; a bad date; a bad time
   const bad = B.parseUpstox([UH, u("2025-01-06", "MYSTERY CO", "1", "Buy", "1", "10"), u("2025-01-06", "NIFTY BEES", "999", "Buy", "1", "10"), u("2025-01-06", "NIFTY BEES", "590103", "Hold", "1", "10"), u("2025-01-06", "NIFTY BEES", "590103", "Buy", "0", "10"), u("2025-13-40", "NIFTY BEES", "590103", "Buy", "1", "10"), u("2025-01-06", "NIFTY BEES", "590103", "Buy", "1", "10", { time: "bad" })].join("\n"));
   assert.strictEqual(bad.trades.length, 0); assert.strictEqual(bad.errors.length, 6); assert.ok(/MYSTERY CO/.test(bad.errors[0]) && /code 1/.test(bad.errors[0]) && /code 999/.test(bad.errors[1]));
@@ -411,5 +418,24 @@ assert.strictEqual(B.heldPositions([row("A", 4, 25, { invested: 0 })]).get("Me|Z
   // a bonus on the day it matters: 2 shares held on the ex-date become 4, sold together
   const ec = T([trade("buy", "2025-01-01", 4, 3410, { symbol: "ECLERX" }), trade("sell", "2025-01-21", 1, 3220, { symbol: "ECLERX", n: "a" }), trade("sell", "2025-02-03", 1, 3166, { symbol: "ECLERX", n: "b" }), trade("buy", "2026-01-02", 1, 4734.7, { symbol: "ECLERX", n: "c" }), trade("sell", "2026-03-09", 1, 2985.5, { symbol: "ECLERX", n: "d" }), trade("sell", "2026-03-20", 4, 1485.4, { symbol: "ECLERX", n: "e" })]);
   const e1 = B.saleCandidate(ec, { owner: "Me", demat: "Zerodha", symbol: "ECLERX", date: "2026-03-20" }); assert.deepStrictEqual([e1.ok, e1.cand.cost, e1.cand.lots.map((l) => [l.buyDate, l.qty])], [true, 3410 + 4734.7, [["2025-01-01", 1], ["2026-01-02", 1], ["2026-03-13", 2]]]);
+}
+
+// ── INDmoney transactions report ──
+{
+  const IH = "Execution Date,Scrip Name,Scrip Symbol,ISIN,Type,Quantity,Price,Exchange,Exchange Order Id,Order Status";
+  const ix = (when, name, sym, isin, type, qty, price, ex, oid, status = "Executed") => [when, name, sym, isin, type, qty, price, ex, oid, status].join(",");
+  assert.strictEqual(B.detectFormat(IH + "\n"), "indmoney-transactions");
+  let r = B.parseIndmoney([IH, ix("2026-11-20T15:09:26", "HDFC Nifty Small Cap 250 ETF", "HDFCSML250", "INF179KC1FB2", "SELL", "239", "179.341", "NSE", "1100000108079847"), ix("2026-11-20T15:07:16", "Bharat 22 ETF", "ICICIB22", "INF109KB15Y7", "BUY", "18", "115.47", "NSE", "7"), ix("2025-03-26", "MON", "MON100", "INF247L01AP3", "BUY", "10", "234.28", "BSE", "9")].join("\n"), { owner: "Wife", source: "t.xlsx" });
+  assert.deepStrictEqual(r.errors, []); assert.deepStrictEqual(r.trades.map((t) => [t.symbol, t.date, t.time, t.side, t.qty, t.price, t.demat, t.broker, t.owner]), [["HDFCSML250", "2026-11-20", "2026-11-20T15:09:26", "sell", 239, 179.341, "INDmoney", "INDmoney", "Wife"], ["BHARAT22", "2026-11-20", "2026-11-20T15:07:16", "buy", 18, 115.47, "INDmoney", "INDmoney", "Wife"], ["MON100", "2025-03-26", "2025-03-26T00:00:00", "buy", 10, 234.28, "INDmoney", "INDmoney", "Wife"]], "ICICIB22 is read as the Bharat 22 holding's symbol; a date with no time is midnight");
+  assert.deepStrictEqual(r.trades.map((t) => t.id), ["i:NSE:1100000108079847|239|179.341", "i:NSE:7|18|115.47", "i:BSE:9|10|234.28"]);
+  // not executed, no-transaction lines, bad rows, a missing column
+  r = B.parseIndmoney([IH, "No transactions done in this period", ix("2026-11-20T15:09:26", "A", "AAA", "INF1", "SELL", "1", "10", "NSE", "1", "Rejected"), ix("2026-11-20T15:09:26", "A", "AAA", "INF1", "HOLD", "1", "10", "NSE", "2"), ix("2026-11-20T15:09:26", "A", "AAA", "INF1", "BUY", "0", "10", "NSE", "3"), ix("2026-11-20T15:09:26", "A", "AAA", "INF1", "BUY", "1", "0", "NSE", "4"), ix("bad", "A", "AAA", "INF1", "BUY", "1", "10", "NSE", "5"), ix("2026-13-40T10:00:00", "A", "AAA", "INF1", "BUY", "1", "10", "NSE", "6")].join("\n"));
+  assert.deepStrictEqual([r.trades.length, r.skipped, r.errors.length], [0, 1, 5]);
+  assert.ok(/no "exchange order id" column/.test(B.parseIndmoney("Execution Date,Scrip Symbol,Type,Quantity,Price\n1,2,3,4,5").errors[0]));
+  // the same order twice in one file is two fills; in two overlapping files one
+  const row = ix("2025-03-26T10:00:00", "A", "AAA", "INF1", "BUY", "5", "10", "NSE", "77"), two = [IH, row, row].join("\n"); const t1 = B.parseIndmoney(two).trades; assert.deepStrictEqual(t1.map((t) => t.id), ["i:NSE:77|5|10", "i:NSE:77|5|10|2"]); assert.strictEqual(B.mergeTrades(t1, B.parseIndmoney(two).trades).trades.length, 2);
+  assert.strictEqual(B.parseFile(IH + "\n" + row).format, "indmoney-transactions"); assert.ok(/INDmoney/.test(B.parseFile("a,b\n1,2").errors[0]));
+  // the two INDmoney names of one ETF are one position, so a holding called BHARAT22 matches the trades
+  assert.strictEqual(B.heldPositions([{ id: "x", symbol: "BHARAT22", quantity: 2, invested: 10, owner: "Wife", demat: "INDmoney" }]).has("Wife|INDmoney|BHARAT22"), true); assert.strictEqual(B.heldPositions([{ id: "y", symbol: "ICICIB22", quantity: 2, invested: 10, owner: "Wife", demat: "INDmoney" }]).has("Wife|INDmoney|BHARAT22"), true);
 }
 console.log("broker-trades-core: ok");

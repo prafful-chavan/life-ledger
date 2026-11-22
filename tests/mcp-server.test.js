@@ -27,6 +27,16 @@ const S = require("../mcp/server.js");
   assert.strictEqual((await V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "pw-123", fetchImpl: redirecting })).rev, 9);
   assert.deepStrictEqual(hops, ["POST", "GET"]);
   await assert.rejects(() => V.fetchState({ gatewayUrl: "https://script.google.com/x", password: "x", fetchImpl: bad, waitMs: 1 }), /Wrong vault password/);
+
+  // the "no buy date" gap names the holdings that really lack one
+  {
+    const lot = (symbol, dateKnown, kind = "stock") => ({ kind, symbol, dateKnown });
+    assert.deepStrictEqual(S.noDateGap([lot("A", true), lot("B", true)]), [], "nothing missing: no gap");
+    assert.deepStrictEqual(S.noDateGap(null), []); assert.deepStrictEqual(S.noDateGap([lot("X", false, "us")]), [], "US lots have their own message");
+    const one = S.noDateGap([lot("gold1", false), lot("GOLD1", false), lot("A", true)]); assert.strictEqual(one.length, 1); assert.ok(/for 1 Indian stock or ETF: GOLD1$/.test(one[0].what), one[0].what);
+    const many = S.noDateGap(Array.from({ length: 10 }, (_, i) => lot("S" + i, false))); assert.ok(/for 10 Indian stocks or ETFs: S0, S1, S2, S3, S4, S5, S6, S7 and 2 more$/.test(many[0].what), many[0].what);
+    assert.ok(/other holdings already have real dates/.test(many[0].why) && !/Every stock row/.test(many[0].why));
+  }
   // transient failures (a 404 from Google, a network blip) are retried; a wrong password is not
   let calls = 0;
   const flaky = async (url, init) => { calls++; if (calls === 1) return { ok: false, status: 404, headers: { get: () => null }, text: async () => "" }; if (calls === 2) throw new TypeError("fetch failed"); return reply({ ok: true, rev: 11, vault }); };

@@ -32,6 +32,7 @@ const BTC = require("../broker-trades-core.js"), { tradeFileText } = require("./
   const out = L.build(data, trades, { today, sales, stamp });
   if (!out.ok) { console.error("Stopped: " + out.error); process.exit(2); }
   const r = out.report;
+  if (r.pendingCleared) console.log(`Waiting "did you sell this?" items answered: ${r.pendingCleared}`);
   if (r.markedUnknown) console.log(`Marked "buy date unknown": ${r.markedUnknown} holdings still on the import day`);
   console.log(`Trades kept: ${r.trades} (${r.added} new, ${r.duplicates} already kept). Holdings by status: ${JSON.stringify(r.status)}`);
   for (const a of r.applied) console.log(`  dated ${a.symbol}: ${a.lots} lots${a.unknownQty ? `, ${a.unknownQty} shares undated` : ""}`);

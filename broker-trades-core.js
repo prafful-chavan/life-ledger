@@ -16,7 +16,7 @@
  * Nothing is applied here: this builds the plan and the new rows; the page shows them and asks first. The total invested in a position is
  * never changed: the dated lots are scaled to the cost already on the books.
  *
- * Supported files: Zerodha Console tradebook (CSV), Groww order history (CSV) and Upstox trade history (CSV, or the .xlsx it is sent as, read by mcp/xlsx-read.js). Anything else is named as unsupported, not guessed at.
+ * Supported files: Zerodha Console tradebook (CSV), Groww order history (CSV) and Upstox trade history and INDmoney transactions report (CSV, or the .xlsx they are sent as, read by mcp/xlsx-read.js). Anything else is named as unsupported, not guessed at.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -55,10 +55,10 @@
   }
 
   /** A company that changed its trading symbol: the old one is read as the new one, so its trades and its holding are one position. */
-  const RENAMES = { AMIORG: "ACUTAAS" };   // Ami Organics became Acutaas Chemicals in 2025 (same company; the split below is dated by its record date)
+  const RENAMES = { AMIORG: "ACUTAAS", ICICIB22: "BHARAT22" };   // ICICIB22 is the exchange symbol INDmoney reports for the Bharat 22 ETF (ISIN INF109KB15Y7); the holdings call it BHARAT22   // Ami Organics became Acutaas Chemicals in 2025 (same company; the split below is dated by its record date)
   const symOf = (v) => { const x = String(v || "").toUpperCase().replace(/\s*-EQ$/i, "").trim(); return RENAMES[x] || x; };
 
-  /** Which kind of file this is, from its header row: "zerodha-tradebook" | "groww-history" | "upstox-tradebook" | null. */
+  /** Which kind of file this is, from its header row: "zerodha-tradebook" | "groww-history" | "upstox-tradebook" | "indmoney-transactions" | null. */
   function detectFormat(text) {
     const rows = parseCSV(text);
     const head = (rows[0] || []).map((h) => h.trim().toLowerCase());
@@ -66,6 +66,7 @@
     if (has("symbol", "isin", "trade_date", "trade_type", "quantity", "price", "trade_id")) return "zerodha-tradebook";
     if (has("symbol", "type", "quantity", "value", "execution date and time")) return "groww-history";
     if (has("date", "company", "scrip code", "trade num", "trade time", "side", "quantity", "price")) return "upstox-tradebook";
+    if (has("execution date", "scrip symbol", "isin", "type", "quantity", "price", "exchange order id")) return "indmoney-transactions";
     return null;
   }
 
@@ -118,7 +119,7 @@
    */
   const UPSTOX_SYMBOLS = {
     "BANK BEES|590106": "BANKBEES", "NIFTY BEES|590103": "NIFTYBEES", "KOTAKGOLDETF|590097": "GOLD1", "NIP IND ETF MIDCAP 150|MID150BEES": "MID150BEES",
-    "N100|533385": "MON100", "RELCAPAMC NETFIT|206811": "ITBEES", "HDFC MUTUAL FUND|543775": "HDFCSML250", "HDFC MUTUAL FUND|543776": "HDFCMID150",
+    "N100|533385": "MON100", "RELCAPAMC NETFIT|206811": "ITBEES", "NIPPON INDIA ETF NIFTY IT|590141": "ITBEES", "HDFC MUTUAL FUND|543775": "HDFCSML250", "HDFC MUTUAL FUND|543776": "HDFCMID150", "CPSE ETF GROWTH|538057": "CPSEETF",
   };
   const excelDay = (v) => { const x = Number(v); if (!Number.isFinite(x) || x < 20000 || x > 80000) return null; return new Date(Math.round((Math.floor(x) - 25569) * 86400000)).toISOString().slice(0, 10); };
 
@@ -136,12 +137,34 @@
       if ((seg && seg !== "EQ") || (inst && inst !== "equity")) { out.skipped++; continue; }
       const side = get("side").toLowerCase(), qty = num(get("quantity")), price = num(get("price"));
       const raw = get("date"), date = validISO(raw.slice(0, 10)) ? raw.slice(0, 10) : excelDay(raw);
-      const tm = /^(\d{1,2}):(\d{2}):(\d{2})$/.exec(get("trade time"));
-      if (!date || !validISO(date) || !tm || (side !== "buy" && side !== "sell") || !(qty > 0) || !(price > 0)) { out.errors.push(`Line ${i + 1}: not a usable trade.`); continue; }
+      const tm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(get("trade time"));   // older rows carry hours and minutes only
+      if (!date || !validISO(date) || !tm || +tm[1] > 23 || +tm[2] > 59 || +(tm[3] || 0) > 59 || (side !== "buy" && side !== "sell") || !(qty > 0) || !(price > 0)) { out.errors.push(`Line ${i + 1}: not a usable trade.`); continue; }
       const sym = UPSTOX_SYMBOLS[`${get("company").toUpperCase()}|${get("scrip code")}`];
       if (!sym) { out.errors.push(`Line ${i + 1}: "${get("company")}" (code ${get("scrip code")}) is not a share this app knows how to name.`); continue; }
-      const time = `${date}T${tm[1].padStart(2, "0")}:${tm[2]}:${tm[3]}`, base = `u:${get("exchange") || "NSE"}:${get("trade num")}`, n = (seen.get(base) || 0) + 1; seen.set(base, n);
+      const time = `${date}T${tm[1].padStart(2, "0")}:${tm[2]}:${tm[3] || "00"}`, base = `u:${get("exchange") || "NSE"}:${get("trade num")}`, n = (seen.get(base) || 0) + 1; seen.set(base, n);
       out.trades.push({ id: n === 1 ? base : base + "|" + n, broker: "Upstox", demat: (ctx && ctx.demat) || "Upstox", owner: (ctx && ctx.owner) || "Me", symbol: sym, isin: "", date, time, side, qty: r4(qty), price: r4(price), source: (ctx && ctx.source) || "" });
+    }
+    return out;
+  }
+
+  /** INDmoney equity transactions report. The date is an ISO date-time (the .xlsx day number turned into one by the file reader) or an ISO date. */
+  function parseIndmoney(text, ctx) {
+    const rows = parseCSV(text), head = (rows[0] || []).map((h) => h.trim().toLowerCase());
+    const out = { trades: [], skipped: 0, errors: [] };
+    const idx = Object.fromEntries(["execution date", "scrip name", "scrip symbol", "isin", "type", "quantity", "price", "exchange", "exchange order id", "order status"].map((n) => [n, col(head, n)]));
+    for (const n of ["execution date", "scrip symbol", "type", "quantity", "price", "exchange order id"]) if (idx[n] < 0) { out.errors.push(`The file has no "${n}" column.`); return out; }
+    const seen = new Map();
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i], get = (n) => (idx[n] >= 0 ? String(r[idx[n]] || "").trim() : "");
+      if (!get("scrip symbol") && !get("type")) continue;   // "No transactions done in this period" and similar lines
+      const status = get("order status");
+      if (status && !/^executed$/i.test(status)) { out.skipped++; continue; }
+      const side = get("type").toLowerCase(), qty = num(get("quantity")), price = num(get("price"));
+      const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}:\d{2}))?/.exec(get("execution date")), date = m ? m[1] : "";
+      if (!m || !validISO(date) || (side !== "buy" && side !== "sell") || !(qty > 0) || !(price > 0)) { out.errors.push(`Line ${i + 1}: not a usable trade.`); continue; }
+      const sym = symOf(get("scrip symbol")), time = `${date}T${m[2] || "00:00:00"}`;
+      const base = `i:${get("exchange") || "NSE"}:${get("exchange order id")}|${r4(qty)}|${r4(price)}`, n = (seen.get(base) || 0) + 1; seen.set(base, n);
+      out.trades.push({ id: n === 1 ? base : base + "|" + n, broker: "INDmoney", demat: (ctx && ctx.demat) || "INDmoney", owner: (ctx && ctx.owner) || "Wife", symbol: sym, name: get("scrip name"), isin: get("isin"), date, time, side, qty: r4(qty), price: r4(price), source: (ctx && ctx.source) || "" });
     }
     return out;
   }
@@ -149,8 +172,8 @@
   /** Reads one file of either kind. ctx = { owner, demat, source }. → { format, trades, skipped, errors } */
   function parseFile(text, ctx) {
     const format = detectFormat(text);
-    if (!format) return { format: null, trades: [], skipped: 0, errors: ["This file is not a Zerodha tradebook, a Groww order history or an Upstox trade history."] };
-    return { format, ...(format === "zerodha-tradebook" ? parseZerodha(text, ctx) : format === "groww-history" ? parseGroww(text, ctx) : parseUpstox(text, ctx)) };
+    if (!format) return { format: null, trades: [], skipped: 0, errors: ["This file is not a Zerodha tradebook, a Groww order history, an Upstox trade history or an INDmoney transactions report."] };
+    return { format, ...(format === "zerodha-tradebook" ? parseZerodha(text, ctx) : format === "groww-history" ? parseGroww(text, ctx) : format === "upstox-tradebook" ? parseUpstox(text, ctx) : parseIndmoney(text, ctx)) };
   }
 
   /** Trades already kept + new ones; the same trade (same id) is kept once. → { trades (oldest first), added, duplicates } */
@@ -380,5 +403,5 @@
     return { stocks: out, applied, skipped, flagged };
   }
 
-  return { EPS, ACTIONS, saleCandidate, COST_TOLERANCE_PCT, parseCSV, detectFormat, parseZerodha, parseGroww, parseUpstox, UPSTOX_SYMBOLS, markStamped, stampedDate, parseFile, mergeTrades, replay, heldPositions, reconcile, rowsFor, apply, posKey, validISO };
+  return { EPS, ACTIONS, saleCandidate, COST_TOLERANCE_PCT, parseCSV, detectFormat, parseZerodha, parseGroww, parseUpstox, parseIndmoney, UPSTOX_SYMBOLS, markStamped, stampedDate, parseFile, mergeTrades, replay, heldPositions, reconcile, rowsFor, apply, posKey, validISO };
 });

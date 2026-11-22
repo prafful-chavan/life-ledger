@@ -35,15 +35,22 @@ function build(before, trades, opts) {
     if ((before.sales || []).some((x) => x.id === b.sale.id) || newSales.some((x) => x.id === b.sale.id)) { salesReport.push({ symbol: sel.symbol, date: sel.date, skipped: "already recorded" }); continue; }
     newSales.push(b.sale); salesReport.push({ symbol: sel.symbol, date: sel.date, qty: b.sale.qty, price: b.sale.price, gross: b.sale.gross, charges: b.sale.charges, cost: b.sale.cost, gain: b.sale.gain, lots: b.sale.lots.length });
   }
-  const after = { ...before, brokerTrades: merged.trades, stocks: applied.stocks, sales: [...(before.sales || []), ...newSales] };
+  // a "did you sell this?" item waiting for exactly the shares just recorded is answered: it goes
+  const answers = (p, sale) => symOf(p) === symOf(sale) && (p.owner || "Me") === (sale.owner || "Me") && (p.demat || "") === (sale.demat || "") && Math.abs(Number(p.qty) - Number(sale.qty)) < 1e-6;
+  const pending = (before.salesPending || []).filter((p) => !newSales.some((sale) => answers(p, sale)));
+  const after = { ...before, brokerTrades: merged.trades, stocks: applied.stocks, sales: [...(before.sales || []), ...newSales], ...(Array.isArray(before.salesPending) ? { salesPending: pending } : {}) };
   const status = {}; recon.items.forEach((i) => { status[i.status] = (status[i.status] || 0) + 1; });
-  return { ok: true, after, report: { markedUnknown: pre.flagged, trades: merged.trades.length, added: merged.added, duplicates: merged.duplicates, status, applied: applied.applied, skipped: applied.skipped, sales: salesReport, oversold: [...BTC.replay(merged.trades).values()].filter((p) => p.oversold > 0).map((p) => ({ symbol: p.symbol, oversold: p.oversold })) } };
+  return { ok: true, after, report: { pendingCleared: (before.salesPending || []).length - pending.length, markedUnknown: pre.flagged, trades: merged.trades.length, added: merged.added, duplicates: merged.duplicates, status, applied: applied.applied, skipped: applied.skipped, sales: salesReport, oversold: [...BTC.replay(merged.trades).values()].filter((p) => p.oversold > 0).map((p) => ({ symbol: p.symbol, oversold: p.oversold })) } };
 }
 
 /** The change may touch only brokerTrades, stocks and sales; shares and money per holding stay; trades and sales only grow. */
 function guard(before, after) {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  for (const k of keys) if (!["brokerTrades", "stocks", "sales"].includes(k) && JSON.stringify(before[k]) !== JSON.stringify(after[k])) return false;
+  for (const k of keys) if (!["brokerTrades", "stocks", "sales", "salesPending"].includes(k) && JSON.stringify(before[k]) !== JSON.stringify(after[k])) return false;
+  // waiting items may only go, and only those a newly recorded sale answers
+  const newSalesList = (after.sales || []).filter((x) => !(before.sales || []).some((y) => y.id === x.id)), bp = before.salesPending || [], ap = after.salesPending || [];
+  for (const p of ap) if (!bp.some((q) => q.id === p.id) || JSON.stringify(bp.find((q) => q.id === p.id)) !== JSON.stringify(p)) return false;
+  for (const p of bp) if (!ap.some((q) => q.id === p.id) && !newSalesList.some((x) => symOf(p) === symOf(x) && (p.owner || "Me") === (x.owner || "Me") && (p.demat || "") === (x.demat || "") && Math.abs(Number(p.qty) - Number(x.qty)) < 1e-6)) return false;
   const bt = new Set((before.brokerTrades || []).map((t) => t.id)), at = new Set((after.brokerTrades || []).map((t) => t.id));
   for (const id of bt) if (!at.has(id)) return false;
   const bs = new Set((before.sales || []).map((t) => t.id)), as = new Set((after.sales || []).map((t) => t.id));

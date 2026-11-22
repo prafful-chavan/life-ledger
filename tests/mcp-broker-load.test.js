@@ -62,6 +62,26 @@ const two = L.build(data(), [...trades, tr("7", "buy", "2025-02-01", 2, 10, "NEW
   assert.strictEqual(L.guard(base, { ...out.after, stocks: out.after.stocks.map((x) => (x.id === "flagged" ? { ...x, buyDateKnown: undefined } : x)) }), false, "a mark may not be taken away");
 }
 
+// A waiting "did you sell this?" item is answered by the sale recorded from the trades, and only that one
+{
+  const pend = (id, sym, qty, extra = {}) => ({ id, key: `${sym}|Me|Zerodha`, symbol: sym, name: sym, owner: "Me", demat: "Zerodha", qty, cost: 500, lots: [], whole: true, detectedOn: "2026-11-20", ...extra });
+  const base = { ...data(), salesPending: [pend("p-old", "OLD", 50), pend("p-other", "OTHER", 5), pend("p-qty", "OLD", 49), pend("p-owner", "OLD", 50, { owner: "Wife" })] };
+  const r = L.build(base, trades, { today: T, sales: [sel] }); assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(r.after.salesPending.map((p) => p.id), ["p-other", "p-qty", "p-owner"], "only the item for the same share, owner, broker and exactly these shares goes"); assert.strictEqual(r.report.pendingCleared, 1);
+  assert.strictEqual(L.guard(base, r.after), true);
+  assert.strictEqual(L.build(base, trades, { today: T }).report.pendingCleared, 0, "no sale: nothing answered"); assert.strictEqual(L.build(base, trades, { today: T }).after.salesPending.length, 4);
+  // the guard: nothing may be added or changed among the waiting items, and an unanswered one may not go
+  assert.strictEqual(L.guard(base, { ...r.after, salesPending: [...r.after.salesPending, pend("new", "NEW", 1)] }), false, "an item appeared");
+  assert.strictEqual(L.guard(base, { ...r.after, salesPending: r.after.salesPending.map((p) => (p.id === "p-other" ? { ...p, qty: 6 } : p)) }), false, "an item changed");
+  assert.strictEqual(L.guard(base, { ...r.after, salesPending: r.after.salesPending.filter((p) => p.id !== "p-other") }), false, "an item went that no sale answers");
+  assert.strictEqual(L.guard(base, { ...r.after, salesPending: r.after.salesPending.filter((p) => p.id !== "p-qty") }), false, "a different quantity is not answered");
+  // a sale that was already recorded earlier does not license removing a waiting item (only a sale added by this change does)
+  { const oldSale = { id: "s0", symbol: "OLD", owner: "Me", demat: "Zerodha", qty: 50 }, withOld = { ...base, sales: [oldSale] };
+    assert.strictEqual(L.guard(withOld, { ...withOld, salesPending: withOld.salesPending.filter((p) => p.id !== "p-old") }), false, "p-old matches s0, but s0 was not recorded by this change"); }
+  // data with no waiting list at all stays without one
+  assert.strictEqual("salesPending" in L.build(data(), trades, { today: T, sales: [sel] }).after, false);
+}
+
 // The guard
 const ok = L.build(data(), trades, { today: T }).after;
 assert.strictEqual(L.guard(data(), { ...ok, goals: [] }), false, "another record list changed");

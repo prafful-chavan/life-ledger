@@ -57,7 +57,14 @@ function excelDate(n) {
   return new Date(Math.round((Math.floor(x) - 25569) * 86400000)).toISOString().slice(0, 10);
 }
 
+/** An Excel day number with its time of day as YYYY-MM-DDTHH:MM:SS (to the nearest second); null when it is not a plausible date. */
+function excelDateTime(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x < 20000 || x > 80000) return null;
+  return new Date(Math.round((x - 25569) * 86400) * 1000).toISOString().slice(0, 19);
+}
+
 /** Rows as CSV text (cells with a comma, quote or line break are quoted). */
 const toCSV = (rows) => rows.map((r) => r.map((c) => (/[",\n\r]/.test(String(c)) ? '"' + String(c).replace(/"/g, '""') + '"' : String(c))).join(",")).join("\n");
 
-module.exports = { unzip, readXlsx, excelDate, toCSV };
+module.exports = { unzip, readXlsx, excelDate, excelDateTime, toCSV };

@@ -75,6 +75,15 @@ function brief(state, a = {}) {
 // ── tax ──────────────────────────────────────────────────────────────────────────────────────
 const WHO = { Me: "Prafful", Wife: "Archana" };
 
+/** The data gap for Indian holdings with no real buy date: names the holdings that still lack one (most now have real dates from broker trade files). */
+function noDateGap(lots) {
+  const unknown = (lots || []).filter((l) => l.kind === "stock" && l.dateKnown === false);
+  if (!unknown.length) return [];
+  const names = [...new Set(unknown.map((l) => String(l.symbol || l.name || "").toUpperCase()).filter(Boolean))];
+  const shown = names.slice(0, 8).join(", ") + (names.length > 8 ? ` and ${names.length - 8} more` : "");
+  return [{ what: `Real buy dates for ${names.length} Indian stock${names.length === 1 ? "" : "s"} or ETF${names.length === 1 ? "" : "s"}: ${shown}`, why: "Short-term vs long-term cannot be told for these, so their tax is shown as a range (all long-term vs all short-term). The broker's trade history for that account (every year since the first buy) fixes it; the other holdings already have real dates." }];
+}
+
 function taxReport(state, ctx, today) {
   const fx = A.netWorth(state, ctx.usdInr).fxUsdInr || 1;
   const { lots, realised } = Tax.buildLots(state, fx);
@@ -117,7 +126,7 @@ function taxReport(state, ctx, today) {
     incomeTax: incomeTax.map((e) => ({ person: WHO[e.who], ...e, who: undefined })), slabRateUsed: { Prafful: slab.Me, Archana: slab.Wife },
     needFromYou: M.actions.filter((a) => a.severity !== "high").slice(0, 6).map((a) => ({ what: a.title, why: a.why })),
     dataGaps: [
-      ...(lots.some((l) => l.kind === "stock" && l.dateKnown === false) ? [{ what: "Real buy dates for your Indian stocks and ETFs", why: "Every stock row in the vault carries the sheet's import date, so short-term vs long-term cannot be told. Tax on those holdings is shown as a range (all long-term vs all short-term). A broker 'tax P&L' or holdings statement with first-buy dates fixes this." }] : []),
+      ...noDateGap(lots),
       ...(lots.some((l) => l.kind === "us" && l.dateKnown === false) ? [{ what: "Real buy dates for US stocks", why: "Same issue; foreign shares need 24 months to be long-term." }] : []),
     ],
     caveats: [
@@ -272,4 +281,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { handle, brief, protectionView, taxReport, tableFor, normalizeTypes, TOOLS };
+module.exports = { handle, brief, protectionView, taxReport, noDateGap, tableFor, normalizeTypes, TOOLS };

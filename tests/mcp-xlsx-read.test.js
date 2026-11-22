@@ -59,6 +59,7 @@ assert.throws(() => X.readXlsx(Buffer.alloc(0)), /not an \.xlsx/);
 assert.strictEqual(X.excelDate(46003), "2025-12-12"); assert.strictEqual(X.excelDate("46000.0"), "2025-12-09"); assert.strictEqual(X.excelDate(46003.75), "2025-12-12", "the time of day is dropped");
 assert.strictEqual(X.excelDate(20000), "1954-10-03", "the lowest day accepted");
 assert.strictEqual(X.excelDate(19999), null); assert.strictEqual(X.excelDate(80001), null); assert.strictEqual(X.excelDate(80000), "2119-01-11", "the highest day accepted"); assert.strictEqual(X.excelDate("x"), null); assert.strictEqual(X.excelDate(""), null);
+assert.strictEqual(X.excelDateTime(46346.63155092593), "2026-11-20T15:09:26"); assert.strictEqual(X.excelDateTime(46346), "2026-11-20T00:00:00"); assert.strictEqual(X.excelDateTime("46108.46386574074"), "2026-03-27T11:07:58"); assert.strictEqual(X.excelDateTime(19999), null); assert.strictEqual(X.excelDateTime(80001), null); assert.strictEqual(X.excelDateTime("x"), null); assert.strictEqual(X.excelDateTime(""), null); assert.strictEqual(X.excelDateTime(20000), "1954-10-03T00:00:00"); assert.strictEqual(X.excelDateTime(80000), "2119-01-11T00:00:00");
 // CSV text
 assert.strictEqual(X.toCSV([["a", "b,c", 'd"e'], ["x\ny", "", "z"]]), 'a,"b,c","d""e"\n"x\ny",,z');
 assert.deepStrictEqual(B.parseCSV(X.toCSV([["a", "b,c", 'd"e'], ["1", "2", "3"]])), [["a", "b,c", 'd"e'], ["1", "2", "3"]], "round trip");
@@ -77,7 +78,14 @@ t = B.parseFile(F.tradeFileText(upstox), { owner: "Me" }); assert.deepStrictEqua
   const r = B.parseFile(F.tradeFileText(two), { owner: "Me" }); assert.deepStrictEqual([r.errors.length, r.trades.map((x) => x.date)], [0, ["2025-12-12", "2025-12-09", "2025-01-06"]]);
   const g1 = put("g1.xlsx", xlsx([gh, ["TRENT LTD", "TRENT", "INE849A01020", "BUY", "1.0", "7588.0", "NSE", "1200", "23-09-2024 11:06 AM", "Executed"]])); assert.strictEqual(B.parseFile(F.tradeFileText(g1), { owner: "Wife" }).trades.length, 1, "Groww table on line 1");
 }
+// INDmoney report: the day-number-with-time becomes a date-time and the empty "no transactions" workbook reads as no trades
+{
+  const ih = ["Execution Date", "Scrip Name", "Scrip Symbol", "ISIN", "Type", "Quantity", "Price", "Exchange", "Exchange Order Id", "Order Status"];
+  const f = put("i.xlsx", xlsx([["Equity transactions report"], [], ["Name", "Someone"], ["Unique client code", "X1"], [], [], ih, [46346.63155092593, "Bharat 22 ETF", "ICICIB22", "INF109KB15Y7", "SELL", "311", "118.98", "NSE", "1100000107309617", "Executed"], ["2025-01-09", "Bharat 22 ETF", "ICICIB22", "INF109KB15Y7", "BUY", "49", "102.61", "NSE", "5", "Executed"]]));
+  const r = B.parseFile(F.tradeFileText(f), { owner: "Wife" }); assert.deepStrictEqual([r.format, r.errors.length, r.trades.map((t) => [t.time, t.symbol, t.side])], ["indmoney-transactions", 0, [["2026-11-20T15:09:26", "BHARAT22", "sell"], ["2025-01-09T00:00:00", "BHARAT22", "buy"]]]);
+  const empty = put("ie.xlsx", xlsx([["Equity transactions report"], [], ih, ["No transactions done in this period"]])); const e = B.parseFile(F.tradeFileText(empty), { owner: "Wife" }); assert.deepStrictEqual([e.format, e.trades.length, e.errors.length], ["indmoney-transactions", 0, 0]);
+}
 assert.strictEqual(F.tradeFileText(put("p.csv", "a,b\n1,2\n")), "a,b\n1,2\n", "a CSV is read as it is");
-assert.throws(() => F.tradeFileText(put("o.xlsx", xlsx([["just", "some"], ["other", "sheet"]]))), /no Groww or Upstox trade table/);
+assert.throws(() => F.tradeFileText(put("o.xlsx", xlsx([["just", "some"], ["other", "sheet"]]))), /no Groww, Upstox or INDmoney trade table/);
 fs.rmSync(dir, { recursive: true });
 console.log("mcp-xlsx-read tests passed");
