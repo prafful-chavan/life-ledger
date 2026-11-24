@@ -128,4 +128,55 @@ const docs = D.clean([
   assert.strictEqual(D.collectList([{ area: "A", doc: "D" }], { [k]: { note: "n".repeat(300) } }).rows[0].note.length, 300); assert.strictEqual(D.collectList([{ area: "A", doc: "D" }], { [k]: { note: "n".repeat(301) } }).rows[0].note.length, 300);
 }
 console.log("docs-vault-core: limits and columns passed");
+
+// ---- folders: the way down from a file's path, readable names, dates that sort, one folder at a time
+{
+  assert.deepStrictEqual(D.folderParts({ path: "a/b/c.pdf" }), ["a", "b"]); assert.deepStrictEqual(D.folderParts({ path: "c.pdf" }), []); assert.deepStrictEqual(D.folderParts({ path: "" }), []); assert.deepStrictEqual(D.folderParts({}), []); assert.deepStrictEqual(D.folderParts(null), []);
+  assert.deepStrictEqual(D.folderParts({ path: "/a//b/c.pdf" }), ["a", "b"], "stray slashes are ignored");
+  assert.strictEqual(D.folderLabel("02_Salary-and-Form16"), "Salary and Form16"); assert.strictEqual(D.folderLabel("FY2019-20"), "FY2019-20"); assert.strictEqual(D.folderLabel("AY-2021-22"), "AY 2021-22");
+  assert.strictEqual(D.folderLabel("Car-Loan_Bank-of-Maharashtra"), "Car Loan Bank of Maharashtra"); assert.strictEqual(D.folderLabel("14_Education-and-Certificates"), "Education and Certificates");
+  assert.strictEqual(D.folderLabel("2026_notes"), "2026 notes", "only a one or two digit number is a numbering prefix"); assert.strictEqual(D.folderLabel("99_To-Review"), "To Review"); assert.strictEqual(D.folderLabel("100_x"), "100 x");
+  assert.strictEqual(D.folderLabel("02_"), "02_", "nothing left → the original name"); assert.strictEqual(D.folderLabel(""), ""); assert.strictEqual(D.folderLabel(null), "");
+  assert.strictEqual(D.dateKey("2026-05-23_Rokde.jpg"), 20260523); assert.strictEqual(D.dateKey("Feb-2019_BlazeClan.pdf"), 20190200); assert.strictEqual(D.dateKey("Apr-2019_x"), 20190400); assert.strictEqual(D.dateKey("December-2020_x"), 20201200);
+  assert.strictEqual(D.dateKey("Fab-2019_x"), null); assert.strictEqual(D.dateKey("passport.pdf"), null); assert.strictEqual(D.dateKey("2026-5-2_x"), null);
+}
+{
+  const f = (name, path, o = {}) => D.record({ name, path, type: "T", ...o });
+  const docs = D.clean([
+    f("Dec-2019_B.pdf", "02_Tax/Payslips/BlazeClan/FY2019-20/Dec-2019_B.pdf"), f("Apr-2019_B.pdf", "02_Tax/Payslips/BlazeClan/FY2019-20/Apr-2019_B.pdf"), f("Aug-2019_B.pdf", "02_Tax/Payslips/BlazeClan/FY2019-20/Aug-2019_B.pdf"),
+    f("Feb-2019_B.pdf", "02_Tax/Payslips/BlazeClan/FY2018-19/Feb-2019_B.pdf"), f("Offer.pdf", "02_Tax/Payslips/BlazeClan/Offer.pdf"), f("Jan-2021_H.pdf", "02_Tax/Payslips/HashedIn/Jan-2021_H.pdf"),
+    f("aadhaar.pdf", "01_Identity/aadhaar.pdf"), f("loose.pdf", "loose.pdf"), f("hidden.pdf", "99_Aside/hidden.pdf", { status: "Ignore (set aside)" }), f("2026-05-23_ring.jpg", "10_Gold/2026-05-23_ring.jpg"), f("2025-01-01_chain.jpg", "10_Gold/2025-01-01_chain.jpg"), f("undated.jpg", "10_Gold/undated.jpg"),
+  ]);
+  const top = D.browse(docs, []);
+  assert.deepStrictEqual(top.folders.map((x) => [x.name, x.label, x.count]), [["01_Identity", "Identity", 1], ["02_Tax", "Tax", 6], ["10_Gold", "Gold", 3]], "numbered folders in order; the set-aside one is not listed");
+  assert.deepStrictEqual(top.files.map((x) => x.name), ["loose.pdf"]); assert.strictEqual(top.total, 11); assert.strictEqual(top.exists, true); assert.deepStrictEqual(top.crumbs, [{ label: "All papers", parts: [] }]);
+  const pay = D.browse(docs, ["02_Tax", "Payslips"]);
+  assert.deepStrictEqual(pay.folders.map((x) => [x.label, x.count]), [["BlazeClan", 5], ["HashedIn", 1]]); assert.strictEqual(pay.files.length, 0);
+  const bz = D.browse(docs, ["02_Tax", "Payslips", "BlazeClan"]);
+  assert.deepStrictEqual(bz.folders.map((x) => [x.label, x.count]), [["FY2018-19", 1], ["FY2019-20", 3]]); assert.deepStrictEqual(bz.files.map((x) => x.name), ["Offer.pdf"]); assert.strictEqual(bz.total, 5);
+  assert.deepStrictEqual(bz.crumbs.map((c) => c.label), ["All papers", "Tax", "Payslips", "BlazeClan"]); assert.deepStrictEqual(bz.crumbs[2].parts, ["02_Tax", "Payslips"]);
+  const fy = D.browse(docs, ["02_Tax", "Payslips", "BlazeClan", "FY2019-20"]);
+  assert.deepStrictEqual(fy.files.map((x) => x.name), ["Apr-2019_B.pdf", "Aug-2019_B.pdf", "Dec-2019_B.pdf"], "payslips in month order, not alphabetical"); assert.strictEqual(fy.folders.length, 0);
+  const gold = D.browse(docs, ["10_Gold"]); assert.deepStrictEqual(gold.files.map((x) => x.name), ["2025-01-01_chain.jpg", "2026-05-23_ring.jpg", "undated.jpg"], "dated files in date order, undated last");
+  // a folder that is not there, a path that only starts the same way, set-aside papers on request
+  assert.strictEqual(D.browse(docs, ["nope"]).exists, false); assert.strictEqual(D.browse(docs, ["02_Ta"]).exists, false, "a folder name must match whole");
+  assert.strictEqual(D.browse(docs, ["99_Aside"]).exists, false); const aside = D.browse(docs, [], { showSetAside: true }); assert.strictEqual(aside.folders.length, 4); assert.strictEqual(aside.total, 12);
+  assert.strictEqual(D.browse(docs, ["02_Tax", "Payslips", "HashedIn"]).exists, true, "a folder holding a single file exists"); assert.strictEqual(D.browse(docs, ["01_Identity"]).exists, true);
+  assert.strictEqual(D.browse(null, []).total, 0); assert.strictEqual(D.browse(docs, null).parts.length, 0);
+  // search inside a folder
+  assert.strictEqual(D.search(docs, "", { under: ["02_Tax"] }).length, 6); assert.strictEqual(D.search(docs, "", { under: ["02_Tax", "Payslips", "HashedIn"] }).length, 1); assert.strictEqual(D.search(docs, "", { under: [] }).length, 11); assert.strictEqual(D.search(docs, "", { under: ["02_Ta"] }).length, 0);
+  assert.strictEqual(D.search(docs, "apr", { under: ["02_Tax"] }).length, 1);
+}
+console.log("docs-vault-core: folders passed");
+
+// ---- file order inside a folder: dated first by date, equal dates by name, undated last by name — whatever order they arrive in
+{
+  const f = (name) => D.record({ name, path: "x/" + name, type: "T" });
+  const names = ["b.pdf", "a.pdf", "2025-01-01_z.pdf", "2025-01-01_a.pdf", "Jan-2025_m.pdf", "10.pdf", "9.pdf"];
+  const want = ["Jan-2025_m.pdf", "2025-01-01_a.pdf", "2025-01-01_z.pdf", "9.pdf", "10.pdf", "a.pdf", "b.pdf"];
+  const orders = [names, [...names].reverse(), [...names.slice(3), ...names.slice(0, 3)], [names[4], names[0], names[6], names[2], names[5], names[1], names[3]]];
+  orders.forEach((o) => assert.deepStrictEqual(D.browse(D.clean(o.map(f)), ["x"]).files.map((d) => d.name), want, o.join(",")));
+  assert.strictEqual(D.folderLabel("2_Tax"), "Tax", "a one-digit number is a numbering prefix too");
+}
+console.log("docs-vault-core: order passed");
 console.log("docs-vault-core: all assertions passed");

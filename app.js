@@ -5858,7 +5858,7 @@ function bindOutgo() {
 function docsCoreFn() { return (typeof window !== "undefined" && window.LifeLedgerDocs) || (typeof require === "function" ? require("./docs-vault-core.js") : null); }
 function docsViewsFn() { return (typeof window !== "undefined" && window.LifeLedgerDocsViews) || (typeof require === "function" ? require("./docs-vault-views.js") : null); }
 function docsCleanList(rows) { const C = docsCoreFn(); return C ? C.clean(rows) : (Array.isArray(rows) ? rows : []); }
-const docsUi = { q: "", type: "", person: "", fy: "", showSetAside: false, limit: 60 };
+const docsUi = { q: "", type: "", person: "", fy: "", showSetAside: false, limit: 60, tab: "folders", path: [], flat: false };
 
 function renderDocs() {
   const box = document.getElementById("docsBody");
@@ -5866,7 +5866,13 @@ function renderDocs() {
   if (!box || !C || !V) return;
   const filters = { type: docsUi.type, person: docsUi.person, fy: docsUi.fy, showSetAside: docsUi.showSetAside };
   const docs = state.documents || [];
-  box.innerHTML = V.panel({ facets: C.facets(docs), results: C.search(docs, docsUi.q, filters), query: docsUi.q, filters, limit: docsUi.limit, collect: C.collectList(state.docCollectItems, state.docCollect) }, { names: DASH_NAMES });
+  const searching = Boolean(docsUi.q.trim() || docsUi.type || docsUi.person || docsUi.fy);
+  const b = C.browse(docs, docsUi.path, { showSetAside: docsUi.showSetAside });
+  box.innerHTML = V.panel({
+    facets: C.facets(docs), tab: docsUi.tab, query: docsUi.q, filters, searching, results: searching ? C.search(docs, docsUi.q, filters) : [],
+    browse: b, flat: docsUi.flat, flatFiles: docsUi.flat ? C.search(docs, "", { under: docsUi.path, showSetAside: docsUi.showSetAside }) : [],
+    limit: docsUi.limit, collect: C.collectList(state.docCollectItems, state.docCollect),
+  }, { names: DASH_NAMES });
 }
 
 function bindDocs() {
@@ -5876,9 +5882,10 @@ function bindDocs() {
     renderDocs();
     if (keepSearchFocus) { const el = box.querySelector('[data-field="q"]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   };
+  const goTo = (parts) => { docsUi.path = parts; docsUi.flat = false; docsUi.limit = 60; docsUi.tab = "folders"; docsUi.q = ""; docsUi.type = ""; docsUi.person = ""; docsUi.fy = ""; redraw(false); };
   box.addEventListener("input", (event) => {
     const t = event.target;
-    if (t.matches('[data-field="q"]')) { docsUi.q = t.value; docsUi.limit = 60; redraw(true); return; }
+    if (t.matches('[data-field="q"]')) { docsUi.q = t.value; docsUi.limit = 60; docsUi.tab = "folders"; redraw(true); return; }
     if (t.matches('[data-act="docs-note"]')) {
       const key = t.dataset.key, prev = (state.docCollect || {})[key] || {};
       state.docCollect = { ...(state.docCollect || {}), [key]: { ...prev, note: t.value.slice(0, 300) } };
@@ -5887,8 +5894,9 @@ function bindDocs() {
   });
   box.addEventListener("change", (event) => {
     const t = event.target;
-    if (t.matches('[data-field="person"]')) { docsUi.person = t.value; docsUi.limit = 60; redraw(false); return; }
-    if (t.matches('[data-field="fy"]')) { docsUi.fy = t.value; docsUi.limit = 60; redraw(false); return; }
+    if (t.matches('[data-field="type"]')) { docsUi.type = t.value; docsUi.limit = 60; docsUi.tab = "folders"; redraw(false); return; }
+    if (t.matches('[data-field="person"]')) { docsUi.person = t.value; docsUi.limit = 60; docsUi.tab = "folders"; redraw(false); return; }
+    if (t.matches('[data-field="fy"]')) { docsUi.fy = t.value; docsUi.limit = 60; docsUi.tab = "folders"; redraw(false); return; }
     if (t.matches('[data-field="showSetAside"]')) { docsUi.showSetAside = t.checked; docsUi.limit = 60; redraw(false); return; }
     if (t.matches('[data-act="docs-done"]')) {
       const key = t.dataset.key, prev = (state.docCollect || {})[key] || {};
@@ -5899,8 +5907,12 @@ function bindDocs() {
   box.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-act]");
     if (!btn) return;
-    if (btn.dataset.act === "docs-type") { docsUi.type = btn.dataset.v || ""; docsUi.limit = 60; redraw(false); }
-    else if (btn.dataset.act === "docs-more") { docsUi.limit += 60; redraw(false); }
+    const act = btn.dataset.act;
+    if (act === "docs-go") goTo((btn.dataset.path || "").split("/").filter(Boolean));
+    else if (act === "docs-flat") { docsUi.flat = !docsUi.flat; docsUi.limit = 60; redraw(false); }
+    else if (act === "docs-more") { docsUi.limit += 60; redraw(false); }
+    else if (act === "docs-tab") { docsUi.tab = btn.dataset.v === "collect" ? "collect" : "folders"; redraw(false); }
+    else if (act === "docs-clear") { docsUi.q = ""; docsUi.type = ""; docsUi.person = ""; docsUi.fy = ""; docsUi.limit = 60; redraw(false); }
   });
 }
 

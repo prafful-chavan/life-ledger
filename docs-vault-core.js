@@ -6,6 +6,7 @@
  *   clean(rows)                   — records as the app keeps them: trimmed, de-duplicated, bad links dropped
  *   fromRegisterRow(cells)        — one row of the Document Register spreadsheet → a record (or null)
  *   search(docs, query, filters)  — the files that match every word typed and every chosen filter
+ *   browse(docs, parts, opts)     — one folder of the Drive tree: its sub-folders (with counts), the files directly in it, and the way back up
  *   facets(docs)                  — counts per kind of paper, per person and per year, for the filter chips
  *   collectList(items, progress)  — what is still to be collected, with the household's own ticks and notes
  * Nothing here guesses: a note that is not there stays empty, a link that is not a Drive link is dropped.
@@ -89,7 +90,7 @@
   }
 
   const hay = (d) => `${d.name} ${d.type} ${d.person} ${d.fy} ${d.about} ${d.path}`.toLowerCase();
-  /** Files matching every word of `query` (any order, any case) and every filter: { type, person, fy, status, showSetAside }. Set-aside files are hidden unless asked for. */
+  /** Files matching every word of `query` (any order, any case) and every filter: { type, person, fy, status, under (folder parts), showSetAside }. Set-aside files are hidden unless asked for. */
   function search(docs, query, filters) {
     const f = filters || {};
     const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
@@ -99,8 +100,59 @@
         && (!f.person || d.person === f.person)
         && (!f.fy || d.fy === f.fy)
         && (!f.status || d.status === f.status)
+        && (!f.under || !f.under.length || startsWith(folderParts(d), f.under))
         && words.every((w) => hay(d).includes(w)))
       .sort((a, b) => a.type.localeCompare(b.type) || b.fy.localeCompare(a.fy) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+  }
+
+  /** The folders a file sits in, from its path (the file name itself is not a folder). */
+  function folderParts(d) {
+    const p = String(d && d.path || "").split("/").filter(Boolean);
+    p.pop();
+    return p;
+  }
+  /** A folder name made readable: "02_Salary-and-Form16" → "Salary and Form16"; a year like "FY2019-20" keeps its dash. */
+  function folderLabel(name) {
+    const n = String(name == null ? "" : name);
+    return n.replace(/^\d{1,2}_/, "").replace(/_/g, " ").replace(/(?<!\d)-|-(?!\d)/g, " ").replace(/\s+/g, " ").trim() || n;
+  }
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  /** A date at the start of a file name ("2026-05-23_…" or "Feb-2019_…") as a number to sort by, or null. */
+  function dateKey(name) {
+    let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(name);
+    if (m) return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]);
+    m = /^([A-Za-z]{3})[a-z]*[-_ ](\d{4})/.exec(name);
+    if (m && MONTHS.includes(m[1].toLowerCase())) return Number(m[2]) * 10000 + (MONTHS.indexOf(m[1].toLowerCase()) + 1) * 100;
+    return null;
+  }
+  const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+  const startsWith = (parts, prefix) => prefix.every((x, i) => parts[i] === x);
+  const visible = (docs, showSetAside) => (docs || []).filter((d) => showSetAside || d.status !== STATUS.IGNORED);
+
+  /** One folder: `parts` is the way down from the top (e.g. ["02_Tax-Documents","02_Salary-and-Form16"]); [] is the top. Sub-folders carry the count of every file below them. */
+  function browse(docs, parts, opts) {
+    const here = Array.isArray(parts) ? parts.map(String) : [];
+    const all = visible(docs, opts && opts.showSetAside).filter((d) => startsWith(folderParts(d), here));
+    const sub = new Map(), direct = [];
+    all.forEach((d) => {
+      const fp = folderParts(d);
+      if (fp.length === here.length) direct.push(d);
+      else { const n = fp[here.length]; sub.set(n, (sub.get(n) || 0) + 1); }
+    });
+    const files = direct.sort((a, b) => {
+      const ka = dateKey(a.name), kb = dateKey(b.name);
+      if (ka !== null && kb !== null && ka !== kb) return ka - kb;
+      if ((ka === null) !== (kb === null)) return ka === null ? 1 : -1;
+      return byName(a.name, b.name);
+    });
+    return {
+      parts: here,
+      crumbs: [{ label: "All papers", parts: [] }, ...here.map((n, i) => ({ label: folderLabel(n), parts: here.slice(0, i + 1) }))],
+      folders: [...sub.entries()].sort((a, b) => byName(a[0], b[0])).map(([name, count]) => ({ name, label: folderLabel(name), parts: [...here, name], count })),
+      files,
+      total: all.length,
+      exists: here.length === 0 || all.length > 0,
+    };
   }
 
   function tally(list, key) {
@@ -142,5 +194,5 @@
     };
   }
 
-  return { STATUS, COLLECT_STATES, safeUrl, driveId, record, clean, fromRegisterRow, search, facets, collectKey, collectList };
+  return { STATUS, COLLECT_STATES, folderParts, folderLabel, dateKey, browse, safeUrl, driveId, record, clean, fromRegisterRow, search, facets, collectKey, collectList };
 });
