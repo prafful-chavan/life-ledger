@@ -22,7 +22,7 @@ const { build } = require("./fixture");
 const ROOT = path.join(__dirname, "..", "..");
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".svg": "image/svg+xml" };
-const VIEWS = ["dashboard", "finance", "advisor", "goals", "protection", "tax", "exercise", "habits", "career", "todo"];
+const VIEWS = ["dashboard", "finance", "advisor", "goals", "protection", "documents", "tax", "exercise", "habits", "career", "todo"];
 const results = [];
 const check = (name, ok, detail = "") => { results.push({ name, ok: Boolean(ok), detail }); console.log(`${ok ? "  ✓" : "  ✗"} ${name}${!ok && detail ? "\n      " + String(detail).slice(0, 400) : ""}`); };
 const near = (a, b, tol = 1) => Math.abs(a - b) <= tol;
@@ -832,6 +832,53 @@ const SCANNER = `(${function scan() {
       const fj = JSON.parse(fit); check(`outgo calendar at ${w}px: fits, text at least 12px, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
     }
     await cdp.eval(`(()=>{ LifeLedgerApp.getState().outgoings=window.__origOut||[]; LifeLedgerApp.renderAll(); return 0; })()`);
+    await viewport(1280, 900); await sleep(300);
+    // Documents page: find a paper, open it in Drive, the collect list
+    console.log("\nDocuments");
+    await viewport(1280, 900); await sleep(300); await view("documents"); await sleep(300);
+    const dc = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); window.__origDocs=[S.documents,S.docCollectItems,S.docCollect];
+      const D=LifeLedgerDocs; const ID='1KyUeuC55LHX0KLJ32bMVj9xHlRbh-2cN';
+      const types=['Gold & jewellery','Form 16 / TDS','Insurance policy','Vehicle'];
+      const rows=[]; for(let i=0;i<130;i++) rows.push({name:'Paper_'+String(i).padStart(3,'0')+(i===5?'_Rokde_diamond_ring_invoice':'')+'.pdf',type:types[i%4],person:i%3===0?'Archana':'Prafful',fy:'FY202'+(3+i%3)+'-'+(4+i%3<10?'0':'')+(4+i%3),kind:'pdf',sizeKb:10+i,status:'Readable',about:i===5?'Diamond ring, Rokde':'',url:'https://drive.google.com/file/d/'+ID.slice(0,29)+String(i).padStart(4,'0')+'/view',path:'p/'+i});
+      rows.push({name:'<img src=x onerror=window.__xss=1>.pdf',type:'Other',person:'Prafful',status:'Readable',path:'p/x',url:'javascript:window.__xss=1'});
+      S.documents=D.clean(rows); S.docCollectItems=[{area:'Insurance',doc:'Archana term policy',status:'COLLECT',helpsApp:true,where:'Insurer'},{area:'Tax',doc:'Form 26AS',status:'HAVE'}]; S.docCollect={};
+      LifeLedgerApp.renderAll(); await w(300); const box=document.getElementById('docsBody'); const rowsIn=()=>box.querySelectorAll('.dc-row').length; const head=()=>box.querySelector('.dc-head').textContent;
+      out.view=!document.getElementById('documents').hidden; out.head=head(); out.expHead=D.facets(S.documents).total; out.first=rowsIn(); 
+      out.open=[...box.querySelectorAll('.dc-open')].every(a=>a.target==='_blank'&&/noopener/.test(a.rel)&&/^https:\\/\\/drive\\.google\\.com\\/file\\/d\\//.test(a.href)); 
+      // a paper whose name holds markup and whose link is not Drive: shown as plain text, no link, nothing runs
+      { const e=box.querySelector('[data-field="q"]'); e.value='onerror'; e.dispatchEvent(new Event('input',{bubbles:true})); await w(150); const r=box.querySelector('.dc-row'); out.xssRows=box.querySelectorAll('.dc-row').length; out.xssText=!!r&&r.textContent.includes('<img src=x onerror=window.__xss=1>'); out.xssNoTag=!!r&&!r.querySelector('img'); out.xssNoLink=!!r&&!r.querySelector('a')&&/not linked to Drive yet/.test(r.textContent); out.xss=window.__xss||0; const e2=box.querySelector('[data-field="q"]'); e2.value=''; e2.dispatchEvent(new Event('input',{bubbles:true})); await w(150); }
+      // show more
+      box.querySelector('[data-act="docs-more"]').click(); await w(150); out.more=rowsIn();
+      // search by typing: only the matching paper remains and the search box keeps the cursor
+      const q=box.querySelector('[data-field="q"]'); q.focus(); q.value='rokde ring'; q.dispatchEvent(new Event('input',{bubbles:true})); await w(150);
+      out.searchRows=rowsIn(); out.searchName=(box.querySelector('.dc-row b')||{}).textContent; out.focusKept=document.activeElement&&document.activeElement.matches('[data-field="q"]'); out.qKept=box.querySelector('[data-field="q"]').value;
+      { const e=box.querySelector('[data-field="q"]'); e.value='zzzz'; e.dispatchEvent(new Event('input',{bubbles:true})); await w(150); } out.none=/No paper matches/.test(box.textContent);
+      const q2=box.querySelector('[data-field="q"]'); q2.value=''; q2.dispatchEvent(new Event('input',{bubbles:true})); await w(150);
+      // a kind chip and a person filter
+      box.querySelector('[data-act="docs-type"][data-v="Vehicle"]').click(); await w(150); out.vehicle=[...box.querySelectorAll('.dc-type')].every(e=>e.textContent==='Vehicle'); out.vehicleCount=D.search(S.documents,'',{type:'Vehicle'}).length; out.vehicleMatches=/(\\d+) match/.exec(box.textContent)[1];
+      const per=box.querySelector('[data-field="person"]'); per.value='Archana'; per.dispatchEvent(new Event('change',{bubbles:true})); await w(150); out.both=D.search(S.documents,'',{type:'Vehicle',person:'Archana'}).length; out.bothMatches=/(\\d+) match/.exec(box.textContent)[1];
+      box.querySelector('[data-act="docs-type"][data-v=""]').click(); await w(100); const per2=box.querySelector('[data-field="person"]'); per2.value=''; per2.dispatchEvent(new Event('change',{bubbles:true})); await w(100);
+      // collect: tick, saved in the state, the open count falls; the note is kept
+      const open0=/(\\d+) still to collect/.exec(box.textContent)[1]; const key=D.collectKey({area:'Insurance',doc:'Archana term policy'});
+      const cb=box.querySelector('[data-act="docs-done"][data-key="'+key+'"]'); cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true})); await w(200);
+      out.open0=open0; out.open1=/(\\d+) still to collect/.exec(box.textContent)[1]; out.saved=(S.docCollect[key]||{}).done===true;
+      const nt=box.querySelector('[data-act="docs-note"][data-key="'+key+'"]'); nt.value='asked the agent'; nt.dispatchEvent(new Event('input',{bubbles:true})); await w(100); out.noteSaved=(S.docCollect[key]||{}).note==='asked the agent'&&(S.docCollect[key]||{}).done===true; out.noteShown=box.querySelector('[data-act="docs-note"][data-key="'+key+'"]').value;
+      out.haveLocked=box.querySelector('[data-act="docs-done"][data-key="'+D.collectKey({area:'Tax',doc:'Form 26AS'})+'"]').disabled;
+      return JSON.stringify(out); })()`));
+    check("documents: the page opens, counts every paper, draws no raw markup and no non-Drive link", dc.view && Number(dc.head.match(/([\d,]+) paper/)[1].replace(/,/g,"")) === dc.expHead && dc.first === 60 && dc.xss === 0 && dc.xssRows === 1 && dc.xssText && dc.xssNoTag && dc.xssNoLink, JSON.stringify(dc));
+    check("documents: every Open link goes to Drive, in a new tab, without handing the page over", dc.open, JSON.stringify(dc));
+    check("documents: Show more adds 60 at a time", dc.more === 120, JSON.stringify(dc));
+    check("documents: typing finds the right paper, keeps the cursor and the typed words, and says so when nothing matches", dc.searchRows === 1 && /Rokde/.test(dc.searchName) && dc.focusKept && dc.qKept === "rokde ring" && dc.none, JSON.stringify(dc));
+    check("documents: a kind and a person filter show exactly what the logic finds", dc.vehicle && dc.vehicleCount > 0 && Number(dc.vehicleMatches) === dc.vehicleCount && Number(dc.bothMatches) === dc.both && dc.both > 0 && dc.both < dc.vehicleCount, JSON.stringify(dc));
+    check("documents: a collect tick is saved and lowers the open count by one; the note is kept; an item already had cannot be un-ticked", Number(dc.open1) === Number(dc.open0) - 1 && dc.saved && dc.noteSaved && dc.noteShown === "asked the agent" && dc.haveLocked, JSON.stringify(dc));
+    for (const w of [360, 390, 768, 1024, 1280, 1600]) {
+      await viewport(w, 900); await sleep(300);
+      const fit = await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.documents=LifeLedgerDocs.clean([{name:'AVeryLongUnbrokenFileNameThatKeepsGoingAndGoingAndGoingAndGoingForever_FY2025-26_Form16_Part-A_Final_Final.pdf',type:'Bank / FD / card statement',person:'Archana',fy:'FY2025-26',kind:'pdf',sizeKb:2048,status:'LOCKED',about:'A long note about what is inside the paper '.repeat(6),url:'https://drive.google.com/file/d/1KyUeuC55LHX0KLJ32bMVj9xHlRbh-2cN/view',path:'p/long'},{name:'b.pdf',type:'Gold & jewellery',path:'p/b'}]); LifeLedgerApp.renderAll();
+        const bad=[]; const p=document.getElementById('docsBody'); if (p.scrollWidth-p.clientWidth>1) bad.push('panel '+(p.scrollWidth-p.clientWidth)); p.querySelectorAll('b,button,a,input,select,li,summary').forEach(e=>{ const r=e.getBoundingClientRect(); if (r.width>0&&(r.right>innerWidth+1||r.left<-1)) bad.push((e.dataset.act||e.tagName)+' off screen'); }); const small=Math.min(...[...p.querySelectorAll('b,span,p,summary,li,small,a,button')].map(e=>parseFloat(getComputedStyle(e).fontSize))); if (small<12) bad.push('font '+small);
+        return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, bad:bad.slice(0,4)}); })()`);
+      const fj = JSON.parse(fit); check(`documents at ${w}px: fits, text at least 12px, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
+    }
+    await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(), o=window.__origDocs||[[],[],{}]; S.documents=o[0]; S.docCollectItems=o[1]; S.docCollect=o[2]; LifeLedgerApp.renderAll(); return 0; })()`);
     await viewport(1280, 900); await sleep(300);
     // the page title is never squeezed into a column by the top-bar buttons
     for (const w of [681, 700, 768, 820, 900, 1024]) {

@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.154",
-    "sha256": "8b777e1a8f48ae2c50c003ed835efc52798d54b8d1210afa6d73e902dd554ff2"
+    "version": "1.0.155",
+    "sha256": "7ddcabeb3266b784f4ded3b554a51ec9b55e3bf19252ef12af2caf55d8eb11bb"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -66,6 +66,14 @@
   "day-meter-core.js": {
     "version": "1.0.0",
     "sha256": "bb62b60c81ef28e8a20de10f96fa6389cd048712572feff52c37b858ed532a40"
+  },
+  "docs-vault-core.js": {
+    "version": "1.0.0",
+    "sha256": "9d1e1e63882e08722f2da1f59ad3cdb404a71d4c915d36402e614c5d190e6222"
+  },
+  "docs-vault-views.js": {
+    "version": "1.0.0",
+    "sha256": "9fccb2382da4bc7a5c27abdb49b015085f3c665be0ab4aed71b110479ca80749"
   },
   "drive-sync.js": {
     "version": "1.0.42",
@@ -112,8 +120,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.51",
-    "sha256": "780a5b01d91ed71b48e8bcf069fd3465dd515011577d0d852b6dcfac60d7a895"
+    "version": "1.8.53",
+    "sha256": "9bfcb80622b6fcdfabe1bbe0a31b65b56f9c46bdf98fb013d6af71649f813a55"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -124,8 +132,8 @@
     "sha256": "06fe7270092e50fec5be267b682d5fc4ec97ecc0c1b8dff11cb8e0e488e593e5"
   },
   "nav.js": {
-    "version": "1.1.6",
-    "sha256": "6dd4dc3204678471680a035a7a3faf94f19eddb3cc4aad322529f1be17e38cea"
+    "version": "1.1.7",
+    "sha256": "422e5830a55fc6fc68dc0d41aae99f712e7eb47af3c120337af84640a0dccfb5"
   },
   "networth-close.js": {
     "version": "1.0.6",

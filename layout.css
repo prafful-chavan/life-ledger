@@ -1218,3 +1218,37 @@ details[open] > .bt-summary::before { transform: rotate(90deg); }
 .oc .table-wrap table.oc-table { min-width: 0; }
 .oc-table td, .oc-table th, .oc-items li { overflow-wrap: anywhere; }
 @media (max-width: 480px) { .oc-month > summary { grid-template-columns: 70px minmax(0, 1fr) auto; gap: 8px; } .oc-items li { grid-template-columns: 64px minmax(0, 1fr) auto; } }
+
+/* Documents page: search, kind chips, one row per paper with an "Open in Drive" button, and the collect list */
+.dc-panel { display: grid; gap: 12px; }
+.dc-head { margin: 0; font-size: 15px; line-height: 1.45; }
+.dc-find .dc-search { grid-column: 1 / -1; }
+.dc-find .dc-showset { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.dc-find .dc-showset input { width: auto; }
+.dc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dc-chips .chip { padding: 6px 12px; min-height: 32px; font-size: 12.5px; }
+.dc-chips .chip span { color: var(--muted); font-weight: 500; }
+.dc-chips .chip.active { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.dc-chips .chip.active span { color: var(--on-brand); font-weight: 600; }
+.dc-list { gap: 8px; }
+.up-list li.dc-row { grid-template-columns: auto 1fr auto; align-items: start; gap: 4px 12px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel-soft); }
+.dc-type { font-size: 12px; font-weight: 700; color: var(--muted); max-width: 9.5rem; overflow-wrap: anywhere; }
+.dc-main { min-width: 0; display: grid; gap: 2px; }
+.dc-main b { overflow-wrap: anywhere; }
+.dc-main small, .dc-collect small { font-size: 12px; color: var(--muted); }
+.dc-about { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.dc-tag { font-size: 12px; font-weight: 700; }
+.dc-open, .dc-nolink { white-space: nowrap; align-self: center; font-size: 12.5px; }
+.dc-collect-h { margin: 8px 0 0; font-size: 15px; }
+.dc-area { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); padding: 8px 12px; margin-bottom: 6px; }
+.dc-area summary { cursor: pointer; font-size: 13px; }
+.dc-area summary span { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.up-list li.dc-collect { grid-template-columns: 1fr; gap: 4px; padding: 6px 0; border-top: 1px solid var(--line); }
+.dc-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.dc-done .dc-check span { text-decoration: line-through; color: var(--muted); }
+.dc-note { width: 100%; box-sizing: border-box; font-size: 13px; }
+@media (max-width: 700px) {
+  .up-list li.dc-row { grid-template-columns: 1fr; }
+  .dc-type { max-width: none; }
+  .dc-open, .dc-nolink { justify-self: start; }
+}

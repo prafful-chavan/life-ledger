@@ -46,6 +46,9 @@ const defaultData = {
   jobSwitch: [],
   brokerTrades: [],
   outgoings: [],
+  documents: [],
+  docCollectItems: [],
+  docCollect: {},
   brokerChoices: [],
   studies: [],
   workouts: [],
@@ -584,6 +587,7 @@ function bootstrapApp(initialState) {
     bindJobSwitch();
     bindBroker();
     bindOutgo();
+    bindDocs();
     initStockCSVImport();
     bindCareerTabs();
     bindImports();
@@ -1226,6 +1230,10 @@ function normalizeDataCore(data) {
     brokerChoices: ensureIds(Array.isArray(data.brokerChoices) ? data.brokerChoices : [], "choice"),
     // Recurring payments the household added itself (rent, PPF, fees…): they appear in the Outgo calendar
     outgoings: ensureIds(Array.isArray(data.outgoings) ? data.outgoings : [], "out"),
+    // The Documents page: an index of the papers kept in Drive (name, kind, person, year, note, Drive link), what is still to collect, and the household's own ticks
+    documents: docsCleanList(data.documents),
+    docCollectItems: Array.isArray(data.docCollectItems) ? data.docCollectItems.slice(0, 500) : [],
+    docCollect: data.docCollect && typeof data.docCollect === "object" && !Array.isArray(data.docCollect) ? data.docCollect : {},
     studies: ensureIds(data.studies || [], "study").map(s => {
       if (s.owner === "Me" || s.owner) return s;
       return { ...s, owner: "Me" };
@@ -4629,6 +4637,7 @@ function renderAll() {
   renderDayMeter();
   renderBroker();
   renderOutgo();
+  renderDocs();
   renderFinance();
   renderCareer();
   renderGoals();
@@ -5842,6 +5851,56 @@ function bindOutgo() {
       state.outgoings = [...(state.outgoings || []), { id: "out-" + Date.now().toString(36) + Math.random().toString(16).slice(2, 6), ...rec }];
       renderAll(); await saveData(true, "outgoings"); toast("Outgoing added to the calendar.");
     }
+  });
+}
+
+// ── Documents: the household's papers in Drive ────────────────────────────────
+function docsCoreFn() { return (typeof window !== "undefined" && window.LifeLedgerDocs) || (typeof require === "function" ? require("./docs-vault-core.js") : null); }
+function docsViewsFn() { return (typeof window !== "undefined" && window.LifeLedgerDocsViews) || (typeof require === "function" ? require("./docs-vault-views.js") : null); }
+function docsCleanList(rows) { const C = docsCoreFn(); return C ? C.clean(rows) : (Array.isArray(rows) ? rows : []); }
+const docsUi = { q: "", type: "", person: "", fy: "", showSetAside: false, limit: 60 };
+
+function renderDocs() {
+  const box = document.getElementById("docsBody");
+  const C = docsCoreFn(), V = docsViewsFn();
+  if (!box || !C || !V) return;
+  const filters = { type: docsUi.type, person: docsUi.person, fy: docsUi.fy, showSetAside: docsUi.showSetAside };
+  const docs = state.documents || [];
+  box.innerHTML = V.panel({ facets: C.facets(docs), results: C.search(docs, docsUi.q, filters), query: docsUi.q, filters, limit: docsUi.limit, collect: C.collectList(state.docCollectItems, state.docCollect) }, { names: DASH_NAMES });
+}
+
+function bindDocs() {
+  const box = document.getElementById("docsBody");
+  if (!box) return;
+  const redraw = (keepSearchFocus) => {
+    renderDocs();
+    if (keepSearchFocus) { const el = box.querySelector('[data-field="q"]'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+  };
+  box.addEventListener("input", (event) => {
+    const t = event.target;
+    if (t.matches('[data-field="q"]')) { docsUi.q = t.value; docsUi.limit = 60; redraw(true); return; }
+    if (t.matches('[data-act="docs-note"]')) {
+      const key = t.dataset.key, prev = (state.docCollect || {})[key] || {};
+      state.docCollect = { ...(state.docCollect || {}), [key]: { ...prev, note: t.value.slice(0, 300) } };
+      saveData(false, "docCollect");
+    }
+  });
+  box.addEventListener("change", (event) => {
+    const t = event.target;
+    if (t.matches('[data-field="person"]')) { docsUi.person = t.value; docsUi.limit = 60; redraw(false); return; }
+    if (t.matches('[data-field="fy"]')) { docsUi.fy = t.value; docsUi.limit = 60; redraw(false); return; }
+    if (t.matches('[data-field="showSetAside"]')) { docsUi.showSetAside = t.checked; docsUi.limit = 60; redraw(false); return; }
+    if (t.matches('[data-act="docs-done"]')) {
+      const key = t.dataset.key, prev = (state.docCollect || {})[key] || {};
+      state.docCollect = { ...(state.docCollect || {}), [key]: { ...prev, done: t.checked } };
+      renderDocs(); saveData(true, "docCollect");
+    }
+  });
+  box.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-act]");
+    if (!btn) return;
+    if (btn.dataset.act === "docs-type") { docsUi.type = btn.dataset.v || ""; docsUi.limit = 60; redraw(false); }
+    else if (btn.dataset.act === "docs-more") { docsUi.limit += 60; redraw(false); }
   });
 }
 
@@ -15505,6 +15564,7 @@ function viewTitle(view) {
       goals: "Goals Tracker",
       todo: "Your tasks and notes",
       protection: "Your protection",
+      documents: "Your papers, in Drive",
       tax: "Your tax plan",
       exercise: "Exercise & Workout Tracker",
       habits: "Habit Tracker & Streaks",
