@@ -232,6 +232,7 @@
       { label: "Goals", icon: "goals", run: () => goToView("goals") },
       { label: "Protection", icon: "protection", run: () => goToView("protection") },
       { label: "Tax", icon: "tax", run: () => goToView("tax") },
+      { label: "Documents", icon: "docs", run: () => goToView("documents") },
       { label: "Habits", icon: "habits", run: () => goToView("habits") },
       { label: "Career", icon: "career", run: () => goToView("career") },
       { label: "To-Do", icon: "todo", run: () => goToView("todo") },

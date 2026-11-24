@@ -878,6 +878,9 @@ const SCANNER = `(${function scan() {
         return JSON.stringify({w:innerWidth, page:document.documentElement.scrollWidth-document.documentElement.clientWidth, bad:bad.slice(0,4)}); })()`);
       const fj = JSON.parse(fit); check(`documents at ${w}px: fits, text at least 12px, nothing off screen, no sideways scroll`, fj.bad.length === 0 && fj.page <= 1, fit);
     }
+    await viewport(390, 844); await sleep(300);
+    const mm = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; LifeLedgerNav.goToView('dashboard'); await w(300); const item=[...document.querySelectorAll('#moreSheet .more-item')].find(b=>/Documents/.test(b.textContent)); out.has=!!item; if(item){ item.click(); await w(500); out.went=!document.getElementById('documents').hidden; } return JSON.stringify(out); })()`));
+    check("documents: on a phone the page is reachable from the More sheet", mm.has && mm.went, JSON.stringify(mm));
     await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(), o=window.__origDocs||[[],[],{}]; S.documents=o[0]; S.docCollectItems=o[1]; S.docCollect=o[2]; LifeLedgerApp.renderAll(); return 0; })()`);
     await viewport(1280, 900); await sleep(300);
     // the page title is never squeezed into a column by the top-bar buttons
