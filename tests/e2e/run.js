@@ -1046,8 +1046,9 @@ const SCANNER = `(${function scan() {
     check("vendored SQLite reader runs a query and the spreadsheet reader loads, under the policy", vend.sum === 42 && vend.xlsx === "0.20.3", JSON.stringify(vend));
     const amf = JSON.parse(await cdp.eval(`(async()=>{ const S=LifeLedgerApp.getState(); const keep=S.mutualFunds;
       const mk=(i,owner,fund,type,units,date)=>({id:'amf'+i,owner,fundName:fund,transactionType:type,units,nav:10,latestNav:20,invested:units*10,currentValue:units*20,purchaseDate:date,date,demat:'Groww'});
-      S.mutualFunds=[mk(1,'Me','Alpha Fund','PURCHASE',100,'2025-01-01'),mk(2,'Me','Alpha Fund','REDEMPTION',40,'2026-01-01'),mk(3,'Wife','Beta Fund','PURCHASE',50,'2025-01-01'),mk(4,'Me','Gone Fund','PURCHASE',10,'2025-01-01'),mk(5,'Me','Gone Fund','REDEMPTION',10,'2026-01-01')];
+      S.mutualFunds=[mk(1,'Me','Alpha Fund','PURCHASE',100,'2025-01-01'),mk(2,'Me','Alpha Fund','REDEMPTION',40,'2026-01-01'),mk(3,'Wife','Beta Fund','PURCHASE',50,'2025-01-01'),mk(4,'Me','Gone Fund','PURCHASE',10,'2025-01-01'),mk(5,'Me','Gone Fund','REDEMPTION',10,'2026-01-01')]; S.mutualFunds.filter((r)=>r.fundName==='Gone Fund').forEach((r)=>{ r.nav=100; r.invested=1000; });
       const text=String(answerQuestion('show my mutual fund portfolio')); const net=[calcMfTotalValue(S.mutualFunds.filter(f=>f.owner==='Me')),calcMfTotalValue(S.mutualFunds)]; S.mutualFunds=keep; return JSON.stringify({text,net}); })()`));
+    check("assistant: cost is worked out fund by fund (a sale never uses up another fund's units), and only funds still held are counted", /Invested: \*\*₹1,100(\.00)?\*\*/.test(amf.text) && /Funds held: \*\*2\*\*/.test(amf.text), JSON.stringify(amf));
     check("assistant: a fund sale is taken off the totals (60 units held, not 140), and a fund sold out is not listed", amf.net[0] === 1200 && amf.net[1] === 2200 && /Alpha Fund: ₹1,200(\.00)?(\n|$)/.test(amf.text) && !/Gone Fund:/.test(amf.text) && !/₹2,800|₹3,200/.test(amf.text), JSON.stringify(amf));
     // AI permission: nothing is sent to an AI service until the household says yes; it can be withdrawn in Settings
     console.log("\nAI permission");

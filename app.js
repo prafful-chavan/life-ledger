@@ -14247,8 +14247,9 @@ function answerQuestion(question) {
   const weakestWifeTopic = [...wifeStudies].sort((a, b) => (a.confidence || 0) - (b.confidence || 0))[0];
 
   // Investment totals (pulled fresh every time) — Average Cost Method
-  const mfPortfolioBasis = calcMfCostBasis(state.mutualFunds);
-  const mfInvested = mfPortfolioBasis.invested;
+  // cost is worked out fund by fund and person by person: one fund's sale must never use up another fund's units
+  const mfGroups = Object.values(state.mutualFunds.reduce((g, t) => { const k = `${t.fundName || "Unknown"}|${t.owner || "Me"}`; (g[k] = g[k] || []).push(t); return g; }, {}));
+  const mfInvested = mfGroups.reduce((total, txns) => total + calcMfCostBasis(txns).invested, 0);
   const mfCurrentCalc = (() => {
     const byFund = {};
     state.mutualFunds.forEach((t) => {
@@ -14382,7 +14383,7 @@ function answerQuestion(question) {
     const topFunds = fundNames.map((name) => [name, calcMfTotalValue(state.mutualFunds.filter((f) => (f.fundName || "Unknown") === (name || "Unknown")))])
       .filter(([, val]) => val > 0).sort((a, b) => b[1] - a[1]).slice(0, 5)
       .map(([name, val]) => `  • ${name}: ${formatINR(val)}`).join("\n");
-    return `**Mutual Fund Portfolio** 📈\n• Funds: **${fundNames.length}** | Transactions: **${state.mutualFunds.length}**\n• Invested: **${formatINR(mfInvested)}**\n• Current: **${formatINR(mfCurrent)}**\n• Gain/Loss: **${formatINR(gain)}** (${mfInvested ? ((gain / mfInvested) * 100).toFixed(1) : 0}%)\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}\n\n**Top funds:**\n${topFunds}`;
+    return `**Mutual Fund Portfolio** 📈\n• Funds held: **${fundNames.filter((name) => calcMfTotalValue(state.mutualFunds.filter((f) => (f.fundName || "Unknown") === (name || "Unknown"))) > 0).length}** | Transactions: **${state.mutualFunds.length}**\n• Invested: **${formatINR(mfInvested)}**\n• Current: **${formatINR(mfCurrent)}**\n• Gain/Loss: **${formatINR(gain)}** (${mfInvested ? ((gain / mfInvested) * 100).toFixed(1) : 0}%)\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}\n\n**Top funds:**\n${topFunds}`;
   }
 
   // ─── INDIVIDUAL INVESTMENT TYPES ────────────────────────────────────────────
