@@ -14376,9 +14376,11 @@ function answerQuestion(question) {
     if (!state.mutualFunds.length) return "No mutual fund data. Import your MF statement or add entries manually.";
     const gain = mfCurrent - mfInvested;
     const fundNames = [...new Set(state.mutualFunds.map((f) => f.fundName))];
-    const { mine, hers } = ownerSplit(state.mutualFunds, "currentValue");
-    const topFunds = Object.entries(groupSum(state.mutualFunds, (f) => f.fundName || "Unknown", "currentValue"))
-      .sort((a, b) => b[1] - a[1]).slice(0, 5)
+    // a sale is stored with a positive value, so the stored values are never just added up: units held x latest price, as net worth does it
+    const mine = calcMfTotalValue(state.mutualFunds.filter((f) => (f.owner || "Me") === "Me"));
+    const hers = calcMfTotalValue(state.mutualFunds.filter((f) => f.owner === "Wife"));
+    const topFunds = fundNames.map((name) => [name, calcMfTotalValue(state.mutualFunds.filter((f) => (f.fundName || "Unknown") === (name || "Unknown")))])
+      .filter(([, val]) => val > 0).sort((a, b) => b[1] - a[1]).slice(0, 5)
       .map(([name, val]) => `  • ${name}: ${formatINR(val)}`).join("\n");
     return `**Mutual Fund Portfolio** 📈\n• Funds: **${fundNames.length}** | Transactions: **${state.mutualFunds.length}**\n• Invested: **${formatINR(mfInvested)}**\n• Current: **${formatINR(mfCurrent)}**\n• Gain/Loss: **${formatINR(gain)}** (${mfInvested ? ((gain / mfInvested) * 100).toFixed(1) : 0}%)\n• Prafful: ${formatINR(mine)} | Wife: ${formatINR(hers)}\n\n**Top funds:**\n${topFunds}`;
   }

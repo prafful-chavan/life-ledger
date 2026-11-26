@@ -1,6 +1,6 @@
 /* Life Ledger service worker — network-first so code is never stale, with an
  * offline fallback. Bump CACHE_VERSION on releases that change cached shell files. */
-const CACHE_VERSION = "ll-shell-v36";
+const CACHE_VERSION = "ll-shell-v37";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./expenses-core.js", "./networth-snapshot.js", "./salary-core.js", "./salary-ledger-core.js", "./goals-plan-core.js", "./goals-measure-core.js", "./salary-insights-core.js", "./spending-insights-core.js", "./dashboard-settings.js", "./dashboard-charts.js", "./dashboard-views.js", "./portfolio-core.js", "./portfolio-views.js", "./breakdown-core.js", "./sales-core.js", "./pnl-core.js", "./pnl-views.js", "./stale-values-core.js", "./upkeep-views.js", "./day-meter-core.js", "./outgo-calendar-core.js", "./outgo-calendar-views.js", "./docs-vault-core.js", "./docs-vault-views.js", "./broker-trades-core.js", "./broker-trades-views.js", "./job-switch-core.js", "./job-switch-views.js", "./networth-weekly.js", "./mf-panel-core.js", "./stocks-panel-core.js", "./remember-core.js", "./auth.js", "./sync-engine.js", "./sync-client.js", "./app-version.js", "./vault-store.js", "./drive-sync.js", "./ui-polish.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
