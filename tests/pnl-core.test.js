@@ -64,3 +64,51 @@ console.log("pnl-core: ok");
 assert.strictEqual(L.guard(data, { ...data, brokerStatements: P.clean([line()]) }), true, "one line is enough");
 assert.strictEqual(row([{ owner: "Me", demat: "Groww", soldOn: "2025-01-01" }, sale("Me", "Groww", "2025-01-02", 4)], []).app, 4, "a sale with no gain adds nothing");
 assert.strictEqual(P.build([], [line({ charges: null })]).totals.chargesUnknown, 0, "a year with no sale in the app has no unknown charges to flag");
+
+// ── Three kinds: Indian shares, mutual funds, US stocks ──
+{
+  // a line without a kind (the ones already saved) is a share line and keeps its id; a wrong kind falls back to shares
+  assert.deepStrictEqual([P.statement(line()).kind, P.statement(line()).id, P.statement(line({ kind: "gold" })).kind], ["shares", "bst-Me-Groww-2024-25", "shares"]);
+  assert.deepStrictEqual([P.statement(line({ kind: "mf" })).id, P.statement(line({ kind: "us" })).id], ["bst-mf-Me-Groww-2024-25", "bst-us-Me-Groww-2024-25"]);
+  assert.strictEqual(P.clean([line(), line({ kind: "mf" }), line({ kind: "us" })]).length, 3, "same broker and year, three kinds: three lines");
+  // fund lots → one sale per person, fund and day
+  const lot = (owner, name, sellDate, cost, proceeds, kind = "mf") => ({ kind, owner, name, sellDate, cost, proceeds });
+  const fs_ = P.fundSales([lot("Me", "A", "2025-06-01", 10, 15), lot("Me", "A", "2025-06-01", 20, 22.006), lot("Me", "B", "2025-06-01", 5, 4), lot("Wife", "A", "2025-06-01", 1, 3), lot("Me", "A", "bad", 1, 9), lot("Me", "S", "2025-06-01", 1, 9, "stock"), null]);
+  assert.deepStrictEqual(fs_.map((s) => [s.owner, s.demat, s.soldOn, s.gain]), [["Me", "Groww", "2025-06-01", 7.01], ["Me", "Groww", "2025-06-01", -1], ["Wife", "Groww", "2025-06-01", 2]]);
+  assert.deepStrictEqual(P.fundSales(null), []); assert.strictEqual(P.fundSales([lot("Me", "A", "2025-06-01T10:00", 1, 2)], "X")[0].demat, "X");
+  const sts = [line({ realised: 100 }), line({ kind: "mf", fy: "2025-26", realised: 7, charges: null, dividends: null, to: "2026-03-31" }), line({ kind: "us", broker: "INDmoney", realised: 50, charges: null, dividends: 9 }), line({ kind: "us", broker: "INDmoney", fy: "2023-24", realised: 0, charges: null, dividends: 3, to: "2024-03-31" })];
+  const all = P.buildAll({ sales: [sale("Me", "Groww", "2025-01-01", 100)], fundRealised: [lot("Me", "A", "2025-06-01", 10, 17)], statements: sts });
+  // each kind sees only its own lines
+  assert.deepStrictEqual([all.shares.totals.profit, all.mf.totals.profit, all.us.totals.profit], [100, 7, 50]);
+  assert.deepStrictEqual(all.mf.people[0].brokers[0].years.map((y) => [y.fy, y.status]), [["2025-26", "match"]]);
+  assert.deepStrictEqual(all.us.people[0].brokers[0].years.map((y) => [y.fy, y.status, y.shown, y.dividends]), [["2024-25", "report", 50, 9], ["2023-24", "report", 0, 3]], "a US year is the report's alone, never 'differs'");
+  assert.deepStrictEqual(all.summary.map((r) => [r.kind, r.byOwner, r.total, r.dividends]), [["shares", { Me: 100 }, 100, 5], ["mf", { Me: 7 }, 7, null], ["us", { Me: 50 }, 50, 12]]);
+  assert.deepStrictEqual([all.all.byOwner, all.all.total, all.all.dividends, all.all.charges, all.owners], [{ Me: 157 }, 157, 17, 10, ["Me"]]);
+  // a fund sale with no report is the app's own figure
+  assert.strictEqual(P.buildAll({ fundRealised: [lot("Wife", "A", "2025-06-01", 10, 17)] }).mf.people[0].brokers[0].years[0].status, "app");
+  const two = P.buildAll({ sales: [sale("Wife", "Groww", "2025-01-01", -5)], fundRealised: [lot("Me", "A", "2025-06-01", 10, 17)] });
+  assert.deepStrictEqual([two.owners, two.all.byOwner, two.all.total, two.summary.length], [["Me", "Wife"], { Me: 7, Wife: -5 }, 2, 2]);
+  assert.deepStrictEqual([P.buildAll(null).summary, P.buildAll({}).all.total], [[], 0]);
+  // the screen: summary, a section per kind, rows open by kind, nothing broken
+  let v = W.panel({ ...all.shares, all, open: [] }, o);
+  assert.ok(/Everything sold, all time/.test(v) && /Mutual funds sold/.test(v) && /US stocks sold/.test(v) && !/NaN|undefined|Infinity/.test(v) && !/pf-sub/.test(v));
+  v = W.panel({ ...all.shares, all, open: ["us:Me|INDmoney"] }, o); assert.strictEqual((v.match(/class="pf-sub"/g) || []).length, 2); assert.ok(/From the broker's tax report/.test(v) && v.includes('data-id="mf:Me|Groww"') && v.includes('data-id="Me|Groww"'));
+  v = W.panel({ ...all.shares, all, open: [] }, o); assert.ok(/from the broker's tax reports/.test(v) && !/0 sales/.test(v) && /1 sale</.test(v), "a kind with no sales in the app does not claim zero sales");
+  assert.ok(!/Everything sold/.test(W.panel(all.shares, o)), "without the other kinds the screen is as before");
+  assert.ok(/No sales recorded yet/.test(W.panel({ ...P.build([], []), all: P.buildAll({}) }, o)));
+  // the loader takes the three kinds together
+  const out = L.build({ sales: [sale("Me", "Groww", "2025-01-01", 100)], mutualFunds: [] }, sts.map((s) => ({ ...s, source: "f" }))); assert.strictEqual(out.ok, true); assert.deepStrictEqual([out.report.lines, [...new Set(out.report.rows.map((r) => r.kind))]], [4, ["shares", "mf", "us"]]);
+}
+console.log("pnl-core: three kinds ok");
+{
+  // options count in a fund/share summary; a lot with no proceeds or no cost counts that side as nothing
+  const x = P.buildAll({ statements: [line({ realised: 100, options: -30 }), line({ owner: "Wife", realised: 1 })] });
+  assert.deepStrictEqual([x.summary[0].byOwner, x.summary[0].total, x.all.total], [{ Me: 70, Wife: 1 }, 71, 71]);
+  assert.deepStrictEqual(P.fundSales([{ kind: "mf", name: "A", sellDate: "2025-06-01", cost: 4 }, { kind: "mf", name: "B", sellDate: "2025-06-01", proceeds: 9 }, { kind: "mf", name: "C", sellDate: "2025-06-01T09:30:00", proceeds: 1, cost: 0 }]).map((s) => [s.owner, s.soldOn, s.gain]), [["Me", "2025-06-01", -4], ["Me", "2025-06-01", 9], ["Me", "2025-06-01", 1]]);
+  // "Me" comes first whichever order the lines arrive in, in each kind and across kinds
+  for (const order of [["Aaa", "Me", "Zed"], ["Zed", "Me", "Aaa"], ["Me", "Zed", "Aaa"]]) assert.deepStrictEqual(P.buildAll({ statements: order.map((owner) => line({ owner })) }).owners, ["Me", "Aaa", "Zed"]);
+  assert.deepStrictEqual(P.buildAll({ statements: [line({ owner: "Zed" }), line({ owner: "Aaa", kind: "mf" }), line({ kind: "us" })] }).owners, ["Me", "Aaa", "Zed"]);
+}
+console.log("pnl-core: edges ok");
+// a year whose figure is exactly nothing adds nothing to the year table
+assert.deepStrictEqual(P.build([], [line({ realised: 0, options: null })]).years.map((y) => [y.total, y.byOwner]), [[0, { Me: 0 }]]);

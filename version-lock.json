@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.160",
-    "sha256": "082fc78ae20cf7b63e06d425fa89e3d6b6ec09ee561ad35985384a0ea2546a0e"
+    "version": "1.0.161",
+    "sha256": "57836086a1d639417abdb09cfed4f0dfd3ecfb4e78a705b614beb05cad61f809"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -120,8 +120,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.55",
-    "sha256": "8c6ff94b25aaf8ca690329adbf7d102a058314244fdf29e8e15bcf282aef1582"
+    "version": "1.8.56",
+    "sha256": "a3e461ac63759f64b7360116f7c6b0605635ab4deec53834a90057722820fe1c"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -160,12 +160,12 @@
     "sha256": "2763c7fdd8ec7f772bb267c205c5d9a55060f6ad33c630852f94b6f10c3cc31b"
   },
   "pnl-core.js": {
-    "version": "1.0.0",
-    "sha256": "c6721c1105d27f7f3754eb776a97c2f393bcf1d242619ecc4b22d5d941d57704"
+    "version": "1.0.1",
+    "sha256": "438a04a832209d4fede0e96a63bcf482bda8c22c2ecb88b64d5d7b0d9ceca591"
   },
   "pnl-views.js": {
-    "version": "1.0.0",
-    "sha256": "2711145b2d890c85b26ddecab8f0ce98f0a0fc6718d92c436aab4a4f999f9835"
+    "version": "1.0.1",
+    "sha256": "d16707d809659dc71130753fff8636d103fd03464f5828b479c3da583e1bde57"
   },
   "portfolio-core.js": {
     "version": "1.0.1",

@@ -16,8 +16,10 @@ function build(before, list) {
   }
   const lines = P.clean(list);
   if (lines.length !== list.length) return { ok: false, error: "Two lines are for the same owner, broker and year." };
-  const view = P.build(before.sales || [], lines);
-  const rows = view.people.flatMap((p) => p.brokers.flatMap((b) => b.years.map((r) => ({ owner: p.owner, broker: b.broker, fy: r.fy, status: r.status, app: r.app, reported: r.reported, diff: r.diff }))));
+  // each kind beside its own app figures: shares from the recorded sales, funds from the tax engine, US from the report alone
+  const realised = require("../tax-core.js").gains.buildLots({ mutualFunds: before.mutualFunds || [] }, 1).realised; // funds only
+  const all = P.buildAll({ sales: before.sales || [], fundRealised: realised, statements: lines }), view = all.shares;
+  const rows = P.KINDS.flatMap((kind) => all[kind].people.flatMap((p) => p.brokers.flatMap((b) => b.years.map((r) => ({ kind, owner: p.owner, broker: b.broker, fy: r.fy, status: r.status, app: r.app, reported: r.reported, diff: r.diff })))));
   return { ok: true, after: { ...before, brokerStatements: lines }, report: { lines: lines.length, previous: (before.brokerStatements || []).length, rows, totals: view.totals } };
 }
 

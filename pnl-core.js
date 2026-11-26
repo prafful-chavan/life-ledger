@@ -9,12 +9,16 @@
  * with the known reason if one was written down. Where the report ends before the latest recorded sale, it is out of date: the app's
  * figure is shown and the row says why. Where there is no report, the row says the figure is the app's own. Charges the reports do not
  * give are "not known", never zero.
+ *
+ * Indian shares, mutual funds and US stocks are three separate kinds, each built the same way. For mutual funds the app's side is the
+ * tax engine's realised lots. The app keeps no US sales, so a US year is the broker's report alone and says so.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.LifeLedgerPnl = factory();
 })(typeof self !== "undefined" ? self : this, function () {
   const MATCH_WITHIN = 1;
+  const KINDS = ["shares", "mf", "us"];
   const r2 = (n) => Math.round(n * 100) / 100;
   const has = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
   const val = (v) => (has(v) ? r2(Number(v)) : null);
@@ -34,9 +38,10 @@
     if (!s || !str(s.owner, 20) || !str(s.broker, 40)) return null;
     const fy = str(s.fy, 7);
     if (fy && !validFY(fy)) return null;
-    const out = { owner: str(s.owner, 20), broker: str(s.broker, 40), fy, realised: val(s.realised), options: val(s.options), charges: val(s.charges), dividends: val(s.dividends), to: validISO(s.to) ? s.to : "", note: str(s.note, 300), source: str(s.source, 300) };
+    const kind = KINDS.includes(s.kind) ? s.kind : "shares";
+    const out = { kind, owner: str(s.owner, 20), broker: str(s.broker, 40), fy, realised: val(s.realised), options: val(s.options), charges: val(s.charges), dividends: val(s.dividends), to: validISO(s.to) ? s.to : "", note: str(s.note, 300), source: str(s.source, 300) };
     if ([out.realised, out.options, out.charges, out.dividends].every((v) => v === null)) return null;
-    out.id = str(s.id, 80) || `bst-${out.owner}-${out.broker}-${fy || "all"}`.replace(/\s+/g, "_");
+    out.id = str(s.id, 80) || `bst-${kind === "shares" ? "" : kind + "-"}${out.owner}-${out.broker}-${fy || "all"}`.replace(/\s+/g, "_");
     return out;
   }
   /** Clean lines, one per owner + broker + year: of two for the same year the one reaching later is kept. */
@@ -45,7 +50,7 @@
     for (const raw of Array.isArray(list) ? list : []) {
       const s = statement(raw);
       if (!s) continue;
-      const k = `${s.owner}|${s.broker}|${s.fy}`, old = map.get(k);
+      const k = `${s.kind}|${s.owner}|${s.broker}|${s.fy}`, old = map.get(k);
       if (!old || s.to > old.to) map.set(k, s);
     }
     return [...map.values()];
@@ -64,13 +69,14 @@
     return t;
   }
 
-  function yearRow(fy, sales, st) {
+  function yearRow(fy, sales, st, reportOnly) {
     const count = sales.length, app = count ? r2(sales.reduce((t, s) => t + (Number(s.gain) || 0), 0)) : null;
     const latest = sales.reduce((m, s) => (String(s.soldOn) > m ? String(s.soldOn) : m), "");
     const reported = st ? st.realised : null;
     const row = { fy, count, app, reported, shown: app, diff: null, status: "app", options: st ? st.options : null, charges: st ? st.charges : null, dividends: st ? st.dividends : null, to: st ? st.to : "", note: st ? st.note : "", latest };
     if (!fy) { row.status = "extra"; row.shown = reported; return row; }
     if (reported === null) { row.status = count ? "app" : "none"; return row; }
+    if (reportOnly) { row.status = "report"; row.shown = reported; return row; }
     if (latest && st.to < latest) { row.status = "older"; return row; }
     row.shown = reported;
     row.diff = r2((app === null ? 0 : app) - reported);
@@ -78,9 +84,11 @@
     return row;
   }
 
-  /** → { people:[{ owner, brokers:[{ broker, years[], totals }], totals }], totals, years:[{ fy, byOwner:{}, total }] } */
-  function build(sales, statements) {
-    const sts = clean(statements), groups = new Map();
+  /** One kind (opts.kind, shares by default; opts.reportOnly: the app keeps no sales of this kind)
+   *  → { people:[{ owner, brokers:[{ broker, years[], totals }], totals }], totals, years:[{ fy, byOwner:{}, total }] } */
+  function build(sales, statements, opts) {
+    const kind = (opts && opts.kind) || "shares", reportOnly = Boolean(opts && opts.reportOnly);
+    const sts = clean(statements).filter((s) => s.kind === kind), groups = new Map();
     const at = (owner, broker, fy) => {
       const o = groups.get(owner) || groups.set(owner, new Map()).get(owner);
       const b = o.get(broker) || o.set(broker, new Map()).get(broker);
@@ -94,7 +102,7 @@
     for (const owner of owners) {
       const brokers = [], mine = [];
       for (const [broker, years] of [...groups.get(owner)].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-        const rows = [...years].map(([fy, g]) => yearRow(fy, g.sales, g.st)).filter((r) => !quiet(r)).sort((a, b) => (a.fy === "" ? 1 : b.fy === "" ? -1 : a.fy < b.fy ? 1 : -1));
+        const rows = [...years].map(([fy, g]) => yearRow(fy, g.sales, g.st, reportOnly)).filter((r) => !quiet(r)).sort((a, b) => (a.fy === "" ? 1 : b.fy === "" ? -1 : a.fy < b.fy ? 1 : -1));
         if (!rows.length) continue;
         brokers.push({ broker, years: rows, totals: totalsOf(rows) }); mine.push(...rows);
         for (const r of rows) if (r.fy) { const y = byYear.get(r.fy) || byYear.set(r.fy, { fy: r.fy, byOwner: {}, total: 0 }).get(r.fy); const p = (r.shown || 0) + (r.options || 0); y.byOwner[owner] = r2((y.byOwner[owner] || 0) + p); y.total = r2(y.total + p); }
@@ -105,5 +113,42 @@
     return { people, totals: totalsOf(all), years: [...byYear.values()].sort((a, b) => (a.fy < b.fy ? 1 : -1)) };
   }
 
-  return { MATCH_WITHIN, fyOf, statement, clean, build };
+  /** The tax engine's realised mutual fund lots → one sale per person, fund and day: { owner, demat, soldOn, gain }. */
+  function fundSales(realised, broker) {
+    const map = new Map();
+    for (const r of Array.isArray(realised) ? realised : []) {
+      if (!r || r.kind !== "mf" || !validISO(String(r.sellDate || "").slice(0, 10))) continue;
+      const day = String(r.sellDate).slice(0, 10), k = `${r.owner || "Me"}|${r.name}|${day}`;
+      const s = map.get(k) || map.set(k, { owner: r.owner || "Me", demat: broker || "Groww", soldOn: day, gain: 0 }).get(k);
+      s.gain += (Number(r.proceeds) || 0) - (Number(r.cost) || 0);
+    }
+    return [...map.values()].map((s) => ({ ...s, gain: r2(s.gain) }));
+  }
+
+  /** All three kinds side by side, and one summary of everything sold. input = { sales, fundRealised, statements }. */
+  function buildAll(input) {
+    const i = input || {};
+    const kinds = {
+      shares: build(i.sales, i.statements),
+      mf: build(fundSales(i.fundRealised), i.statements, { kind: "mf" }),
+      us: build([], i.statements, { kind: "us", reportOnly: true }),
+    };
+    const owners = [];
+    for (const k of KINDS) for (const p of kinds[k].people) if (!owners.includes(p.owner)) owners.push(p.owner);
+    owners.sort((a, b) => (a === "Me" ? -1 : b === "Me" ? 1 : a < b ? -1 : 1));
+    const summary = KINDS.filter((k) => kinds[k].people.length).map((k) => {
+      const byOwner = {}, dividends = {};
+      for (const p of kinds[k].people) { byOwner[p.owner] = r2(p.totals.profit + (p.totals.options || 0)); dividends[p.owner] = p.totals.dividends; }
+      const t = kinds[k].totals;
+      return { kind: k, byOwner, total: r2(t.profit + (t.options || 0)), charges: t.charges, dividends: t.dividends };
+    });
+    const all = { byOwner: {}, total: 0, charges: null, dividends: null };
+    for (const row of summary) {
+      for (const [w, v] of Object.entries(row.byOwner)) all.byOwner[w] = r2((all.byOwner[w] || 0) + v);
+      all.total = r2(all.total + row.total); all.charges = add(all.charges, row.charges); all.dividends = add(all.dividends, row.dividends);
+    }
+    return { ...kinds, owners, summary, all };
+  }
+
+  return { MATCH_WITHIN, KINDS, fyOf, statement, clean, build, fundSales, buildAll };
 });

@@ -696,7 +696,7 @@ const SCANNER = `(${function scan() {
     check("sales: recording works out proceeds after charges, gain, adds the money to the bank balance and clears the pending item", sl2.sale && sl2.sale.proceeds === 1460 && sl2.sale.cost === 900 && sl2.sale.gain === 560 && sl2.sale.credited === true && near(sl2.bankDelta, 1460, 0.01) && sl2.pendingAfter === 0 && sl2.row, JSON.stringify(sl2));
     check("sales: the tax engine counts the sale this financial year and the sold share is not left as an open lot", sl2.taxRows.length === 1 && sl2.taxRows[0].gain === 560 && sl2.taxRows[0].term === "short" && sl2.noGhostLot === 0, JSON.stringify(sl2));
     check("sales: a sale typed in by hand with no buy date is 'term unknown' and counted in neither short nor long; remove and 'not a sale' work", sl2.formShown && sl2.wipro && sl2.wipro.proceeds === 18000 && sl2.wipro.cost === 22500 && Math.abs(sl2.unknownBucket + 4500) <= 1 && sl2.unknownText && sl2.afterDelete === 1 && sl2.dismissed, JSON.stringify(sl2));
-    const pn = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const keep={s:S.sales,b:S.brokerStatements};
+    const pn = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const keep={s:S.sales,b:S.brokerStatements,m:S.mutualFunds}; S.mutualFunds=[];
       const mk=(i,owner,demat,soldOn,gain)=>({id:'sale-p'+i,symbol:'S'+i,name:'Share '+i,owner,demat,soldOn,qty:1,price:10,gross:10,charges:0,proceeds:10,cost:10-gain,gain,lots:[],bankCredited:false});
       S.sales=[mk(0,'Me','Groww','2025-01-10',100.25),mk(1,'Wife','Groww','2025-05-10',-40)]; for(let i=2;i<14;i++) S.sales.push(mk(i,'Me','Zerodha','2025-06-1'+(i%9),1));
       S.brokerStatements=[{id:'bst-a',owner:'Me',broker:'Groww',fy:'2024-25',realised:100.25,options:null,charges:7.5,dividends:3,to:'2025-03-31',note:'',source:'a'},{id:'bst-b',owner:'Wife',broker:'Groww',fy:'2025-26',realised:-51.47,options:null,charges:null,dividends:null,to:'2026-03-31',note:'A known reason',source:'b'}];
@@ -704,7 +704,17 @@ const SCANNER = `(${function scan() {
       box.querySelector('[data-act="pnl-open"][data-id="Wife|Groww"]').click(); await w(200); out.sub=[...box.querySelectorAll('tr.pf-sub')].map(r=>r.innerText.replace(/\\s+/g,' '));
       box.querySelector('[data-act="pnl-open"][data-id="Wife|Groww"]').click(); await w(200); out.reclosed=box.querySelectorAll('tr.pf-sub').length;
       const list=document.getElementById('salesBox'); out.rows=list.querySelectorAll('tbody tr').length; list.querySelector('[data-act="sale-all"]').click(); await w(200); out.allRows=list.querySelectorAll('tbody tr').length; list.querySelector('[data-act="sale-all"]').click(); await w(200); out.backRows=list.querySelectorAll('tbody tr').length;
-      out.kept=LifeLedgerPnl.clean(S.brokerStatements).length; window.__pnlKeep=keep; return JSON.stringify(out); })()`));
+      out.kept=LifeLedgerPnl.clean(S.brokerStatements).length;
+      const tx=(i,type,date,units,invested)=>({id:'mf-p'+i,fundName:'Test Flexi Cap Fund Direct Growth',owner:'Me',transactionType:type,purchaseDate:date,date,units,invested,nav:invested/units,currentValue:invested,currentNav:invested/units});
+      S.mutualFunds=[tx(1,'PURCHASE','2023-01-10',10,1000),tx(2,'REDEEM','2025-08-01',10,1300)];
+      const st=(id,kind,broker,fy,realised,charges,dividends,to)=>({id,kind,owner:'Me',broker,fy,realised,options:null,charges,dividends,to,note:'',source:id});
+      S.brokerStatements=S.brokerStatements.concat([st('bst-m','mf','Groww','2025-26',299.5,null,null,'2026-03-31'),st('bst-u','us','INDmoney','2024-25',61.5,3.25,39,'2025-03-31')]);
+      LifeLedgerApp.renderAll(); await w(300); out.kinds=[...box.querySelectorAll('h4.pnl-kind')].map(e=>e.innerText); out.summary=[...box.querySelectorAll('.pnl-summary tbody tr')].map(r=>r.innerText.replace(/\\s+/g,' '));
+      box.querySelector('[data-act="pnl-open"][data-id="us:Me|INDmoney"]').click(); await w(200); out.usSub=[...box.querySelectorAll('tr.pf-sub')].map(r=>r.innerText.replace(/\\s+/g,' '));
+      box.querySelector('[data-act="pnl-open"][data-id="mf:Me|Groww"]').click(); await w(200); out.bothOpen=box.querySelectorAll('tr.pf-sub').length;
+      window.__pnlKeep=keep; return JSON.stringify(out); })()`));
+    check("profit and loss: mutual funds and US stocks have their own sections, and one table adds up everything sold", pn.kinds.length === 4 && /All together/.test(pn.summary[pn.summary.length - 1]) && pn.summary.length === 4 && /\+₹299\.50/.test(pn.summary[1]) && /\+₹61\.50/.test(pn.summary[2]), JSON.stringify([pn.kinds, pn.summary]));
+    check("profit and loss: a fund year is checked against the app's own sales; a US year says it is the broker report alone", pn.usSub.length === 1 && /app keeps no sales of this kind/.test(pn.usSub[0]) && /₹3\.25/.test(pn.usSub[0]) && pn.bothOpen === 2, JSON.stringify([pn.usSub, pn.bothOpen]));
     check("profit and loss: a row per broker per person, paise shown, years closed until tapped", pn.brokers === 3 && pn.closed === 0 && /\+₹100\.25/.test(pn.text) && /−₹51\.47/.test(pn.text) && !/NaN|undefined|Infinity/.test(pn.text), JSON.stringify(pn));
     check("profit and loss: a year that differs from the broker shows the broker's figure, says by how much and why; unknown charges stay unknown", pn.sub.length === 1 && /−₹51\.47/.test(pn.sub[0]) && /₹11\.47 above the broker/.test(pn.sub[0]) && /A known reason/.test(pn.sub[0]) && /not known/.test(pn.sub[0]) && pn.reclosed === 0, JSON.stringify(pn.sub));
     check("sales: a long list shows the latest 10 until asked for all", pn.rows === 10 && pn.allRows === 14 && pn.backRows === 10, JSON.stringify(pn));
@@ -713,7 +723,7 @@ const SCANNER = `(${function scan() {
       const fj = JSON.parse(await cdp.eval(`(()=>{ document.querySelectorAll('#pnlBox [data-act="pnl-open"][aria-expanded="false"]').forEach((b)=>0); const p=document.getElementById('pnlPanel'); const wide=[...p.querySelectorAll('.table-wrap')].filter(t=>t.scrollWidth>t.clientWidth+1).length; return JSON.stringify({page:document.documentElement.scrollWidth-document.documentElement.clientWidth, panel:p.scrollWidth-p.clientWidth, wide, h:p.getBoundingClientRect().height}); })()`));
       check(`profit and loss at ${w}px: fits, no sideways scroll`, fj.page <= 1 && fj.panel <= 1 && fj.wide === 0 && fj.h > 100, JSON.stringify(fj));
     }
-    await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.sales=window.__pnlKeep.s||[]; S.brokerStatements=window.__pnlKeep.b||[]; LifeLedgerApp.renderAll(); return 0; })()`);
+    await cdp.eval(`(()=>{ const S=LifeLedgerApp.getState(); S.sales=window.__pnlKeep.s||[]; S.brokerStatements=window.__pnlKeep.b||[]; S.mutualFunds=window.__pnlKeep.m||[]; LifeLedgerApp.renderAll(); return 0; })()`);
     await viewport(1280, 900); await sleep(300);
     for (const w of [390, 768, 1024, 1280, 1600]) {
       await viewport(w, 900); await sleep(400);

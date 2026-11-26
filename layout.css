@@ -1082,6 +1082,7 @@ path[class^="pf-c"]:hover { opacity: .82; }
 .pf-c10 { --pf: #0d9488; } .pf-c11 { --pf: #db2777; }
 
 /* Share profit and loss: four totals, then broker and year tables */
+.pnl-kind { margin: 14px 0 0; font-size: 15px; }
 .pnl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .pnl-cards .pnl-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
 .pnl-cards span { font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }

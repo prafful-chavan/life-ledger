@@ -5972,7 +5972,12 @@ function breakdownModel() {
   return { bd, gains: BKD.gainsView(T.gains.unrealised(lots.lots, today).perLot, T.gains.realisedThisFY(lots.realised, today), { exemption }), exemption, open: [...upkeepUi.open] };
 }
 
-function pnlModel() { return window.LifeLedgerPnl.build(state.sales || [], state.brokerStatements || []); }
+function pnlModel() {
+  let fundRealised = [];
+  try { fundRealised = window.LifeLedgerTax.gains.buildLots(state, getUsdInrRate()).realised; } catch (e) { console.warn("[app.js] mutual fund sales for the profit screen:", e); }
+  const all = window.LifeLedgerPnl.buildAll({ sales: state.sales || [], fundRealised, statements: state.brokerStatements || [] });
+  return { ...all.shares, all };
+}
 
 function renderUpkeep() {
   if (!UPV || !STV || !BKD || !SLS || !window.LifeLedgerAdvisor || !window.LifeLedgerTax) return;

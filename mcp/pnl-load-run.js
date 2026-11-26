@@ -14,7 +14,7 @@ const L = require("./pnl-load.js"), V = require("./vault-client.js"), Common = r
   const { data } = await V.fetchState({ gatewayUrl: login.gatewayUrl, password: login.password });
   const out = L.build(data, input);
   if (!out.ok) { console.error("Stopped: " + out.error); process.exit(2); }
-  for (const r of out.report.rows) console.log(`${r.owner} ${r.broker} ${r.fy || "other"}: ${r.status}${r.reported === null ? "" : `, broker ${r.reported}`}${r.app === null ? "" : `, app ${r.app}`}`);
+  for (const r of out.report.rows) console.log(`${r.kind} ${r.owner} ${r.broker} ${r.fy || "other"}: ${r.status}${r.reported === null ? "" : `, broker ${r.reported}`}${r.app === null ? "" : `, app ${r.app}`}`);
   console.log(`Lines: ${out.report.lines} (in the vault before: ${out.report.previous})`);
   if (!L.guard(data, out.after)) { console.error("Stopped: the change is more than was allowed."); process.exit(2); }
   if (!write) { console.log("Dry run: nothing written. Add --write to save."); return; }
