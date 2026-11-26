@@ -18,14 +18,14 @@ const P = require("../protection-core.js"), L = require("../liability-calc.js"),
   assert.strictEqual(P.dueStatus("2026-11-20", "2026-10-20").state, "ok", "31 days away is not");
   assert.strictEqual(P.advanceDue("2026-11-30", "Quarterly"), "2027-02-28", "a quarter after 30 Nov is the end of February");
   assert.strictEqual(P.advanceDue("2026-11-10", "Something else"), "2027-11-10", "unknown frequency: yearly");
-  assert.strictEqual(P.nextBirthday("1997-05-22", "2026-05-21").date, "2026-05-22", "the day before: this year's");
-  assert.strictEqual(P.nextBirthday("1997-05-22", "2026-06-21").date, "2027-05-22", "same day-of-month, later month: next year's");
+  assert.strictEqual(P.nextBirthday("1992-05-15", "2026-05-14").date, "2026-05-15", "the day before: this year's");
+  assert.strictEqual(P.nextBirthday("1992-05-15", "2026-06-14").date, "2027-05-15", "same day-of-month, later month: next year's");
   const sp = P.monthlySpending({ expenses: [{ date: "2026-04-01", amount: 600 }, { date: "2026-03-31", amount: 9999 }, { date: "2026-10-05", amount: 9999 }, { date: "2026-09-30", amount: 600 }] }, "2026-10-20");
   assert.strictEqual(sp, 200, "the six complete months before (Apr–Sep), divided by 6; not March, not this month");
-  const g = P.suggestGoals({ expenses: [{ date: "2026-09-10", amount: 60000 }], goals: [], banksaving: [{ value: 1000 }], fd: [{ value: 2000 }], people: { me: { dob: "1995-10-22" } } }, "2026-10-20");
+  const g = P.suggestGoals({ expenses: [{ date: "2026-09-10", amount: 60000 }], goals: [], banksaving: [{ value: 1000 }], fd: [{ value: 2000 }], people: { me: { dob: "1990-10-15" } } }, "2026-10-20");
   const em = g.find((x) => x.key === "emergency"), ret = g.find((x) => x.key === "retirement");
   assert.deepStrictEqual([em.target, em.saved], [60000, 3000], "6 months of ₹10,000 average spending; progress from bank + FDs");
-  assert.deepStrictEqual([ret.target, ret.saved, ret.dueDate], [3000000, 0, "2055-10-22"], "25 × a year of spending, due at 60");
+  assert.deepStrictEqual([ret.target, ret.saved, ret.dueDate], [3000000, 0, "2050-10-15"], "25 × a year of spending, due at 60");
 }
 
 // ── Loans: interest first, then principal; undo only if nothing changed since ──

@@ -21,7 +21,7 @@ const state = () => ({
     { date: "2026-10-03", category: "Groceries", amount: 30000 }, { date: "2026-10-05", category: "EMI- Car, Home, policy", amount: 20000 },
     { date: "2026-09-04", category: "Groceries", amount: 25000 }, { date: "2026-09-10", category: "Gromming", amount: 5000 },
   ],
-  insurance: [], people: { me: { dob: "1995-10-22" } }, netWorthHistory: [],
+  insurance: [], people: { me: { dob: "1990-10-15" } }, netWorthHistory: [],
 });
 
 const s = state();

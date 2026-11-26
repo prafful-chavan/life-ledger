@@ -9,11 +9,11 @@ const filler = ["A", "B", "C", "D", "E"].map((s) => row(s, 10, 1000, "2026-11-11
 
 // ── detect ──
 {
-  const prev = [...filler, row("WIPRO", 93, 24395.76, "2026-11-11", { currentPrice: 198 })];
+  const prev = [...filler, row("WIPRO", 90, 22500, "2026-11-11", { currentPrice: 198 })];
   const next = [...filler];
   const c = S.detect(prev, next, "2026-11-13");
   assert.strictEqual(c.length, 1);
-  assert.strictEqual(c[0].symbol, "WIPRO"); assert.strictEqual(c[0].qty, 93); assert.strictEqual(c[0].cost, 24395.76);
+  assert.strictEqual(c[0].symbol, "WIPRO"); assert.strictEqual(c[0].qty, 90); assert.strictEqual(c[0].cost, 22500);
   assert.strictEqual(c[0].whole, true); assert.strictEqual(c[0].lastPrice, 198);
   assert.strictEqual(c[0].lots[0].buyDateKnown, false, "the shared import date is not a real buy date");
   assert.strictEqual(S.detect(prev, prev, "2026-11-13").length, 0, "nothing left: nothing to ask");
@@ -61,15 +61,15 @@ assert.strictEqual(S.stampedDate([...filler.slice(0, 3), ...["2020-01-01", "2021
 }
 
 // ── buildSale ──
-const cand = { id: "c1", key: "WIPRO|Me|Zerodha", symbol: "WIPRO", name: "Wipro", owner: "Me", demat: "Zerodha", qty: 93, cost: 24395.76, lots: [{ buyDate: "2026-11-11", buyDateKnown: false, qty: 93, cost: 24395.76 }] };
+const cand = { id: "c1", key: "WIPRO|Me|Zerodha", symbol: "WIPRO", name: "Wipro", owner: "Me", demat: "Zerodha", qty: 90, cost: 22500, lots: [{ buyDate: "2026-11-11", buyDateKnown: false, qty: 90, cost: 22500 }] };
 {
-  const r = S.buildSale(cand, { price: 198.13, date: "2026-11-11", charges: 25 }, { today: "2026-11-13" });
+  const r = S.buildSale(cand, { price: 200, date: "2026-11-11", charges: 25 }, { today: "2026-11-13" });
   assert.ok(r.ok);
-  assert.strictEqual(r.sale.gross, 18426.09); assert.strictEqual(r.sale.proceeds, 18401.09); assert.strictEqual(r.sale.cost, 24395.76); assert.strictEqual(r.sale.gain, -5994.67);
+  assert.strictEqual(r.sale.gross, 18000); assert.strictEqual(r.sale.proceeds, 17975); assert.strictEqual(r.sale.cost, 22500); assert.strictEqual(r.sale.gain, -4525);
   assert.strictEqual(r.sale.lots[0].buyDateKnown, false, "still unknown: the household did not give a date");
-  const k = S.buildSale(cand, { price: 198.13, date: "2026-11-11", buyDate: "2025-02-03" }, { today: "2026-11-13" }).sale;
+  const k = S.buildSale(cand, { price: 200, date: "2026-11-11", buyDate: "2025-02-03" }, { today: "2026-11-13" }).sale;
   assert.strictEqual(k.lots[0].buyDate, "2025-02-03"); assert.strictEqual(k.lots[0].buyDateKnown, true);
-  assert.strictEqual(S.buildSale(cand, { price: 198.13, date: "2026-11-11", charges: 25 }, { today: "2026-11-13" }).sale.id, r.sale.id, "the same sale gets the same id, so it can never be recorded twice");
+  assert.strictEqual(S.buildSale(cand, { price: 200, date: "2026-11-11", charges: 25 }, { today: "2026-11-13" }).sale.id, r.sale.id, "the same sale gets the same id, so it can never be recorded twice");
 }
 const bad = (input, re) => { const r = S.buildSale(cand, input, { today: "2026-11-13" }); assert.ok(!r.ok && re.test(r.error), JSON.stringify(input) + " → " + r.error); };
 bad({ price: 0, date: "2026-11-11" }, /price/);
@@ -79,16 +79,16 @@ bad({ price: 100, date: "2026-02-30" }, /date/);
 bad({ price: 100, date: "2026-11-14" }, /future/);
 assert.ok(S.buildSale(cand, { price: 100, date: "2026-11-13" }, { today: "2026-11-13" }).ok, "today is allowed");
 bad({ price: 100, date: "2026-11-11", charges: -1 }, /negative/);
-bad({ price: 100, date: "2026-11-11", charges: 9301.01 }, /more than/);
-assert.ok(S.buildSale(cand, { price: 100, date: "2026-11-11", charges: 9300 }, { today: "2026-11-13" }).ok, "charges equal to the sale value are allowed (the money is nil)");
-assert.strictEqual(S.buildSale(cand, { price: 100, date: "2026-11-11", charges: 9300 }, { today: "2026-11-13" }).sale.proceeds, 0);
+bad({ price: 100, date: "2026-11-11", charges: 9001.01 }, /more than/);
+assert.ok(S.buildSale(cand, { price: 100, date: "2026-11-11", charges: 9000 }, { today: "2026-11-13" }).ok, "charges equal to the sale value are allowed (the money is nil)");
+assert.strictEqual(S.buildSale(cand, { price: 100, date: "2026-11-11", charges: 9000 }, { today: "2026-11-13" }).sale.proceeds, 0);
 bad({ price: 100, date: "2026-11-11", buyDate: "2026-11-12" }, /after they were sold/);
 assert.ok(S.buildSale(cand, { price: 100, date: "2026-11-11", buyDate: "2026-11-11" }, { today: "2026-11-13" }).ok, "bought and sold the same day is allowed");
 bad({ price: 100, date: "2026-11-11", buyDate: "nonsense" }, /buy date/);
 assert.ok(!S.buildSale({ ...cand, qty: 0 }, { price: 1, date: "2026-11-11" }, { today: "2026-11-13" }).ok);
 // a lot with a KNOWN buy date after the sale date is refused; a known earlier date keeps its own date even if a buyDate is typed
 {
-  const known = { ...cand, lots: [{ buyDate: "2024-05-05", buyDateKnown: true, qty: 93, cost: 24395.76 }] };
+  const known = { ...cand, lots: [{ buyDate: "2024-05-05", buyDateKnown: true, qty: 90, cost: 22500 }] };
   assert.ok(!S.buildSale(known, { price: 1, date: "2024-01-01" }, { today: "2026-11-13" }).ok);
   const r = S.buildSale(known, { price: 1, date: "2026-01-01", buyDate: "2020-01-01" }, { today: "2026-11-13" });
   assert.strictEqual(r.sale.lots[0].buyDate, "2024-05-05", "a date the sheet really had is not overwritten");
@@ -96,8 +96,8 @@ assert.ok(!S.buildSale({ ...cand, qty: 0 }, { price: 1, date: "2026-11-11" }, { 
 
 // ── manual candidate (a sale the sync never saw) ──
 {
-  const m = S.manualCandidate({ symbol: "wipro", name: "Wipro", qty: 93, avgCost: 262.32, owner: "Me", demat: "Zerodha" }, "2026-11-13");
-  assert.ok(m.ok); assert.strictEqual(m.cand.cost, 24395.76); assert.strictEqual(m.cand.symbol, "WIPRO"); assert.strictEqual(m.cand.lots[0].buyDateKnown, false);
+  const m = S.manualCandidate({ symbol: "wipro", name: "Wipro", qty: 90, avgCost: 250, owner: "Me", demat: "Zerodha" }, "2026-11-13");
+  assert.ok(m.ok); assert.strictEqual(m.cand.cost, 22500); assert.strictEqual(m.cand.symbol, "WIPRO"); assert.strictEqual(m.cand.lots[0].buyDateKnown, false);
   assert.strictEqual(S.manualCandidate({ symbol: "w", qty: 1, avgCost: 1, buyDate: "2024-01-01" }, "2026-11-13").cand.lots[0].buyDateKnown, true);
   for (const f of [{ qty: 1, avgCost: 1 }, { symbol: "W", qty: 0, avgCost: 1 }, { symbol: "W", qty: 1, avgCost: 0 }, { symbol: "W", qty: 1, avgCost: 1, buyDate: "2024-13-01" }]) assert.ok(!S.manualCandidate(f, "2026-11-13").ok, JSON.stringify(f));
 }
@@ -106,9 +106,9 @@ assert.ok(!S.buildSale({ ...cand, qty: 0 }, { price: 1, date: "2026-11-11" }, { 
 {
   const banks = [{ id: "b1", owner: "Me", value: 50000, date: "2026-11-13" }, { id: "b2", owner: "Wife", value: 20000, date: "2026-11-13" }];
   const frozen = JSON.stringify(banks);
-  const r = S.creditBank(banks, { owner: "Wife", proceeds: 18401.09 }, "2026-11-14");
-  assert.ok(r.ok); assert.strictEqual(r.id, "b2"); assert.strictEqual(r.before, 20000); assert.strictEqual(r.after, 38401.09);
-  assert.deepStrictEqual(r.list.map((b) => b.value), [50000, 38401.09]); assert.strictEqual(r.list[1].date, "2026-11-14"); assert.strictEqual(r.list[0].date, "2026-11-13");
+  const r = S.creditBank(banks, { owner: "Wife", proceeds: 17975 }, "2026-11-14");
+  assert.ok(r.ok); assert.strictEqual(r.id, "b2"); assert.strictEqual(r.before, 20000); assert.strictEqual(r.after, 37975);
+  assert.deepStrictEqual(r.list.map((b) => b.value), [50000, 37975]); assert.strictEqual(r.list[1].date, "2026-11-14"); assert.strictEqual(r.list[0].date, "2026-11-13");
   assert.strictEqual(JSON.stringify(banks), frozen, "the input is not changed");
   assert.ok(!S.creditBank([banks[0]], { owner: "Wife", proceeds: 1 }, "2026-11-14").ok);
   assert.ok(S.creditBank([{ id: "x", value: 10 }], { owner: "Me", proceeds: 5 }, "2026-11-14").ok, "a record with no owner counts as Me");

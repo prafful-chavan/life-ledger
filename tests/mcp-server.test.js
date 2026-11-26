@@ -51,7 +51,7 @@ const S = require("../mcp/server.js");
   const state = {
     fx: { usdInr: 90 }, mutualFunds: [], stocks: [], usstocks: [], gold: [], silver: [], crypto: [], fd: [{ value: 1000 }], epf: [], ppf: [], bonds: [], banksaving: [], others: [], vehicles: [{ name: "Altroz", value: 500 }],
     liabilities: [], income: [], expenses: [], goals: [{ name: "Car", target: 100, saved: 25 }], netWorthHistory: [],
-    people: { me: { dob: "1995-10-22" } },
+    people: { me: { dob: "1990-10-15" } },
     insurance: [{ person: "Me", type: "Term life", insurer: "ACME", policyName: "Secret plan", cover: 5000000, premium: 12000, frequency: "Yearly", nextDue: "2027-01-01", nominee: "SECRET NAME", note: "POLICY-998877" }],
   };
   const loader = async () => state;
@@ -65,7 +65,7 @@ const S = require("../mcp/server.js");
   const briefRes = await call("household_brief");
   const text = briefRes.content[0].text;
   assert.ok(!briefRes.isError);
-  assert.ok(!/SECRET NAME|POLICY-998877|1995-10-22/.test(text), "nominee, policy note and date of birth never leave");
+  assert.ok(!/SECRET NAME|POLICY-998877|1990-10-15/.test(text), "nominee, policy note and date of birth never leave");
   const parsed = JSON.parse(text);
   assert.strictEqual(parsed.netWorth.classes.others.value, 500, "vehicles count");
   assert.strictEqual(parsed.protection.people[0].who, "Prafful");

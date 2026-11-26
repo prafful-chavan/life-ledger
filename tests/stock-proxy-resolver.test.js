@@ -170,15 +170,9 @@ it('Proxy URL sanitization: strips quotes, whitespace, and handles trailing quer
   assert.strictEqual(url, 'https://script.google.com/macros/s/ABC/exec?token=123&symbols=AAPL&market=US');
 });
 
-// 10. Preloaded US Stocks valuation calculation
-it('US Stocks Valuation: correctly computes total invested and current value', () => {
-  assert.ok(Array.isArray(defaultUsStockHoldings), 'defaultUsStockHoldings should exist');
-  assert.strictEqual(defaultUsStockHoldings.length, 4);
-
-  const aapl = defaultUsStockHoldings.find(s => s.symbol === 'AAPL');
-  assert.ok(aapl);
-  assert.ok(toNumber(aapl.quantity) > 0);
-  assert.strictEqual(formatUSD(aapl.avgPrice), '$223.75');
+// 10. No built-in US holdings (the code is public)
+it('US Stocks: no built-in holdings', () => {
+  assert.deepStrictEqual(defaultUsStockHoldings, []);
 });
 
 // 11. persist() execution safety

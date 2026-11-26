@@ -75,7 +75,7 @@ assert.strictEqual(P.referenceFor("age", { ages: [15] }).mix.equity, 80, "capped
 for (const ag of [15, 20, 21, 50, 80, 90, 99]) assert.strictEqual(Object.values(P.referenceFor("age", { ages: [ag] }).mix).reduce((t, v) => t + v, 0), 100, `age ${ag} adds to 100`);
 assert.strictEqual(P.referenceFor("age", { ages: [] }), null); assert.strictEqual(P.referenceFor("age", { ages: [NaN] }), null); assert.strictEqual(P.referenceFor("age", {}), null);
 // ages
-assert.strictEqual(P.ageOn("1995-10-22", "2026-10-21"), 30, "the day before the birthday"); assert.strictEqual(P.ageOn("1995-10-22", "2026-10-22"), 31, "on the birthday"); assert.strictEqual(P.ageOn("1995-10-22", "2026-10-23"), 31);
+assert.strictEqual(P.ageOn("1990-10-15", "2026-10-14"), 35, "the day before the birthday"); assert.strictEqual(P.ageOn("1990-10-15", "2026-10-15"), 36, "on the birthday"); assert.strictEqual(P.ageOn("1990-10-15", "2026-10-23"), 36);
 assert.strictEqual(P.ageOn("2000-02-29", "2026-02-28"), 25); assert.strictEqual(P.ageOn("2000-02-29", "2026-03-01"), 26); assert.strictEqual(P.ageOn("bad", "2026-01-01"), null); assert.strictEqual(P.ageOn("2030-01-01", "2026-01-01"), null, "not born yet"); assert.strictEqual(P.ageOn("1800-01-01", "2026-01-01"), null);
 
 // ── comparison ──

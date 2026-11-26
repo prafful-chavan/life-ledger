@@ -151,59 +151,19 @@ Wipro Ltd,WIPRO,480.00,4800.00,4800.00`;
 });
 
 // ----------------------------------------------------------------------
-// Test 6: Pre-loaded Real Portfolio Verification (Upstox, Zerodha, Groww, INDmoney)
+// Test 6: no built-in holdings — the code is public, and a built-in list must never be put into the household's data
 // ----------------------------------------------------------------------
-runTest('Verify pre-loaded 36 holdings across Upstox, Zerodha, Groww, INDmoney', () => {
-  const { defaultStockHoldings } = require('../app.js');
-  assert.strictEqual(defaultStockHoldings.length, 36, 'Should contain 36 pre-loaded holdings');
-
-  // Me - Upstox (8 ETFs)
-  const upstoxItems = defaultStockHoldings.filter(s => s.demat === 'Upstox');
-  assert.strictEqual(upstoxItems.length, 8, 'Upstox should have 8 ETF holdings');
-  const upstoxCurrent = upstoxItems.reduce((sum, s) => sum + s.currentValue, 0);
-  assert.strictEqual(Math.round(upstoxCurrent), 847881, 'Upstox Current Value should be ₹8,47,881');
-
-  // Me - Zerodha (11 Stocks & Bonds)
-  const zerodhaItems = defaultStockHoldings.filter(s => s.demat === 'Zerodha');
-  assert.strictEqual(zerodhaItems.length, 11, 'Zerodha should have 11 stock/bond holdings');
-  const zerodhaInvested = zerodhaItems.reduce((sum, s) => sum + s.invested, 0);
-  const zerodhaCurrent = zerodhaItems.reduce((sum, s) => sum + s.currentValue, 0);
-  assert.strictEqual(zerodhaInvested.toFixed(2), '277195.60', 'Zerodha Invested should be ₹2,77,195.60');
-  assert.strictEqual(zerodhaCurrent.toFixed(2), '319895.20', 'Zerodha Current Value should be ₹3,19,895.20');
-
-  // Wife - Groww (14 Stocks & ETFs)
-  const growwItems = defaultStockHoldings.filter(s => s.demat === 'Groww');
-  assert.strictEqual(growwItems.length, 14, 'Groww should have 14 holdings for Wife');
-  const growwInvested = growwItems.reduce((sum, s) => sum + s.invested, 0);
-  const growwCurrent = growwItems.reduce((sum, s) => sum + s.currentValue, 0);
-  assert.strictEqual(Math.round(growwInvested), 320745, 'Groww Invested should be ₹3,20,745');
-  assert.strictEqual(Math.round(growwCurrent), 364889, 'Groww Current Value should be ₹3,64,889');
-
-  // Wife - INDmoney (3 ETFs)
-  const indmoneyItems = defaultStockHoldings.filter(s => s.demat === 'INDmoney');
-  assert.strictEqual(indmoneyItems.length, 3, 'INDmoney should have 3 ETF holdings for Wife');
-  const indmoneyInvested = indmoneyItems.reduce((sum, s) => sum + s.invested, 0);
-  const indmoneyCurrent = indmoneyItems.reduce((sum, s) => sum + s.currentValue, 0);
-  assert.strictEqual(indmoneyInvested.toFixed(2), '119037.68', 'INDmoney Invested should be ₹1,19,037.68');
-  assert.strictEqual(indmoneyCurrent.toFixed(2), '140226.82', 'INDmoney Current Value should be ₹1,40,226.82');
-});
-
-// ----------------------------------------------------------------------
-// Test 7: US Stocks Portfolio Verification (AAPL, T, VOO, META)
-// ----------------------------------------------------------------------
-runTest('Verify pre-loaded US Stocks holdings (AAPL, T, VOO, META)', () => {
-  const { defaultUsStockHoldings, formatUSD } = require('../app.js');
-  assert.strictEqual(defaultUsStockHoldings.length, 4, 'Should contain 4 pre-loaded US stock holdings');
-
-  const symbols = defaultUsStockHoldings.map(s => s.symbol);
-  assert.deepStrictEqual(symbols, ['AAPL', 'T', 'VOO', 'META']);
-
-  const investedUSD = defaultUsStockHoldings.reduce((sum, s) => sum + s.invested, 0);
-  const currentUSD = defaultUsStockHoldings.reduce((sum, s) => sum + s.currentValue, 0);
-  
-  assert.strictEqual(investedUSD.toFixed(2), '1150.18', 'US Invested Value should be $1,150.18');
-  assert.strictEqual(currentUSD.toFixed(2), '1395.83', 'US Current Value should be $1,395.83');
-  assert.strictEqual(formatUSD(investedUSD), '$1,150.18', 'formatUSD should format $1,150.18');
+runTest('No built-in holdings or body records, and none are invented for empty data', () => {
+  const { defaultStockHoldings, defaultUsStockHoldings, normalizeData } = require('../app.js');
+  assert.deepStrictEqual(defaultStockHoldings, []);
+  assert.deepStrictEqual(defaultUsStockHoldings, []);
+  const empty = normalizeData({});
+  assert.deepStrictEqual([empty.stocks, empty.usstocks, empty.bodyMetrics], [[], [], []], 'empty data stays empty');
+  // one person with no shares gets none made up; the other keeps exactly their own
+  const one = normalizeData({ stocks: [{ id: 's1', owner: 'Wife', symbol: 'AAA', company: 'Aaa', quantity: 2, invested: 20 }] });
+  assert.deepStrictEqual(one.stocks.map((x) => [x.owner, x.symbol, x.quantity]), [['Wife', 'AAA', 2]]);
+  const mine = normalizeData({ stocks: [{ id: 's2', owner: 'Me', symbol: 'BBB', company: 'Bbb', quantity: 3, invested: 30 }], usstocks: [{ id: 'u1', symbol: 'CCC', quantity: 1 }], bodyMetrics: [{ id: 'b1', date: '2020-01-01', weight: 50 }] });
+  assert.deepStrictEqual([mine.stocks.length, mine.usstocks.length, mine.bodyMetrics.length], [1, 1, 1]);
 });
 
 // ----------------------------------------------------------------------
@@ -537,7 +497,7 @@ runTest('parseMasterHoldingsWorkbook: parses user exact ISIN + Qty + AVG master 
     { "ISIN": "INE811K01011", "Qty": "10", "AVG": "1667.95" },
     { "ISIN": "INE020B01018", "Qty": "70", "AVG": "438.62" },
     { "ISIN": "INE200M01039", "Qty": "56", "AVG": "506.77" },
-    { "ISIN": "INE075A01022", "Qty": "93", "AVG": "262.32" }
+    { "ISIN": "INE075A01022", "Qty": "90", "AVG": "250" }
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zerodhaData), "my-zerodha");
 

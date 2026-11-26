@@ -29,7 +29,7 @@ const defaultData = {
   tasks: [],
   vehicles: [],
   insurance: [],
-  people: { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } },
+  people: { me: { dob: "" }, wife: { dob: "" } },
   protectionSeeded: false,
   taxProfile: {},
   taxReturns: [],
@@ -1204,7 +1204,7 @@ function normalizeDataCore(data) {
     // Protection: vehicles, insurance policies and the two birthdays (kept in the vault, synced like everything else)
     vehicles: ensureIds(Array.isArray(data.vehicles) ? data.vehicles : [], "veh"),
     insurance: ensureIds(Array.isArray(data.insurance) ? data.insurance : [], "ins"),
-    people: data.people && typeof data.people === "object" ? data.people : { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } },
+    people: data.people && typeof data.people === "object" ? data.people : { me: { dob: "" }, wife: { dob: "" } },
     protectionSeeded: Boolean(data.protectionSeeded),
     // Tax page: the household's profile, filed returns and family money transfers (private; kept in the vault, synced like everything else)
     taxProfile: data.taxProfile && typeof data.taxProfile === "object" && !Array.isArray(data.taxProfile) ? data.taxProfile : {},
@@ -1622,15 +1622,6 @@ function bindFinanceTabs() {
     });
   });
 
-  document.getElementById('restoreStockPortfolioBtn')?.addEventListener('click', async () => {
-    if (confirm('Load your real Upstox (8 ETFs) + Zerodha (11 Stocks) holdings into Life Ledger?')) {
-      state.stocks = clone(defaultStockHoldings);
-      await saveData(true, 'stock');
-      renderStockHoldingsPanel();
-      renderAll();
-      toast('✅ Real Upstox (8 ETFs) + Zerodha (11 Stocks) holdings loaded!');
-    }
-  });
 
   document.getElementById('toggleUsStockViewHoldings')?.addEventListener('click', () => {
     activeUsStockView = 'holdings';
@@ -1655,15 +1646,6 @@ function bindFinanceTabs() {
     });
   });
 
-  document.getElementById('restoreUsStockPortfolioBtn')?.addEventListener('click', async () => {
-    if (confirm('Load real US portfolio (AAPL, T, VOO, META) into Life Ledger?')) {
-      state.usstocks = clone(defaultUsStockHoldings);
-      await saveData(true, 'usstocks');
-      renderUsStockHoldingsPanel();
-      renderAll();
-      toast('✅ Real US stock holdings loaded into portfolio!');
-    }
-  });
 
   document.addEventListener('click', (e) => {
     const editBtn = e.target.closest('.edit-usstock-btn');
@@ -6622,61 +6604,14 @@ function calcUsStockTotalValueINR() {
   return calcStockTotalValue(state.usstocks) * getUsdInrRate();
 }
 
-const defaultStockHoldings = [
-  // ── Upstox Holdings (8 ETFs) ──
-  { id: "stk-up-1", owner: "Me", symbol: "HDFCMID150", company: "HDFC Nifty Midcap 150 ETF", exchange: "NSE", category: "ETF", quantity: 1678, avgPrice: 21.12, currentPrice: 23.36, invested: 35439.36, currentValue: 39198.08, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox ETF" },
-  { id: "stk-up-2", owner: "Me", symbol: "GOLD1", company: "Kotak Gold ETF", exchange: "NSE", category: "ETF", quantity: 1523, avgPrice: 80.21, currentPrice: 118.16, invested: 122159.83, currentValue: 179957.68, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Gold ETF" },
-  { id: "stk-up-3", owner: "Me", symbol: "HDFCSML250", company: "HDFC Nifty Smallcap 250 ETF", exchange: "NSE", category: "ETF", quantity: 464, avgPrice: 170.49, currentPrice: 180.67, invested: 79107.36, currentValue: 83830.88, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Smallcap ETF" },
-  { id: "stk-up-4", owner: "Me", symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", exchange: "NSE", category: "ETF", quantity: 569, avgPrice: 264.94, currentPrice: 277.42, invested: 150750.86, currentValue: 157851.98, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Nifty 50 ETF" },
-  { id: "stk-up-5", owner: "Me", symbol: "MID150BEES", company: "Nippon India ETF Nifty Midcap 150 BeES", exchange: "NSE", category: "ETF", quantity: 221, avgPrice: 217.54, currentPrice: 239.42, invested: 48076.34, currentValue: 52911.82, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Midcap ETF" },
-  { id: "stk-up-6", owner: "Me", symbol: "MON100", company: "Motilal Oswal Nasdaq 100 ETF", exchange: "NSE", category: "ETF", quantity: 441, avgPrice: 193.28, currentPrice: 305.18, invested: 85236.48, currentValue: 134584.38, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Nasdaq 100 ETF" },
-  { id: "stk-up-7", owner: "Me", symbol: "BANKBEES", company: "Nippon India ETF Bank BeES", exchange: "NSE", category: "ETF", quantity: 149, avgPrice: 543.48, currentPrice: 592.26, invested: 80978.52, currentValue: 88246.74, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox Bank ETF" },
-  { id: "stk-up-8", owner: "Me", symbol: "ITBEES", company: "Nippon India ETF IT BeES", exchange: "NSE", category: "ETF", quantity: 3262, avgPrice: 39.45, currentPrice: 34.12, invested: 128685.90, currentValue: 111299.44, demat: "Upstox", purchaseDate: "2024-01-15", notes: "Upstox IT ETF" },
-
-  // ── Zerodha Holdings (11 Stocks & Bonds) ──
-  { id: "stk-ze-1", owner: "Me", symbol: "BLUESTARCO", company: "Blue Star Ltd", exchange: "NSE", category: "Stock", quantity: 19, avgPrice: 1534.29, currentPrice: 1681.00, invested: 29151.45, currentValue: 31939.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-2", owner: "Me", symbol: "FACT", company: "Fertilisers & Chemicals Travancore Ltd", exchange: "NSE", category: "Stock", quantity: 37, avgPrice: 855.23, currentPrice: 827.50, invested: 31643.55, currentValue: 30617.50, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-3", owner: "Me", symbol: "HAVELLS", company: "Havells India Ltd", exchange: "NSE", category: "Stock", quantity: 13, avgPrice: 1533.61, currentPrice: 1259.60, invested: 19936.95, currentValue: 16374.80, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-4", owner: "Me", symbol: "JINDALSTEL", company: "Jindal Steel & Power Ltd", exchange: "NSE", category: "Stock", quantity: 19, avgPrice: 753.02, currentPrice: 1102.40, invested: 14307.35, currentValue: 20945.60, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-5", owner: "Me", symbol: "M&M", company: "Mahindra & Mahindra Ltd", exchange: "NSE", category: "Stock", quantity: 11, avgPrice: 2441.30, currentPrice: 3398.50, invested: 26854.30, currentValue: 37383.50, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-6", owner: "Me", symbol: "PFC", company: "Power Finance Corporation Ltd", exchange: "NSE", category: "Stock", quantity: 60, avgPrice: 401.31, currentPrice: 424.45, invested: 24078.55, currentValue: 25467.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-7", owner: "Me", symbol: "PRESTIGE", company: "Prestige Estates Projects Ltd", exchange: "NSE", category: "Stock", quantity: 10, avgPrice: 1667.95, currentPrice: 1618.50, invested: 16679.50, currentValue: 16185.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-8", owner: "Me", symbol: "RECLTD", company: "REC Ltd", exchange: "NSE", category: "Stock", quantity: 70, avgPrice: 438.62, currentPrice: 373.10, invested: 30703.70, currentValue: 26117.00, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-9", owner: "Me", symbol: "SGBFEB32IV-GB", company: "Sovereign Gold Bond 2032 Series IV", exchange: "NSE", category: "Bond", quantity: 5, avgPrice: 6213.00, currentPrice: 14601.83, invested: 31065.00, currentValue: 73009.15, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Sovereign Gold Bond" },
-  { id: "stk-ze-10", owner: "Me", symbol: "VBL", company: "Varun Beverages Ltd", exchange: "NSE", category: "Stock", quantity: 56, avgPrice: 506.77, currentPrice: 442.45, invested: 28379.25, currentValue: 24777.20, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-  { id: "stk-ze-11", owner: "Me", symbol: "WIPRO", company: "Wipro Ltd", exchange: "NSE", category: "Stock", quantity: 93, avgPrice: 262.32, currentPrice: 183.65, invested: 24396.00, currentValue: 17079.45, demat: "Zerodha", purchaseDate: "2024-02-10", notes: "Zerodha Equity" },
-
-  // ── Wife - Groww Holdings (14 Real Stocks & ETFs from Groww App) ──
-  { id: "stk-gw-1", owner: "Wife", symbol: "GEVERNOVA", company: "GE Vernova T&D India", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 3250.73, currentPrice: 4406.50, invested: 9752.19, currentValue: 13219.50, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-2", owner: "Wife", symbol: "MCX", company: "Multi Commodity Exchange of India", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 3005.00, currentPrice: 2970.10, invested: 9015.00, currentValue: 8910.30, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-3", owner: "Wife", symbol: "RRKABEL", company: "RR Kabel Ltd", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 2392.00, currentPrice: 2789.60, invested: 7176.00, currentValue: 8368.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-4", owner: "Wife", symbol: "LAURUSLABS", company: "Laurus Labs Ltd", exchange: "NSE", category: "Stock", quantity: 3, avgPrice: 1400.90, currentPrice: 1850.00, invested: 4202.70, currentValue: 5550.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-5", owner: "Wife", symbol: "RATEGAIN", company: "RateGain Travel Technologies", exchange: "NSE", category: "Stock", quantity: 12, avgPrice: 969.95, currentPrice: 932.65, invested: 11639.40, currentValue: 11191.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-6", owner: "Wife", symbol: "GRANULES", company: "Granules India Ltd", exchange: "NSE", category: "Stock", quantity: 15, avgPrice: 885.57, currentPrice: 864.80, invested: 13283.55, currentValue: 12972.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-7", owner: "Wife", symbol: "ARVIND", company: "Arvind Ltd", exchange: "NSE", category: "Stock", quantity: 26, avgPrice: 510.37, currentPrice: 566.85, invested: 13269.62, currentValue: 14738.10, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-8", owner: "Wife", symbol: "BAJAJCORP", company: "Bajaj Consumer Care Ltd", exchange: "NSE", category: "Stock", quantity: 20, avgPrice: 546.95, currentPrice: 538.25, invested: 10939.00, currentValue: 10765.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-9", owner: "Wife", symbol: "HONASA", company: "Honasa Consumer Ltd (Mamaearth)", exchange: "NSE", category: "Stock", quantity: 36, avgPrice: 362.69, currentPrice: 467.40, invested: 13056.84, currentValue: 16826.40, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-10", owner: "Wife", symbol: "TARIL", company: "Transformers & Rectifiers India Ltd", exchange: "NSE", category: "Stock", quantity: 14, avgPrice: 534.42, currentPrice: 292.45, invested: 7481.88, currentValue: 4094.30, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Equity" },
-  { id: "stk-gw-11", owner: "Wife", symbol: "NIFTYBEES", company: "Nippon India ETF Nifty 50 BeES", exchange: "NSE", category: "ETF", quantity: 490, avgPrice: 263.68, currentPrice: 278.32, invested: 129203.20, currentValue: 136376.80, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
-  { id: "stk-gw-12", owner: "Wife", symbol: "MID150BEES", company: "Nippon India ETF Midcap 150 BeES", exchange: "NSE", category: "ETF", quantity: 18, avgPrice: 206.60, currentPrice: 242.77, invested: 3718.80, currentValue: 4369.86, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww ETF" },
-  { id: "stk-gw-13", owner: "Wife", symbol: "SILVERBEES", company: "Nippon India ETF Silver BeES", exchange: "NSE", category: "ETF", quantity: 50, avgPrice: 240.24, currentPrice: 225.76, invested: 12012.00, currentValue: 11288.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Silver ETF" },
-  { id: "stk-gw-14", owner: "Wife", symbol: "GOLDBEES", company: "Nippon India ETF Gold BeES", exchange: "NSE", category: "ETF", quantity: 840, avgPrice: 90.47, currentPrice: 126.45, invested: 75994.80, currentValue: 106218.00, demat: "Groww", purchaseDate: "2024-03-01", notes: "Groww Gold ETF" },
-
-  // ── Wife - INDmoney Holdings (3 ETFs) ──
-  { id: "stk-ind-1", owner: "Wife", symbol: "MON100", company: "Motilal Oswal Nasdaq 100 ETF", exchange: "NSE", category: "ETF", quantity: 200, avgPrice: 221.80, currentPrice: 305.18, invested: 44360.00, currentValue: 61036.00, demat: "INDmoney", purchaseDate: "2024-03-15", notes: "INDmoney Nasdaq 100 ETF" },
-  { id: "stk-ind-2", owner: "Wife", symbol: "HDFCSML250", company: "HDFC Nifty Smallcap 250 ETF", exchange: "NSE", category: "ETF", quantity: 239, avgPrice: 166.38, currentPrice: 180.67, invested: 39764.82, currentValue: 43180.13, demat: "INDmoney", purchaseDate: "2024-03-15", notes: "INDmoney Smallcap ETF" },
-  { id: "stk-ind-3", owner: "Wife", symbol: "ICICIB22", company: "ICICI Prudential Bharat 22 ETF", exchange: "NSE", category: "ETF", quantity: 311, avgPrice: 112.26, currentPrice: 115.79, invested: 34912.86, currentValue: 36010.69, demat: "INDmoney", purchaseDate: "2024-03-15", notes: "INDmoney Bharat 22 ETF" },
-];
+// No built-in holdings: this code is public, and a built-in list would be put back as if still owned whenever a person had no shares. Holdings come only from the household's own data.
+const defaultStockHoldings = [];
 
 let activeUsStockView = "holdings";
 let activeUsStockBroker = "All";
 
-const defaultUsStockHoldings = [
-  { id: "us-1", owner: "Me", symbol: "AAPL", company: "Apple Inc.", exchange: "NASDAQ", category: "Stock", quantity: 2.96888827, avgPrice: 223.75, currentPrice: 307.34, invested: 664.29, currentValue: 912.46, demat: "INDmoney", purchaseDate: "2024-01-15", notes: "Apple US Stock" },
-  { id: "us-2", owner: "Me", symbol: "T", company: "AT&T Inc.", exchange: "NYSE", category: "Stock", quantity: 3.84444291, avgPrice: 18.19, currentPrice: 23.27, invested: 69.92, currentValue: 89.46, demat: "INDmoney", purchaseDate: "2024-01-15", notes: "AT&T US Stock" },
-  { id: "us-3", owner: "Me", symbol: "VOO", company: "Vanguard S&P 500 ETF", exchange: "NYSEARCA", category: "ETF", quantity: 0.4502127, avgPrice: 688.92, currentPrice: 684.58, invested: 310.16, currentValue: 308.21, demat: "INDmoney", purchaseDate: "2024-01-15", notes: "Vanguard S&P 500 ETF" },
-  { id: "us-4", owner: "Me", symbol: "META", company: "Meta Platforms Inc. Class A", exchange: "NASDAQ", category: "Stock", quantity: 0.1548297, avgPrice: 683.40, currentPrice: 553.51, invested: 105.81, currentValue: 85.70, demat: "INDmoney", purchaseDate: "2024-01-15", notes: "Meta US Stock" },
-];
+// No built-in US holdings, for the same reason.
+const defaultUsStockHoldings = [];
 
 let activeExerciseYear = new Date().getFullYear();
 let activeExerciseMonth = new Date().getMonth();
@@ -6684,39 +6619,8 @@ let activeActivityFilter = "all";
 let selectedChartMetric = "calories";
 let editActivityId = null;
 
-const defaultBodyMetrics = [
-  { id: "bm-1",  date: "2026-08-01", time: "09:37", weight: 84.50, bmi: 29.2, bodyFat: 24.60, subcutaneousFat: 21.20, visceralFat: 11.8, bodyWater: 54.40, skeletalMuscle: 48.70, muscleMass: 60.50, boneMass: 3.20, protein: 17.20, bmr: 1745, bodyAge: 34 },
-  { id: "bm-2",  date: "2026-07-31", time: "09:37", weight: 84.10, bmi: 29.1, bodyFat: 24.50, subcutaneousFat: 21.00, visceralFat: 11.7, bodyWater: 54.50, skeletalMuscle: 48.80, muscleMass: 60.30, boneMass: 3.20, protein: 17.20, bmr: 1741, bodyAge: 34 },
-  { id: "bm-3",  date: "2026-07-31", time: "06:59", weight: 84.10, bmi: 29.2, bodyFat: 24.60, subcutaneousFat: 21.20, visceralFat: 11.8, bodyWater: 54.40, skeletalMuscle: 48.70, muscleMass: 60.40, boneMass: 3.20, protein: 17.20, bmr: 1742, bodyAge: 34 },
-  { id: "bm-4",  date: "2026-07-20", time: "09:36", weight: 84.85, bmi: 29.4, bodyFat: 24.90, subcutaneousFat: 21.40, visceralFat: 12.0, bodyWater: 54.20, skeletalMuscle: 48.50, muscleMass: 60.50, boneMass: 3.20, protein: 17.10, bmr: 1745, bodyAge: 34 },
-  { id: "bm-5",  date: "2026-07-16", time: "09:45", weight: 84.80, bmi: 29.3, bodyFat: 24.80, subcutaneousFat: 21.30, visceralFat: 11.9, bodyWater: 54.30, skeletalMuscle: 48.60, muscleMass: 60.60, boneMass: 3.20, protein: 17.10, bmr: 1747, bodyAge: 34 },
-  { id: "bm-6",  date: "2026-07-15", time: "12:41", weight: 85.05, bmi: 29.4, bodyFat: 24.90, subcutaneousFat: 21.40, visceralFat: 12.0, bodyWater: 54.20, skeletalMuscle: 48.50, muscleMass: 60.60, boneMass: 3.20, protein: 17.10, bmr: 1748, bodyAge: 34 },
-  { id: "bm-7",  date: "2026-07-15", time: "08:53", weight: 85.05, bmi: 29.4, bodyFat: 24.90, subcutaneousFat: 21.40, visceralFat: 12.0, bodyWater: 54.20, skeletalMuscle: 48.50, muscleMass: 60.70, boneMass: 3.20, protein: 17.10, bmr: 1749, bodyAge: 34 },
-  { id: "bm-8",  date: "2026-07-14", time: "08:53", weight: 86.10, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1754, bodyAge: 34 },
-  { id: "bm-9",  date: "2026-07-14", time: "08:57", weight: 86.10, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1754, bodyAge: 34 },
-  { id: "bm-10", date: "2026-07-10", time: "19:14", weight: 86.25, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1757, bodyAge: 34 },
-  { id: "bm-11", date: "2026-07-08", time: "09:40", weight: 86.45, bmi: 29.9, bodyFat: 25.70, subcutaneousFat: 22.10, visceralFat: 12.4, bodyWater: 53.60, skeletalMuscle: 48.00, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1757, bodyAge: 34 },
-  { id: "bm-12", date: "2026-07-08", time: "09:39", weight: 86.45, bmi: 29.9, bodyFat: 25.70, subcutaneousFat: 22.10, visceralFat: 12.4, bodyWater: 53.60, skeletalMuscle: 48.00, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1757, bodyAge: 35 },
-  { id: "bm-13", date: "2026-07-07", time: "10:12", weight: 87.05, bmi: 30.1, bodyFat: 26.00, subcutaneousFat: 22.30, visceralFat: 12.6, bodyWater: 53.40, skeletalMuscle: 47.80, muscleMass: 61.20, boneMass: 3.20, protein: 16.90, bmr: 1761, bodyAge: 35 },
-  { id: "bm-14", date: "2026-07-06", time: "10:09", weight: 86.95, bmi: 30.1, bodyFat: 26.00, subcutaneousFat: 22.30, visceralFat: 12.6, bodyWater: 53.40, skeletalMuscle: 47.80, muscleMass: 61.10, boneMass: 3.20, protein: 16.90, bmr: 1759, bodyAge: 35 },
-  { id: "bm-15", date: "2026-07-06", time: "10:08", weight: 86.95, bmi: 30.1, bodyFat: 26.00, subcutaneousFat: 22.30, visceralFat: 12.6, bodyWater: 53.40, skeletalMuscle: 47.80, muscleMass: 61.10, boneMass: 3.20, protein: 16.90, bmr: 1759, bodyAge: 35 },
-  { id: "bm-16", date: "2026-07-05", time: "21:42", weight: 86.60, bmi: 30.0, bodyFat: 25.80, subcutaneousFat: 22.20, visceralFat: 12.5, bodyWater: 53.50, skeletalMuscle: 47.90, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1757, bodyAge: 35 },
-  { id: "bm-17", date: "2026-07-01", time: "08:32", weight: 87.40, bmi: 30.2, bodyFat: 26.20, subcutaneousFat: 22.40, visceralFat: 12.7, bodyWater: 53.30, skeletalMuscle: 47.70, muscleMass: 61.30, boneMass: 3.20, protein: 16.80, bmr: 1764, bodyAge: 35 },
-  { id: "bm-18", date: "2026-05-17", time: "11:00", weight: 86.05, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1753, bodyAge: 34 },
-  { id: "bm-19", date: "2026-03-31", time: "11:06", weight: 85.95, bmi: 29.7, bodyFat: 25.40, subcutaneousFat: 21.80, visceralFat: 12.2, bodyWater: 53.90, skeletalMuscle: 48.20, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1755, bodyAge: 34 },
-  { id: "bm-20", date: "2026-03-28", time: "10:38", weight: 86.25, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1757, bodyAge: 34 },
-  { id: "bm-21", date: "2026-03-24", time: "17:42", weight: 86.20, bmi: 29.8, bodyFat: 25.60, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1756, bodyAge: 34 },
-  { id: "bm-22", date: "2026-02-21", time: "12:40", weight: 86.25, bmi: 30.3, bodyFat: null,  subcutaneousFat: null, visceralFat: null, bodyWater: null, skeletalMuscle: null, muscleMass: null, boneMass: null, protein: null, bmr: null, bodyAge: null },
-  { id: "bm-23", date: "2025-11-24", time: "11:37", weight: 86.05, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.10, muscleMass: 60.90, boneMass: 3.20, protein: 17.00, bmr: 1754, bodyAge: 34 },
-  { id: "bm-24", date: "2025-11-13", time: "10:33", weight: 86.40, bmi: 29.9, bodyFat: 25.70, subcutaneousFat: 22.10, visceralFat: 12.4, bodyWater: 53.60, skeletalMuscle: 48.00, muscleMass: 61.00, boneMass: 3.20, protein: 16.90, bmr: 1756, bodyAge: 34 },
-  { id: "bm-25", date: "2025-10-12", time: "10:39", weight: 85.55, bmi: 29.6, bodyFat: 25.10, subcutaneousFat: 21.60, visceralFat: 12.1, bodyWater: 54.00, skeletalMuscle: 48.40, muscleMass: 60.80, boneMass: 3.20, protein: 17.10, bmr: 1753, bodyAge: 33 },
-  { id: "bm-26", date: "2025-10-06", time: "13:10", weight: 85.95, bmi: 29.7, bodyFat: 25.30, subcutaneousFat: 21.70, visceralFat: 12.2, bodyWater: 53.90, skeletalMuscle: 48.30, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1756, bodyAge: 33 },
-  { id: "bm-27", date: "2025-10-05", time: "13:05", weight: 85.95, bmi: 29.7, bodyFat: 25.30, subcutaneousFat: 21.70, visceralFat: 12.2, bodyWater: 53.90, skeletalMuscle: 48.30, muscleMass: 61.00, boneMass: 3.20, protein: 17.00, bmr: 1756, bodyAge: 33 },
-  { id: "bm-28", date: "2025-10-05", time: "10:05", weight: 85.50, bmi: 29.6, bodyFat: 25.10, subcutaneousFat: 21.60, visceralFat: 12.1, bodyWater: 54.00, skeletalMuscle: 48.40, muscleMass: 60.80, boneMass: 3.20, protein: 17.10, bmr: 1752, bodyAge: 33 },
-  { id: "bm-29", date: "2025-09-28", time: "12:38", weight: 86.50, bmi: 29.9, bodyFat: 25.60, subcutaneousFat: 22.00, visceralFat: 12.4, bodyWater: 53.70, skeletalMuscle: 48.10, muscleMass: 61.10, boneMass: 3.20, protein: 16.90, bmr: 1760, bodyAge: 33 },
-  { id: "bm-30", date: "2025-09-28", time: "12:38", weight: 86.25, bmi: 29.8, bodyFat: 25.40, subcutaneousFat: 21.80, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.20, muscleMass: 61.10, boneMass: 3.20, protein: 17.00, bmr: 1759, bodyAge: 33 },
-  { id: "bm-31", date: "2025-09-28", time: "12:38", weight: 86.25, bmi: 29.8, bodyFat: 25.50, subcutaneousFat: 21.90, visceralFat: 12.3, bodyWater: 53.80, skeletalMuscle: 48.20, muscleMass: 61.10, boneMass: 3.20, protein: 17.00, bmr: 1758, bodyAge: 33 },
-];
+// No built-in body measurements: they are private, and come only from the household's own data.
+const defaultBodyMetrics = [];
 
 function normalizeHeaderKey(str) {
   if (!str) return '';

@@ -35,10 +35,10 @@ assert.strictEqual(NC.dayAfter("2026-12-31"), "2027-01-01", "across the year end
 assert.strictEqual(NC.dayAfter("2028-02-28"), "2028-02-29", "a leap day");
 
 // ── Birthdays, ages and due dates ──
-assert.strictEqual(P.ageOn("1995-10-22", "2026-10-21"), 30, "the day before the birthday");
-assert.strictEqual(P.ageOn("1995-10-22", "2026-10-22"), 31, "on the birthday");
-assert.deepStrictEqual(P.nextBirthday("1995-10-22", "2026-10-22"), { date: "2026-10-22", days: 0, turning: 31 }, "today is the birthday");
-assert.strictEqual(P.nextBirthday("1995-10-22", "2026-12-31").date, "2027-10-22", "after this year's birthday: next year's");
+assert.strictEqual(P.ageOn("1990-10-15", "2026-10-14"), 35, "the day before the birthday");
+assert.strictEqual(P.ageOn("1990-10-15", "2026-10-15"), 36, "on the birthday");
+assert.deepStrictEqual(P.nextBirthday("1990-10-15", "2026-10-15"), { date: "2026-10-15", days: 0, turning: 36 }, "today is the birthday");
+assert.strictEqual(P.nextBirthday("1990-10-15", "2026-12-31").date, "2027-10-15", "after this year's birthday: next year's");
 assert.deepStrictEqual(P.dueStatus("2026-10-20", "2026-10-20"), { state: "soon", days: 0 }, "due today is not overdue");
 assert.strictEqual(P.dueStatus("2026-10-19", "2026-10-20").state, "overdue", "due yesterday is overdue");
 assert.strictEqual(P.dueStatus("", "2026-10-20").state, "none", "no date, nothing due");

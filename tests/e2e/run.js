@@ -182,12 +182,14 @@ const SCANNER = `(${function scan() {
 
     // 1b. Protection on a brand-new vault: the empty ₹0 rows are put in place once
     console.log("\nProtection");
+    // made-up birth dates: the app has none of its own
+    await cdp.eval(`(()=>{ LifeLedgerApp.getState().people={me:{dob:'1990-10-15'},wife:{dob:'1992-05-15'}}; LifeLedgerApp.renderAll(); return 0; })()`);
     await view("protection");
     await sleep(800);
     const seeded = await cdp.eval(`({cards:document.querySelectorAll('#protectionBody .prot-card').length, empty:document.querySelectorAll('#protectionBody .prot-card.is-empty').length, state:{v:LifeLedgerApp.getState().vehicles.length,i:LifeLedgerApp.getState().insurance.length,s:LifeLedgerApp.getState().protectionSeeded}})`);
     check("first visit puts in 1 vehicle and 4 policies, all at ₹0 for you to fill", seeded.state.v === 1 && seeded.state.i === 4 && seeded.state.s && seeded.empty === 5, JSON.stringify(seeded));
     const people = await cdp.eval(`document.querySelector('#protectionBody .prot-people').innerText.split(String.fromCharCode(10)).join(' | ')`);
-    check("both birth dates show an age and a birthday countdown", /Prafful[\s\S]*years old[\s\S]*turns/.test(people) && /Archana[\s\S]*years old[\s\S]*turns/.test(people) && (await cdp.eval(`[...document.querySelectorAll('[data-dob]')].map(i=>i.value).join(',')`)) === "1995-10-22,1997-05-22", people);
+    check("both birth dates show an age and a birthday countdown", /Prafful[\s\S]*years old[\s\S]*turns/.test(people) && /Archana[\s\S]*years old[\s\S]*turns/.test(people) && (await cdp.eval(`[...document.querySelectorAll('[data-dob]')].map(i=>i.value).join(',')`)) === "1990-10-15,1992-05-15", people);
 
     // 2. load the made-up household
     const { state, expected } = build(new Date());
@@ -679,7 +681,7 @@ const SCANNER = `(${function scan() {
       out.noGhostLot=lots.lots.filter(l=>l.symbol==='AAA'&&l.owner==='Me').length;
       // the same sale cannot be recorded twice, and a manual one for shares already gone is allowed; unknown buy date → term unknown
       box.querySelector('[data-act="sale-form"]').click(); await w(200); const f=box.querySelector('.up-card[data-cand="manual"]'); out.formShown=!!f;
-      const set=(n,v)=>{ f.querySelector('[data-field="'+n+'"]').value=v; }; set('symbol','WIPRO'); set('name','Wipro Ltd'); set('qty','93'); set('avgCost','262.32'); set('price','198.13'); set('date',today);
+      const set=(n,v)=>{ f.querySelector('[data-field="'+n+'"]').value=v; }; set('symbol','WIPRO'); set('name','Wipro Ltd'); set('qty','90'); set('avgCost','250'); set('price','200'); set('date',today);
       f.querySelector('[data-act="sale-record"]').click(); await w(600);
       const wip=(S.sales||[]).find(x=>x.symbol==='WIPRO'); out.wipro=wip?{proceeds:wip.proceeds,cost:wip.cost,gain:wip.gain}:null; out.unknownText=/Term unknown/.test(box.innerText);
       const fy2=G.realisedThisFY(G.buildLots(S,95).realised,today); out.unknownBucket=Math.round((fy2.owners.Me||{}).unknownTerm||0);
@@ -693,7 +695,7 @@ const SCANNER = `(${function scan() {
     check("sales: a missing price is refused with a message and records nothing", sl2.errorShown && sl2.salesAfterBad === 0, JSON.stringify(sl2));
     check("sales: recording works out proceeds after charges, gain, adds the money to the bank balance and clears the pending item", sl2.sale && sl2.sale.proceeds === 1460 && sl2.sale.cost === 900 && sl2.sale.gain === 560 && sl2.sale.credited === true && near(sl2.bankDelta, 1460, 0.01) && sl2.pendingAfter === 0 && sl2.row, JSON.stringify(sl2));
     check("sales: the tax engine counts the sale this financial year and the sold share is not left as an open lot", sl2.taxRows.length === 1 && sl2.taxRows[0].gain === 560 && sl2.taxRows[0].term === "short" && sl2.noGhostLot === 0, JSON.stringify(sl2));
-    check("sales: a sale typed in by hand with no buy date is 'term unknown' and counted in neither short nor long; remove and 'not a sale' work", sl2.formShown && sl2.wipro && sl2.wipro.proceeds === 18426.09 && sl2.wipro.cost === 24395.76 && Math.abs(sl2.unknownBucket + 5970) <= 1 && sl2.unknownText && sl2.afterDelete === 1 && sl2.dismissed, JSON.stringify(sl2));
+    check("sales: a sale typed in by hand with no buy date is 'term unknown' and counted in neither short nor long; remove and 'not a sale' work", sl2.formShown && sl2.wipro && sl2.wipro.proceeds === 18000 && sl2.wipro.cost === 22500 && Math.abs(sl2.unknownBucket + 4500) <= 1 && sl2.unknownText && sl2.afterDelete === 1 && sl2.dismissed, JSON.stringify(sl2));
     const pn = JSON.parse(await cdp.eval(`(async()=>{ const w=(ms)=>new Promise(r=>setTimeout(r,ms)); const out={}; const S=LifeLedgerApp.getState(); const keep={s:S.sales,b:S.brokerStatements};
       const mk=(i,owner,demat,soldOn,gain)=>({id:'sale-p'+i,symbol:'S'+i,name:'Share '+i,owner,demat,soldOn,qty:1,price:10,gross:10,charges:0,proceeds:10,cost:10-gain,gain,lots:[],bankCredited:false});
       S.sales=[mk(0,'Me','Groww','2025-01-10',100.25),mk(1,'Wife','Groww','2025-05-10',-40)]; for(let i=2;i<14;i++) S.sales.push(mk(i,'Me','Zerodha','2025-06-1'+(i%9),1));

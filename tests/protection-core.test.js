@@ -1,13 +1,13 @@
 const assert = require("assert");
 const P = require("../protection-core.js");
 
-// Ages and birthdays (Prafful 22 Oct 1995, Archana 22 May 1997; "today" = 18 Oct 2026)
-assert.strictEqual(P.ageOn("1995-10-22", "2026-10-18"), 30, "turns 31 in four days");
-assert.strictEqual(P.ageOn("1995-10-22", "2026-10-22"), 31, "on the birthday itself");
-assert.strictEqual(P.ageOn("1997-05-22", "2026-10-18"), 29);
-assert.deepStrictEqual(P.nextBirthday("1995-10-22", "2026-10-18"), { date: "2026-10-22", days: 4, turning: 31 });
-assert.deepStrictEqual(P.nextBirthday("1997-05-22", "2026-10-18"), { date: "2027-05-22", days: 216, turning: 30 });
-assert.strictEqual(P.nextBirthday("1995-10-22", "2026-10-22").days, 0, "today counts");
+// Ages and birthdays (made-up birth dates; "today" = 11 Oct 2026)
+assert.strictEqual(P.ageOn("1990-10-15", "2026-10-11"), 35, "turns 36 in four days");
+assert.strictEqual(P.ageOn("1990-10-15", "2026-10-15"), 36, "on the birthday itself");
+assert.strictEqual(P.ageOn("1992-05-15", "2026-10-11"), 34);
+assert.deepStrictEqual(P.nextBirthday("1990-10-15", "2026-10-11"), { date: "2026-10-15", days: 4, turning: 36 });
+assert.deepStrictEqual(P.nextBirthday("1992-05-15", "2026-10-11"), { date: "2027-05-15", days: 216, turning: 35 });
+assert.strictEqual(P.nextBirthday("1990-10-15", "2026-10-15").days, 0, "today counts");
 assert.strictEqual(P.ageOn("garbage", "2026-10-18"), null);
 assert.strictEqual(P.nextBirthday("", "2026-10-18"), null);
 
@@ -28,7 +28,7 @@ assert.strictEqual(P.advanceDue("2026-08-31", "Half-yearly"), "2027-02-28");
 // Cover checks
 const state = () => ({
   income: [{ person: "Me", date: "2026-09-30", netSalary: 199884 }, { person: "Me", date: "2026-08-31", netSalary: 199884 }, { person: "Me", date: "2026-07-31", netSalary: 278484 }, { person: "Wife", date: "2026-09-30", amount: 56986 }],
-  insurance: [], vehicles: [], goals: [], expenses: [], people: { me: { dob: "1995-10-22" }, wife: { dob: "1997-05-22" } }, banksaving: [{ value: 450000 }], fd: [{ value: 2000000 }],
+  insurance: [], vehicles: [], goals: [], expenses: [], people: { me: { dob: "1990-10-15" }, wife: { dob: "1992-05-15" } }, banksaving: [{ value: 450000 }], fd: [{ value: 2000000 }],
 });
 let s = state();
 assert.strictEqual(P.monthlyIncome(s, "Me"), 199884, "the middle of the last three months: the July bonus month does not lift it");
@@ -98,7 +98,7 @@ assert.deepStrictEqual(g.map((x) => x.key), ["emergency", "retirement"]);
 assert.strictEqual(g[0].target, 720000, "6 × ₹1.2L");
 assert.strictEqual(g[0].saved, 2450000, "bank + FD today");
 assert.strictEqual(g[1].target, 36000000, "25 × ₹14.4L a year");
-assert.strictEqual(g[1].dueDate, "2055-10-22", "when the first person turns 60");
+assert.strictEqual(g[1].dueDate, "2050-10-15", "when the first person turns 60");
 assert.strictEqual(g[1].track, "All my assets");
 s.goals = [{ name: "Emergency Fund" }];
 assert.deepStrictEqual(P.suggestGoals(s, "2026-10-18").map((x) => x.key), ["retirement"], "already added");

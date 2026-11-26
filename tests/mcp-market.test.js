@@ -97,7 +97,7 @@ assert.ok(!JSON.stringify(fit).includes("PRIVATE NAME"), "habit names never leav
 assert.strictEqual(F.milestones(13248312, []).next, 15000000);
 const ms = F.milestones(10000000, [{ date: "2026-01-01", netWorth: 9000000 }, { date: "2026-07-01", netWorth: 9900000 }]);
 assert.ok(ms.monthsAtThatPace > 0 && ms.next === 12500000);
-const cal = C.calendar({ people: { me: { dob: "1995-10-22" } }, insurance: [{ person: "Me", type: "Health", policyName: "Fam", nextDue: "2026-11-05", premium: 20000 }] }, "2026-10-18");
+const cal = C.calendar({ people: { me: { dob: "1990-10-24" } }, insurance: [{ person: "Me", type: "Health", policyName: "Fam", nextDue: "2026-11-05", premium: 20000 }] }, "2026-10-18");
 assert.deepStrictEqual(cal.slice(0, 3).map((i) => i.kind), ["birthday", "salary", "renewal"]);
 assert.ok(cal.some((i) => /Advance tax/.test(i.what)));
 const sip = C.sipProgress({ mfMonthlyTarget: { me: 50000, wife: 50000 }, mutualFunds: [{ owner: "Me", invested: 20000, purchaseDate: "2026-10-05" }, { owner: "Me", invested: 999, purchaseDate: "2026-09-05" }] }, "2026-10-18");

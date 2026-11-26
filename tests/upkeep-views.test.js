@@ -32,19 +32,19 @@ assert.strictEqual(V.stale(null, o), "");
 }
 
 // ── sales ──
-const cand = { id: "salecand-1", key: "K", symbol: "WIPRO", name: EVIL, owner: "Me", demat: "Zerodha", qty: 93, cost: 24395.76, lots: [{ buyDate: "2026-11-11", buyDateKnown: false, qty: 93, cost: 24395.76 }], lastPrice: 198.5, whole: true, detectedOn: "2026-11-13" };
+const cand = { id: "salecand-1", key: "K", symbol: "WIPRO", name: EVIL, owner: "Me", demat: "Zerodha", qty: 90, cost: 22500, lots: [{ buyDate: "2026-11-11", buyDateKnown: false, qty: 90, cost: 22500 }], lastPrice: 198.5, whole: true, detectedOn: "2026-11-13" };
 {
   const empty = V.sales({ pending: [], sales: [], showForm: false }, o);
   assert.ok(/Nothing is waiting/.test(empty) && empty.includes('data-act="sale-form"') && !empty.includes("<table"));
   const html = V.sales({ pending: [cand], sales: [], showForm: false }, o);
   noRaw(html);
-  assert.ok(html.includes('data-cand="salecand-1"') && html.includes("93 shares left your holdings") && html.includes("₹24,396") && html.includes("Prafful · Zerodha"));
+  assert.ok(html.includes('data-cand="salecand-1"') && html.includes("90 shares left your holdings") && html.includes("₹22,500") && html.includes("Prafful · Zerodha"));
   assert.ok(html.includes('data-act="sale-record"') && html.includes('data-act="sale-dismiss"') && html.includes('data-field="price"') && html.includes('value="198.5"'));
   assert.ok(/replace it with your contract note price/.test(html), "the filled-in price is called what it is: the last market price");
   assert.ok(html.includes('data-field="buyDate"') && /term unknown/.test(html), "an unknown buy date asks for one and says what happens without it");
   assert.ok(!/Nothing is waiting/.test(html));
   // with a real buy date there is no buy date box and no warning
-  const known = V.sales({ pending: [{ ...cand, lots: [{ buyDate: "2023-01-01", buyDateKnown: true, qty: 93, cost: 24395.76 }] }], sales: [] }, o);
+  const known = V.sales({ pending: [{ ...cand, lots: [{ buyDate: "2023-01-01", buyDateKnown: true, qty: 90, cost: 22500 }] }], sales: [] }, o);
   assert.ok(!known.includes('data-field="buyDate"') && !/term unknown/.test(known));
   // one share, and no last price: no price pre-filled and no note about it
   const one = V.sales({ pending: [{ ...cand, qty: 1, lastPrice: 0 }], sales: [] }, o);
@@ -55,10 +55,10 @@ const cand = { id: "salecand-1", key: "K", symbol: "WIPRO", name: EVIL, owner: "
   for (const f of ["symbol", "name", "owner", "demat", "qty", "avgCost", "buyDate", "price", "date", "charges", "credit"]) assert.ok(form.includes(`data-field="${f}"`), f);
   assert.ok(form.includes('data-cand="manual"') && form.includes('max="2026-11-13"') && !/Nothing is waiting/.test(form));
   // recorded sales
-  const sale = S.buildSale(cand, { price: 198.13, date: "2026-11-11", charges: 25 }, { today: "2026-11-13" }).sale;
+  const sale = S.buildSale(cand, { price: 200, date: "2026-11-11", charges: 25 }, { today: "2026-11-13" }).sale;
   const listed = V.sales({ pending: [], sales: [{ ...sale, term: "unknown" }, { ...sale, id: "s2", gain: 100, term: "long", charges: 0 }, { ...sale, id: "s3", term: "mixed" }, { ...sale, id: "s4", term: "short" }] }, o);
   noRaw(listed);
-  assert.ok(listed.includes("11 Nov 2026") && listed.includes("₹18,401") && listed.includes("after ₹25 charges") && listed.includes("−₹5,995") && listed.includes("+₹100"));
+  assert.ok(listed.includes("11 Nov 2026") && listed.includes("₹17,975") && listed.includes("after ₹25 charges") && listed.includes("−₹4,525") && listed.includes("+₹100"));
   for (const t of ["Term unknown", "Long-term", "Part long, part short", "Short-term"]) assert.ok(listed.includes(t), t);
   assert.ok(listed.includes('data-act="sale-del"') && listed.includes('data-id="s2"') && /feed the Tax page/.test(listed));
   assert.strictEqual((listed.match(/after ₹25 charges/g) || []).length, 3, "a sale with no charges shows no charges line");
