@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Loads Zerodha tradebook / Groww order-history / Upstox trade-history files (CSV or .xlsx) into the vault (see broker-load.js).
- *   node mcp/broker-load-run.js --owner Me --demat Zerodha FILE... [--sale SYMBOL:YYYY-MM-DD[THH:MM:SS][:charges[:Company name]]] [--stamp YYYY-MM-DD] [--all-sales] [--write]
+ *   node mcp/broker-load-run.js --owner Me --demat Zerodha FILE... [--sale SYMBOL:YYYY-MM-DD[THH:MM:SS][:charges[:Company name]]] [--stamp YYYY-MM-DD] [--all-sales] [--replace] [--write]
+ * --replace: a sale already recorded for that share and day, worked out differently, is corrected from the files (without it, it is only listed).
  * --all-sales: every day a share was sold in the files becomes a recorded sale (charges 0); the load stops if any cannot be accounted for.
  * --stamp: the day a holdings sync stamped on every row; holdings still on it are marked "buy date unknown" first.
  * Without --write it only shows what would happen. The vault password comes from the macOS keychain (or the cloud secrets).
@@ -10,10 +11,10 @@ const fs = require("fs");
 const BTC = require("../broker-trades-core.js"), { tradeFileText } = require("./broker-files.js"), L = require("./broker-load.js"), V = require("./vault-client.js"), Common = require("./cloud-common.js");
 
 (async () => {
-  const argv = process.argv.slice(2), files = [], sales = []; let owner = "Me", demat = "Zerodha", write = false, stamp = "", allSales = false;
+  const argv = process.argv.slice(2), files = [], sales = []; let owner = "Me", demat = "Zerodha", write = false, stamp = "", allSales = false, replace = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--owner") owner = argv[++i]; else if (a === "--demat") demat = argv[++i]; else if (a === "--write") write = true; else if (a === "--stamp") stamp = argv[++i]; else if (a === "--all-sales") allSales = true;
+    if (a === "--owner") owner = argv[++i]; else if (a === "--demat") demat = argv[++i]; else if (a === "--write") write = true; else if (a === "--stamp") stamp = argv[++i]; else if (a === "--all-sales") allSales = true; else if (a === "--replace") replace = true;
     else if (a === "--sale") { const parts = String(argv[++i] || "").split(":"), symbol = parts.shift(); let date = parts.shift(); if (/^\d{4}-\d{2}-\d{2}T\d{2}$/.test(date)) date += ":" + parts.shift() + ":" + parts.shift(); const [charges, ...name] = parts; sales.push({ owner, demat, symbol, date, charges: Number(charges || 0), name: name.join(":") || symbol }); }
     else files.push(a);
   }
@@ -29,7 +30,7 @@ const BTC = require("../broker-trades-core.js"), { tradeFileText } = require("./
   const login = Common.login(process.env);
   const { data } = await V.fetchState({ gatewayUrl: login.gatewayUrl, password: login.password });
   const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
-  const out = L.build(data, trades, { today, sales, stamp });
+  const out = L.build(data, trades, { today, sales, stamp, replace });
   if (!out.ok) { console.error("Stopped: " + out.error); process.exit(2); }
   const r = out.report;
   if (r.pendingCleared) console.log(`Waiting "did you sell this?" items answered: ${r.pendingCleared}`);
@@ -37,9 +38,9 @@ const BTC = require("../broker-trades-core.js"), { tradeFileText } = require("./
   console.log(`Trades kept: ${r.trades} (${r.added} new, ${r.duplicates} already kept). Holdings by status: ${JSON.stringify(r.status)}`);
   for (const a of r.applied) console.log(`  dated ${a.symbol}: ${a.lots} lots${a.unknownQty ? `, ${a.unknownQty} shares undated` : ""}`);
   for (const s of r.skipped) console.log(`  skipped ${s.key}: ${s.why}`);
-  for (const s of r.sales) console.log(s.skipped ? `  sale ${s.symbol} ${s.date}: ${s.skipped}` : `  sale ${s.symbol} ${s.date}: ${s.qty} shares at ${s.price}, gross ${s.gross}, charges ${s.charges}, cost ${s.cost}, ${s.gain < 0 ? "loss" : "gain"} ${Math.abs(s.gain)} (${s.lots} lots)`);
+  for (const s of r.sales) console.log(s.skipped ? `  sale ${s.symbol} ${s.date}: ${s.skipped}` : `  sale ${s.symbol} ${s.date}: ${s.qty} shares at ${s.price}, gross ${s.gross}, charges ${s.charges}, cost ${s.cost}, ${s.gain < 0 ? "loss" : "gain"} ${Math.abs(s.gain)} (${s.lots} lots)${s.replaced ? `, corrects the recorded ${s.replaced.qty} shares, ${s.replaced.gain}` : ""}`);
   for (const o of r.oversold) console.log(`  note: ${o.symbol} sells ${o.oversold} shares more than the files show bought (a split or bonus not in the table, or an earlier file)`);
   if (!write) { console.log("Dry run: nothing written. Add --write to save."); return; }
-  const res = await V.updateWith({ gatewayUrl: login.gatewayUrl, password: login.password, make: (b) => L.build(b, trades, { today, sales, stamp }).after, guard: L.guard, expectCount: L.expectCount(V) });
+  const res = await V.updateWith({ gatewayUrl: login.gatewayUrl, password: login.password, make: (b) => L.build(b, trades, { today, sales, stamp, replace }).after, guard: L.guard, expectCount: L.expectCount(V) });
   console.log(`Saved to the vault (rev ${res.rev}).`);
 })().catch((e) => { console.error(e.message); process.exit(1); });

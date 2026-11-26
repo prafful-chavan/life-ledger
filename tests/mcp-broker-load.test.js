@@ -110,3 +110,32 @@ assert.strictEqual(L.guard(data(), { ...ok, stocks: ok.stocks.map((x) => (x.symb
   await assert.rejects(V.updateWith({ gatewayUrl: "x", password: pw, fetchImpl, make: (b) => ({ ...make(b), goals: [] }), guard: L.guard, expectCount: L.expectCount(V) }), /more than was allowed/); assert.strictEqual(server.rev, 6);
   console.log("mcp-broker-load tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// ── A sale already recorded, worked out differently: never twice; corrected only when asked ──
+{
+  const tr2 = [tr("r1", "buy", "2025-01-01", 20, 100, "RT"), tr("r2", "sell", "2025-04-29", 20, 150, "RT", { time: "2025-04-29T11:00:00" }), tr("r3", "buy", "2025-04-29", 20, 160, "RT", { time: "2025-04-29T12:00:00" }), tr("r4", "sell", "2025-04-29", 20, 155, "RT", { time: "2025-04-29T13:00:00" })];
+  const s = { owner: "Me", demat: "Zerodha", symbol: "RT", name: "Rt", date: "2025-04-29" };
+  const first = L.build(data(), tr2, { today: T, sales: [{ ...s, date: "2025-04-29T11:00:00" }] }).after;
+  assert.deepStrictEqual(first.sales.map((x) => [x.qty, x.gain]), [[20, 1000]]);
+  let out = L.build(first, tr2, { today: T, sales: [s] });
+  assert.deepStrictEqual(out.after.sales, first.sales, "without --replace nothing changes");
+  assert.match(out.report.sales[0].skipped, /recorded differently \(20 shares, 1000; the files give 40, 900\)/);
+  out = L.build(first, tr2, { today: T, sales: [s], replace: true });
+  assert.deepStrictEqual(out.after.sales.map((x) => [x.qty, x.gain]), [[40, 900]], "one sale, the whole day"); assert.deepStrictEqual(out.report.sales[0].replaced, { qty: 20, gain: 1000 });
+  assert.strictEqual(L.guard(first, out.after), true);
+  assert.deepStrictEqual(L.build(out.after, tr2, { today: T, sales: [s], replace: true }).report.sales[0].skipped, "already recorded", "again: nothing to do");
+  // a sale whose money is in the bank is never replaced; nor one by a smaller sale
+  const credited = { ...first, sales: first.sales.map((x) => ({ ...x, bankCredited: true })) };
+  assert.match(L.build(credited, tr2, { today: T, sales: [s], replace: true }).report.sales[0].skipped, /recorded differently/);
+  assert.match(L.build(out.after, tr2, { today: T, sales: [{ ...s, date: "2025-04-29T11:00:00" }], replace: true }).report.sales[0].skipped, /recorded differently/);
+  // the guard: no sale may vanish, move to another day, shrink, or sit twice on one day
+  const nu = out.after.sales[0], g = (sales) => L.guard(first, { ...out.after, sales });
+  assert.strictEqual(g([]), false); assert.strictEqual(g([{ ...nu, soldOn: "2025-04-30" }]), false); assert.strictEqual(g([{ ...nu, qty: 19 }]), false); assert.strictEqual(g([{ ...nu, qty: 20 }]), true);
+  assert.strictEqual(g([first.sales[0], nu]), false, "old and new together would count the day twice"); assert.strictEqual(g([{ ...nu, owner: "Wife" }]), false);
+  assert.strictEqual(L.guard(credited, out.after), false);
+  // a difference of half a paisa is the same sale; two paise is not
+  const nudge = (d) => ({ ...first, sales: [{ ...nu, id: "older", gain: nu.gain + d }] });
+  assert.strictEqual(L.build(nudge(0.004), tr2, { today: T, sales: [s] }).report.sales[0].skipped, "already recorded");
+  assert.match(L.build(nudge(0.02), tr2, { today: T, sales: [s] }).report.sales[0].skipped, /recorded differently/);
+}
+console.log("mcp-broker-load: replacement checks ok");

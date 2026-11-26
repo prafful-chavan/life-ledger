@@ -24,8 +24,8 @@
     "sha256": "aab25e11c286e8edfed928732322856f3f6b2bd628884709e2795c1e7e388509"
   },
   "app.js": {
-    "version": "1.0.156",
-    "sha256": "f1b791c901ee1e8734886d56dd30b0e32c237d6f6c03ba4bcdd3f50e8e5fc374"
+    "version": "1.0.157",
+    "sha256": "8e880ffb1a01c0ad5fbccb47c8adc10d5050e921e73969b02e279fc409d8cbb8"
   },
   "auth.js": {
     "version": "1.0.45",
@@ -36,8 +36,8 @@
     "sha256": "623b817172e4400e78848ecd67ff32455d5b3bbd1eca33d2ab75645fde8469fc"
   },
   "broker-trades-core.js": {
-    "version": "1.0.7",
-    "sha256": "4291774d45faf3cd249ade7cacbd70f80cc915361e64dbfd6c3b99fdfa001558"
+    "version": "1.0.8",
+    "sha256": "68a3efd54fbbc9df7a75af5a8ff5b1773b2f9ad6a874c18630161a4dfc02b56d"
   },
   "broker-trades-views.js": {
     "version": "1.0.0",
@@ -120,8 +120,8 @@
     "sha256": "03353d379a45e375571fdb0a354abaa202d1ade875e2b65a6a8add223ea57434"
   },
   "layout.css": {
-    "version": "1.8.54",
-    "sha256": "0e3ab983bb26d78d5f2aa5ccd0428c0b81fc539499b00f30fa5ea250ec294ef1"
+    "version": "1.8.55",
+    "sha256": "8c6ff94b25aaf8ca690329adbf7d102a058314244fdf29e8e15bcf282aef1582"
   },
   "liability-calc.js": {
     "version": "1.0.0",
@@ -158,6 +158,14 @@
   "outgo-calendar-views.js": {
     "version": "1.0.0",
     "sha256": "2763c7fdd8ec7f772bb267c205c5d9a55060f6ad33c630852f94b6f10c3cc31b"
+  },
+  "pnl-core.js": {
+    "version": "1.0.0",
+    "sha256": "c6721c1105d27f7f3754eb776a97c2f393bcf1d242619ecc4b22d5d941d57704"
+  },
+  "pnl-views.js": {
+    "version": "1.0.0",
+    "sha256": "2711145b2d890c85b26ddecab8f0ce98f0a0fc6718d92c436aab4a4f999f9835"
   },
   "portfolio-core.js": {
     "version": "1.0.1",
@@ -260,8 +268,8 @@
     "sha256": "bd24cc972de203a8294bfc40313e4ae980cdaa69425dddf4848316362951e31d"
   },
   "upkeep-views.js": {
-    "version": "1.0.0",
-    "sha256": "b19a3fd383cfaf43520a88286a66e6673b4ce84a648f2af3326bcb4e875c7f32"
+    "version": "1.0.1",
+    "sha256": "92b58195a9eaa9db9d660d93e6ded858c3d32cdd7856e046c1906e01acac1322"
   },
   "vault-store.js": {
     "version": "1.0.8",

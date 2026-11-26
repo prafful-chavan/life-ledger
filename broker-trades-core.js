@@ -176,12 +176,22 @@
     return { format, ...(format === "zerodha-tradebook" ? parseZerodha(text, ctx) : format === "groww-history" ? parseGroww(text, ctx) : format === "upstox-tradebook" ? parseUpstox(text, ctx) : parseIndmoney(text, ctx)) };
   }
 
-  /** Trades already kept + new ones; the same trade (same id) is kept once. → { trades (oldest first), added, duplicates } */
+  const accountOf = (t) => `${t.owner || "Me"}|${t.demat || ""}`;
+  /**
+   * Trades already kept + new ones; the same trade (same id, same account) is kept once. → { trades (oldest first), added, duplicates }
+   * A Groww row has no trade number, so two people who got the same shares at the same moment (an IPO allotment) make the same id. The
+   * second account's trade then gets the id with its account added; ids already kept never change.
+   */
   function mergeTrades(existing, incoming) {
     const map = new Map();
     for (const t of existing || []) if (t && t.id) map.set(t.id, t);
     let added = 0, duplicates = 0;
-    for (const t of incoming || []) { if (!t || !t.id) continue; if (map.has(t.id)) duplicates++; else { map.set(t.id, t); added++; } }
+    for (const t of incoming || []) {
+      if (!t || !t.id) continue;
+      let id = t.id;
+      if (map.has(id) && accountOf(map.get(id)) !== accountOf(t)) id = `${t.id}@${accountOf(t)}`;
+      if (map.has(id)) duplicates++; else { map.set(id, id === t.id ? t : { ...t, id }); added++; }
+    }
     const trades = [...map.values()].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.id < b.id ? -1 : 1));
     return { trades, added, duplicates };
   }
@@ -198,6 +208,7 @@
    * `date` is the ex-date: trades on or after it are already in the new shares.
    */
   const ACTIONS = [
+    { symbol: "GAIL", kind: "bonus", date: "2022-09-06", ratio: 0.5, note: "GAIL 1:2 bonus (record date 7 Sep 2022, ex-date 6 Sep 2022): 1 free share for every 2 held, whole shares only, at no cost", source: "https://www.indiainfoline.com/article/news-top-story/gail-india-fixes-record-date-for-1-2-bonus-issue-stock-climbs-2-122082600412_1.html" },
     { symbol: "VBL", kind: "split", date: "2024-09-12", ratio: 2.5, note: "Varun Beverages split its Rs 5 shares into Rs 2 shares (record and ex-date 12 Sep 2024; ISIN INE200M01021 became INE200M01039): 1 share became 2.5", source: "https://msei.in/SX-Content/Circulars/2024/September/Circular-15949.pdf" },
     { symbol: "MAZDOCK", kind: "split", date: "2024-12-27", ratio: 2, note: "Mazagon Dock split each Rs 10 share into two Rs 5 shares (record and ex-date 27 Dec 2024): 1 share became 2", source: "https://business-standard.com/amp/markets/news/mazagon-dock-shares-trade-ex-date-for-stock-split-today-check-details-124122700355_1.html" },
     { symbol: "ACUTAAS", kind: "split", date: "2025-04-25", ratio: 2, note: "Acutaas Chemicals (formerly Ami Organics) split each Rs 10 share into two Rs 5 shares (record and ex-date 25 Apr 2025; ISIN INE00FF01017 became INE00FF01025): 1 share became 2", source: "https://trendlyne.com/equity/Split/ACUTAAS/644637/acutaas-chemicals-ltd-split" },
@@ -206,10 +217,27 @@
     { symbol: "WIPRO", kind: "bonus", date: "2024-12-03", ratio: 1, note: "Wipro 1:1 bonus (record date 3 Dec 2024): 1 free share for each share held, at no cost. Credited by 15 Dec 2024, so every lot is long-term either way", source: "https://www.businesstoday.in/markets/company-stock/story/wipro-shares-rise-as-board-announces-record-date-for-bonus-issue-454643-2024-11-22" },
   ];
 
-  /** Replays the trades, first in first out, one position per owner + broker + share. Splits and bonus issues are applied on their date. → Map(key → { owner, demat, symbol, lots[{date, qty, price}], qty, cost, oversold, bought, sold, first, last }) */
+  const byTime = (a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.side === b.side ? 0 : a.side === "buy" ? -1 : 1);
+
+  /**
+   * One share, one account, one day, the way brokers (and the tax rules) match it: what was bought and sold the same day is set off against
+   * each other first (intraday, whatever the order of the two), and only the rest of the sells come out of the older shares, first in first
+   * out. Changes `lots` in place. → { used[{ date, qty, price }] (what the day's sells consumed), short (sold shares nothing explains) }
+   */
+  function matchDay(lots, dayTrades, day) {
+    const buys = dayTrades.filter((t) => t.side === "buy").sort(byTime).map((t) => ({ date: day, qty: num(t.qty), price: num(t.price) }));
+    let sell = r4(dayTrades.filter((t) => t.side === "sell").reduce((a, t) => a + num(t.qty), 0));
+    const used = [];
+    const take = (from) => { while (sell > EPS && from.length) { const l = from[0], q = Math.min(sell, l.qty); used.push({ date: l.date, qty: r4(q), price: l.price }); l.qty = r4(l.qty - q); sell = r4(sell - q); if (l.qty <= EPS) from.shift(); } };
+    take(buys); take(lots);
+    lots.push(...buys);
+    return { used, short: sell > EPS ? sell : 0 };
+  }
+
+  /** Replays the trades, first in first out (same-day buys and sells set off first), one position per owner + broker + share. Splits and bonus issues are applied on their date. → Map(key → { owner, demat, symbol, lots[{date, qty, price}], qty, cost, oversold, bought, sold, first, last }) */
   function replay(trades, actions) {
     const acts = (Array.isArray(actions) ? actions : ACTIONS).filter((a) => a && validISO(a.date) && (a.kind === "demerger" || num(a.ratio) > 0)).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    const sorted = (trades || []).slice().sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.side === b.side ? 0 : a.side === "buy" ? -1 : 1));
+    const sorted = (trades || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : byTime(a, b)));
     const map = new Map();
     let next = 0;
     const applyAction = (a) => {
@@ -227,19 +255,21 @@
           const ck = posKey(p.owner, p.demat, child), c = map.get(ck) || map.set(ck, { key: ck, owner: p.owner, demat: p.demat, symbol: child, lots: [], oversold: 0, bought: 0, sold: 0, first: a.date, last: a.date }).get(ck);
           c.lots.push(...lots); c.lots.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0)); c.bought = r4(c.bought + childQty);
         }
-        else if (a.kind === "bonus") { const held = r4(p.lots.reduce((t, l) => t + l.qty, 0)), extra = r4(held * f); if (extra > EPS) { p.lots.push({ date: a.date, qty: extra, price: 0, bonus: true }); p.bought = r4(p.bought + extra); } }
+        else if (a.kind === "bonus") { const held = r4(p.lots.reduce((t, l) => t + l.qty, 0)), extra = Math.floor(held * f + 1e-9); if (extra > EPS)   // whole shares only: a fraction is paid in cash, never credited
+           { p.lots.push({ date: a.date, qty: extra, price: 0, bonus: true }); p.bought = r4(p.bought + extra); } }
       }
     };
-    for (const t of sorted) {
-      while (next < acts.length && acts[next].date <= t.date) applyAction(acts[next++]);
-      const k = posKey(t.owner, t.demat, t.symbol);
-      const p = map.get(k) || map.set(k, { key: k, owner: t.owner || "Me", demat: t.demat || "", symbol: symOf(t.symbol), lots: [], oversold: 0, bought: 0, sold: 0, first: t.date, last: t.date }).get(k);
-      if (t.date < p.first) p.first = t.date; if (t.date > p.last) p.last = t.date;
-      if (t.side === "buy") { p.lots.push({ date: t.date, qty: num(t.qty), price: num(t.price) }); p.bought += num(t.qty); }
-      else {
-        let need = num(t.qty); p.sold += need;
-        while (need > EPS && p.lots.length) { const l = p.lots[0], take = Math.min(need, l.qty); l.qty = r4(l.qty - take); need -= take; if (l.qty <= EPS) p.lots.shift(); }
-        if (need > EPS) p.oversold = r4(p.oversold + need);   // sold shares the files never show being bought: the buys are in an earlier file
+    for (let i = 0; i < sorted.length;) {
+      const day = sorted[i].date, today = new Map();
+      for (; i < sorted.length && sorted[i].date === day; i++) { const k = posKey(sorted[i].owner, sorted[i].demat, sorted[i].symbol); (today.get(k) || today.set(k, []).get(k)).push(sorted[i]); }
+      while (next < acts.length && acts[next].date <= day) applyAction(acts[next++]);
+      for (const [k, list] of today) {
+        const t = list[0];
+        const p = map.get(k) || map.set(k, { key: k, owner: t.owner || "Me", demat: t.demat || "", symbol: symOf(t.symbol), lots: [], oversold: 0, bought: 0, sold: 0, first: day, last: day }).get(k);
+        if (day < p.first) p.first = day; if (day > p.last) p.last = day;
+        for (const x of list) { if (x.side === "buy") p.bought += num(x.qty); else p.sold += num(x.qty); }
+        const m = matchDay(p.lots, list, day);
+        if (m.short) p.oversold = r4(p.oversold + m.short);   // sold shares the files never show being bought: the buys are in an earlier file
       }
     }
     while (next < acts.length) applyAction(acts[next++]);
@@ -262,18 +292,22 @@
     if (!sells.length) return { ok: false, error: "The files show no sale of that share on that day." };
     const first = sells.map((t) => t.time).sort()[0];
     // the whole account is replayed, not only this share: a demerger hands a share its lots from another company's trades
-    const before = (trades || []).filter((t) => t && (t.owner || "Me") === (s.owner || "Me") && (t.demat || "") === (s.demat || "") && t.time < first);
+    // a whole day: the earlier days, then that day's own buys and sells set off against each other. One named sell: only what came before it
+    const before = (trades || []).filter((t) => t && (t.owner || "Me") === (s.owner || "Me") && (t.demat || "") === (s.demat || "") && (at ? t.time < first : t.date < date));
     // only what had already happened by the sale day: a split or demerger later on must not change the shares or the cost of an earlier sale
     const upTo = (Array.isArray(actions) ? actions : ACTIONS).filter((a) => a && a.date <= date);
     const p = replay(before, upTo).get(key);
     const lots = p ? p.lots.map((l) => ({ ...l })) : [];
     const qty = r4(sells.reduce((t, x) => t + num(x.qty), 0)), gross = sells.reduce((t, x) => t + num(x.qty) * num(x.price), 0);
-    let need = qty; const used = [];
-    for (const l of lots) { if (need <= EPS) break; const take = Math.min(need, l.qty); used.push({ buyDate: l.date, buyDateKnown: true, qty: r4(take), cost: r2(take * l.price) }); need = r4(need - take); }
+    const dayTrades = at ? sells.concat(mine.filter((t) => t.side === "buy" && t.date === date && t.time < first)) : mine.filter((t) => t.date === date);
+    const matched = matchDay(lots, dayTrades, date);
+    const used = matched.used.map((l) => ({ buyDate: l.date, buyDateKnown: true, qty: l.qty, cost: r2(l.qty * l.price) }));
+    const need = matched.short;
     if (need > EPS) return { ok: false, error: `The files show only ${r4(qty - need)} of the ${qty} shares sold being bought: ${need} are missing, so the cost cannot be worked out.` };
     const cost = r2(used.reduce((t, l) => t + l.cost, 0));
     const cand = { id: "salecand-" + hash16(`${key}|${date}|${qty}`), key: `${symOf(s.symbol)}|${s.owner || "Me"}|${s.demat || ""}`, symbol: symOf(s.symbol), name: s.name || symOf(s.symbol), owner: s.owner || "Me", demat: s.demat || "", qty, cost, lots: used, lastPrice: 0, whole: true, detectedOn: date };
-    return { ok: true, cand, price: r4(gross / qty), date, sellTrades: sells.length };
+    // the average is left unrounded: rounding it first moves a large day's sale value by a few paise
+    return { ok: true, cand, price: gross / qty, date, sellTrades: sells.length };
   }
 
   /** A date shared by most rows (5 or more rows, more than half) is the day a sheet was imported, not a buy date. */

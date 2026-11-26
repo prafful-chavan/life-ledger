@@ -43,6 +43,7 @@ const defaultData = {
   briefRun: null,
   sales: [],
   salesPending: [],
+  brokerStatements: [],
   jobSwitch: [],
   brokerTrades: [],
   outgoings: [],
@@ -1224,6 +1225,8 @@ function normalizeDataCore(data) {
     // Shares sold (recorded from a Sync Holdings that found them gone) and the ones still waiting for a price
     sales: ensureIds(Array.isArray(data.sales) ? data.sales : [], "sale"),
     salesPending: ensureIds(Array.isArray(data.salesPending) ? data.salesPending : [], "salecand"),
+    // What each broker's own report says for each year (profit, charges, dividends), shown next to the app's figure
+    brokerStatements: ensureIds(Array.isArray(data.brokerStatements) ? data.brokerStatements : [], "bst"),
     jobSwitch: ensureIds(Array.isArray(data.jobSwitch) ? data.jobSwitch : [], "jobswitch"),
     // Trades read from broker files (real buy dates) and the partly-explained shares the household agreed to date
     brokerTrades: ensureIds(Array.isArray(data.brokerTrades) ? data.brokerTrades : [], "trade"),
@@ -5704,7 +5707,7 @@ const STV = (typeof window !== "undefined" && window.LifeLedgerStaleValues) || (
 const BKD = (typeof window !== "undefined" && window.LifeLedgerBreakdown) || (typeof require === "function" ? require("./breakdown-core.js") : null);
 const SLS = (typeof window !== "undefined" && window.LifeLedgerSales) || (typeof require === "function" ? require("./sales-core.js") : null);
 const UPV = (typeof window !== "undefined" && window.LifeLedgerUpkeepViews) || (typeof require === "function" ? require("./upkeep-views.js") : null);
-const upkeepUi = { saleForm: false, open: new Set() };
+const upkeepUi = { saleForm: false, open: new Set(), allSales: false, pnlOpen: new Set() };
 const JSW = (typeof window !== "undefined" && window.LifeLedgerJobSwitch) || (typeof require === "function" ? require("./job-switch-core.js") : null);
 const JSV = (typeof window !== "undefined" && window.LifeLedgerJobSwitchViews) || (typeof require === "function" ? require("./job-switch-views.js") : null);
 const DMT = (typeof window !== "undefined" && window.LifeLedgerDayMeter) || (typeof require === "function" ? require("./day-meter-core.js") : null);
@@ -5987,6 +5990,8 @@ function breakdownModel() {
   return { bd, gains: BKD.gainsView(T.gains.unrealised(lots.lots, today).perLot, T.gains.realisedThisFY(lots.realised, today), { exemption }), exemption, open: [...upkeepUi.open] };
 }
 
+function pnlModel() { return window.LifeLedgerPnl.build(state.sales || [], state.brokerStatements || []); }
+
 function renderUpkeep() {
   if (!UPV || !STV || !BKD || !SLS || !window.LifeLedgerAdvisor || !window.LifeLedgerTax) return;
   const o = { fmt: dashFmt, names: DASH_NAMES, today: todayISO() };
@@ -5996,13 +6001,22 @@ function renderUpkeep() {
   const salesEl = document.getElementById("salesBox");
   if (salesEl) {
     const list = [...(state.sales || [])].sort((a, b) => (a.soldOn < b.soldOn ? 1 : a.soldOn > b.soldOn ? -1 : 0)).map((s) => ({ ...s, term: saleTerm(s) }));
-    salesEl.innerHTML = UPV.sales({ pending: state.salesPending || [], sales: list, showForm: upkeepUi.saleForm }, o);
+    salesEl.innerHTML = UPV.sales({ pending: state.salesPending || [], sales: list, showForm: upkeepUi.saleForm, showAll: upkeepUi.allSales }, o);
   }
+  const pnlEl = document.getElementById("pnlBox");
+  if (pnlEl && window.LifeLedgerPnl && window.LifeLedgerPnlViews) pnlEl.innerHTML = window.LifeLedgerPnlViews.panel({ ...pnlModel(), open: [...upkeepUi.pnlOpen] }, o);
   const bdEl = document.getElementById("portfolioBreakdown");
   if (bdEl) bdEl.innerHTML = UPV.breakdown(breakdownModel(), o);
 }
 
 function bindUpkeep() {
+  document.getElementById("pnlBox")?.addEventListener("click", (event) => {
+    const btn = event.target.closest('[data-act="pnl-open"]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (upkeepUi.pnlOpen.has(id)) upkeepUi.pnlOpen.delete(id); else upkeepUi.pnlOpen.add(id);
+    renderUpkeep();
+  });
   const field = (root, name) => root.querySelector(`[data-field="${name}"]`);
   const fail = (card, message) => { const e = card.querySelector(".up-error"); if (e) { e.textContent = message; e.hidden = false; } };
   document.getElementById("staleValues")?.addEventListener("click", async (event) => {
@@ -6031,6 +6045,7 @@ function bindUpkeep() {
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === "sale-form") { upkeepUi.saleForm = !upkeepUi.saleForm; renderUpkeep(); return; }
+    if (act === "sale-all") { upkeepUi.allSales = !upkeepUi.allSales; renderUpkeep(); return; }
     if (act === "sale-del") {
       if (!confirm("Remove this sale? The gain or loss stops counting. Money you added to a bank balance stays there.")) return;
       state.sales = (state.sales || []).filter((s) => s.id !== btn.dataset.id);

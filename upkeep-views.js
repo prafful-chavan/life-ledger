@@ -79,17 +79,21 @@
   }
 
   const TERM = { long: "Long-term", short: "Short-term", mixed: "Part long, part short", unknown: "Term unknown" };
+  const SALES_SHOWN = 10;
   function sales(model, o) {
     const { fmt, names } = o, m = model || {};
     const pending = m.pending || [], list = m.sales || [];
-    const rows = list.map((s) => `<tr><td data-label="Sold">${h(dateText(s.soldOn))}</td><td data-label="Share"><strong>${h(s.name)}</strong><br><small>${h(name(names, s.owner))}${s.demat ? " · " + h(s.demat) : ""}</small></td>
+    // a long history is folded: the latest ones, and a button for the rest
+    const shown = m.showAll || list.length <= SALES_SHOWN ? list : list.slice(0, SALES_SHOWN);
+    const more = list.length > SALES_SHOWN ? `<p><button type="button" class="secondary-button up-btn" data-act="sale-all">${m.showAll ? `Show only the latest ${SALES_SHOWN}` : `Show all ${list.length} sales`}</button></p>` : "";
+    const rows = shown.map((s) => `<tr><td data-label="Sold">${h(dateText(s.soldOn))}</td><td data-label="Share"><strong>${h(s.name)}</strong><br><small>${h(name(names, s.owner))}${s.demat ? " · " + h(s.demat) : ""}</small></td>
         <td data-label="Shares">${h(String(s.qty))}</td><td data-label="Price">${h(fmt.inr(s.price))}</td><td data-label="Received">${h(fmt.inr(s.proceeds))}${s.charges ? `<br><small>after ${h(fmt.inr(s.charges))} charges</small>` : ""}</td>
         <td data-label="Cost">${h(fmt.inr(s.cost))}</td><td data-label="Gain / loss"><span class="dv-delta ${cls(s.gain)}">${h(signed(s.gain, fmt))}</span></td>
         <td data-label="Term">${h(TERM[s.term] || "—")}</td><td data-label=""><button type="button" class="pf-link" data-act="sale-del" data-id="${h(s.id)}">Remove</button></td></tr>`).join("");
     const table = list.length ? `<div class="table-wrap"><table class="dv-table up-table"><thead><tr><th>Sold</th><th>Share</th><th>Shares</th><th>Price</th><th>Received</th><th>Cost</th><th>Gain / loss</th><th>Term</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="dv-note">These sales feed the Tax page: the gain or loss counts toward this year's capital gains and the ₹1.25 lakh tax-free limit. Removing one does not take back money you added to a bank balance.</p>` : "";
     const intro = !pending.length && !list.length && !m.showForm ? `<p class="dv-note">When Sync Holdings finds shares that are no longer in your sheet, they appear here so you can say what you sold them for. Nothing is waiting right now.</p>` : "";
-    return `${intro}${pending.map((c) => pendingCard(c, o)).join("")}${m.showForm ? manualForm(o) : `<p><button type="button" class="secondary-button up-btn" data-act="sale-form">Record a sale I made</button></p>`}${table}`;
+    return `${intro}${pending.map((c) => pendingCard(c, o)).join("")}${m.showForm ? manualForm(o) : `<p><button type="button" class="secondary-button up-btn" data-act="sale-form">Record a sale I made</button></p>`}${table}${more}`;
   }
 
   // ── breakdown ───────────────────────────────────────────────────────────────────────────────

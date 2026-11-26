@@ -9,6 +9,10 @@ const BTC = require("../broker-trades-core.js"), SLS = require("../sales-core.js
 const r2 = (n) => Math.round(n * 100) / 100;
 const symOf = (r) => String(r.symbol || r.company || "").toUpperCase().replace(/\s*-EQ$/i, "").trim();
 const posOf = (r) => `${r.owner || "Me"}|${r.demat || ""}|${symOf(r)}`;
+const dayOf = (x) => `${BTC.posKey(x.owner, x.demat, x.symbol)}|${x.soldOn}`;
+const sameSale = (a, b) => Math.abs(Number(a.qty) - Number(b.qty)) < 1e-6 && Math.abs(Number(a.gain) - Number(b.gain)) < 0.005;
+/** A recorded sale may give way only to a new one of the same share, account and day, with at least as many shares, and only if its money was not added to a bank balance. */
+const mayReplace = (old, nu) => dayOf(old) === dayOf(nu) && Number(nu.qty) >= Number(old.qty) - 1e-6 && !old.bankCredited;
 
 /**
  * before = vault data. files = [{ trades }] already parsed. sales = [{ owner, demat, symbol, name, date, charges }] to record.
@@ -24,7 +28,7 @@ function build(before, trades, opts) {
   // what the trades leave of each position, against what the holdings say: a sale is only recorded when the holdings no longer include the shares it sold
   const left = BTC.replay(merged.trades), heldNow = new Map();
   for (const r of applied.stocks) if (Number(r.quantity) > 0) heldNow.set(posOf(r), (heldNow.get(posOf(r)) || 0) + Number(r.quantity));
-  const newSales = [], salesReport = [];
+  const newSales = [], salesReport = [], replaced = new Set();
   for (const sel of o.sales || []) {
     const sc = BTC.saleCandidate(merged.trades, sel);
     if (!sc.ok) return { ok: false, error: `${sel.symbol} sale on ${sel.date}: ${sc.error}` };
@@ -32,13 +36,21 @@ function build(before, trades, opts) {
     if ((heldNow.get(k) || 0) > kept + 1e-6) return { ok: false, error: `${sel.symbol}: your holdings still include shares this sale used (you hold ${heldNow.get(k)}, the trades leave ${kept}), so it would count them twice` };
     const b = SLS.buildSale(sc.cand, { price: sc.price, date: sc.date, charges: sel.charges || 0 }, { today });
     if (!b.ok) return { ok: false, error: `${sel.symbol} sale: ${b.error}` };
-    if ((before.sales || []).some((x) => x.id === b.sale.id) || newSales.some((x) => x.id === b.sale.id)) { salesReport.push({ symbol: sel.symbol, date: sel.date, skipped: "already recorded" }); continue; }
+    if (newSales.some((x) => x.id === b.sale.id || dayOf(x) === dayOf(b.sale))) { salesReport.push({ symbol: sel.symbol, date: sel.date, skipped: "already recorded" }); continue; }
+    // never twice: a share's sale on one day is already in the books even if an earlier load worked it out differently
+    const there = (before.sales || []).filter((x) => dayOf(x) === dayOf(b.sale));
+    if (there.some((x) => x.id === b.sale.id) || (there.length === 1 && sameSale(there[0], b.sale))) { salesReport.push({ symbol: sel.symbol, date: sel.date, skipped: "already recorded" }); continue; }
+    if (there.length) {
+      const was = { qty: there.reduce((t, x) => t + Number(x.qty), 0), gain: r2(there.reduce((t, x) => t + Number(x.gain), 0)) };
+      if (!o.replace || there.length !== 1 || !mayReplace(there[0], b.sale)) { salesReport.push({ symbol: sel.symbol, date: sel.date, skipped: `recorded differently (${was.qty} shares, ${was.gain}; the files give ${b.sale.qty}, ${b.sale.gain})` }); continue; }
+      replaced.add(there[0].id); newSales.push(b.sale); salesReport.push({ symbol: sel.symbol, date: sel.date, qty: b.sale.qty, price: b.sale.price, gross: b.sale.gross, charges: b.sale.charges, cost: b.sale.cost, gain: b.sale.gain, lots: b.sale.lots.length, replaced: was }); continue;
+    }
     newSales.push(b.sale); salesReport.push({ symbol: sel.symbol, date: sel.date, qty: b.sale.qty, price: b.sale.price, gross: b.sale.gross, charges: b.sale.charges, cost: b.sale.cost, gain: b.sale.gain, lots: b.sale.lots.length });
   }
   // a "did you sell this?" item waiting for exactly the shares just recorded is answered: it goes
   const answers = (p, sale) => symOf(p) === symOf(sale) && (p.owner || "Me") === (sale.owner || "Me") && (p.demat || "") === (sale.demat || "") && Math.abs(Number(p.qty) - Number(sale.qty)) < 1e-6;
   const pending = (before.salesPending || []).filter((p) => !newSales.some((sale) => answers(p, sale)));
-  const after = { ...before, brokerTrades: merged.trades, stocks: applied.stocks, sales: [...(before.sales || []), ...newSales], ...(Array.isArray(before.salesPending) ? { salesPending: pending } : {}) };
+  const after = { ...before, brokerTrades: merged.trades, stocks: applied.stocks, sales: [...(before.sales || []).filter((x) => !replaced.has(x.id)), ...newSales], ...(Array.isArray(before.salesPending) ? { salesPending: pending } : {}) };
   const status = {}; recon.items.forEach((i) => { status[i.status] = (status[i.status] || 0) + 1; });
   return { ok: true, after, report: { pendingCleared: (before.salesPending || []).length - pending.length, markedUnknown: pre.flagged, trades: merged.trades.length, added: merged.added, duplicates: merged.duplicates, status, applied: applied.applied, skipped: applied.skipped, sales: salesReport, oversold: [...BTC.replay(merged.trades).values()].filter((p) => p.oversold > 0).map((p) => ({ symbol: p.symbol, oversold: p.oversold })) } };
 }
@@ -54,7 +66,11 @@ function guard(before, after) {
   const bt = new Set((before.brokerTrades || []).map((t) => t.id)), at = new Set((after.brokerTrades || []).map((t) => t.id));
   for (const id of bt) if (!at.has(id)) return false;
   const bs = new Set((before.sales || []).map((t) => t.id)), as = new Set((after.sales || []).map((t) => t.id));
-  for (const id of bs) if (!as.has(id)) return false;
+  // a sale may go only when a new one takes its place (same share, account and day)
+  for (const old of before.sales || []) if (!as.has(old.id) && newSalesList.filter((x) => mayReplace(old, x)).length !== 1) return false;
+  // and no share ends up with two sales on one day that were not both there before
+  const perDay = (rows) => { const m = new Map(); for (const x of rows || []) m.set(dayOf(x), (m.get(dayOf(x)) || 0) + 1); return m; }, was = perDay(before.sales);
+  for (const [k, n] of perDay(after.sales)) if (n > Math.max(1, was.get(k) || 0)) return false;
   const tot = (rows) => { const m = new Map(); for (const r of rows || []) { const e = m.get(posOf(r)) || m.set(posOf(r), { q: 0, c: 0 }).get(posOf(r)); e.q += Number(r.quantity) || 0; e.c += Number(r.invested) || 0; } return m; };
   const b = tot(before.stocks), a = tot(after.stocks);
   if (b.size !== a.size) return false;
